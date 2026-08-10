@@ -1,0 +1,33 @@
+# Módulos — Documentación por módulo
+
+Skill: `documentation`. Regla: **cada módulo de negocio se documenta en `docs/modules/<modulo>/`**.
+
+## Estructura por módulo
+
+```text
+docs/modules/<modulo>/
+├── README.md              # objetivo del módulo + enlaces a lo demás
+├── architecture.md        # entidades, flujo, dependencias, decisión de diseño
+├── queries.md             # queries importantes, paginación, índices usados
+├── database.md            # tablas, relaciones, transacciones, concurrencia
+└── performance.md         # decisiones de rendimiento + mediciones
+```
+
+## Contenido mínimo obligatorio
+
+```text
+Objetivo | Arquitectura | Flujo | Entidades | DTOs | Endpoints
+Queries | Commands | Repositories | Services | Base de datos
+Índices | Relaciones | Transacciones | Concurrencia | CancellationToken
+Riesgos | Rendimiento | Escalabilidad | Dependencias
+```
+
+## Reglas
+
+- La doc del módulo se crea con la primera feature del módulo (no antes — sin inventar contenido).
+- Se actualiza en la misma tarea que modifica código/esquema/queries.
+- Decisiones de arquitectura transversales → `docs/architecture/README.md` (ADR).
+
+## Estado actual
+
+Sin módulos implementados (esqueleto). Primer módulo a documentar cuando exista.
