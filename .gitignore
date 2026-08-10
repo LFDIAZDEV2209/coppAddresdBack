@@ -1,0 +1,89 @@
+# ============================================================
+# CoppAddresd.Back — .NET 10 (Clean Architecture)
+# ============================================================
+
+# --- Artefactos de compilación ---
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]uild/
+artifacts/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# --- Visual Studio ---
+.vs/
+.vsconfig
+*.DotSettings.user
+
+# --- JetBrains Rider ---
+.idea/
+
+# --- VS Code ---
+.vscode/*.log
+
+# --- Resultados de pruebas ---
+TestResults/
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+*.report
+*.junit
+coverage/
+*.lcov
+
+# --- NuGet ---
+*.nupkg
+*.snupkg
+*.nupkg.metadata
+packages/
+*.nuget.props
+*.nuget.targets
+!packages/**/build/*.targets
+!packages/**/build/*.props
+
+# --- Publicación / publish ---
+publish/
+*.publish.xml
+[Pp]ublish[Pp]rofiles/
+
+# --- Configuración de la aplicación (no se versiona) ---
+appsettings.json
+appsettings.*.json
+secrets.json
+connectionstrings.config
+*.user.config
+
+# --- Entity Framework ---
+*.migration*.tmp
+*.efproj
+
+# --- Logs y archivos temporales ---
+*.log
+logs/
+*.tmp
+*.temp
+*.cache
+*.pid
+*.pid.lock
+*.orig
+*.rej
+*~
+*.bak
+*.swp
+
+# --- Archivos del sistema operativo ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
