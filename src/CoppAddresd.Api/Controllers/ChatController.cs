@@ -1,12 +1,14 @@
 using System.Text;
 using CoppAddresd.Application.Features.Chat;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CoppAddresd.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/[controller]")]
+[Authorize]
 public class ChatController : ControllerBase
 {
     private readonly IMediator _mediator;

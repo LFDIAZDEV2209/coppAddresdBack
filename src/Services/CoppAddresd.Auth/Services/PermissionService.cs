@@ -1,4 +1,4 @@
-using CoppAddresd.Auth.Contracts;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Models;
 using Microsoft.EntityFrameworkCore;

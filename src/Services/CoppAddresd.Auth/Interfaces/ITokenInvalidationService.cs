@@ -1,4 +1,4 @@
-namespace CoppAddresd.Auth.Contracts;
+namespace CoppAddresd.Auth.Interfaces;
 
 public interface ITokenInvalidationService
 {

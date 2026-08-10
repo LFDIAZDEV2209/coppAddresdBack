@@ -1,6 +1,6 @@
 using CoppAddresd.Auth.Models;
 
-namespace CoppAddresd.Auth.Contracts;
+namespace CoppAddresd.Auth.Interfaces;
 
 public interface IAuthService
 {
