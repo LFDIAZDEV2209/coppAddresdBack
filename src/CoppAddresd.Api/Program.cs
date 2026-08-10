@@ -9,12 +9,21 @@ builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.ConfigureCors();
 
 builder.Services.AddHealthChecks();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo { Title = "CoppAddresd API", Version = "v1" });
+});
 
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "CoppAddresd API v1");
+    });
 }
 
 app.UseCors(CoppAddresd.Api.Extensions.ApplicationServiceExtensions.CorsPolicyName);
