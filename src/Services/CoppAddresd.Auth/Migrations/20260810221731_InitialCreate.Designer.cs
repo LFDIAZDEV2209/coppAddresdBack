@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Auth.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    [Migration("20260810200303_AddRefreshTokens")]
-    partial class AddRefreshTokens
+    [Migration("20260810221731_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -64,7 +64,7 @@ namespace CoppAddresd.Auth.Migrations
                         .IsUnique()
                         .HasDatabaseName("RoleNameIndex");
 
-                    b.ToTable("Roles", (string)null);
+                    b.ToTable("Roles", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.ApplicationUser", b =>
@@ -148,7 +148,7 @@ namespace CoppAddresd.Auth.Migrations
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.ApplicationUserRole", b =>
@@ -163,7 +163,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("UserRoleAssignments", (string)null);
+                    b.ToTable("UserRoleAssignments", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.Permission", b =>
@@ -201,7 +201,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("Module");
 
-                    b.ToTable("Permissions", (string)null);
+                    b.ToTable("Permissions", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.RefreshToken", b =>
@@ -239,7 +239,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("RefreshTokens", (string)null);
+                    b.ToTable("RefreshTokens", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.RolePermission", b =>
@@ -254,7 +254,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("PermissionId");
 
-                    b.ToTable("RolePermissions", (string)null);
+                    b.ToTable("RolePermissions", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.UserPermission", b =>
@@ -269,7 +269,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("PermissionId");
 
-                    b.ToTable("UserPermissions", (string)null);
+                    b.ToTable("UserPermissions", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -293,7 +293,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("RoleClaims", (string)null);
+                    b.ToTable("RoleClaims", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>
@@ -317,7 +317,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserClaims", (string)null);
+                    b.ToTable("UserClaims", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<System.Guid>", b =>
@@ -338,7 +338,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserLogins", (string)null);
+                    b.ToTable("UserLogins", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<System.Guid>", b =>
@@ -353,7 +353,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("UserRoles", (string)null);
+                    b.ToTable("UserRoles", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<System.Guid>", b =>
@@ -372,7 +372,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasKey("UserId", "LoginProvider", "Name");
 
-                    b.ToTable("UserTokens", (string)null);
+                    b.ToTable("UserTokens", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.ApplicationUserRole", b =>

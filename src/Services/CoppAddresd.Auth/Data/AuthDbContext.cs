@@ -23,46 +23,46 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
 
         builder.Entity<ApplicationUser>(b =>
         {
-            b.ToTable("Users");
+            b.ToTable("Users", "auth");
             b.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
             b.Property(u => u.LastName).HasMaxLength(100).IsRequired();
         });
 
         builder.Entity<ApplicationRole>(b =>
         {
-            b.ToTable("Roles");
+            b.ToTable("Roles", "auth");
             b.Property(r => r.Name).HasMaxLength(100).IsRequired();
             b.Property(r => r.Description).HasMaxLength(500);
         });
 
         builder.Entity<IdentityUserClaim<Guid>>(b =>
         {
-            b.ToTable("UserClaims");
+            b.ToTable("UserClaims", "auth");
         });
 
         builder.Entity<IdentityUserRole<Guid>>(b =>
         {
-            b.ToTable("UserRoles");
+            b.ToTable("UserRoles", "auth");
         });
 
         builder.Entity<IdentityUserLogin<Guid>>(b =>
         {
-            b.ToTable("UserLogins");
+            b.ToTable("UserLogins", "auth");
         });
 
         builder.Entity<IdentityUserToken<Guid>>(b =>
         {
-            b.ToTable("UserTokens");
+            b.ToTable("UserTokens", "auth");
         });
 
         builder.Entity<IdentityRoleClaim<Guid>>(b =>
         {
-            b.ToTable("RoleClaims");
+            b.ToTable("RoleClaims", "auth");
         });
 
         builder.Entity<ApplicationUserRole>(b =>
         {
-            b.ToTable("UserRoleAssignments");
+            b.ToTable("UserRoleAssignments", "auth");
             b.HasKey(ur => new { ur.UserId, ur.RoleId });
 
             b.HasOne(ur => ur.User)
@@ -78,7 +78,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
 
         builder.Entity<Permission>(b =>
         {
-            b.ToTable("Permissions");
+            b.ToTable("Permissions", "auth");
             b.HasKey(p => p.Id);
             b.Property(p => p.Code).HasMaxLength(100).IsRequired();
             b.Property(p => p.Name).HasMaxLength(200).IsRequired();
@@ -90,7 +90,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
 
         builder.Entity<RolePermission>(b =>
         {
-            b.ToTable("RolePermissions");
+            b.ToTable("RolePermissions", "auth");
             b.HasKey(rp => new { rp.RoleId, rp.PermissionId });
 
             b.HasOne(rp => rp.Role)
@@ -106,7 +106,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
 
         builder.Entity<UserPermission>(b =>
         {
-            b.ToTable("UserPermissions");
+            b.ToTable("UserPermissions", "auth");
             b.HasKey(up => new { up.UserId, up.PermissionId });
 
             b.HasOne(up => up.User)
@@ -122,7 +122,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
 
         builder.Entity<RefreshToken>(b =>
         {
-            b.ToTable("RefreshTokens");
+            b.ToTable("RefreshTokens", "auth");
             b.HasKey(rt => rt.Id);
             b.Property(rt => rt.Token).HasMaxLength(256).IsRequired();
             b.HasIndex(rt => rt.Token).IsUnique();
