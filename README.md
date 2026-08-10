@@ -268,8 +268,9 @@ Cada proyecto incluye un archivo `.http` listo para usar con el cliente REST del
 
 ## 📖 Documentación de la API (OpenAPI)
 
-El proyecto usa el soporte nativo de **OpenAPI** de ASP.NET Core (paquete `Microsoft.AspNetCore.OpenApi`).
+El proyecto usa el soporte nativo de **OpenAPI** de ASP.NET Core (paquete `Microsoft.AspNetCore.OpenApi`) + **Swagger UI** (Swashbuckle).
 
+- **Swagger UI** (modo Development): `http://localhost:5122/swagger`
 - El documento OpenAPI se genera en **modo Development** en: `GET /openapi/v1.json`
 - Puedes inspeccionarlo con [Swagger Editor](https://editor.swagger.io/), [Postman](https://www.postman.com/) o cualquier cliente OpenAPI.
 
