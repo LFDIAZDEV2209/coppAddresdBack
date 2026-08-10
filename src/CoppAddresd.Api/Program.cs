@@ -1,4 +1,5 @@
 using CoppAddresd.Api.Extensions;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,7 +27,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseCors(CoppAddresd.Api.Extensions.ApplicationServiceExtensions.CorsPolicyName);
+app.UseCors(ApplicationServiceExtensions.CorsPolicyName);
 app.UseHttpsRedirection();
 app.MapControllers();
 app.MapHealthChecks("/health");
