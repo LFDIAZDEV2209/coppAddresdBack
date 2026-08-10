@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CoppAddresd.Api/CoppAddresd.Api.csproj" />
+    <Project Path="src/CoppAddresd.Application/CoppAddresd.Application.csproj" />
+    <Project Path="src/CoppAddresd.Domain/CoppAddresd.Domain.csproj" />
+    <Project Path="src/CoppAddresd.Infrastructure/CoppAddresd.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/">
+    <Project Path="src/Services/CoppAddresd.Auth/CoppAddresd.Auth.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CoppAddresd.IntegrationTests/CoppAddresd.IntegrationTests.csproj" />
+    <Project Path="tests/CoppAddresd.UnitTests/CoppAddresd.UnitTests.csproj" />
+  </Folder>
+</Solution>
