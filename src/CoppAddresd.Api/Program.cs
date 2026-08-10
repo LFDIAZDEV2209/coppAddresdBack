@@ -1,4 +1,5 @@
 using CoppAddresd.Api.Extensions;
+using CoppAddresd.Infrastructure;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +8,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.ConfigureCors();
 
 builder.Services.AddHealthChecks();
