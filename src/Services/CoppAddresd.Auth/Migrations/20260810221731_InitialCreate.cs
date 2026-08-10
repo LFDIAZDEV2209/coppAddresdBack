@@ -12,8 +12,12 @@ namespace CoppAddresd.Auth.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.EnsureSchema(
+                name: "auth");
+
             migrationBuilder.CreateTable(
                 name: "Permissions",
+                schema: "auth",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -30,6 +34,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "Roles",
+                schema: "auth",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -48,6 +53,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "Users",
+                schema: "auth",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -78,6 +84,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "RoleClaims",
+                schema: "auth",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
@@ -92,6 +99,7 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_RoleClaims_Roles_RoleId",
                         column: x => x.RoleId,
+                        principalSchema: "auth",
                         principalTable: "Roles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -99,6 +107,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "RolePermissions",
+                schema: "auth",
                 columns: table => new
                 {
                     RoleId = table.Column<Guid>(type: "uuid", nullable: false),
@@ -110,19 +119,54 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_RolePermissions_Permissions_PermissionId",
                         column: x => x.PermissionId,
+                        principalSchema: "auth",
                         principalTable: "Permissions",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_RolePermissions_Roles_RoleId",
                         column: x => x.RoleId,
+                        principalSchema: "auth",
                         principalTable: "Roles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
+                name: "RefreshTokens",
+                schema: "auth",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Token = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    RevokedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ReplacedByTokenId = table.Column<Guid>(type: "uuid", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_RefreshTokens", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_RefreshTokens_RefreshTokens_ReplacedByTokenId",
+                        column: x => x.ReplacedByTokenId,
+                        principalSchema: "auth",
+                        principalTable: "RefreshTokens",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_RefreshTokens_Users_UserId",
+                        column: x => x.UserId,
+                        principalSchema: "auth",
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "UserClaims",
+                schema: "auth",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
@@ -137,6 +181,7 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_UserClaims_Users_UserId",
                         column: x => x.UserId,
+                        principalSchema: "auth",
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -144,6 +189,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "UserLogins",
+                schema: "auth",
                 columns: table => new
                 {
                     LoginProvider = table.Column<string>(type: "text", nullable: false),
@@ -157,6 +203,7 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_UserLogins_Users_UserId",
                         column: x => x.UserId,
+                        principalSchema: "auth",
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -164,6 +211,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "UserPermissions",
+                schema: "auth",
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uuid", nullable: false),
@@ -175,12 +223,14 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_UserPermissions_Permissions_PermissionId",
                         column: x => x.PermissionId,
+                        principalSchema: "auth",
                         principalTable: "Permissions",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_UserPermissions_Users_UserId",
                         column: x => x.UserId,
+                        principalSchema: "auth",
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -188,6 +238,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "UserRoleAssignments",
+                schema: "auth",
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uuid", nullable: false),
@@ -199,12 +250,14 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_UserRoleAssignments_Roles_RoleId",
                         column: x => x.RoleId,
+                        principalSchema: "auth",
                         principalTable: "Roles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_UserRoleAssignments_Users_UserId",
                         column: x => x.UserId,
+                        principalSchema: "auth",
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -212,6 +265,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "UserRoles",
+                schema: "auth",
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uuid", nullable: false),
@@ -223,12 +277,14 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_UserRoles_Roles_RoleId",
                         column: x => x.RoleId,
+                        principalSchema: "auth",
                         principalTable: "Roles",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_UserRoles_Users_UserId",
                         column: x => x.UserId,
+                        principalSchema: "auth",
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -236,6 +292,7 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateTable(
                 name: "UserTokens",
+                schema: "auth",
                 columns: table => new
                 {
                     UserId = table.Column<Guid>(type: "uuid", nullable: false),
@@ -249,6 +306,7 @@ namespace CoppAddresd.Auth.Migrations
                     table.ForeignKey(
                         name: "FK_UserTokens_Users_UserId",
                         column: x => x.UserId,
+                        principalSchema: "auth",
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
@@ -256,63 +314,94 @@ namespace CoppAddresd.Auth.Migrations
 
             migrationBuilder.CreateIndex(
                 name: "IX_Permissions_Code",
+                schema: "auth",
                 table: "Permissions",
                 column: "Code",
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Permissions_Module",
+                schema: "auth",
                 table: "Permissions",
                 column: "Module");
 
             migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_ReplacedByTokenId",
+                schema: "auth",
+                table: "RefreshTokens",
+                column: "ReplacedByTokenId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_Token",
+                schema: "auth",
+                table: "RefreshTokens",
+                column: "Token",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_RefreshTokens_UserId",
+                schema: "auth",
+                table: "RefreshTokens",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_RoleClaims_RoleId",
+                schema: "auth",
                 table: "RoleClaims",
                 column: "RoleId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_RolePermissions_PermissionId",
+                schema: "auth",
                 table: "RolePermissions",
                 column: "PermissionId");
 
             migrationBuilder.CreateIndex(
                 name: "RoleNameIndex",
+                schema: "auth",
                 table: "Roles",
                 column: "NormalizedName",
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserClaims_UserId",
+                schema: "auth",
                 table: "UserClaims",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserLogins_UserId",
+                schema: "auth",
                 table: "UserLogins",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserPermissions_PermissionId",
+                schema: "auth",
                 table: "UserPermissions",
                 column: "PermissionId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserRoleAssignments_RoleId",
+                schema: "auth",
                 table: "UserRoleAssignments",
                 column: "RoleId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_UserRoles_RoleId",
+                schema: "auth",
                 table: "UserRoles",
                 column: "RoleId");
 
             migrationBuilder.CreateIndex(
                 name: "EmailIndex",
+                schema: "auth",
                 table: "Users",
                 column: "NormalizedEmail");
 
             migrationBuilder.CreateIndex(
                 name: "UserNameIndex",
+                schema: "auth",
                 table: "Users",
                 column: "NormalizedUserName",
                 unique: true);
@@ -322,37 +411,52 @@ namespace CoppAddresd.Auth.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "RoleClaims");
+                name: "RefreshTokens",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "RolePermissions");
+                name: "RoleClaims",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "UserClaims");
+                name: "RolePermissions",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "UserLogins");
+                name: "UserClaims",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "UserPermissions");
+                name: "UserLogins",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "UserRoleAssignments");
+                name: "UserPermissions",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "UserRoles");
+                name: "UserRoleAssignments",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "UserTokens");
+                name: "UserRoles",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "Permissions");
+                name: "UserTokens",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "Roles");
+                name: "Permissions",
+                schema: "auth");
 
             migrationBuilder.DropTable(
-                name: "Users");
+                name: "Roles",
+                schema: "auth");
+
+            migrationBuilder.DropTable(
+                name: "Users",
+                schema: "auth");
         }
     }
 }

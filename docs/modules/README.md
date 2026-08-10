@@ -28,6 +28,18 @@ Riesgos | Rendimiento | Escalabilidad | Dependencias
 - Se actualiza en la misma tarea que modifica código/esquema/queries.
 - Decisiones de arquitectura transversales → `docs/architecture/README.md` (ADR).
 
-## Estado actual
+## Módulos implementados
 
-Sin módulos implementados (esqueleto). Primer módulo a documentar cuando exista.
+| Módulo | Descripción | Documentación |
+|--------|-------------|---------------|
+| **Auth** | Autenticación JWT, autorización por permisos, gestión de usuarios/roles | [auth/README.md](auth/README.md) |
+| **Chat/AI** | Integración con AI Service (Python), chat síncrono + streaming SSE | [chat/README.md](chat/README.md) |
+| **Activity Log** | Auditoría automática vía triggers PostgreSQL, schema `audit.` | [activity-log/README.md](activity-log/README.md) |
+
+## Pendientes de implementación
+
+Próximos módulos de negocio (dependen de requerimientos):
+- Pacientes
+- Citas
+- CRM
+- Agentes IA (configuración)
