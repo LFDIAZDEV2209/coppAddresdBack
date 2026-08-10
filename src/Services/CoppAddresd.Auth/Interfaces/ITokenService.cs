@@ -1,6 +1,6 @@
 using CoppAddresd.Auth.Entities;
 
-namespace CoppAddresd.Auth.Contracts;
+namespace CoppAddresd.Auth.Interfaces;
 
 public interface ITokenService
 {

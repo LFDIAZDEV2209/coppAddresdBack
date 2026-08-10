@@ -1,7 +1,7 @@
 using System.Threading.RateLimiting;
 using CoppAddresd.Auth.Authorization;
 using CoppAddresd.Auth.Configuration;
-using CoppAddresd.Auth.Contracts;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
 using CoppAddresd.Auth.Extensions;
@@ -13,13 +13,32 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 ValidateConfiguration(builder.Configuration);
 
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "CoppAddresd Auth API",
+        Version = "v1",
+        Description = "Microservicio de autenticación y autorización"
+    });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "Bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Ingrese el token JWT"
+    });
+});
 
 builder.Services.AddAuthDatabase(builder.Configuration);
 builder.Services.AddAuthIdentity();
@@ -83,7 +102,11 @@ using (var scope = app.Services.CreateScope())
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/swagger/v1/swagger.json", "CoppAddresd Auth API v1");
+    });
 }
 
 app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
