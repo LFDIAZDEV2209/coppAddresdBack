@@ -1,4 +1,4 @@
-using CoppAddresd.Auth.Contracts;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Entities;
 using Microsoft.AspNetCore.Identity;
 

@@ -1,6 +1,6 @@
 using CoppAddresd.Auth.Authorization;
 using CoppAddresd.Auth.Constants;
-using CoppAddresd.Auth.Contracts;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

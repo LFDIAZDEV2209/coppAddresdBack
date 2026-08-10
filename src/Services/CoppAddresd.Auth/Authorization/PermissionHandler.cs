@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using CoppAddresd.Auth.Contracts;
+using CoppAddresd.Auth.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 
 namespace CoppAddresd.Auth.Authorization;
