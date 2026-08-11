@@ -3,12 +3,18 @@
   "mcp": {
     "codegraph": {
       "type": "local",
-      "command": [
-        "codegraph",
-        "serve",
-        "--mcp"
-      ],
+      "command": ["codegraph", "serve", "--mcp"],
       "enabled": true
     }
+  },
+  "permission": {
+    "skill": {
+      "*": "allow"
+    }
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 15000
   }
 }
