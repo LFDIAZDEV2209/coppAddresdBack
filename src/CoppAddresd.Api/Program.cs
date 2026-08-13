@@ -1,4 +1,5 @@
 using CoppAddresd.Api.Extensions;
+using CoppAddresd.Api.Security;
 using CoppAddresd.Infrastructure;
 using Microsoft.OpenApi.Models;
 using System.Text.Json.Serialization;
@@ -8,6 +9,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
+builder.Services.AddSingleton(new StorageSignatureService(
+    builder.Configuration["Storage:SignatureKey"]
+        ?? "coppaddresd-storage-signature-dev-key-change-in-prod"));
 
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
