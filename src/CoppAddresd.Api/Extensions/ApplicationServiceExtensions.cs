@@ -32,16 +32,21 @@ public static class ApplicationServiceExtensions
         return services;
     }
 
-    public static IServiceCollection ConfigureCors(this IServiceCollection services)
+    public static IServiceCollection ConfigureCors(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
+        var origins = configuration["Cors:Origins"]
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? ["http://localhost:3000"];
+
         services.AddCors(options =>
         {
             options.AddPolicy(CorsPolicyName, policy =>
             {
-                policy
-                    .AllowAnyOrigin()
-                    .AllowAnyMethod()
-                    .AllowAnyHeader();
+                policy.WithOrigins(origins)
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
             });
         });
 

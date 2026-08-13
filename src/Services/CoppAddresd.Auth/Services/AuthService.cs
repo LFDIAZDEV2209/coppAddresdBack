@@ -35,7 +35,7 @@ public class AuthService : IAuthService
         _logger = logger;
     }
 
-    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct = default)
+    public async Task<TokenResult?> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
         var user = await _userManager.FindByEmailAsync(request.Email);
         
@@ -72,17 +72,14 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("User {UserId} logged in successfully", user.Id);
 
-        return new LoginResponse(
+        return new TokenResult(
             AccessToken: accessToken,
             RefreshToken: refreshToken,
             TokenType: "Bearer",
-            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60,
-            UserId: user.Id.ToString(),
-            Email: user.Email!,
-            Roles: roles.ToArray());
+            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60);
     }
 
-    public async Task<RefreshTokenResponse?> RefreshAsync(string refreshToken, CancellationToken ct = default)
+    public async Task<TokenResult?> RefreshAsync(string refreshToken, CancellationToken ct = default)
     {
         var storedToken = await _dbContext.RefreshTokens
             .Include(rt => rt.User)
@@ -119,11 +116,25 @@ public class AuthService : IAuthService
 
         _logger.LogInformation("Refreshed tokens for user {UserId}", storedToken.UserId);
 
-        return new RefreshTokenResponse(
+        return new TokenResult(
             AccessToken: newAccessToken,
             RefreshToken: newRefreshToken,
             TokenType: "Bearer",
             ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60);
+    }
+
+    public async Task<Guid?> GetUserIdByRefreshTokenAsync(string refreshToken, CancellationToken ct = default)
+    {
+        var storedToken = await _dbContext.RefreshTokens
+            .AsNoTracking()
+            .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
+
+        if (storedToken is null || !storedToken.IsActive)
+        {
+            return null;
+        }
+
+        return storedToken.UserId;
     }
 
     public async Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default)
