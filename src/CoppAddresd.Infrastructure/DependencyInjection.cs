@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Infrastructure.Persistence;
+using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -28,6 +29,8 @@ public static class DependencyInjection
 
         services.AddHttpContextAccessor();
         services.AddScoped<IAuditActorContext, HttpAuditActorContext>();
+
+        services.AddScoped<IMediaItemRepository, MediaItemRepository>();
 
         AddObjectStorage(services, configuration);
 

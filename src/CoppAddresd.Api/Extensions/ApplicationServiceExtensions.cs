@@ -1,8 +1,11 @@
 using System.Text;
 using CoppAddresd.Application.Common;
+using CoppAddresd.Application.Common.Behaviors;
+using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Infrastructure.Extensions;
 using CoppAddresd.Infrastructure.Services;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -24,7 +27,10 @@ public static class ApplicationServiceExtensions
         services.AddMediatR(cfg =>
         {
             cfg.RegisterServicesFromAssembly(typeof(CoppAddresd.Application.Features.Chat.ChatCommand).Assembly);
+            cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
         });
+
+        services.AddValidatorsFromAssembly(typeof(CreateMediaItemCommand).Assembly);
 
         services.AddHttpClient<IAiServiceClient, AiServiceClient>()
             .AddResiliencePolicy();
