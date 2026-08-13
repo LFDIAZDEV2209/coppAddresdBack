@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Auth.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    [Migration("20260810194954_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260810221740_AddRefreshTokens")]
+    partial class AddRefreshTokens
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -64,7 +64,7 @@ namespace CoppAddresd.Auth.Migrations
                         .IsUnique()
                         .HasDatabaseName("RoleNameIndex");
 
-                    b.ToTable("Roles", (string)null);
+                    b.ToTable("Roles", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.ApplicationUser", b =>
@@ -148,7 +148,7 @@ namespace CoppAddresd.Auth.Migrations
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.ApplicationUserRole", b =>
@@ -163,7 +163,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("UserRoleAssignments", (string)null);
+                    b.ToTable("UserRoleAssignments", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.Permission", b =>
@@ -201,7 +201,45 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("Module");
 
-                    b.ToTable("Permissions", (string)null);
+                    b.ToTable("Permissions", "auth");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReplacedByTokenId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReplacedByTokenId");
+
+                    b.HasIndex("Token")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshTokens", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.RolePermission", b =>
@@ -216,7 +254,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("PermissionId");
 
-                    b.ToTable("RolePermissions", (string)null);
+                    b.ToTable("RolePermissions", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.UserPermission", b =>
@@ -231,7 +269,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("PermissionId");
 
-                    b.ToTable("UserPermissions", (string)null);
+                    b.ToTable("UserPermissions", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -255,7 +293,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("RoleClaims", (string)null);
+                    b.ToTable("RoleClaims", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>
@@ -279,7 +317,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserClaims", (string)null);
+                    b.ToTable("UserClaims", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<System.Guid>", b =>
@@ -300,7 +338,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("UserLogins", (string)null);
+                    b.ToTable("UserLogins", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<System.Guid>", b =>
@@ -315,7 +353,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("RoleId");
 
-                    b.ToTable("UserRoles", (string)null);
+                    b.ToTable("UserRoles", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<System.Guid>", b =>
@@ -334,7 +372,7 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasKey("UserId", "LoginProvider", "Name");
 
-                    b.ToTable("UserTokens", (string)null);
+                    b.ToTable("UserTokens", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.ApplicationUserRole", b =>
@@ -352,6 +390,24 @@ namespace CoppAddresd.Auth.Migrations
                         .IsRequired();
 
                     b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("CoppAddresd.Auth.Entities.RefreshToken", "ReplacedByToken")
+                        .WithMany()
+                        .HasForeignKey("ReplacedByTokenId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CoppAddresd.Auth.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReplacedByToken");
 
                     b.Navigation("User");
                 });
