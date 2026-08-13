@@ -4,6 +4,7 @@ namespace CoppAddresd.Auth.Interfaces;
 
 public interface ITokenService
 {
-    string GenerateAccessToken(ApplicationUser user, IEnumerable<string> roles);
-    Task<string> GenerateRefreshTokenAsync(Guid userId, CancellationToken ct = default);
+    /// <summary>Genera el access token con <paramref name="audience"/> como claim `aud` (código de aplicación).</summary>
+    string GenerateAccessToken(ApplicationUser user, IEnumerable<string> roles, string audience);
+    Task<string> GenerateRefreshTokenAsync(Guid userId, Guid? applicationId, CancellationToken ct = default);
 }

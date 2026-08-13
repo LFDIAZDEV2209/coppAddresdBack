@@ -60,7 +60,13 @@ public static class ApplicationServiceExtensions
         var jwtSettings = configuration.GetSection("Jwt");
         var secret = jwtSettings["Secret"]!;
         var issuer = jwtSettings["Issuer"]!;
-        var audience = jwtSettings["Audience"]!;
+
+        // El `aud` del token es el código de la aplicación ("erp", "app").
+        // Esta API sirve endpoints para ambas aplicaciones, por lo que acepta
+        // todos los códigos conocidos; si no se configuran, se asume la lista
+        // de aplicaciones actuales.
+        var validAudiences = jwtSettings.GetSection("ValidAudiences").Get<string[]>()
+            ?? ["erp", "app"];
 
         services.AddAuthentication(options =>
         {
@@ -78,7 +84,7 @@ public static class ApplicationServiceExtensions
                 ValidateIssuer = true,
                 ValidIssuer = issuer,
                 ValidateAudience = true,
-                ValidAudience = audience,
+                ValidAudiences = validAudiences,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             };

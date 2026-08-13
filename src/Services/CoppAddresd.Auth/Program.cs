@@ -98,6 +98,7 @@ using (var scope = app.Services.CreateScope())
     var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;
 
     await AdminSeeder.SeedAsync(dbContext, userManager, roleManager, authSettings, logger);
+    await ApplicationSeeder.SeedAsync(dbContext, userManager, authSettings.AdminEmail, logger);
 }
 
 if (app.Environment.IsDevelopment())

@@ -12,4 +12,5 @@ public class ApplicationUser : IdentityUser<Guid>
 
     public virtual ICollection<ApplicationUserRole> UserRoles { get; set; } = [];
     public virtual ICollection<UserPermission> UserPermissions { get; set; } = [];
+    public virtual ICollection<UserApplication> UserApplications { get; set; } = [];
 }
