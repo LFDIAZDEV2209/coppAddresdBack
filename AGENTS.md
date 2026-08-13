@@ -32,17 +32,22 @@ Flujo de dependencias hacia adentro, enforceado solo por referencias csproj:
 
 ```sql
 Schema public:  __EFMigrationsHistory (solo)
-Schema auth:    12 tablas (Users, Roles, Permissions, RefreshTokens, etc.)
+Schema auth:    14 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, etc.)
+Schema app:     1 tabla (patient_profiles → auth.users)
+Schema erp:     1 tabla (employees → auth.users)
 Schema audit:   1 tabla (activity_logs)
 ```
 
-**Regla**: Cada módulo tiene su schema. Auth usa `auth.`, auditoría usa `audit.`, negocio irá en `public.`.
+**Regla**: Cada módulo tiene su schema. Auth usa `auth.`, auditoría usa `audit.`, la app móvil `app.`, el ERP `erp.`; `public` se mantiene mínimo.
+
+**Aplicaciones**: `auth.applications` (códigos `erp`/`app`) + `auth.user_applications` determinan a qué aplicación accede cada usuario (nunca se asume rol→app). El `aud` del JWT es el código de la aplicación del login; ambos servicios validan con `Jwt:ValidAudiences` (fallback `["erp","app"]`). El login requiere el campo `application`; el refresh conserva la aplicación ligada al refresh token.
 
 ## Auth Service — Endpoints y permisos
 
 ```
-POST   /api/auth/login              # Login (email + password + rememberMe) → access token en body,
-                                    #   refresh en cookie HttpOnly copp_refresh_token
+POST   /api/auth/login              # Login (email + password + application + rememberMe) → access token en body,
+                                    #   refresh en cookie HttpOnly copp_refresh_token. application = código
+                                    #   ("erp"/"app") → aud del JWT; requiere UserApplication para esa app.
 POST   /api/auth/refresh            # Refresh con la cookie (sin body) — rotación + Set-Cookie nuevo token.
                                     #   401 limpia la cookie corrupta. Header X-Refresh-Status:
                                     #   "missing" (nunca hubo cookie) | "invalid" (token inválido)
