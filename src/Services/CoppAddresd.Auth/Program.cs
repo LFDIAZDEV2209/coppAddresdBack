@@ -43,7 +43,7 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddAuthDatabase(builder.Configuration);
 builder.Services.AddAuthIdentity();
 builder.Services.AddAuthJwt(builder.Configuration);
-builder.Services.AddAuthCors();
+builder.Services.AddAuthCors(builder.Configuration);
 
 builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
 
@@ -98,6 +98,7 @@ using (var scope = app.Services.CreateScope())
     var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;
 
     await AdminSeeder.SeedAsync(dbContext, userManager, roleManager, authSettings, logger);
+    await ApplicationSeeder.SeedAsync(dbContext, userManager, authSettings.AdminEmail, logger);
 }
 
 if (app.Environment.IsDevelopment())

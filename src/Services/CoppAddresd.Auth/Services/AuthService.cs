@@ -35,7 +35,7 @@ public class AuthService : IAuthService
         _logger = logger;
     }
 
-    public async Task<LoginResponse?> LoginAsync(LoginRequest request, CancellationToken ct = default)
+    public async Task<TokenResult?> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
         var user = await _userManager.FindByEmailAsync(request.Email);
         
@@ -66,26 +66,50 @@ public class AuthService : IAuthService
             return null;
         }
 
+        // La aplicación del login determina el `aud` del token. El acceso se
+        // resuelve explícitamente por UserApplication: roles y permisos no
+        // determinan a qué aplicaciones puede entrar el usuario.
+        var application = await _dbContext.Applications
+            .AsNoTracking()
+            .FirstOrDefaultAsync(a => a.Code == request.Application, ct);
+
+        if (application is null || !application.IsActive)
+        {
+            _logger.LogWarning("Login failed: application {Application} not found or inactive for user {UserId}",
+                request.Application, user.Id);
+            return null;
+        }
+
+        var hasAccess = await _dbContext.UserApplications
+            .AsNoTracking()
+            .AnyAsync(ua => ua.UserId == user.Id && ua.ApplicationId == application.Id, ct);
+
+        if (!hasAccess)
+        {
+            _logger.LogWarning("Login failed: user {UserId} has no access to application {Application}",
+                user.Id, application.Code);
+            return null;
+        }
+
         var roles = await _userManager.GetRolesAsync(user);
-        var accessToken = _tokenService.GenerateAccessToken(user, roles);
-        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, ct);
+        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code);
+        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct);
 
-        _logger.LogInformation("User {UserId} logged in successfully", user.Id);
+        _logger.LogInformation("User {UserId} logged in successfully to application {Application}",
+            user.Id, application.Code);
 
-        return new LoginResponse(
+        return new TokenResult(
             AccessToken: accessToken,
             RefreshToken: refreshToken,
             TokenType: "Bearer",
-            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60,
-            UserId: user.Id.ToString(),
-            Email: user.Email!,
-            Roles: roles.ToArray());
+            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60);
     }
 
-    public async Task<RefreshTokenResponse?> RefreshAsync(string refreshToken, CancellationToken ct = default)
+    public async Task<TokenResult?> RefreshAsync(string refreshToken, CancellationToken ct = default)
     {
         var storedToken = await _dbContext.RefreshTokens
             .Include(rt => rt.User)
+            .Include(rt => rt.Application)
             .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
 
         if (storedToken is null)
@@ -106,24 +130,48 @@ public class AuthService : IAuthService
             return null;
         }
 
+        // El refresh conserva la aplicación con la que se emitió el token
+        // original: el nuevo access token mantiene el mismo `aud`.
+        if (storedToken.Application is null || !storedToken.Application.IsActive)
+        {
+            _logger.LogWarning("Refresh failed: token {TokenId} has no valid application binding", storedToken.Id);
+            return null;
+        }
+
         storedToken.RevokedAt = DateTime.UtcNow;
 
-        var newRefreshToken = await _tokenService.GenerateRefreshTokenAsync(storedToken.UserId, ct);
+        var newRefreshToken = await _tokenService.GenerateRefreshTokenAsync(
+            storedToken.UserId, storedToken.ApplicationId, ct);
         storedToken.ReplacedByTokenId = (await _dbContext.RefreshTokens
             .FirstOrDefaultAsync(rt => rt.Token == newRefreshToken, ct))?.Id;
 
         await _dbContext.SaveChangesAsync(ct);
 
         var roles = await _userManager.GetRolesAsync(storedToken.User);
-        var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles);
+        var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles, storedToken.Application.Code);
 
-        _logger.LogInformation("Refreshed tokens for user {UserId}", storedToken.UserId);
+        _logger.LogInformation("Refreshed tokens for user {UserId} (application {Application})",
+            storedToken.UserId, storedToken.Application.Code);
 
-        return new RefreshTokenResponse(
+        return new TokenResult(
             AccessToken: newAccessToken,
             RefreshToken: newRefreshToken,
             TokenType: "Bearer",
             ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60);
+    }
+
+    public async Task<Guid?> GetUserIdByRefreshTokenAsync(string refreshToken, CancellationToken ct = default)
+    {
+        var storedToken = await _dbContext.RefreshTokens
+            .AsNoTracking()
+            .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
+
+        if (storedToken is null || !storedToken.IsActive)
+        {
+            return null;
+        }
+
+        return storedToken.UserId;
     }
 
     public async Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default)

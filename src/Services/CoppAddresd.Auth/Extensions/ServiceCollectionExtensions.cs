@@ -1,5 +1,6 @@
 using System.Text;
 using CoppAddresd.Auth.Configuration;
+using CoppAddresd.Auth.Constants;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -66,6 +67,14 @@ public static class ServiceCollectionExtensions
         {
             options.RequireHttpsMetadata = false;
             options.SaveToken = true;
+
+            // El `aud` del token es el código de la aplicación ("erp", "app").
+            // Se aceptan todos los códigos conocidos: el acceso por aplicación
+            // se controla en el login vía UserApplication, no en la validación.
+            var validAudiences = jwtSettings.ValidAudiences.Count > 0
+                ? jwtSettings.ValidAudiences.ToArray()
+                : ApplicationCodes.GetAll().ToArray();
+
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuerSigningKey = true,
@@ -73,7 +82,7 @@ public static class ServiceCollectionExtensions
                 ValidateIssuer = true,
                 ValidIssuer = jwtSettings.Issuer,
                 ValidateAudience = true,
-                ValidAudience = jwtSettings.Audience,
+                ValidAudiences = validAudiences,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             };
@@ -82,15 +91,26 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddAuthCors(this IServiceCollection services)
+    public static IServiceCollection AddAuthCors(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
+        var origins = configuration["Cors:Origins"]
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? ["http://localhost:3000"];
+
         services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
             {
-                policy.AllowAnyOrigin()
+                policy.WithOrigins(origins)
                       .AllowAnyMethod()
-                      .AllowAnyHeader();
+                      .AllowAnyHeader()
+                      .AllowCredentials()
+                      // El cliente distingue "sin cookie previa" de "token
+                      // inválido" para decidir si muestra el banner de sesión
+                      // expirada (header no-safelisted, requiere exposición).
+                      .WithExposedHeaders("X-Refresh-Status");
             });
         });
 

@@ -4,6 +4,15 @@ public class RefreshToken
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
+
+    /// <summary>
+    /// Aplicación para la cual se emitió el token. El access token rotado en
+    /// <c>refresh</c> conserva el mismo `aud` de esta aplicación. Nullable solo
+    /// por compatibilidad con tokens emitidos antes del binding por aplicación
+    /// (el seeder los retro-asigna al ERP al iniciar).
+    /// </summary>
+    public Guid? ApplicationId { get; set; }
+
     public string Token { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -15,5 +24,6 @@ public class RefreshToken
     public bool IsActive => !IsRevoked && !IsExpired;
 
     public virtual ApplicationUser User { get; set; } = null!;
+    public virtual Application? Application { get; set; }
     public virtual RefreshToken? ReplacedByToken { get; set; }
 }

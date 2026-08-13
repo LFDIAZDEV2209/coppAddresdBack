@@ -38,16 +38,21 @@ public static class ApplicationServiceExtensions
         return services;
     }
 
-    public static IServiceCollection ConfigureCors(this IServiceCollection services)
+    public static IServiceCollection ConfigureCors(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
+        var origins = configuration["Cors:Origins"]
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? ["http://localhost:3000"];
+
         services.AddCors(options =>
         {
             options.AddPolicy(CorsPolicyName, policy =>
             {
-                policy
-                    .AllowAnyOrigin()
-                    .AllowAnyMethod()
-                    .AllowAnyHeader();
+                policy.WithOrigins(origins)
+                      .AllowAnyMethod()
+                      .AllowAnyHeader();
             });
         });
 
@@ -61,7 +66,13 @@ public static class ApplicationServiceExtensions
         var jwtSettings = configuration.GetSection("Jwt");
         var secret = jwtSettings["Secret"]!;
         var issuer = jwtSettings["Issuer"]!;
-        var audience = jwtSettings["Audience"]!;
+
+        // El `aud` del token es el código de la aplicación ("erp", "app").
+        // Esta API sirve endpoints para ambas aplicaciones, por lo que acepta
+        // todos los códigos conocidos; si no se configuran, se asume la lista
+        // de aplicaciones actuales.
+        var validAudiences = jwtSettings.GetSection("ValidAudiences").Get<string[]>()
+            ?? ["erp", "app"];
 
         services.AddAuthentication(options =>
         {
@@ -79,7 +90,7 @@ public static class ApplicationServiceExtensions
                 ValidateIssuer = true,
                 ValidIssuer = issuer,
                 ValidateAudience = true,
-                ValidAudience = audience,
+                ValidAudiences = validAudiences,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             };

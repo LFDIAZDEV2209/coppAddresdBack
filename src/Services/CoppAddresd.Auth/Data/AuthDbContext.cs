@@ -16,6 +16,8 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<ApplicationUserRole> ApplicationUserRole => Set<ApplicationUserRole>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<Application> Applications => Set<Application>();
+    public DbSet<UserApplication> UserApplications => Set<UserApplication>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -137,6 +139,38 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
                 .WithMany()
                 .HasForeignKey(rt => rt.ReplacedByTokenId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            b.HasOne(rt => rt.Application)
+                .WithMany()
+                .HasForeignKey(rt => rt.ApplicationId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<Application>(b =>
+        {
+            b.ToTable("Applications", "auth");
+            b.HasKey(a => a.Id);
+            b.Property(a => a.Code).HasMaxLength(50).IsRequired();
+            b.Property(a => a.Name).HasMaxLength(100).IsRequired();
+            b.Property(a => a.Description).HasMaxLength(500);
+            b.Property(a => a.IsActive).IsRequired();
+            b.HasIndex(a => a.Code).IsUnique();
+        });
+
+        builder.Entity<UserApplication>(b =>
+        {
+            b.ToTable("UserApplications", "auth");
+            b.HasKey(ua => new { ua.UserId, ua.ApplicationId });
+
+            b.HasOne(ua => ua.User)
+                .WithMany(u => u.UserApplications)
+                .HasForeignKey(ua => ua.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne(ua => ua.Application)
+                .WithMany(a => a.UserApplications)
+                .HasForeignKey(ua => ua.ApplicationId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

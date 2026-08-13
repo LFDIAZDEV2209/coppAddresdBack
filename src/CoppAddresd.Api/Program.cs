@@ -11,7 +11,7 @@ builder.Services.AddControllers()
 
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.ConfigureCors();
+builder.Services.ConfigureCors(builder.Configuration);
 builder.Services.ConfigureJwtAuthentication(builder.Configuration);
 
 builder.Services.AddHealthChecks();
