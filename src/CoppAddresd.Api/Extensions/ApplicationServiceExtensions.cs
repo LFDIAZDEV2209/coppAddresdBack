@@ -51,6 +51,7 @@ public static class ApplicationServiceExtensions
             options.AddPolicy(CorsPolicyName, policy =>
             {
                 policy.WithOrigins(origins)
+                      .AllowCredentials()
                       .AllowAnyMethod()
                       .AllowAnyHeader();
             });
