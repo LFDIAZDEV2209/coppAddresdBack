@@ -10,4 +10,9 @@ public record LoginRequest
 
     [Required(ErrorMessage = "Password es requerido")]
     public string Password { get; init; } = string.Empty;
+
+    /// <summary>
+    /// True: cookie de refresh persistente (7 días). False: cookie de sesión (8 horas).
+    /// </summary>
+    public bool RememberMe { get; init; }
 }

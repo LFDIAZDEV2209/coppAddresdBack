@@ -82,15 +82,26 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddAuthCors(this IServiceCollection services)
+    public static IServiceCollection AddAuthCors(
+        this IServiceCollection services,
+        IConfiguration configuration)
     {
+        var origins = configuration["Cors:Origins"]
+            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            ?? ["http://localhost:3000"];
+
         services.AddCors(options =>
         {
             options.AddDefaultPolicy(policy =>
             {
-                policy.AllowAnyOrigin()
+                policy.WithOrigins(origins)
                       .AllowAnyMethod()
-                      .AllowAnyHeader();
+                      .AllowAnyHeader()
+                      .AllowCredentials()
+                      // El cliente distingue "sin cookie previa" de "token
+                      // inválido" para decidir si muestra el banner de sesión
+                      // expirada (header no-safelisted, requiere exposición).
+                      .WithExposedHeaders("X-Refresh-Status");
             });
         });
 
