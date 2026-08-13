@@ -29,6 +29,44 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddScoped<IAuditActorContext, HttpAuditActorContext>();
 
+        AddObjectStorage(services, configuration);
+
         return services;
+    }
+
+    /// <summary>
+    /// Registra la implementación de <see cref="IObjectStorageService"/> según
+    /// <c>Storage:Provider</c> (por defecto, <c>Local</c>).
+    /// </summary>
+    private static void AddObjectStorage(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var provider = configuration["Storage:Provider"] ?? "Local";
+
+        if (provider.Equals("Local", StringComparison.OrdinalIgnoreCase))
+        {
+            services.Configure<LocalStorageOptions>(
+                configuration.GetSection(LocalStorageOptions.SectionName));
+
+            // Singleton: LocalObjectStorageService es stateless-safe (raíz inmutable,
+            // operaciones de archivo por llamada, sin estado compartido).
+            services.AddSingleton<IObjectStorageService, LocalObjectStorageService>();
+            return;
+        }
+
+        if (provider.Equals("S3", StringComparison.OrdinalIgnoreCase))
+        {
+            // Punto de extensión para el futuro S3ObjectStorageService (AWSSDK.S3).
+            // Se implementará cuando el equipo entregue las credenciales de AWS.
+            throw new InvalidOperationException(
+                "El proveedor de almacenamiento 'S3' aún no está implementado. " +
+                "Agregue S3ObjectStorageService y el paquete AWSSDK.S3 cuando la " +
+                "configuración de AWS esté disponible.");
+        }
+
+        throw new InvalidOperationException(
+            $"Proveedor de almacenamiento desconocido: '{provider}'. " +
+            "Valores soportados: 'Local'.");
     }
 }

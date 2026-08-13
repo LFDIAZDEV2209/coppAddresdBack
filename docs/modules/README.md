@@ -35,6 +35,7 @@ Riesgos | Rendimiento | Escalabilidad | Dependencias
 | **Auth** | Autenticación JWT, autorización por permisos, gestión de usuarios/roles | [auth/README.md](auth/README.md) |
 | **Chat/AI** | Integración con AI Service (Python), chat síncrono + streaming SSE | [chat/README.md](chat/README.md) |
 | **Activity Log** | Auditoría automática vía triggers PostgreSQL, schema `audit.` | [activity-log/README.md](activity-log/README.md) |
+| **Storage** | Abstracción de almacenamiento de objetos (S3-like), implementación local por filesystem | [storage/README.md](storage/README.md) |
 
 ## Pendientes de implementación
 
