@@ -43,7 +43,7 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddAuthDatabase(builder.Configuration);
 builder.Services.AddAuthIdentity();
 builder.Services.AddAuthJwt(builder.Configuration);
-builder.Services.AddAuthCors();
+builder.Services.AddAuthCors(builder.Configuration);
 
 builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
 

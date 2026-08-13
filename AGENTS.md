@@ -41,12 +41,15 @@ Schema audit:   1 tabla (activity_logs)
 ## Auth Service — Endpoints y permisos
 
 ```
-POST   /api/auth/login              # Login (email + password)
-POST   /api/auth/refresh            # Refresh token (rotación automática)
-POST   /api/auth/logout             # Logout (revoca refresh tokens) [Authorize]
+POST   /api/auth/login              # Login (email + password + rememberMe) → access token en body,
+                                    #   refresh en cookie HttpOnly copp_refresh_token
+POST   /api/auth/refresh            # Refresh con la cookie (sin body) — rotación + Set-Cookie nuevo token.
+                                    #   401 limpia la cookie corrupta. Header X-Refresh-Status:
+                                    #   "missing" (nunca hubo cookie) | "invalid" (token inválido)
+POST   /api/auth/logout             # Revoca todos los refresh del usuario + limpia cookie. Sin [Authorize]
 POST   /api/auth/change-password    # Cambiar password [Authorize]
 
-GET    /api/me                      # Info del usuario actual + permisos [Authorize]
+GET    /api/me                      # Info del usuario actual + roles + permisos [Authorize]
 
 GET    /api/users                   # Listar usuarios [RequirePermission("Users.View")]
 POST   /api/users                   # Crear usuario [AllowAnonymous]
@@ -74,6 +77,10 @@ DELETE /api/permissions/{id}/assign-to-user   # Remover de usuario [RequirePermi
 **Permisos seedeados** (15 total): `Users.View/Create/Update/Delete`, `Roles.View/Create/Update/Delete/Assign`, `Permissions.View/Assign`, `Agents.View/Create/Update/Delete`.
 
 **Credenciales admin**: `admin@coppaddresd.com` / `Test@1234` (configurable en `appsettings.json` → `Auth` section).
+
+**Cookie de refresh**: `copp_refresh_token` — HttpOnly, `SameSite=Lax`, `Secure` solo fuera de Development, `Path=/api/auth`, `rememberMe=true` → 7 días / `false` → 8 h. El access token (15 min) va en header Bearer, nunca en cookie.
+
+**CORS**: whitelist configurable en `Cors:Origins` (default `http://localhost:3000`) con `AllowCredentials` y expone `X-Refresh-Status`. La API principal usa la misma whitelist pero sin credentials (solo Bearer).
 
 ## Chat/AI Integration — Endpoints
 

@@ -45,8 +45,10 @@ Sistema completo de autenticación JWT con autorización basada en permisos gran
 | **Permisos granulares** | `Users.View`, `Users.Create`, etc. Más flexible que solo roles. |
 | **Permisos directos + via rol** | Usuario puede tener permisos directos (excepciones) o via rol. |
 | **Refresh tokens en DB** | Rotación automática, revocación en logout/cambio password. |
+| **Refresh token en cookie HttpOnly** | `copp_refresh_token` (Path `/api/auth`, SameSite=Lax, Secure en prod). El JS del navegador nunca ve el token: inmune a XSS persistente. El access token viaja en header Bearer (memoria del cliente). |
 | **SecurityStamp invalidation** | Cambios de password/rol/permiso invalidan tokens inmediatamente. |
 | **Schema `auth.` separado** | Consistencia con `audit.`. Previene contaminación de `public.` |
+| **CORS whitelist configurable** | `Cors:Origins` (default `http://localhost:3000`) con `AllowCredentials`; expone `X-Refresh-Status` para distinguir "sin cookie" de "token inválido". |
 
 ## Modelo de datos (Schema `auth.`)
 
@@ -69,11 +71,13 @@ auth.UserTokens               → Tokens 2FA (Identity)
 
 ### Login
 ```
-1. POST /api/auth/login (email + password)
+1. POST /api/auth/login (email + password + rememberMe)
 2. Validar credenciales con UserManager
 3. Si falla → incrementar lockout counter
 4. Si OK → generar AccessToken (JWT) + RefreshToken (DB)
-5. Retornar tokens + info usuario
+5. Response: { accessToken, tokenType, expiresIn } — sin refresh en el body
+6. Set-Cookie copp_refresh_token (HttpOnly): rememberMe=true → 7 días,
+   rememberMe=false → 8 horas (cookie de sesión)
 ```
 
 ### Request autorizado
@@ -87,12 +91,27 @@ auth.UserTokens               → Tokens 2FA (Identity)
 
 ### Refresh token
 ```
-1. POST /api/auth/refresh (refreshToken)
+1. POST /api/auth/refresh (sin body — el token viene de la cookie HttpOnly)
 2. Buscar token en DB
 3. Validar: no expirado, no revocado
-4. Generar nuevo AccessToken + nuevo RefreshToken
+4. Generar nuevo AccessToken + nuevo RefreshToken (rotación)
 5. Marcar token viejo como reemplazado (ReplacedByTokenId)
-6. Retornar nuevos tokens
+6. Set-Cookie con el NUEVO refresh token (rota la cookie)
+7. Response: { accessToken, tokenType, expiresIn }
+
+Si la cookie está corrupta/expirada/revocada → 401 + Set-Cookie expirada
+(limpia la cookie automáticamente; el usuario no debe borrarla a mano).
+Header X-Refresh-Status: "missing" (nunca hubo cookie) | "invalid" (token
+inválido) — el frontend decide si muestra el banner de sesión expirada.
+```
+
+### Logout
+```
+1. POST /api/auth/logout — se resuelve SOLO con la cookie de refresh
+   (no requiere [Authorize]: funciona aunque el access token haya expirado)
+2. Revoca TODOS los refresh tokens del usuario
+3. Set-Cookie expirada (limpia la cookie del navegador)
+4. Idempotente: sin cookie responde 200 igual
 ```
 
 ### Invalidación de tokens
@@ -146,6 +165,9 @@ Cambio de password/rol/permiso →
     "AdminPassword": "Test@1234",
     "AdminFirstName": "Admin",
     "AdminLastName": "System"
+  },
+  "Cors": {
+    "Origins": "http://localhost:3000"
   }
 }
 ```
@@ -179,25 +201,29 @@ Configurado con `HealthChecks.NpgSql`.
 - **Lockout**: 15 minutos después de 5 intentos fallidos
 - **Refresh token rotation**: Cada refresh genera nuevo token, invalida el anterior
 - **SecurityStamp**: Cambios críticos invalidan todos los tokens activos
-- **CORS**: AllowAll (configurar en producción)
-- **HTTPS**: Requiere en producción (RequireHttpsMetadata = false solo en dev)
+- **Cookie HttpOnly**: `copp_refresh_token` — invisible para JS, `SameSite=Lax` (mitiga CSRF: las peticiones cross-site no envían la cookie; el bearer es independiente)
+- **Rate limiting**: 100 requests/minuto por IP aplicado a `AuthController` (`[EnableRateLimiting("auth")]`)
+- **CORS**: Whitelist configurable (`Cors:Origins`) con `AllowCredentials`; expone `X-Refresh-Status`
+- **HTTPS**: Requiere en producción (RequireHttpsMetadata = false solo en dev); cookie `Secure` solo fuera de desarrollo
 
 ## Testing
 
 ```bash
-# Login
-curl -X POST http://localhost:5058/api/auth/login \
+# Login — guarda la cookie en jar.txt
+curl -c jar.txt -X POST http://localhost:5058/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@coppaddresd.com","password":"Test@1234"}'
+  -d '{"email":"admin@coppaddresd.com","password":"Test@1234","rememberMe":true}'
 
 # Usar token
 curl http://localhost:5058/api/me \
   -H "Authorization: Bearer <accessToken>"
 
-# Refresh
-curl -X POST http://localhost:5058/api/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"refreshToken":"<refreshToken>"}'
+# Refresh — usa la cookie del jar (sin body)
+curl -b jar.txt -c jar.txt -X POST http://localhost:5058/api/auth/refresh \
+  -H "Content-Type: application/json" -d '{}'
+
+# Logout — revoca + limpia cookie
+curl -b jar.txt -c jar.txt -X POST http://localhost:5058/api/auth/logout
 ```
 
 ## TODO / Mejoras futuras
@@ -206,6 +232,4 @@ curl -X POST http://localhost:5058/api/auth/refresh \
 - [ ] Agregar 2FA (TwoFactorEnabled ya está en schema)
 - [ ] Logins externos (Google, GitHub) — `UserLogins` ya existe
 - [ ] Email confirmation (RequireConfirmedEmail = false actualmente)
-- [ ] Frontend para gestión de usuarios/roles/permisos
-- [ ] Configurar CORS específico por dominio en producción
 - [ ] HTTPS obligatorio en producción
