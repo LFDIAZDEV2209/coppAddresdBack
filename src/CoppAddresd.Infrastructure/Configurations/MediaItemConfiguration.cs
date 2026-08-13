@@ -11,7 +11,7 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
 {
     public void Configure(EntityTypeBuilder<MediaItem> builder)
     {
-        builder.ToTable("media_items", "public");
+        builder.ToTable("media_items", "app");
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
