@@ -27,7 +27,7 @@ public class TokenService : ITokenService
         _logger = logger;
     }
 
-    public string GenerateAccessToken(ApplicationUser user, IEnumerable<string> roles)
+    public string GenerateAccessToken(ApplicationUser user, IEnumerable<string> roles, string audience)
     {
         var claims = new List<Claim>
         {
@@ -47,17 +47,20 @@ public class TokenService : ITokenService
 
         var token = new JwtSecurityToken(
             issuer: _jwtSettings.Issuer,
-            audience: _jwtSettings.Audience,
+            // El audience es el código de la aplicación con la que el usuario
+            // se autentica ("erp", "app"): la validación en cada API exige que
+            // el `aud` del token esté dentro de las audiencias permitidas.
+            audience: audience,
             claims: claims,
             expires: DateTime.UtcNow.AddMinutes(_jwtSettings.AccessTokenExpirationMinutes),
             signingCredentials: credentials);
 
-        _logger.LogDebug("Generated access token for user {UserId}", user.Id);
+        _logger.LogDebug("Generated access token for user {UserId} with audience {Audience}", user.Id, audience);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    public async Task<string> GenerateRefreshTokenAsync(Guid userId, CancellationToken ct = default)
+    public async Task<string> GenerateRefreshTokenAsync(Guid userId, Guid? applicationId, CancellationToken ct = default)
     {
         var randomNumber = new byte[64];
         using var rng = RandomNumberGenerator.Create();
@@ -67,6 +70,7 @@ public class TokenService : ITokenService
         var refreshToken = new RefreshToken
         {
             UserId = userId,
+            ApplicationId = applicationId,
             Token = tokenString,
             ExpiresAt = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays),
             CreatedAt = DateTime.UtcNow
