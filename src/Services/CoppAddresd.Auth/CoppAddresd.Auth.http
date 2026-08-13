@@ -1,6 +1,72 @@
 @CoppAddresd.Auth_HostAddress = http://localhost:5058
 
-GET {{CoppAddresd.Auth_HostAddress}}/weatherforecast/
-Accept: application/json
+### Health check
+GET {{CoppAddresd.Auth_HostAddress}}/health
 
-###
+### Login (admin)
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@coppaddresd.com",
+  "password": "Test@1234"
+}
+
+> {%
+    client.global.set("access_token", response.body.accessToken);
+    client.global.set("refresh_token", response.body.refreshToken);
+%}
+
+### Refresh token
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh_token}}"
+}
+
+> {%
+    client.global.set("access_token", response.body.accessToken);
+    client.global.set("refresh_token", response.body.refreshToken);
+%}
+
+### Get current user info
+GET {{CoppAddresd.Auth_HostAddress}}/api/me
+Authorization: Bearer {{access_token}}
+
+### List users
+GET {{CoppAddresd.Auth_HostAddress}}/api/users
+Authorization: Bearer {{access_token}}
+
+### Create user
+POST {{CoppAddresd.Auth_HostAddress}}/api/users
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "Test@1234",
+  "firstName": "Test",
+  "lastName": "User"
+}
+
+### List roles
+GET {{CoppAddresd.Auth_HostAddress}}/api/roles
+Authorization: Bearer {{access_token}}
+
+### List permissions
+GET {{CoppAddresd.Auth_HostAddress}}/api/permissions
+Authorization: Bearer {{access_token}}
+
+### Logout
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/logout
+Authorization: Bearer {{access_token}}
+
+### Change password
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/change-password
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "currentPassword": "Test@1234",
+  "newPassword": "NewPass@1234"
+}

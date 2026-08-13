@@ -1,29 +1,40 @@
 # Arquitectura — CoppAddresd Backend
 
-Estado: **esqueleto inicial** (solo plantilla ASP.NET, módulos sin implementar). Este documento define el target arquitectónico.
+Estado: **implementación activa**. Auth Service completo, integración AI Chat, sistema de auditoría PostgreSQL.
 
 ## Mapa completo
 
 ```
-┌────────────────────────────────────────────────┐
-│  Presentation                                  │
-│  CoppAddresd.Api (Minimal APIs, middleware)    │
-│  CoppAddresd.Auth (standalone: Identity + JWT) │
-└──────────────────────┬─────────────────────────┘
-┌──────────────────────▼─────────────────────────┐
-│  Infrastructure                                │
-│  EF Core + Npgsql, repositorios, servicios AWS │
-└──────────────────────┬─────────────────────────┘
-┌──────────────────────▼─────────────────────────┐
-│  Application                                   │
-│  MediatR (Features/), FluentValidation, DTOs,  │
-│  interfaces (DIP)                              │
-└──────────────────────┬─────────────────────────┘
-┌──────────────────────▼─────────────────────────┐
-│  Domain                                        │
-│  Entities, ValueObjects, Enums, excepciones    │
-└────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  Presentation                                                  │
+│  CoppAddresd.Api (Controllers, JWT auth, SSE streaming)        │
+│  CoppAddresd.Auth (Identity + JWT + permisos granulares)       │
+└──────────────────────────────┬─────────────────────────────────┘
+┌──────────────────────────────▼─────────────────────────────────┐
+│  Infrastructure                                                │
+│  EF Core + Npgsql, AppDbContext (audit), AiServiceClient,      │
+│  AuditTriggerInterceptor, Polly resilience                     │
+└──────────────────────────────┬─────────────────────────────────┘
+┌──────────────────────────────▼─────────────────────────────────┐
+│  Application                                                   │
+│  MediatR (Features/Chat), FluentValidation, DTOs,              │
+│  interfaces (IAiServiceClient, IAuditActorContext)             │
+└──────────────────────────────┬─────────────────────────────────┘
+┌──────────────────────────────▼─────────────────────────────────┐
+│  Domain                                                        │
+│  ActivityLog, AuditAction, AuditActorType                      │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+## Database schema organization
+
+```sql
+Schema public:  __EFMigrationsHistory (solo)
+Schema auth:    12 tablas — Users, Roles, Permissions, RefreshTokens, etc.
+Schema audit:   1 tabla — activity_logs (trigger-based)
+```
+
+**Regla**: Cada módulo tiene su propio schema. Auth usa `auth.`, auditoría usa `audit.`, negocio irá en `public.`.
 
 ## Dependencias (verificadas en csproj)
 
@@ -75,17 +86,22 @@ GET /api/v1/orders?page=1&pageSize=20
 
 ## Decisiones de arquitectura (ADR)
 
-_(Registro incremental: cada decisión relevante se añade aquí con contexto, decisión y consecuencias.)_
-
 | Fecha | Decisión | Contexto |
 |---|---|---|
-| — | Pending | Esqueleto: sin decisiones de negocio aún |
+| 2026-08-10 | Schema `auth.` separado | Auth usa schema propio en PostgreSQL para consistencia con `audit.` y evitar contaminación de `public.` cuando crezca el dominio. |
+| 2026-08-10 | Permisos granulares (no solo roles) | Sistema de permisos tipo `Users.View`, `Users.Create` etc. Usuario puede tener permisos directos + via rol. Más flexible que solo RBAC. |
+| 2026-08-10 | Auth como servicio standalone | Auth no referencia otros proyectos del solution. Puede desplegarse independientemente. |
+| 2026-08-10 | SSE para chat streaming | Server-Sent Events sobre HTTP. Compatible con navegadores, simple, unidireccional (suficiente para streaming de LLM). |
+| 2026-08-10 | Polly resilience para AI Service | Retry (3 intentos, backoff exponencial) + circuit breaker (5 fallos, 30s). Tolerancia a fallos sin código complejo. |
+| 2026-08-10 | Auditoría trigger-based + GUC | Trigger PostgreSQL automático + EF interceptor con `set_config(..., true)` para propagar actor. Zero código en handlers. |
 
-## Deuda técnica conocida / pendientes del esqueleto
+## Deuda técnica / pendientes
 
-- `Program.cs` de Api y Auth: código de plantilla (`/weatherforecast`) a reemplazar por endpoints reales + DI + middleware.
-- Sin DbContext, sin migraciones, sin excepciones propias, sin middleware de errores ni correlation id.
-- Tests sin referencias a proyectos src (stubs).
-- Sin plantilla `appsettings.Example.json` versionada (el patrón `appsettings.*.json` del .gitignore la ignoraría — requeriría negación).
-- README menciona config keys (ConnectionStrings, Jwt) que ningún código lee todavía.
-- Detalle concreto por problema priorizado: ver entregable de análisis (ordenar por severidad).
+- `HttpAuditActorContext` retorna `ActorType=System`, `UserId=null` — no hay integración con Identity todavía. Los audit logs no capturan quién hizo la acción.
+- Tests unitarios (`UnitTest1.cs`) son stubs sin referencias a proyectos src.
+- Tests de integración requieren PostgreSQL real (variable `COP_TEST_DB_CONNECTION`).
+- `.http` files aún apuntan a `/weatherforecast` — actualizar con endpoints reales.
+- CORS configurado como `AllowAll` — restringir en producción.
+- `RequireHttpsMetadata = false` — activar en producción.
+- Secret de JWT en `appsettings.json` es placeholder — usar secrets manager en producción.
+- Sin health check específico para AI Service (solo Polly resilience).

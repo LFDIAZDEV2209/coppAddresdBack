@@ -1,6 +1,40 @@
 @CoppAddresd.Api_HostAddress = http://localhost:5122
 
-GET {{CoppAddresd.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Health check (si existe)
+GET {{CoppAddresd.Api_HostAddress}}/health
 
-###
+### Chat síncrono (requiere Auth Service corriendo + token)
+POST {{CoppAddresd.Api_HostAddress}}/api/v1/chat
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "message": "hola, ¿qué puedes hacer?"
+}
+
+### Chat streaming SSE (requiere Auth Service corriendo + token)
+POST {{CoppAddresd.Api_HostAddress}}/api/v1/chat/stream
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "message": "cuéntame un chiste"
+}
+
+### Chat con thread_id específico (multi-turn)
+POST {{CoppAddresd.Api_HostAddress}}/api/v1/chat
+Content-Type: application/json
+Authorization: Bearer {{access_token}}
+
+{
+  "message": "continúa con lo que decíamos",
+  "threadId": "thread-123"
+}
+
+### Chat sin token (debe retornar 401)
+POST {{CoppAddresd.Api_HostAddress}}/api/v1/chat
+Content-Type: application/json
+
+{
+  "message": "hola"
+}
