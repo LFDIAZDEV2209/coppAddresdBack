@@ -14,4 +14,5 @@ public class AiServiceSettings
     public string ChatEndpoint => $"{ApiPrefix}/chat";
     public string StreamEndpoint => $"{ApiPrefix}/chat/stream";
     public string SyncAgentConfigEndpoint => "/internal/agents/sync-config";
+    public string IngestDocumentEndpoint => "/internal/agents/ingest";
 }

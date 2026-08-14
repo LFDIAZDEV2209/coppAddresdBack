@@ -184,6 +184,12 @@ public sealed class AgentCatalogRepository(AppDbContext dbContext) : IAgentCatal
         return document;
     }
 
+    public async Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default)
+    {
+        dbContext.AgentDocuments.Update(document);
+        await dbContext.SaveChangesAsync(ct);
+    }
+
     public async Task DeleteDocumentAsync(AgentDocument document, CancellationToken ct = default)
     {
         dbContext.AgentDocuments.Remove(document);

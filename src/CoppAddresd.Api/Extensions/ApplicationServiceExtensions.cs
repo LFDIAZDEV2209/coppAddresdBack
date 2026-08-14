@@ -8,6 +8,7 @@ using CoppAddresd.Infrastructure.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
@@ -35,7 +36,12 @@ public static class ApplicationServiceExtensions
         services.AddHttpClient<IAiServiceClient, AiServiceClient>()
             .AddResiliencePolicy();
 
-        services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>();
+        services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
+        {
+            var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+            client.BaseAddress = new Uri(aiSettings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
+        });
 
         return services;
     }

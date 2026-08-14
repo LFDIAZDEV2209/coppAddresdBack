@@ -38,6 +38,7 @@ public interface IAgentCatalogRepository
     Task<AgentDocument?> GetDocumentAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<AgentDocument>> ListDocumentsAsync(Guid knowledgeBaseId, CancellationToken ct = default);
     Task<AgentDocument> AddDocumentAsync(AgentDocument document, CancellationToken ct = default);
+    Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default);
     Task DeleteDocumentAsync(AgentDocument document, CancellationToken ct = default);
 
     // --- Instancias ---
