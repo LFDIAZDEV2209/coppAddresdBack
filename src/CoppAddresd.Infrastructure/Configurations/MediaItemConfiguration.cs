@@ -27,15 +27,29 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
             .HasColumnName("description")
             .HasColumnType("text");
 
+        builder.Property(x => x.Author)
+            .HasColumnName("author")
+            .HasMaxLength(200)
+            .IsRequired();
+
         builder.Property(x => x.MediaType)
             .HasColumnName("media_type")
             .HasConversion<string>()
             .HasMaxLength(20);
 
+        builder.Property(x => x.Category)
+            .HasColumnName("category")
+            .HasConversion<string>()
+            .HasMaxLength(50);
+
         builder.Property(x => x.StorageKey)
             .HasColumnName("storage_key")
             .HasMaxLength(1024)
             .IsRequired();
+
+        builder.Property(x => x.ThumbnailKey)
+            .HasColumnName("thumbnail_key")
+            .HasMaxLength(1024);
 
         builder.Property(x => x.ContentType)
             .HasColumnName("content_type")
@@ -54,6 +68,12 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
 
         builder.Property(x => x.SortOrder)
             .HasColumnName("sort_order");
+
+        builder.Property(x => x.Day)
+            .HasColumnName("day");
+
+        builder.Property(x => x.Month)
+            .HasColumnName("month");
 
         builder.Property(x => x.PublishedAt)
             .HasColumnName("published_at")
@@ -76,5 +96,8 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
 
         builder.HasIndex(x => new { x.MediaType, x.Status })
             .HasDatabaseName("ix_media_items_type_status");
+
+        builder.HasIndex(x => new { x.Month, x.Day })
+            .HasDatabaseName("ix_media_items_month_day");
     }
 }
