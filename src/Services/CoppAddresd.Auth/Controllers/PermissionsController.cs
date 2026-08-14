@@ -10,6 +10,7 @@ namespace CoppAddresd.Auth.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[RequireErpAudience]
 public class PermissionsController : ControllerBase
 {
     private readonly IPermissionService _permissionService;

@@ -10,13 +10,18 @@ namespace CoppAddresd.Application.Features.Media;
 public record CreateMediaItemCommand(
     string Title,
     string? Description,
+    string Author,
     MediaType MediaType,
+    MediaCategory Category,
     string StorageKey,
+    string? ThumbnailKey,
     string? ContentType,
     long? FileSizeBytes,
     int? DurationSecs,
     MediaStatus Status,
     int SortOrder,
+    int Day,
+    int Month,
     Guid? CreatedBy = null)
     : IRequest<MediaItemDto>;
 
@@ -35,11 +40,16 @@ public sealed class CreateMediaItemCommandHandler(
         {
             existing.Title = request.Title;
             existing.Description = request.Description;
+            existing.Author = request.Author;
             existing.MediaType = request.MediaType;
+            existing.Category = request.Category;
+            existing.ThumbnailKey = request.ThumbnailKey;
             existing.ContentType = request.ContentType;
             existing.FileSizeBytes = request.FileSizeBytes;
             existing.DurationSecs = request.DurationSecs;
             existing.SortOrder = request.SortOrder;
+            existing.Day = request.Day;
+            existing.Month = request.Month;
             if (request.Status == MediaStatus.Published && existing.PublishedAt is null)
                 existing.PublishedAt = now;
             existing.Status = request.Status;
@@ -55,13 +65,18 @@ public sealed class CreateMediaItemCommandHandler(
             Id = Guid.NewGuid(),
             Title = request.Title,
             Description = request.Description,
+            Author = request.Author,
             MediaType = request.MediaType,
+            Category = request.Category,
             StorageKey = request.StorageKey,
+            ThumbnailKey = request.ThumbnailKey,
             ContentType = request.ContentType,
             FileSizeBytes = request.FileSizeBytes,
             DurationSecs = request.DurationSecs,
             Status = request.Status,
             SortOrder = request.SortOrder,
+            Day = request.Day,
+            Month = request.Month,
             PublishedAt = request.Status == MediaStatus.Published ? now : null,
             CreatedAt = now,
             CreatedBy = request.CreatedBy,

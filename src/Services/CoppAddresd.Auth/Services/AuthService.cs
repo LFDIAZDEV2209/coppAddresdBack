@@ -15,6 +15,7 @@ public class AuthService : IAuthService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly ITokenService _tokenService;
+    private readonly IPermissionService _permissionService;
     private readonly AuthDbContext _dbContext;
     private readonly JwtSettings _jwtSettings;
     private readonly ILogger<AuthService> _logger;
@@ -23,6 +24,7 @@ public class AuthService : IAuthService
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
         ITokenService tokenService,
+        IPermissionService permissionService,
         AuthDbContext dbContext,
         IOptions<JwtSettings> jwtSettings,
         ILogger<AuthService> logger)
@@ -30,6 +32,7 @@ public class AuthService : IAuthService
         _userManager = userManager;
         _signInManager = signInManager;
         _tokenService = tokenService;
+        _permissionService = permissionService;
         _dbContext = dbContext;
         _jwtSettings = jwtSettings.Value;
         _logger = logger;
@@ -92,7 +95,10 @@ public class AuthService : IAuthService
         }
 
         var roles = await _userManager.GetRolesAsync(user);
-        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code);
+        // Permisos actuales (directos + via rol) al momento del login: se emiten
+        // como claims en el access token para que la autorización no consulte BD.
+        var permissions = await _permissionService.GetUserAllPermissionCodesAsync(user.Id, ct);
+        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions);
         var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct);
 
         _logger.LogInformation("User {UserId} logged in successfully to application {Application}",
@@ -138,6 +144,30 @@ public class AuthService : IAuthService
             return null;
         }
 
+        // Reclamación ATÓMICA del token: un solo UPDATE condicional revoca el
+        // token SI y SOLO SI aún no fue usado (REQ-REFRESH-01). Dos solicitudes
+        // concurrentes con el mismo token compiten por este UPDATE: solo una
+        // gana (affected == 1); la perdedora (affected == 0) ve que el token ya
+        // fue reclamado y se rechaza SIN emitir una nueva familia. Antes era un
+        // check-then-act (IsActive leído antes de escribir) que permitía minting
+        // múltiple ante replay concurrente de un token robado.
+        var claimed = await _dbContext.RefreshTokens
+            .Where(rt => rt.Token == refreshToken && rt.RevokedAt == null)
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(rt => rt.RevokedAt, DateTime.UtcNow),
+                ct);
+
+        if (claimed == 0)
+        {
+            _logger.LogWarning(
+                "Refresh failed: token already claimed (concurrent rotation or replay) for user {UserId}",
+                storedToken.UserId);
+            return null;
+        }
+
+        // Espejo del tracker: el UPDATE batch no toca la entidad tracked; sin
+        // esto, SaveChangesAsync reescribiría RevokedAt = null y revertiría la
+        // reclamación. El valor escrito coincide con el del batch (idempotente).
         storedToken.RevokedAt = DateTime.UtcNow;
 
         var newRefreshToken = await _tokenService.GenerateRefreshTokenAsync(
@@ -148,7 +178,10 @@ public class AuthService : IAuthService
         await _dbContext.SaveChangesAsync(ct);
 
         var roles = await _userManager.GetRolesAsync(storedToken.User);
-        var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles, storedToken.Application.Code);
+        // Re-cálculo de permisos en cada refresh: el nuevo access token refleja
+        // el estado ACTUAL (no copia claims del token anterior).
+        var permissions = await _permissionService.GetUserAllPermissionCodesAsync(storedToken.UserId, ct);
+        var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles, storedToken.Application.Code, permissions);
 
         _logger.LogInformation("Refreshed tokens for user {UserId} (application {Application})",
             storedToken.UserId, storedToken.Application.Code);

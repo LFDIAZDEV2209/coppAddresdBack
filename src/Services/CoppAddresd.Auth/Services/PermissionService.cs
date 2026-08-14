@@ -145,10 +145,9 @@ public class PermissionService : IPermissionService
             .Distinct()
             .ToListAsync(ct);
 
-        foreach (var userId in affectedUserIds)
-        {
-            await _tokenInvalidation.InvalidateUserTokensAsync(userId);
-        }
+        // Batching (REQ-INVALID-05): un solo UPDATE para todos los usuarios
+        // del rol; antes era un loop con 2 round trips por usuario y sin ct.
+        await _tokenInvalidation.InvalidateUsersTokensAsync(affectedUserIds, ct);
 
         _logger.LogInformation("Permission {PermissionId} assigned to role {RoleId}", permissionId, roleId);
         return (true, null);
@@ -173,10 +172,9 @@ public class PermissionService : IPermissionService
             .Distinct()
             .ToListAsync(ct);
 
-        foreach (var userId in affectedUserIds)
-        {
-            await _tokenInvalidation.InvalidateUserTokensAsync(userId);
-        }
+        // Batching (REQ-INVALID-05): un solo UPDATE para todos los usuarios
+        // del rol; antes era un loop con 2 round trips por usuario y sin ct.
+        await _tokenInvalidation.InvalidateUsersTokensAsync(affectedUserIds, ct);
 
         _logger.LogInformation("Permission {PermissionId} removed from role {RoleId}", permissionId, roleId);
         return (true, null);
@@ -213,7 +211,7 @@ public class PermissionService : IPermissionService
         _dbContext.UserPermissions.Add(userPermission);
         await _dbContext.SaveChangesAsync(ct);
 
-        await _tokenInvalidation.InvalidateUserTokensAsync(userId);
+        await _tokenInvalidation.InvalidateUserTokensAsync(userId, ct);
 
         _logger.LogInformation("Permission {PermissionId} assigned to user {UserId}", permissionId, userId);
         return (true, null);
@@ -232,7 +230,7 @@ public class PermissionService : IPermissionService
         _dbContext.UserPermissions.Remove(userPermission);
         await _dbContext.SaveChangesAsync(ct);
 
-        await _tokenInvalidation.InvalidateUserTokensAsync(userId);
+        await _tokenInvalidation.InvalidateUserTokensAsync(userId, ct);
 
         _logger.LogInformation("Permission {PermissionId} removed from user {UserId}", permissionId, userId);
         return (true, null);
