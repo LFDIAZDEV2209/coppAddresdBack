@@ -4,6 +4,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260813222001_AddPatientsModule")]
+    partial class AddPatientsModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -122,35 +125,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("activity_logs", "audit");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.Allergen", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("name");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique()
-                        .HasDatabaseName("ix_allergens_name");
-
-                    b.ToTable("allergens", "app");
-                });
-
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Employee", b =>
                 {
                     b.Property<Guid>("Id")
@@ -194,40 +168,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_employees_user_id");
 
                     b.ToTable("employees", "erp");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.Icd10Code", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasColumnName("code");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)")
-                        .HasColumnName("description");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Code")
-                        .IsUnique()
-                        .HasDatabaseName("ix_icd10_codes_code");
-
-                    b.ToTable("icd10_codes", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Insurer", b =>
@@ -341,50 +281,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("media_items", "app");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.Medication", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("DrugClass")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("drug_class");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("name");
-
-                    b.Property<string>("Ndc")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("ndc");
-
-                    b.Property<string>("RxNorm")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("rx_norm");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Name")
-                        .IsUnique()
-                        .HasDatabaseName("ix_medications_name");
-
-                    b.ToTable("medications", "app");
-                });
-
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientAllergy", b =>
                 {
                     b.Property<Guid>("Id")
@@ -393,9 +289,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
-                    b.Property<Guid>("AllergenId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("allergen_id");
+                    b.Property<string>("Allergen")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("allergen");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -414,9 +312,7 @@ namespace CoppAddresd.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AllergenId");
-
-                    b.HasIndex("PatientId", "AllergenId")
+                    b.HasIndex("PatientId", "Allergen")
                         .IsUnique()
                         .HasDatabaseName("ix_patient_allergies_patient_allergen");
 
@@ -437,9 +333,16 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
-                    b.Property<Guid>("Icd10CodeId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("icd10_code_id");
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Icd10Code")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("icd10_code");
 
                     b.Property<bool>("IsPrimary")
                         .HasColumnType("boolean")
@@ -450,9 +353,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("patient_id");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("Icd10CodeId")
-                        .HasDatabaseName("ix_patient_diagnoses_icd10_code_id");
 
                     b.HasIndex("PatientId")
                         .HasDatabaseName("ix_patient_diagnoses_patient_id");
@@ -474,27 +374,41 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<string>("DrugClass")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("drug_class");
+
                     b.Property<string>("Frequency")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("frequency");
 
-                    b.Property<Guid>("MedicationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("medication_id");
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Ndc")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("ndc");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
+
+                    b.Property<string>("RxNorm")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("rx_norm");
 
                     b.Property<int>("SortOrder")
                         .HasColumnType("integer")
                         .HasColumnName("sort_order");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("MedicationId")
-                        .HasDatabaseName("ix_patient_medications_medication_id");
 
                     b.HasIndex("PatientId")
                         .HasDatabaseName("ix_patient_medications_patient_id");
@@ -742,57 +656,33 @@ namespace CoppAddresd.Infrastructure.Migrations
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientAllergy", b =>
                 {
-                    b.HasOne("CoppAddresd.Domain.Entities.Allergen", "Allergen")
-                        .WithMany("PatientAllergies")
-                        .HasForeignKey("AllergenId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
                         .WithMany("Allergies")
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Allergen");
-
                     b.Navigation("Patient");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientDiagnosis", b =>
                 {
-                    b.HasOne("CoppAddresd.Domain.Entities.Icd10Code", "Icd10Code")
-                        .WithMany("Diagnoses")
-                        .HasForeignKey("Icd10CodeId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
                         .WithMany("Diagnoses")
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Icd10Code");
 
                     b.Navigation("Patient");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientMedication", b =>
                 {
-                    b.HasOne("CoppAddresd.Domain.Entities.Medication", "Medication")
-                        .WithMany("PatientMedications")
-                        .HasForeignKey("MedicationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
                         .WithMany("Medications")
                         .HasForeignKey("PatientId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("Medication");
 
                     b.Navigation("Patient");
                 });
@@ -818,24 +708,9 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Patient");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.Allergen", b =>
-                {
-                    b.Navigation("PatientAllergies");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.Icd10Code", b =>
-                {
-                    b.Navigation("Diagnoses");
-                });
-
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Insurer", b =>
                 {
                     b.Navigation("Patients");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.Medication", b =>
-                {
-                    b.Navigation("PatientMedications");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientProfile", b =>
