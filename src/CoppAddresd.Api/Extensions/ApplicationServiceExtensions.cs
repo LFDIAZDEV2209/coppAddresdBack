@@ -35,6 +35,8 @@ public static class ApplicationServiceExtensions
         services.AddHttpClient<IAiServiceClient, AiServiceClient>()
             .AddResiliencePolicy();
 
+        services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>();
+
         return services;
     }
 

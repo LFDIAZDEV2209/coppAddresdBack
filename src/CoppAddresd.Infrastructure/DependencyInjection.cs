@@ -32,6 +32,7 @@ public static class DependencyInjection
 
         services.AddScoped<IMediaItemRepository, MediaItemRepository>();
         services.AddScoped<IPatientRepository, PatientRepository>();
+        services.AddScoped<IAgentCatalogRepository, AgentCatalogRepository>();
 
         AddObjectStorage(services, configuration);
 
