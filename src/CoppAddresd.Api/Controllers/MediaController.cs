@@ -40,13 +40,18 @@ public class MediaController(IMediator mediator) : ControllerBase
         var command = new CreateMediaItemCommand(
             request.Title,
             request.Description,
+            request.Author,
             request.MediaType,
+            request.Category,
             request.StorageKey,
+            request.ThumbnailKey,
             request.ContentType,
             request.FileSizeBytes,
             request.DurationSecs,
             request.Status,
             request.SortOrder,
+            request.Day,
+            request.Month,
             CurrentUserId());
 
         var item = await mediator.Send(command, ct);
@@ -57,6 +62,9 @@ public class MediaController(IMediator mediator) : ControllerBase
     /// Genera una clave determinística y una URL firmada para subir el archivo
     /// directamente (front → storage). Con el proveedor Local la URL apunta a
     /// <c>PUT /api/v1/storage/{{key}}</c>; con S3 será un presigned URL real.
+    /// El propósito <c>thumbnail</c> reserva la carpeta de imágenes de portada
+    /// y exige Content-Type de imagen; el contenido principal solo admite
+    /// audio/video.
     /// </summary>
     [HttpPost("upload-intent")]
     public async Task<ActionResult<UploadIntentResponse>> CreateUploadIntent(
@@ -68,9 +76,23 @@ public class MediaController(IMediator mediator) : ControllerBase
 
         var extension = Path.GetExtension(request.FileName).ToLowerInvariant();
         var contentType = request.ContentType ?? "application/octet-stream";
-        var folder = contentType.StartsWith("audio", StringComparison.OrdinalIgnoreCase) ? "audio"
-            : contentType.StartsWith("video", StringComparison.OrdinalIgnoreCase) ? "videos"
-            : "podcasts";
+
+        var purpose = request.Purpose?.Trim().ToLowerInvariant();
+        string folder;
+        if (purpose == "thumbnail")
+        {
+            if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "La miniatura debe ser una imagen (Content-Type image/*)." });
+            folder = "thumbnails";
+        }
+        else
+        {
+            if (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                return BadRequest(new { message = "El contenido principal debe ser audio o video; las imágenes solo se admiten como miniatura." });
+            folder = contentType.StartsWith("audio", StringComparison.OrdinalIgnoreCase) ? "audio"
+                : contentType.StartsWith("video", StringComparison.OrdinalIgnoreCase) ? "videos"
+                : "podcasts";
+        }
 
         var storageKey = $"media/{folder}/{Guid.NewGuid():N}{extension}";
 
@@ -90,13 +112,18 @@ public class MediaController(IMediator mediator) : ControllerBase
             id,
             request.Title,
             request.Description,
+            request.Author,
             request.MediaType,
+            request.Category,
             request.StorageKey,
+            request.ThumbnailKey,
             request.ContentType,
             request.FileSizeBytes,
             request.DurationSecs,
             request.Status,
             request.SortOrder,
+            request.Day,
+            request.Month,
             CurrentUserId());
 
         var updated = await mediator.Send(command, ct);

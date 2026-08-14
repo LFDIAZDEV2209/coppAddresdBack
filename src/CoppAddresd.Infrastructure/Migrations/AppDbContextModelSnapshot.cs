@@ -267,6 +267,18 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
+                    b.Property<string>("Author")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("author");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("category");
+
                     b.Property<string>("ContentType")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -281,6 +293,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Property<Guid?>("CreatedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("created_by");
+
+                    b.Property<int>("Day")
+                        .HasColumnType("integer")
+                        .HasColumnName("day");
 
                     b.Property<string>("Description")
                         .HasColumnType("text")
@@ -299,6 +315,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("media_type");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("integer")
+                        .HasColumnName("month");
 
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamptz")
@@ -320,6 +340,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(1024)")
                         .HasColumnName("storage_key");
 
+                    b.Property<string>("ThumbnailKey")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("thumbnail_key");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -337,6 +362,9 @@ namespace CoppAddresd.Infrastructure.Migrations
 
                     b.HasIndex("MediaType", "Status")
                         .HasDatabaseName("ix_media_items_type_status");
+
+                    b.HasIndex("Month", "Day")
+                        .HasDatabaseName("ix_media_items_month_day");
 
                     b.ToTable("media_items", "app");
                 });
