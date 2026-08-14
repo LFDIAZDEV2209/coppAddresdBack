@@ -1,21 +1,32 @@
-using CoppAddresd.Auth.Interfaces;
+using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace CoppAddresd.Auth.Services;
 
 public class UserService : IUserService
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly AuthDbContext _dbContext;
+    private readonly ITokenInvalidationService _tokenInvalidation;
     private readonly ILogger<UserService> _logger;
 
     public UserService(
         UserManager<ApplicationUser> userManager,
+        RoleManager<ApplicationRole> roleManager,
+        AuthDbContext dbContext,
+        ITokenInvalidationService tokenInvalidation,
         ILogger<UserService> logger)
     {
         _userManager = userManager;
+        _roleManager = roleManager;
+        _dbContext = dbContext;
+        _tokenInvalidation = tokenInvalidation;
         _logger = logger;
     }
 
@@ -45,6 +56,14 @@ public class UserService : IUserService
         return result;
     }
 
+    /// <summary>
+    /// Crea el usuario, su password y (si vienen) sus roles y permisos directos
+    /// en UNA transacción: si cualquier rol/permiso no existe o falla una
+    /// asignación, se revierte todo y se devuelve un único error.
+    /// UserManager usa el mismo AuthDbContext, por lo que la transacción cubre
+    /// también sus escrituras. Rollback explícito en cada ruta de error
+    /// (el `await using` del encabezado es la red de seguridad final).
+    /// </summary>
     public async Task<(bool Success, string? Error, UserResponse? User)> CreateAsync(
         CreateUserRequest request,
         CancellationToken ct = default)
@@ -56,62 +75,172 @@ public class UserService : IUserService
             return (false, "Email ya está registrado", null);
         }
 
-        var user = new ApplicationUser
+        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        try
         {
-            UserName = request.Email,
-            Email = request.Email,
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            IsActive = true,
-            EmailConfirmed = true
-        };
+            async Task<(bool Success, string? Error, UserResponse? User)> FailAsync(string error)
+            {
+                // Rollback explícito con CancellationToken.None: no debe abortarse
+                // por la cancelación del request (el await using deshace igual).
+                await tx.RollbackAsync(CancellationToken.None);
+                return (false, error, null);
+            }
 
-        var result = await _userManager.CreateAsync(user, request.Password);
-        if (!result.Succeeded)
-        {
-            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogWarning("Create user failed: {Errors}", errors);
-            return (false, errors, null);
+            var user = new ApplicationUser
+            {
+                UserName = request.Email,
+                Email = request.Email,
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+                IsActive = true,
+                EmailConfirmed = true
+            };
+
+            var result = await _userManager.CreateAsync(user, request.Password);
+            if (!result.Succeeded)
+            {
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                _logger.LogWarning("Create user failed: {Errors}", errors);
+                return await FailAsync(errors);
+            }
+
+            if (request.RoleIds is { Length: > 0 })
+            {
+                var roleSync = await SyncRolesAsync(user, request.RoleIds, ct);
+                if (!roleSync.Success)
+                {
+                    _logger.LogWarning("Create user {UserId} failed assigning roles: {Error}", user.Id, roleSync.Error);
+                    return await FailAsync(roleSync.Error!);
+                }
+            }
+
+            if (request.PermissionIds is { Length: > 0 })
+            {
+                var permissionSync = await SyncPermissionsAsync(user.Id, request.PermissionIds, ct);
+                if (!permissionSync.Success)
+                {
+                    _logger.LogWarning("Create user {UserId} failed assigning permissions: {Error}", user.Id, permissionSync.Error);
+                    return await FailAsync(permissionSync.Error!);
+                }
+            }
+
+            await tx.CommitAsync(ct);
+
+            _logger.LogInformation("User {UserId} created successfully", user.Id);
+
+            var roles = await _userManager.GetRolesAsync(user);
+            return (true, null, MapToResponse(user, roles));
         }
-
-        _logger.LogInformation("User {UserId} created successfully", user.Id);
-
-        var roles = await _userManager.GetRolesAsync(user);
-        return (true, null, MapToResponse(user, roles));
+        catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+        {
+            // Carrera de dos POST concurrentes con el mismo email: el pre-chequeo
+            // no es atómico y el unique index de Identity lo resuelve acá.
+            await tx.RollbackAsync(CancellationToken.None);
+            return (false, "Email ya está registrado", null);
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
 
-    public async Task<(bool Success, string? Error)> UpdateAsync(
+    /// <summary>
+    /// Actualiza el perfil y, si el request lo pide, hace sync TOTAL de roles
+    /// y permisos directos (conjunto completo deseado). Todo en una transacción.
+    /// La invalidación de tokens (security stamp) por desactivación o por
+    /// cambio de asignaciones se ejecuta DENTRO de la transacción para que
+    /// stamp y asignaciones se persistan atómicamente.
+    /// `NotFound` distingue "Usuario no encontrado" (404) de los errores de
+    /// payload, ej. "Rol no encontrado (id X)" (400).
+    /// </summary>
+    public async Task<(bool Success, string? Error, bool NotFound)> UpdateAsync(
         Guid id,
         UpdateUserRequest request,
         CancellationToken ct = default)
     {
-        var user = await _userManager.FindByIdAsync(id.ToString());
-        if (user is null)
+        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        try
         {
-            return (false, "Usuario no encontrado");
+            async Task<(bool Success, string? Error, bool NotFound)> FailAsync(string error, bool notFound = false)
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                return (false, error, notFound);
+            }
+
+            var user = await _userManager.FindByIdAsync(id.ToString());
+            if (user is null)
+            {
+                return await FailAsync("Usuario no encontrado", notFound: true);
+            }
+
+            // Snapshot antes de mutar: permite detectar la transición IsActive → false
+            // (REQ-INVALID-03). Re-activar NO re-bumpea el stamp.
+            var wasActive = user.IsActive;
+            var assignmentsChanged = false;
+
+            if (request.FirstName is not null)
+                user.FirstName = request.FirstName;
+
+            if (request.LastName is not null)
+                user.LastName = request.LastName;
+
+            if (request.IsActive.HasValue)
+                user.IsActive = request.IsActive.Value;
+
+            user.UpdatedAt = DateTime.UtcNow;
+
+            var result = await _userManager.UpdateAsync(user);
+            if (!result.Succeeded)
+            {
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                _logger.LogWarning("Update user {UserId} failed: {Errors}", id, errors);
+                return await FailAsync(errors);
+            }
+
+            if (request.RoleIds is not null)
+            {
+                var roleSync = await SyncRolesAsync(user, request.RoleIds, ct);
+                if (!roleSync.Success)
+                {
+                    _logger.LogWarning("Update user {UserId} failed syncing roles: {Error}", id, roleSync.Error);
+                    return await FailAsync(roleSync.Error!);
+                }
+                assignmentsChanged |= roleSync.Changed;
+            }
+
+            if (request.PermissionIds is not null)
+            {
+                var permissionSync = await SyncPermissionsAsync(user.Id, request.PermissionIds, ct);
+                if (!permissionSync.Success)
+                {
+                    _logger.LogWarning("Update user {UserId} failed syncing permissions: {Error}", id, permissionSync.Error);
+                    return await FailAsync(permissionSync.Error!);
+                }
+                assignmentsChanged |= permissionSync.Changed;
+            }
+
+            // Desactivar un usuario o cambiar sus roles/permisos invalida todos
+            // sus tokens de inmediato (security stamp). Dentro de la transacción
+            // para atomicidad con las asignaciones.
+            if ((wasActive && !user.IsActive) || assignmentsChanged)
+            {
+                await _tokenInvalidation.InvalidateUserTokensAsync(id, ct);
+                _logger.LogInformation(
+                    "User {UserId} assignments/state changed, all tokens invalidated",
+                    id);
+            }
+
+            await tx.CommitAsync(ct);
+
+            _logger.LogInformation("User {UserId} updated successfully", id);
+            return (true, null, false);
         }
-
-        if (request.FirstName is not null)
-            user.FirstName = request.FirstName;
-
-        if (request.LastName is not null)
-            user.LastName = request.LastName;
-
-        if (request.IsActive.HasValue)
-            user.IsActive = request.IsActive.Value;
-
-        user.UpdatedAt = DateTime.UtcNow;
-
-        var result = await _userManager.UpdateAsync(user);
-        if (!result.Succeeded)
+        catch
         {
-            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogWarning("Update user {UserId} failed: {Errors}", id, errors);
-            return (false, errors);
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
         }
-
-        _logger.LogInformation("User {UserId} updated successfully", id);
-        return (true, null);
     }
 
     public async Task<(bool Success, string? Error)> DeleteAsync(Guid id, CancellationToken ct = default)
@@ -132,6 +261,125 @@ public class UserService : IUserService
 
         _logger.LogInformation("User {UserId} deleted successfully", id);
         return (true, null);
+    }
+
+    /// <summary>
+    /// Sync TOTAL de roles: valida que todos los RoleIds existan (batch query,
+    /// sin N+1) y deja al usuario con exactamente ese conjunto (agrega
+    /// faltantes, remueve sobrantes). Reporta si hubo cambios efectivos.
+    /// </summary>
+    private async Task<(bool Success, string? Error, bool Changed)> SyncRolesAsync(
+        ApplicationUser user,
+        Guid[] roleIds,
+        CancellationToken ct)
+    {
+        var distinctIds = roleIds.Distinct().ToArray();
+
+        var existingRoles = await _dbContext.Roles
+            .Where(r => distinctIds.Contains(r.Id))
+            .ToListAsync(ct);
+
+        if (existingRoles.Count != distinctIds.Length)
+        {
+            var existingSet = existingRoles.Select(r => r.Id).ToHashSet();
+            var missingId = distinctIds.First(id => !existingSet.Contains(id));
+            return (false, $"Rol no encontrado (id {missingId})", false);
+        }
+
+        var currentNames = await _userManager.GetRolesAsync(user);
+        var currentSet = currentNames.ToHashSet();
+        var requestedNames = existingRoles.Select(r => r.Name!).ToHashSet();
+        var changed = false;
+
+        foreach (var roleName in requestedNames.Except(currentSet))
+        {
+            var result = await _userManager.AddToRoleAsync(user, roleName);
+            if (!result.Succeeded)
+            {
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                return (false, errors, false);
+            }
+            changed = true;
+        }
+
+        foreach (var roleName in currentSet.Except(requestedNames))
+        {
+            var result = await _userManager.RemoveFromRoleAsync(user, roleName);
+            if (!result.Succeeded)
+            {
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                return (false, errors, false);
+            }
+            changed = true;
+        }
+
+        return (true, null, changed);
+    }
+
+    /// <summary>
+    /// Sync TOTAL de permisos directos: valida que todos los PermissionIds
+    /// existan y deja al usuario con exactamente ese conjunto. Reporta si hubo
+    /// cambios efectivos.
+    /// </summary>
+    private async Task<(bool Success, string? Error, bool Changed)> SyncPermissionsAsync(
+        Guid userId,
+        Guid[] permissionIds,
+        CancellationToken ct)
+    {
+        var distinctIds = permissionIds.Distinct().ToArray();
+
+        var existingIds = await _dbContext.Permissions
+            .Where(p => distinctIds.Contains(p.Id))
+            .Select(p => p.Id)
+            .ToListAsync(ct);
+
+        var existingSet = existingIds.ToHashSet();
+        var missing = distinctIds.FirstOrDefault(id => !existingSet.Contains(id));
+        if (missing != Guid.Empty)
+        {
+            return (false, $"Permiso no encontrado (id {missing})", false);
+        }
+
+        // Entidades tracked: los Add/Remove se persisten con un único
+        // SaveChangesAsync dentro de la transacción del llamador.
+        var currentPermissions = await _dbContext.UserPermissions
+            .Where(up => up.UserId == userId)
+            .ToListAsync(ct);
+
+        var currentSet = currentPermissions.Select(up => up.PermissionId).ToHashSet();
+        var requestedSet = distinctIds.ToHashSet();
+        var changed = false;
+
+        foreach (var permissionId in requestedSet.Except(currentSet))
+        {
+            _dbContext.UserPermissions.Add(new UserPermission
+            {
+                UserId = userId,
+                PermissionId = permissionId
+            });
+            changed = true;
+        }
+
+        foreach (var userPermission in currentPermissions)
+        {
+            if (!requestedSet.Contains(userPermission.PermissionId))
+            {
+                _dbContext.UserPermissions.Remove(userPermission);
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            await _dbContext.SaveChangesAsync(ct);
+        }
+
+        return (true, null, changed);
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is PostgresException { SqlState: "23505" };
     }
 
     private static UserResponse MapToResponse(ApplicationUser user, IList<string> roles)

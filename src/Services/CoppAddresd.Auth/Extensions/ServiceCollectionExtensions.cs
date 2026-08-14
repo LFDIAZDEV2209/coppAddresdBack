@@ -1,11 +1,14 @@
+using System.Security.Claims;
 using System.Text;
 using CoppAddresd.Auth.Configuration;
 using CoppAddresd.Auth.Constants;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
+using CoppAddresd.Auth.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CoppAddresd.Auth.Extensions;
@@ -85,6 +88,40 @@ public static class ServiceCollectionExtensions
                 ValidAudiences = validAudiences,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
+            };
+
+            // Validación del security stamp SOLO para la audiencia ERP: la
+            // revocación de permisos/roles/desactivación es inmediata para
+            // staff/doctores (tráfico bajo, churn alto). La audiencia "app"
+            // (pacientes, ~10M) NO valida el stamp por request: la revocación
+            // queda sujeta a la expiración natural del token (≤ 15 min), trade-off
+            // aceptado para mantener el hot path libre de queries a la BD.
+            options.Events.OnTokenValidated = async context =>
+            {
+                var principal = context.Principal;
+                if (principal is null)
+                {
+                    context.Fail("Security stamp validation failed: no principal");
+                    return;
+                }
+
+                var audience = principal.Claims
+                    .FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Aud)?.Value;
+
+                if (audience != ApplicationCodes.Erp)
+                {
+                    return;
+                }
+
+                var validator = context.HttpContext.RequestServices
+                    .GetRequiredService<CoppAddresd.Auth.Security.ISecurityStampValidator>();
+
+                var isValid = await validator.ValidateAsync(principal);
+                if (!isValid)
+                {
+                    context.Fail("Security stamp validation failed");
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                }
             };
         });
 
