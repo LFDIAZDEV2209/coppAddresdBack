@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.Ai;
 using CoppAddresd.Application.Features.Chat;
@@ -147,7 +148,10 @@ public class AiServiceClient : IAiServiceClient
         return JsonSerializer.Deserialize<T>(data, JsonOpts);
     }
 
-    private record ChatResponseJson(string Reply, string ThreadId);
+    private record ChatResponseJson(
+        [property: JsonPropertyName("answer")] string Reply,
+        [property: JsonPropertyName("thread_id")] string ThreadId,
+        [property: JsonPropertyName("execution_id")] string? ExecutionId = null);
     private record DoneJson(string ThreadId);
     private record NodeJson(string Node);
     private record MessageJson(string Type, string? Content);

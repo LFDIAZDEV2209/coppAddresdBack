@@ -43,6 +43,13 @@ public static class ApplicationServiceExtensions
             client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
         });
 
+        services.AddHttpClient<IAgentExecutionsQueryService, AgentExecutionsQueryService>((sp, client) =>
+        {
+            var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+            client.BaseAddress = new Uri(aiSettings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
+        });
+
         return services;
     }
 

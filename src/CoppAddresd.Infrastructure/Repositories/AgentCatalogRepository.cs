@@ -115,6 +115,37 @@ public sealed class AgentCatalogRepository(AppDbContext dbContext) : IAgentCatal
         return version;
     }
 
+    public async Task<AgentTypeVersion> AddFirstVersionAndActivateAsync(
+        AgentType agentType,
+        AgentTypeVersion version,
+        CancellationToken ct = default)
+    {
+        // NpgsqlRetryingExecutionStrategy no admite transacciones iniciadas por
+        // el usuario fuera de su unidad retriable: se envuelve la operación.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                agentType.ActiveVersionId = version.Id;
+                agentType.UpdatedAt = DateTime.UtcNow;
+                dbContext.AgentTypes.Update(agentType);
+
+                await dbContext.AgentTypeVersions.AddAsync(version, ct);
+                await dbContext.SaveChangesAsync(ct);
+
+                await transaction.CommitAsync(ct);
+                return version;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
     public async Task UpdateVersionAsync(AgentTypeVersion version, CancellationToken ct = default)
     {
         dbContext.AgentTypeVersions.Update(version);

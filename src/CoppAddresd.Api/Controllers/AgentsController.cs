@@ -242,4 +242,39 @@ public class AgentsController(IMediator mediator) : ControllerBase
         await mediator.Send(new DeleteAgentInstanceCommand(id), ct);
         return NoContent();
     }
+
+    // --- Ejecuciones (monitoreo admin, proxy del AI Service) ---
+
+    /// <summary>
+    /// Lista ejecuciones de agentes (monitoreo). Filtros opcionales:
+    /// agentTypeId, userId, status, fromDate, toDate, limit, offset.
+    /// </summary>
+    [HttpGet("executions")]
+    public async Task<ActionResult<AgentExecutionsListDto>> ListExecutions(
+        [FromQuery] string? agentTypeId = null,
+        [FromQuery] string? userId = null,
+        [FromQuery] string? status = null,
+        [FromQuery] DateTimeOffset? fromDate = null,
+        [FromQuery] DateTimeOffset? toDate = null,
+        [FromQuery] int limit = 50,
+        [FromQuery] int offset = 0,
+        CancellationToken ct = default)
+    {
+        var result = await mediator.Send(new ListAgentExecutionsQuery(
+            agentTypeId, userId, status, fromDate, toDate, limit, offset), ct);
+        return Ok(result);
+    }
+
+    /// <summary>Detalle completo de una ejecución (las 12 preguntas del monitoreo).</summary>
+    [HttpGet("executions/{executionId}")]
+    public async Task<ActionResult<AgentExecutionDetailDto>> GetExecution(
+        string executionId,
+        CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetAgentExecutionQuery(executionId), ct);
+        if (result is null)
+            return NotFound(new { message = "Ejecución no encontrada" });
+
+        return Ok(result);
+    }
 }

@@ -41,14 +41,16 @@ public sealed class CreateAgentTypeVersionCommandHandler(
             CreatedAt = DateTime.UtcNow,
         };
 
+        // Primera versión: se inserta y se apunta ActiveVersionId en una sola
+        // transacción — el orden importa por la FK agent_types.active_version_id.
         if (isFirst)
         {
-            agentType.ActiveVersionId = version.Id;
-            agentType.UpdatedAt = DateTime.UtcNow;
-            await repository.UpdateAgentTypeAsync(agentType, ct);
+            await repository.AddFirstVersionAndActivateAsync(agentType, version, ct);
         }
-
-        await repository.AddVersionAsync(version, ct);
+        else
+        {
+            await repository.AddVersionAsync(version, ct);
+        }
 
         logger.LogInformation(
             "Versión {VersionNumber} creada para agente {AgentTypeId} (activa: {IsActive})",

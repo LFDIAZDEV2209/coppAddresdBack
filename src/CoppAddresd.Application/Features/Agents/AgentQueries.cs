@@ -129,3 +129,47 @@ public sealed class ListAgentInstancesQueryHandler(IAgentCatalogRepository repos
             .ToList();
     }
 }
+
+// --- Ejecuciones (monitoreo admin, proxy del AI Service) ---
+
+/// <summary>Lista ejecuciones con filtros (proxy del AI Service).</summary>
+public record ListAgentExecutionsQuery(
+    string? AgentTypeId,
+    string? UserId,
+    string? Status,
+    DateTimeOffset? FromDate,
+    DateTimeOffset? ToDate,
+    int Limit,
+    int Offset) : IRequest<AgentExecutionsListDto>;
+
+public sealed class ListAgentExecutionsQueryHandler(IAgentExecutionsQueryService service)
+    : IRequestHandler<ListAgentExecutionsQuery, AgentExecutionsListDto>
+{
+    public async Task<AgentExecutionsListDto> Handle(ListAgentExecutionsQuery request, CancellationToken ct)
+    {
+        var options = new AgentExecutionQueryOptions
+        {
+            AgentTypeId = request.AgentTypeId,
+            UserId = request.UserId,
+            Status = request.Status,
+            FromDate = request.FromDate,
+            ToDate = request.ToDate,
+            Limit = request.Limit,
+            Offset = request.Offset,
+        };
+
+        return await service.ListAsync(options, ct);
+    }
+}
+
+/// <summary>Detalle de una ejecución (las 12 preguntas del monitoreo).</summary>
+public record GetAgentExecutionQuery(string ExecutionId) : IRequest<AgentExecutionDetailDto?>;
+
+public sealed class GetAgentExecutionQueryHandler(IAgentExecutionsQueryService service)
+    : IRequestHandler<GetAgentExecutionQuery, AgentExecutionDetailDto?>
+{
+    public async Task<AgentExecutionDetailDto?> Handle(GetAgentExecutionQuery request, CancellationToken ct)
+    {
+        return await service.GetAsync(request.ExecutionId, ct);
+    }
+}
