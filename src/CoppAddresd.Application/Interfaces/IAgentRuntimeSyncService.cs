@@ -11,13 +11,37 @@ public record AgentRuntimeConfigPayload(
     string? IconKey,
     string Config);
 
+/// <summary>Payload de ingestión de un documento al AI Service (blob en base64).</summary>
+public record AgentDocumentIngestPayload(
+    Guid DocumentId,
+    Guid KnowledgeBaseId,
+    string FileName,
+    string ContentBase64);
+
+/// <summary>Respuesta de la ingestión de un documento (status + conteo de chunks).</summary>
+public record AgentDocumentIngestResult(
+    string Status,
+    int ChunksCreated,
+    int ReplacedChunks,
+    string? Error);
+
 /// <summary>
-/// Notifica al AI Service el cambio de versión activa de un tipo de agente.
-/// Permite al runtime precompilar/cachear el grafo LangGraph sin round-trips
-/// costosos en cada petición de chat.
+/// Notifica al AI Service los cambios del catálogo de agentes (versión activa,
+/// documentos indexados). Permite al runtime precompilar/cachear grafos y
+/// mantener el índice vectorial sincronizado sin round-trips en cada petición.
 /// </summary>
 public interface IAgentRuntimeSyncService
 {
     /// <summary>Envía la configuración del agente al endpoint interno del AI Service.</summary>
     Task SyncAgentConfigAsync(AgentRuntimeConfigPayload payload, CancellationToken ct = default);
+
+    /// <summary>
+    /// Indexa un documento en el AI Service (chunks + embeddings en pgvector).
+    /// </summary>
+    Task<AgentDocumentIngestResult> IngestDocumentAsync(
+        AgentDocumentIngestPayload payload,
+        CancellationToken ct = default);
+
+    /// <summary>Elimina los chunks de un documento del índice vectorial.</summary>
+    Task DeleteDocumentChunksAsync(Guid documentId, CancellationToken ct = default);
 }
