@@ -19,4 +19,15 @@ public record CreateUserRequest
     [Required(ErrorMessage = "LastName es requerido")]
     [MaxLength(100)]
     public string LastName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Roles a asignar al usuario recién creado (opcional).
+    /// null = sin asignaciones (registro básico); lista (incluso vacía) = aplicar.
+    /// Solo se aplican si el caller autenticado tiene Users.Create,
+    /// Roles.Assign y Permissions.Assign.
+    /// </summary>
+    public Guid[]? RoleIds { get; init; }
+
+    /// <summary>Permisos directos a asignar al usuario recién creado (opcional).</summary>
+    public Guid[]? PermissionIds { get; init; }
 }
