@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using CoppAddresd.Auth.Configuration;
+using CoppAddresd.Auth.Constants;
 using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
@@ -27,7 +28,11 @@ public class TokenService : ITokenService
         _logger = logger;
     }
 
-    public string GenerateAccessToken(ApplicationUser user, IEnumerable<string> roles, string audience)
+    public string GenerateAccessToken(
+        ApplicationUser user,
+        IEnumerable<string> roles,
+        string audience,
+        IEnumerable<string> permissions)
     {
         var claims = new List<Claim>
         {
@@ -40,6 +45,13 @@ public class TokenService : ITokenService
         foreach (var role in roles)
         {
             claims.Add(new Claim(ClaimTypes.Role, role));
+        }
+
+        // Cada código de permiso viaja como claim propio: el PermissionHandler
+        // autoriza leyendo estos claims sin consultar la BD por request.
+        foreach (var permissionCode in permissions)
+        {
+            claims.Add(new Claim(PermissionClaimTypes.Permission, permissionCode));
         }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret));

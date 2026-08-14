@@ -53,9 +53,20 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<ITokenInvalidationService, TokenInvalidationService>();
+// Cualificado: existe Microsoft.AspNetCore.Identity.SecurityStampValidator con el mismo nombre.
+builder.Services.AddScoped<CoppAddresd.Auth.Security.ISecurityStampValidator, CoppAddresd.Auth.Security.SecurityStampValidator>();
 
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
+builder.Services.AddScoped<IAuthorizationHandler, ErpAudienceHandler>();
+
+// REQ-AUDIT-03: los endpoints de administración ERP (Users/Roles/Permissions)
+// exigen aud == "erp". Un token "app" (sin stamp check) no puede invocarlos.
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(ErpAudienceRequirement.PolicyName, policy =>
+        policy.AddRequirements(new ErpAudienceRequirement()));
+});
 
 builder.Services.AddRateLimiter(options =>
 {

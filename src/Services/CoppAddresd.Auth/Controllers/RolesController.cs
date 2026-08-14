@@ -10,6 +10,7 @@ namespace CoppAddresd.Auth.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
+[RequireErpAudience]
 public class RolesController : ControllerBase
 {
     private readonly IRoleService _roleService;

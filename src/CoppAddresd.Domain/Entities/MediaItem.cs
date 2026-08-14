@@ -16,10 +16,19 @@ public sealed class MediaItem
 
     public string? Description { get; set; }
 
+    /// <summary>Autor/a del contenido, nombre visible en la lección.</summary>
+    public string Author { get; set; } = default!;
+
     public MediaType MediaType { get; set; }
+
+    /// <summary>Categoría temática de la lección.</summary>
+    public MediaCategory Category { get; set; }
 
     /// <summary>Clave del objeto en el storage (convención S3), ej. <c>media/podcasts/{id}.mp3</c>.</summary>
     public string StorageKey { get; set; } = default!;
+
+    /// <summary>Clave de la imagen de portada en el storage (opcional), ej. <c>media/thumbnails/{id}.jpg</c>.</summary>
+    public string? ThumbnailKey { get; set; }
 
     /// <summary>Content-Type del archivo, ej. <c>audio/mpeg</c>.</summary>
     public string? ContentType { get; set; }
@@ -32,6 +41,12 @@ public sealed class MediaItem
 
     /// <summary>Orden de la lección dentro de la secuencia diaria.</summary>
     public int SortOrder { get; set; }
+
+    /// <summary>Día de la lección dentro del programa.</summary>
+    public int Day { get; set; }
+
+    /// <summary>Mes de la lección dentro del programa.</summary>
+    public int Month { get; set; }
 
     /// <summary>Momento en que pasó a Published. Null mientras sea Draft.</summary>
     public DateTimeOffset? PublishedAt { get; set; }

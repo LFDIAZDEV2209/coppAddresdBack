@@ -187,7 +187,7 @@ public class RoleService : IRoleService
             return (false, errors);
         }
 
-        await _tokenInvalidation.InvalidateUserTokensAsync(userId);
+        await _tokenInvalidation.InvalidateUserTokensAsync(userId, ct);
 
         _logger.LogInformation("Role {RoleId} assigned to user {UserId}", roleId, userId);
         return (true, null);
@@ -224,7 +224,7 @@ public class RoleService : IRoleService
             return (false, errors);
         }
 
-        await _tokenInvalidation.InvalidateUserTokensAsync(userId);
+        await _tokenInvalidation.InvalidateUserTokensAsync(userId, ct);
 
         _logger.LogInformation("Role {RoleId} removed from user {UserId}", roleId, userId);
         return (true, null);
