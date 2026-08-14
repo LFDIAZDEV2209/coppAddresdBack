@@ -24,6 +24,16 @@ public interface IAgentCatalogRepository
     Task<IReadOnlyList<AgentTypeVersion>> ListVersionsAsync(Guid agentTypeId, CancellationToken ct = default);
     Task<int> NextVersionNumberAsync(Guid agentTypeId, CancellationToken ct = default);
     Task<AgentTypeVersion> AddVersionAsync(AgentTypeVersion version, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserta la primera versión de un tipo y apunta <c>ActiveVersionId</c> en
+    /// la misma transacción (evita violar la FK de versión activa).
+    /// </summary>
+    Task<AgentTypeVersion> AddFirstVersionAndActivateAsync(
+        AgentType agentType,
+        AgentTypeVersion version,
+        CancellationToken ct = default);
+
     Task UpdateVersionAsync(AgentTypeVersion version, CancellationToken ct = default);
     Task<AgentTypeVersion?> GetActiveVersionAsync(Guid agentTypeId, CancellationToken ct = default);
 

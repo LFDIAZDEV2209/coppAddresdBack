@@ -94,11 +94,20 @@ DELETE /api/permissions/{id}/assign-to-user   # Remover de usuario [RequirePermi
 ```
 POST   /api/v1/chat                 # Chat síncrono (vía MediatR → AI Service) [Authorize]
 POST   /api/v1/chat/stream          # Chat streaming SSE (text/event-stream) [Authorize]
+GET    /api/v1/agents/executions    # Ejecuciones de agentes (monitoreo, proxy del AI Service)
+GET    /api/v1/agents/executions/{id}  # Detalle de una ejecución (12 preguntas del monitoreo)
 ```
 
-**Configuración**: `appsettings.json` → `AiService` section (BaseUrl, ApiPrefix, TimeoutSeconds).
+**Configuración**: `appsettings.json` → `AiService` section (BaseUrl, ApiPrefix, TimeoutSeconds, InternalApiKey).
 
 **Resilience**: Polly retry (3 intentos, backoff exponencial) + circuit breaker (5 fallos, 30s break).
+
+**Monitoreo admin**: el frontend NUNCA llama al AI Service directo — `AgentsController` proxya
+`GET /api/v1/agents/executions` hacia `/admin/executions` del AI Service vía
+`AgentExecutionsQueryService` (resiliente: fallo → lista vacía, nunca 500 al cliente).
+La primera versión de un agente se inserta y activa en UNA transacción
+(`AddFirstVersionAndActivateAsync`, envuelta en `CreateExecutionStrategy` porque
+NpgsqlRetryingExecutionStrategy no soporta transacciones manuales).
 
 ## Audit System
 
@@ -115,6 +124,7 @@ POST   /api/v1/chat/stream          # Chat streaming SSE (text/event-stream) [Au
 - **Auth Service corre migraciones + seeders automáticamente** al iniciar (Program.cs).
 - **`HttpAuditActorContext`** actualmente retorna `ActorType=System`, `UserId=null` — no hay integración con Identity todavía.
 - **Tests de integración** requieren PostgreSQL real (no InMemory). Configurar variable `COP_TEST_DB_CONNECTION`.
+- **`AiServiceClient` mapea el contrato del AI Service** (`answer`/`thread_id`/`execution_id`) con `JsonPropertyName` — si el AI Service cambia el schema, ajustar `ChatResponseJson`.
 - **Comentarios/docs en español** por convención del README.
 
 ## Project skills & docs (MANDATORIO antes de trabajo sustancial)
