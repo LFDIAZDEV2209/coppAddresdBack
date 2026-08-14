@@ -27,7 +27,12 @@ public class ChatController : ControllerBase
     {
         try
         {
-            var command = new ChatCommand(request.Message, request.Agent, request.ThreadId);
+            var command = new ChatCommand(
+                request.Message,
+                request.Agent,
+                request.ThreadId,
+                request.AgentTypeId,
+                request.UserId);
             var result = await _mediator.Send(command, ct);
             return Ok(result);
         }
@@ -49,7 +54,12 @@ public class ChatController : ControllerBase
 
         try
         {
-            var command = new StreamChatCommand(request.Message, request.Agent, request.ThreadId);
+            var command = new StreamChatCommand(
+                request.Message,
+                request.Agent,
+                request.ThreadId,
+                request.AgentTypeId,
+                request.UserId);
             var chunks = await _mediator.Send(command, ct);
 
             await foreach (var chunk in chunks.WithCancellation(ct))
@@ -72,4 +82,9 @@ public class ChatController : ControllerBase
     }
 }
 
-public record ChatRequestDto(string Message, string? Agent = null, string? ThreadId = null);
+public record ChatRequestDto(
+    string Message,
+    string? Agent = null,
+    string? ThreadId = null,
+    string? AgentTypeId = null,
+    string? UserId = null);

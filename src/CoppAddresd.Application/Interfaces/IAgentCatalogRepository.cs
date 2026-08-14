@@ -14,6 +14,13 @@ public interface IAgentCatalogRepository
     Task<int> CountAgentTypesAsync(string? search, CancellationToken ct = default);
     Task<AgentType> AddAgentTypeAsync(AgentType agentType, CancellationToken ct = default);
     Task UpdateAgentTypeAsync(AgentType agentType, CancellationToken ct = default);
+
+    /// <summary>
+    /// Apunta la versión activa de un tipo de agente con un UPDATE directo
+    /// (evita el tracking de navegaciones EF que puede reescribir el valor).
+    /// </summary>
+    Task SetActiveVersionAsync(Guid agentTypeId, Guid versionId, CancellationToken ct = default);
+
     Task DeleteAgentTypeAsync(AgentType agentType, CancellationToken ct = default);
     Task<bool> AgentTypeExistsAsync(Guid id, CancellationToken ct = default);
     Task<bool> AgentTypeHasInstancesAsync(Guid id, CancellationToken ct = default);

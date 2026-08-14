@@ -98,6 +98,11 @@ GET    /api/v1/agents/executions    # Ejecuciones de agentes (monitoreo, proxy d
 GET    /api/v1/agents/executions/{id}  # Detalle de una ejecución (12 preguntas del monitoreo)
 ```
 
+**Chat multi-agente**: `ChatRequestDto` acepta `agentTypeId` y `userId` (aislamiento de
+memoria por usuario en el AI Service); `ChatResult` incluye `executionId` (feedback).
+El `AiServiceClient` mapea el contrato del AI Service (`answer`/`thread_id`/`execution_id`)
+con `JsonPropertyName` y nunca envía `agent: null` (schema del AI Service lo rechaza con 422).
+
 **Configuración**: `appsettings.json` → `AiService` section (BaseUrl, ApiPrefix, TimeoutSeconds, InternalApiKey).
 
 **Resilience**: Polly retry (3 intentos, backoff exponencial) + circuit breaker (5 fallos, 30s break).
@@ -107,7 +112,9 @@ GET    /api/v1/agents/executions/{id}  # Detalle de una ejecución (12 preguntas
 `AgentExecutionsQueryService` (resiliente: fallo → lista vacía, nunca 500 al cliente).
 La primera versión de un agente se inserta y activa en UNA transacción
 (`AddFirstVersionAndActivateAsync`, envuelta en `CreateExecutionStrategy` porque
-NpgsqlRetryingExecutionStrategy no soporta transacciones manuales).
+NpgsqlRetryingExecutionStrategy no soporta transacciones manuales). La activación de una
+versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de la navegación
+`ActiveVersion` (cargada con Include) reescribía `active_version_id` al guardar.
 
 ## Audit System
 

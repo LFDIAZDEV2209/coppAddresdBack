@@ -19,10 +19,15 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
     {
         _logger.LogInformation("Chat request: Agent={Agent}, ThreadId={ThreadId}", request.Agent, request.ThreadId);
         
-        var dto = new DTOs.Ai.ChatRequest(request.Message, request.Agent, request.ThreadId);
+        var dto = new DTOs.Ai.ChatRequest(
+            request.Message,
+            request.Agent,
+            request.ThreadId,
+            request.AgentTypeId,
+            request.UserId);
         var result = await _aiService.ChatAsync(dto, ct);
         
         _logger.LogInformation("Chat response: ThreadId={ThreadId}", result.ThreadId);
-        return new ChatResult(result.Reply, result.ThreadId);
+        return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId);
     }
 }
