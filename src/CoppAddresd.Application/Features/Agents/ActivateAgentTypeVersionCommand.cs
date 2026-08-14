@@ -41,9 +41,9 @@ public sealed class ActivateAgentTypeVersionCommandHandler(
         version.IsActive = true;
         await repository.UpdateVersionAsync(version, ct);
 
-        agentType.ActiveVersionId = version.Id;
-        agentType.UpdatedAt = DateTime.UtcNow;
-        await repository.UpdateAgentTypeAsync(agentType, ct);
+        // UPDATE directo de la FK: la entidad cargada con Include(ActiveVersion)
+        // puede reescribir el valor al guardar (tracking de navegaciones).
+        await repository.SetActiveVersionAsync(agentType.Id, version.Id, ct);
 
         logger.LogInformation(
             "Versión {VersionId} activada para agente {AgentTypeId}",

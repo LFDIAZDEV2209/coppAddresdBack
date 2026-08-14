@@ -35,17 +35,27 @@ public class AiServiceClient : IAiServiceClient
         _httpClient.Timeout = TimeSpan.FromSeconds(_settings.TimeoutSeconds);
     }
 
+    private static object BuildChatPayload(ChatRequest request) => new
+    {
+        message = request.Message,
+        // `agent` no admite null (schema del AI Service, default "base").
+        agent = string.IsNullOrWhiteSpace(request.Agent) ? "base" : request.Agent,
+        thread_id = request.ThreadId,
+        agent_type_id = request.AgentTypeId,
+        user_id = request.UserId,
+    };
+
     public async Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default)
     {
         _logger.LogDebug("Calling AI service chat endpoint");
-        var payload = new { message = request.Message, agent = request.Agent, thread_id = request.ThreadId };
+        var payload = BuildChatPayload(request);
         
         var response = await _httpClient.PostAsJsonAsync(_settings.ChatEndpoint, payload, ct);
         response.EnsureSuccessStatusCode();
         
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
-        return new ChatResponse(result!.Reply, result.ThreadId);
+        return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId);
     }
 
     public async IAsyncEnumerable<SseEvent> StreamChatAsync(
@@ -75,7 +85,7 @@ public class AiServiceClient : IAiServiceClient
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         _logger.LogDebug("Starting stream to AI service");
-        var payload = new { message = request.Message, agent = request.Agent, thread_id = request.ThreadId };
+        var payload = BuildChatPayload(request);
         
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.StreamEndpoint)
         {

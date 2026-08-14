@@ -65,7 +65,25 @@ public sealed class AgentCatalogRepository(AppDbContext dbContext) : IAgentCatal
     public async Task UpdateAgentTypeAsync(AgentType agentType, CancellationToken ct = default)
     {
         dbContext.AgentTypes.Update(agentType);
+
+        // `Update()` marca también las navegaciones cargadas (ActiveVersion
+        // viene vía Include). Se desvincula para permitir actualizar versiones
+        // por separado en el mismo contexto sin conflicto de identidad.
+        if (agentType.ActiveVersion is not null)
+            dbContext.Entry(agentType.ActiveVersion).State = EntityState.Detached;
+
         await dbContext.SaveChangesAsync(ct);
+    }
+
+    public async Task SetActiveVersionAsync(Guid agentTypeId, Guid versionId, CancellationToken ct = default)
+    {
+        await dbContext.AgentTypes
+            .Where(x => x.Id == agentTypeId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(x => x.ActiveVersionId, versionId)
+                    .SetProperty(x => x.UpdatedAt, DateTime.UtcNow),
+                ct);
     }
 
     public async Task DeleteAgentTypeAsync(AgentType agentType, CancellationToken ct = default)

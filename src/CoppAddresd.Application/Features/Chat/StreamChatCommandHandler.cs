@@ -19,7 +19,12 @@ public class StreamChatCommandHandler : IRequestHandler<StreamChatCommand, IAsyn
     {
         _logger.LogInformation("Stream chat request: Agent={Agent}, ThreadId={ThreadId}", request.Agent, request.ThreadId);
         
-        var dto = new DTOs.Ai.ChatRequest(request.Message, request.Agent, request.ThreadId);
+        var dto = new DTOs.Ai.ChatRequest(
+            request.Message,
+            request.Agent,
+            request.ThreadId,
+            request.AgentTypeId,
+            request.UserId);
         return Task.FromResult(_aiService.StreamRawAsync(dto, ct));
     }
 }

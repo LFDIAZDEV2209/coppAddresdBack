@@ -32,11 +32,25 @@ public sealed class AgentRuntimeSyncService(
             return;
         }
 
+        // La config del backend es un JSON string; el AI Service espera un dict
+        // (validación Pydantic). Se parsea a JsonElement para enviarlo como objeto.
+        var body = new
+        {
+            payload.AgentTypeId,
+            payload.VersionId,
+            payload.VersionNumber,
+            payload.Name,
+            payload.Description,
+            payload.Specialty,
+            payload.IconKey,
+            Config = JsonSerializer.Deserialize<JsonElement>(payload.Config),
+        };
+
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             settings.Value.SyncAgentConfigEndpoint)
         {
-            Content = JsonContent.Create(payload, options: JsonOpts),
+            Content = JsonContent.Create(body, options: JsonOpts),
         };
         request.Headers.Add("X-Internal-Key", internalKey);
 
