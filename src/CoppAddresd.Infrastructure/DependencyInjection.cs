@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditActorContext, HttpAuditActorContext>();
 
         services.AddScoped<IMediaItemRepository, MediaItemRepository>();
+        services.AddScoped<IPatientRepository, PatientRepository>();
 
         AddObjectStorage(services, configuration);
 

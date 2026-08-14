@@ -12,6 +12,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<PatientProfile> PatientProfiles => Set<PatientProfile>();
+    public DbSet<Insurer> Insurers => Set<Insurer>();
+    public DbSet<Allergen> Allergens => Set<Allergen>();
+    public DbSet<Icd10Code> Icd10Codes => Set<Icd10Code>();
+    public DbSet<Medication> Medications => Set<Medication>();
+    public DbSet<PatientDiagnosis> PatientDiagnoses => Set<PatientDiagnosis>();
+    public DbSet<PatientMedication> PatientMedications => Set<PatientMedication>();
+    public DbSet<PatientAllergy> PatientAllergies => Set<PatientAllergy>();
+    public DbSet<VitalSign> VitalSigns => Set<VitalSign>();
     public DbSet<Employee> Employees => Set<Employee>();
 
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
