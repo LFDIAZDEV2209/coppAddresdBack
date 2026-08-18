@@ -51,7 +51,8 @@ public class AiServiceClient : IAiServiceClient
         var payload = BuildChatPayload(request);
         
         var response = await _httpClient.PostAsJsonAsync(_settings.ChatEndpoint, payload, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
         
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
@@ -94,7 +95,8 @@ public class AiServiceClient : IAiServiceClient
 
         using var response = await _httpClient.SendAsync(
             httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
 
         using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var reader = new StreamReader(stream);
@@ -109,6 +111,14 @@ public class AiServiceClient : IAiServiceClient
         }
         
         _logger.LogDebug("Stream completed");
+    }
+
+    private static async Task ThrowForResponseAsync(
+        HttpResponseMessage response,
+        CancellationToken ct)
+    {
+        var detail = await response.Content.ReadAsStringAsync(ct);
+        throw new AiServiceException((int)response.StatusCode, detail);
     }
 
     private SseEvent? ParseSseEvent(StreamChatChunk chunk)

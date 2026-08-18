@@ -80,6 +80,25 @@ Integración con el AI Service (Python) vía HTTP, con soporte para chat síncro
 - AI Service caído → circuit breaker abre, falla rápido sin saturar
 - AI Service vuelve → circuit breaker cierra automáticamente
 
+## Errores y auto-re-sincronización (resiliencia de negocio)
+
+El AI Service responde 404 cuando el agente aún no está en su registry
+(`ai.agent_runtime_configs`): la activación de versión sincroniza la config
+vía `/internal/agents/sync-config`, pero el sync es best-effort y puede
+fallar si el AI Service está caído en ese momento. Para no exponer ese 404
+al cliente como error genérico:
+
+- `AiServiceClient` lanza `AiServiceException` (StatusCode + Detail) en lugar
+  de `EnsureSuccessStatusCode` (`ThrowForResponseAsync`).
+- `ChatCommandHandler` y `StreamChatCommandHandler` detectan el 404 con
+  `AgentTypeId` y reintentan UNA vez tras re-sincronizar la config activa del
+  agente con `AgentRuntimeReconciler.TryResyncAsync` (transaccional: el agente
+  con su `ActiveVersion` se sincroniza al runtime). En streaming el retry se
+  hace sobre el primer `MoveNextAsync` (el enumerador lazy no permite
+  try/catch con yield).
+- `ChatController` traduce `AiServiceException` → 502 con el detalle real del
+  AI Service; cualquier otra excepción → 500 "AI service unavailable".
+
 ## Configuración
 
 ```json
