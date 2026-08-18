@@ -1,11 +1,12 @@
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Domain.Exceptions;
 
 namespace CoppAddresd.Application.Features.Patients;
 
 /// <summary>
 /// Valida las referencias a catálogos de los payloads de paciente (FKs del
 /// perfil + colecciones hijas) en una sola pasada contra la BD. Lanza
-/// <see cref="InvalidOperationException"/> con el detalle si alguna
+/// <see cref="UnprocessableEntityException"/> (HTTP 422) si alguna
 /// referencia no existe o la geografía es inconsistente.
 /// </summary>
 internal static class CatalogGuard
@@ -77,6 +78,6 @@ internal static class CatalogGuard
             errors.Add($"Los alergenos {string.Join(", ", missingAllergens)} no existen en el catálogo.");
 
         if (errors.Count > 0)
-            throw new InvalidOperationException(string.Join(" ", errors));
+            throw new UnprocessableEntityException(string.Join(" ", errors));
     }
 }

@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Exceptions;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -74,7 +75,7 @@ public sealed class CreatePatientCommandHandler(
 
         if (await repository.GetByMedicalRecordNumberAsync(medicalRecordNumber, ct) is not null)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Ya existe un paciente con el número de historia clínica '{medicalRecordNumber}'.");
         }
 
