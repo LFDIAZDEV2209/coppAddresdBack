@@ -7,28 +7,32 @@ namespace CoppAddresd.Application.Features.Patients;
 
 /// <summary>
 /// Crea un paciente (agregado completo: identidad, contacto, cobertura,
-/// estilo de vida, diagnósticos, medicamentos, alergias y vitales).
+/// estilo de vida, diagnósticos, medicamentos, alergias y vitales). Los
+/// catálogos se referencian por id y se validan contra la BD.
 /// </summary>
 public record CreatePatientCommand(
     string? MedicalRecordNumber,
     string FirstName,
     string? MiddleName,
     string LastName,
-    string? DocumentType,
+    Guid? DocumentTypeId,
     string? DocumentNumber,
     DateTime? DateOfBirth,
     string? Gender,
-    string? Ethnicity,
-    string? BloodType,
-    string? Phone,
+    Guid? EthnicityId,
+    Guid? BloodTypeId,
+    string? PhoneCountryCode,
+    string? PhoneNumber,
     string? Email,
     string? Address,
-    string? City,
-    string? State,
+    Guid? CityId,
+    Guid? StateId,
+    Guid? CountryId,
     string? PostalCode,
     string? EmergencyContact,
     Guid? InsurerId,
     string? MemberId,
+    string? MaritalStatus,
     string? SmokingStatus,
     string? AlcoholStatus,
     string? ExerciseLevel,
@@ -45,16 +49,24 @@ public record CreatePatientCommand(
 
 public sealed class CreatePatientCommandHandler(
     IPatientRepository repository,
+    ICatalogRepository catalogs,
     ILogger<CreatePatientCommandHandler> logger) : IRequestHandler<CreatePatientCommand, PatientDto>
 {
     public async Task<PatientDto> Handle(CreatePatientCommand request, CancellationToken ct)
     {
-        if (request.InsurerId is not null &&
-            await repository.GetInsurerByIdAsync(request.InsurerId.Value, ct) is null)
-        {
-            throw new InvalidOperationException(
-                $"La aseguradora {request.InsurerId} no existe en el catálogo.");
-        }
+        await CatalogGuard.ValidateAsync(
+            catalogs,
+            request.DocumentTypeId,
+            request.EthnicityId,
+            request.BloodTypeId,
+            request.CountryId,
+            request.StateId,
+            request.CityId,
+            request.InsurerId,
+            request.Diagnoses,
+            request.Medications,
+            request.Allergies,
+            ct);
 
         var medicalRecordNumber = string.IsNullOrWhiteSpace(request.MedicalRecordNumber)
             ? GenerateMedicalRecordNumber()
@@ -71,40 +83,38 @@ public sealed class CreatePatientCommandHandler(
             Id = Guid.NewGuid(),
             MedicalRecordNumber = medicalRecordNumber,
             FirstName = request.FirstName.Trim(),
-            MiddleName = Normalize(request.MiddleName),
+            MiddleName = PatientOptions.Normalize(request.MiddleName),
             LastName = request.LastName.Trim(),
-            DocumentType = Normalize(request.DocumentType),
-            DocumentNumber = Normalize(request.DocumentNumber),
+            DocumentTypeId = request.DocumentTypeId,
+            DocumentNumber = PatientOptions.Normalize(request.DocumentNumber),
             DateOfBirth = request.DateOfBirth,
-            Gender = Normalize(request.Gender),
-            Ethnicity = Normalize(request.Ethnicity),
-            BloodType = Normalize(request.BloodType),
-            Phone = Normalize(request.Phone),
-            Email = Normalize(request.Email),
-            Address = Normalize(request.Address),
-            City = Normalize(request.City),
-            State = Normalize(request.State),
-            PostalCode = Normalize(request.PostalCode),
-            EmergencyContact = Normalize(request.EmergencyContact),
+            Gender = PatientOptions.Normalize(request.Gender),
+            EthnicityId = request.EthnicityId,
+            BloodTypeId = request.BloodTypeId,
+            PhoneCountryCode = PatientOptions.Normalize(request.PhoneCountryCode),
+            PhoneNumber = PatientOptions.Normalize(request.PhoneNumber),
+            Email = PatientOptions.Normalize(request.Email),
+            Address = PatientOptions.Normalize(request.Address),
+            CityId = request.CityId,
+            StateId = request.StateId,
+            CountryId = request.CountryId,
+            PostalCode = PatientOptions.Normalize(request.PostalCode),
+            EmergencyContact = PatientOptions.Normalize(request.EmergencyContact),
             InsurerId = request.InsurerId,
-            MemberId = Normalize(request.MemberId),
-            SmokingStatus = Normalize(request.SmokingStatus),
-            AlcoholStatus = Normalize(request.AlcoholStatus),
-            ExerciseLevel = Normalize(request.ExerciseLevel),
-            Disability = Normalize(request.Disability),
-            HospitalizationHistory = Normalize(request.HospitalizationHistory),
-            SurgeryHistory = Normalize(request.SurgeryHistory),
+            MemberId = PatientOptions.Normalize(request.MemberId),
+            MaritalStatus = PatientOptions.Normalize(request.MaritalStatus),
+            SmokingStatus = PatientOptions.Normalize(request.SmokingStatus),
+            AlcoholStatus = PatientOptions.Normalize(request.AlcoholStatus),
+            ExerciseLevel = PatientOptions.Normalize(request.ExerciseLevel),
+            Disability = PatientOptions.Normalize(request.Disability),
+            HospitalizationHistory = PatientOptions.Normalize(request.HospitalizationHistory),
+            SurgeryHistory = PatientOptions.Normalize(request.SurgeryHistory),
             Status = string.IsNullOrWhiteSpace(request.Status) ? "Activo" : request.Status.Trim(),
-            Notes = Normalize(request.Notes),
+            Notes = PatientOptions.Normalize(request.Notes),
             CreatedAt = DateTime.UtcNow,
         };
 
-        var resolver = new PatientCatalogResolver(repository);
-        var diagnoses = await resolver.ResolveDiagnosesAsync(request.Diagnoses, ct);
-        var medications = await resolver.ResolveMedicationsAsync(request.Medications, ct);
-        var allergies = await resolver.ResolveAllergiesAsync(request.Allergies, ct);
-
-        ApplyChildren(entity, diagnoses, medications, allergies, request.VitalSigns);
+        ApplyChildren(entity, request.Diagnoses, request.Medications, request.Allergies, request.VitalSigns);
 
         await repository.AddAsync(entity, ct);
 
@@ -120,19 +130,16 @@ public sealed class CreatePatientCommandHandler(
     private static string GenerateMedicalRecordNumber()
         => $"MRN-{Guid.NewGuid():N}"[..14].ToUpperInvariant();
 
-    private static string? Normalize(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
     internal static void ApplyChildren(
         PatientProfile entity,
-        IReadOnlyList<ResolvedDiagnosis> diagnoses,
-        IReadOnlyList<ResolvedMedication> medications,
-        IReadOnlyList<ResolvedAllergy> allergies,
+        IReadOnlyList<DiagnosisInput>? diagnoses,
+        IReadOnlyList<MedicationInput>? medications,
+        IReadOnlyList<AllergyInput>? allergies,
         IReadOnlyList<VitalSignInput>? vitalSigns)
     {
         var now = DateTime.UtcNow;
 
-        entity.Diagnoses = diagnoses
+        entity.Diagnoses = (diagnoses ?? [])
             .Select(d => new PatientDiagnosis
             {
                 Id = Guid.NewGuid(),
@@ -141,7 +148,7 @@ public sealed class CreatePatientCommandHandler(
                 CreatedAt = now,
             }).ToList();
 
-        entity.Medications = medications
+        entity.Medications = (medications ?? [])
             .Select((m, index) => new PatientMedication
             {
                 Id = Guid.NewGuid(),
@@ -151,12 +158,12 @@ public sealed class CreatePatientCommandHandler(
                 CreatedAt = now,
             }).ToList();
 
-        entity.Allergies = allergies
+        entity.Allergies = (allergies ?? [])
             .Select(a => new PatientAllergy
             {
                 Id = Guid.NewGuid(),
                 AllergenId = a.AllergenId,
-                Notes = a.Notes,
+                Notes = PatientOptions.Normalize(a.Notes),
                 CreatedAt = now,
             }).ToList();
 
@@ -164,7 +171,11 @@ public sealed class CreatePatientCommandHandler(
             .Select(v => new VitalSign
             {
                 Id = Guid.NewGuid(),
-                MeasuredAt = v.MeasuredAt ?? now,
+                // El JSON deserializa fechas sin zona (Kind=Unspecified) y
+                // Npgsql exige Utc para timestamptz: se fija la zona aquí.
+                MeasuredAt = v.MeasuredAt is { } measured
+                    ? DateTime.SpecifyKind(measured, DateTimeKind.Utc)
+                    : now,
                 Systolic = v.Systolic,
                 Diastolic = v.Diastolic,
                 HeartRate = v.HeartRate,

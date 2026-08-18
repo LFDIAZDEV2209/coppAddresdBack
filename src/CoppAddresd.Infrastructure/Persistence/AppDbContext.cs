@@ -21,6 +21,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PatientMedication> PatientMedications => Set<PatientMedication>();
     public DbSet<PatientAllergy> PatientAllergies => Set<PatientAllergy>();
     public DbSet<VitalSign> VitalSigns => Set<VitalSign>();
+    public DbSet<Country> Countries => Set<Country>();
+    public DbSet<State> States => Set<State>();
+    public DbSet<City> Cities => Set<City>();
+    public DbSet<PostalCode> PostalCodes => Set<PostalCode>();
+    public DbSet<BloodType> BloodTypes => Set<BloodType>();
+    public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
+    public DbSet<Ethnicity> Ethnicities => Set<Ethnicity>();
     public DbSet<Employee> Employees => Set<Employee>();
 
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
