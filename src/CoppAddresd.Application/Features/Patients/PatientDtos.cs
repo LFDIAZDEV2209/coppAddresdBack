@@ -5,12 +5,14 @@ namespace CoppAddresd.Application.Features.Patients;
 /// <summary>Diagnóstico de un paciente (DTO anidado del agregado).</summary>
 public record DiagnosisDto(
     Guid Id,
+    Guid Icd10CodeId,
     string Icd10Code,
     string? Description,
     bool IsPrimary)
 {
     public static DiagnosisDto FromEntity(PatientDiagnosis entity) => new(
         entity.Id,
+        entity.Icd10CodeId,
         entity.Icd10Code!.Code,
         entity.Icd10Code!.Description,
         entity.IsPrimary);
@@ -19,6 +21,7 @@ public record DiagnosisDto(
 /// <summary>Medicamento de un paciente (DTO anidado del agregado).</summary>
 public record MedicationDto(
     Guid Id,
+    Guid MedicationId,
     string Name,
     string? Ndc,
     string? RxNorm,
@@ -27,6 +30,7 @@ public record MedicationDto(
 {
     public static MedicationDto FromEntity(PatientMedication entity) => new(
         entity.Id,
+        entity.MedicationId,
         entity.Medication!.Name,
         entity.Medication!.Ndc,
         entity.Medication!.RxNorm,
@@ -37,11 +41,13 @@ public record MedicationDto(
 /// <summary>Alergia de un paciente (DTO anidado del agregado).</summary>
 public record AllergyDto(
     Guid Id,
+    Guid AllergenId,
     string Allergen,
     string? Notes)
 {
     public static AllergyDto FromEntity(PatientAllergy entity) => new(
         entity.Id,
+        entity.AllergenId,
         entity.Allergen!.Name,
         entity.Notes);
 }
@@ -77,22 +83,31 @@ public record PatientDto(
     string FirstName,
     string? MiddleName,
     string LastName,
-    string? DocumentType,
+    Guid? DocumentTypeId,
+    string? DocumentTypeName,
     string? DocumentNumber,
     DateTime? DateOfBirth,
     string? Gender,
-    string? Ethnicity,
-    string? BloodType,
-    string? Phone,
+    Guid? EthnicityId,
+    string? EthnicityName,
+    Guid? BloodTypeId,
+    string? BloodTypeName,
+    string? PhoneCountryCode,
+    string? PhoneNumber,
     string? Email,
     string? Address,
-    string? City,
-    string? State,
+    Guid? CityId,
+    string? CityName,
+    Guid? StateId,
+    string? StateCode,
+    Guid? CountryId,
+    string? CountryName,
     string? PostalCode,
     string? EmergencyContact,
     Guid? InsurerId,
     string? InsurerName,
     string? MemberId,
+    string? MaritalStatus,
     string? SmokingStatus,
     string? AlcoholStatus,
     string? ExerciseLevel,
@@ -114,22 +129,31 @@ public record PatientDto(
         entity.FirstName,
         entity.MiddleName,
         entity.LastName,
-        entity.DocumentType,
+        entity.DocumentTypeId,
+        entity.DocumentType?.Name,
         entity.DocumentNumber,
         entity.DateOfBirth,
         entity.Gender,
-        entity.Ethnicity,
-        entity.BloodType,
-        entity.Phone,
+        entity.EthnicityId,
+        entity.Ethnicity?.Name,
+        entity.BloodTypeId,
+        entity.BloodType?.Code,
+        entity.PhoneCountryCode,
+        entity.PhoneNumber,
         entity.Email,
         entity.Address,
-        entity.City,
-        entity.State,
+        entity.CityId,
+        entity.City?.Name,
+        entity.StateId,
+        entity.State?.Code,
+        entity.CountryId,
+        entity.Country?.Name,
         entity.PostalCode,
         entity.EmergencyContact,
         entity.InsurerId,
         entity.Insurer?.Name,
         entity.MemberId,
+        entity.MaritalStatus,
         entity.SmokingStatus,
         entity.AlcoholStatus,
         entity.ExerciseLevel,
@@ -152,11 +176,12 @@ public record PatientListItemDto(
     string? MedicalRecordNumber,
     string FirstName,
     string LastName,
-    string? DocumentType,
+    string? DocumentTypeName,
     string? DocumentNumber,
     DateTime? DateOfBirth,
     string? Gender,
-    string? Phone,
+    string? PhoneCountryCode,
+    string? PhoneNumber,
     string? Email,
     string? InsurerName,
     string Status,
@@ -167,11 +192,12 @@ public record PatientListItemDto(
         entity.MedicalRecordNumber,
         entity.FirstName,
         entity.LastName,
-        entity.DocumentType,
+        entity.DocumentType?.Name,
         entity.DocumentNumber,
         entity.DateOfBirth,
         entity.Gender,
-        entity.Phone,
+        entity.PhoneCountryCode,
+        entity.PhoneNumber,
         entity.Email,
         entity.Insurer?.Name,
         entity.Status,
@@ -198,21 +224,24 @@ public record CreatePatientRequest(
     string FirstName,
     string? MiddleName,
     string LastName,
-    string? DocumentType,
+    Guid? DocumentTypeId,
     string? DocumentNumber,
     DateTime? DateOfBirth,
     string? Gender,
-    string? Ethnicity,
-    string? BloodType,
-    string? Phone,
+    Guid? EthnicityId,
+    Guid? BloodTypeId,
+    string? PhoneCountryCode,
+    string? PhoneNumber,
     string? Email,
     string? Address,
-    string? City,
-    string? State,
+    Guid? CityId,
+    Guid? StateId,
+    Guid? CountryId,
     string? PostalCode,
     string? EmergencyContact,
     Guid? InsurerId,
     string? MemberId,
+    string? MaritalStatus,
     string? SmokingStatus,
     string? AlcoholStatus,
     string? ExerciseLevel,
@@ -232,21 +261,24 @@ public record UpdatePatientRequest(
     string FirstName,
     string? MiddleName,
     string LastName,
-    string? DocumentType,
+    Guid? DocumentTypeId,
     string? DocumentNumber,
     DateTime? DateOfBirth,
     string? Gender,
-    string? Ethnicity,
-    string? BloodType,
-    string? Phone,
+    Guid? EthnicityId,
+    Guid? BloodTypeId,
+    string? PhoneCountryCode,
+    string? PhoneNumber,
     string? Email,
     string? Address,
-    string? City,
-    string? State,
+    Guid? CityId,
+    Guid? StateId,
+    Guid? CountryId,
     string? PostalCode,
     string? EmergencyContact,
     Guid? InsurerId,
     string? MemberId,
+    string? MaritalStatus,
     string? SmokingStatus,
     string? AlcoholStatus,
     string? ExerciseLevel,
@@ -260,14 +292,14 @@ public record UpdatePatientRequest(
     IReadOnlyList<AllergyInput>? Allergies,
     IReadOnlyList<VitalSignInput>? VitalSigns);
 
-/// <summary>Diagnóstico enviado por el cliente.</summary>
-public record DiagnosisInput(string Icd10Code, string? Description, bool IsPrimary = false);
+/// <summary>Diagnóstico enviado por el cliente (referencia al catálogo ICD-10).</summary>
+public record DiagnosisInput(Guid Icd10CodeId, bool IsPrimary = false);
 
-/// <summary>Medicamento enviado por el cliente.</summary>
-public record MedicationInput(string Name, string? Ndc, string? RxNorm, string? DrugClass, string? Frequency);
+/// <summary>Medicamento enviado por el cliente (referencia al catálogo).</summary>
+public record MedicationInput(Guid MedicationId, string? Frequency);
 
-/// <summary>Alergia enviada por el cliente.</summary>
-public record AllergyInput(string Allergen, string? Notes);
+/// <summary>Alergia enviada por el cliente (referencia al catálogo).</summary>
+public record AllergyInput(Guid AllergenId, string? Notes);
 
 /// <summary>Medición de signos vitales enviada por el cliente.</summary>
 public record VitalSignInput(

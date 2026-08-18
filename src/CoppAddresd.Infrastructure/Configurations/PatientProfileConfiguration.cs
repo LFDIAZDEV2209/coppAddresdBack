@@ -38,9 +38,8 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
             .HasColumnName("last_name")
             .HasMaxLength(100);
 
-        builder.Property(x => x.DocumentType)
-            .HasColumnName("document_type")
-            .HasMaxLength(20);
+        builder.Property(x => x.DocumentTypeId)
+            .HasColumnName("document_type_id");
 
         builder.Property(x => x.DocumentNumber)
             .HasColumnName("document_number")
@@ -54,17 +53,19 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
             .HasColumnName("gender")
             .HasMaxLength(10);
 
-        builder.Property(x => x.Ethnicity)
-            .HasColumnName("ethnicity")
-            .HasMaxLength(60);
+        builder.Property(x => x.EthnicityId)
+            .HasColumnName("ethnicity_id");
 
-        builder.Property(x => x.BloodType)
-            .HasColumnName("blood_type")
-            .HasMaxLength(5);
+        builder.Property(x => x.BloodTypeId)
+            .HasColumnName("blood_type_id");
 
-        builder.Property(x => x.Phone)
-            .HasColumnName("phone")
-            .HasMaxLength(30);
+        builder.Property(x => x.PhoneCountryCode)
+            .HasColumnName("phone_country_code")
+            .HasMaxLength(10);
+
+        builder.Property(x => x.PhoneNumber)
+            .HasColumnName("phone_number")
+            .HasMaxLength(20);
 
         builder.Property(x => x.Email)
             .HasColumnName("email")
@@ -74,13 +75,14 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
             .HasColumnName("address")
             .HasMaxLength(200);
 
-        builder.Property(x => x.City)
-            .HasColumnName("city")
-            .HasMaxLength(100);
+        builder.Property(x => x.CityId)
+            .HasColumnName("city_id");
 
-        builder.Property(x => x.State)
-            .HasColumnName("state")
-            .HasMaxLength(2);
+        builder.Property(x => x.StateId)
+            .HasColumnName("state_id");
+
+        builder.Property(x => x.CountryId)
+            .HasColumnName("country_id");
 
         builder.Property(x => x.PostalCode)
             .HasColumnName("postal_code")
@@ -96,6 +98,10 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
         builder.Property(x => x.MemberId)
             .HasColumnName("member_id")
             .HasMaxLength(50);
+
+        builder.Property(x => x.MaritalStatus)
+            .HasColumnName("marital_status")
+            .HasMaxLength(30);
 
         builder.Property(x => x.SmokingStatus)
             .HasColumnName("smoking_status")
@@ -155,6 +161,36 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
             .WithMany(x => x.Patients)
             .HasForeignKey(x => x.InsurerId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.DocumentType)
+            .WithMany()
+            .HasForeignKey(x => x.DocumentTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.Ethnicity)
+            .WithMany()
+            .HasForeignKey(x => x.EthnicityId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.BloodType)
+            .WithMany()
+            .HasForeignKey(x => x.BloodTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.Country)
+            .WithMany()
+            .HasForeignKey(x => x.CountryId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.State)
+            .WithMany()
+            .HasForeignKey(x => x.StateId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasOne(x => x.City)
+            .WithMany()
+            .HasForeignKey(x => x.CityId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasMany(x => x.Diagnoses)
             .WithOne(x => x.Patient)

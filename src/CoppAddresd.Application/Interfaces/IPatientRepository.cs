@@ -34,25 +34,4 @@ public interface IPatientRepository
     Task<IReadOnlyList<Insurer>> ListInsurersAsync(CancellationToken ct = default);
 
     Task<Insurer?> GetInsurerByIdAsync(Guid id, CancellationToken ct = default);
-
-    /// <summary>
-    /// Obtiene (o crea, race-safe vía unique constraint) un alergeno del catálogo
-    /// <c>app.allergens</c>. El nombre se normaliza con trim.
-    /// </summary>
-    Task<Allergen> GetOrCreateAllergenAsync(string name, CancellationToken ct = default);
-
-    /// <summary>
-    /// Obtiene (o crea, race-safe vía unique constraint) un código ICD-10 del
-    /// catálogo <c>app.icd10_codes</c>. La descripción solo se usa al crear la
-    /// fila del catálogo; las filas existentes no se sobrescriben.
-    /// </summary>
-    Task<Icd10Code> GetOrCreateIcd10CodeAsync(string code, string? description, CancellationToken ct = default);
-
-    /// <summary>
-    /// Obtiene (o crea, race-safe vía unique constraint) un medicamento del
-    /// catálogo <c>app.medications</c>. NDC/RxNorm/clase solo se usan al crear
-    /// la fila del catálogo; las filas existentes no se sobrescriben.
-    /// </summary>
-    Task<Medication> GetOrCreateMedicationAsync(
-        string name, string? ndc, string? rxNorm, string? drugClass, CancellationToken ct = default);
 }

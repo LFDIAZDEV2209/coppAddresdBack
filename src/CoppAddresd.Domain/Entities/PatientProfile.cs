@@ -23,8 +23,8 @@ public sealed class PatientProfile
 
     public string LastName { get; set; } = default!;
 
-    /// <summary>Tipo de documento (CC, CE, Pasaporte...).</summary>
-    public string? DocumentType { get; set; }
+    /// <summary>Tipo de documento del catálogo administrativo (FK, orientado a USA).</summary>
+    public Guid? DocumentTypeId { get; set; }
 
     public string? DocumentNumber { get; set; }
 
@@ -33,20 +33,29 @@ public sealed class PatientProfile
     /// <summary>Género declarado (Femenino, Masculino...).</summary>
     public string? Gender { get; set; }
 
-    public string? Ethnicity { get; set; }
+    /// <summary>Etnia del catálogo demográfico (FK, categorías OMB).</summary>
+    public Guid? EthnicityId { get; set; }
 
-    public string? BloodType { get; set; }
+    /// <summary>Grupo sanguíneo del catálogo clínico (FK).</summary>
+    public Guid? BloodTypeId { get; set; }
 
-    public string? Phone { get; set; }
+    /// <summary>Código telefónico E.164 sin '+' (ej. "1" para USA).</summary>
+    public string? PhoneCountryCode { get; set; }
+
+    public string? PhoneNumber { get; set; }
 
     public string? Email { get; set; }
 
     public string? Address { get; set; }
 
-    public string? City { get; set; }
+    /// <summary>Ciudad del catálogo geográfico (FK).</summary>
+    public Guid? CityId { get; set; }
 
-    /// <summary>Código de estado/departamento (ISO-2, ej. CA).</summary>
-    public string? State { get; set; }
+    /// <summary>Estado del catálogo geográfico (FK, ej. CA).</summary>
+    public Guid? StateId { get; set; }
+
+    /// <summary>País del catálogo geográfico (FK).</summary>
+    public Guid? CountryId { get; set; }
 
     public string? PostalCode { get; set; }
 
@@ -57,6 +66,9 @@ public sealed class PatientProfile
 
     /// <summary>Id de afiliado dentro de la aseguradora.</summary>
     public string? MemberId { get; set; }
+
+    /// <summary>Estado civil (Soltero/a, Casado/a...).</summary>
+    public string? MaritalStatus { get; set; }
 
     public string? SmokingStatus { get; set; }
 
@@ -80,6 +92,18 @@ public sealed class PatientProfile
     public DateTime? UpdatedAt { get; set; }
 
     public Insurer? Insurer { get; set; }
+
+    public DocumentType? DocumentType { get; set; }
+
+    public Ethnicity? Ethnicity { get; set; }
+
+    public BloodType? BloodType { get; set; }
+
+    public Country? Country { get; set; }
+
+    public State? State { get; set; }
+
+    public City? City { get; set; }
 
     public ICollection<PatientDiagnosis> Diagnoses { get; set; } = [];
 

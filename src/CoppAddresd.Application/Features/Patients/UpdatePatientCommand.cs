@@ -15,21 +15,24 @@ public record UpdatePatientCommand(
     string FirstName,
     string? MiddleName,
     string LastName,
-    string? DocumentType,
+    Guid? DocumentTypeId,
     string? DocumentNumber,
     DateTime? DateOfBirth,
     string? Gender,
-    string? Ethnicity,
-    string? BloodType,
-    string? Phone,
+    Guid? EthnicityId,
+    Guid? BloodTypeId,
+    string? PhoneCountryCode,
+    string? PhoneNumber,
     string? Email,
     string? Address,
-    string? City,
-    string? State,
+    Guid? CityId,
+    Guid? StateId,
+    Guid? CountryId,
     string? PostalCode,
     string? EmergencyContact,
     Guid? InsurerId,
     string? MemberId,
+    string? MaritalStatus,
     string? SmokingStatus,
     string? AlcoholStatus,
     string? ExerciseLevel,
@@ -46,6 +49,7 @@ public record UpdatePatientCommand(
 
 public sealed class UpdatePatientCommandHandler(
     IPatientRepository repository,
+    ICatalogRepository catalogs,
     ILogger<UpdatePatientCommandHandler> logger) : IRequestHandler<UpdatePatientCommand, PatientDto?>
 {
     public async Task<PatientDto?> Handle(UpdatePatientCommand request, CancellationToken ct)
@@ -54,50 +58,55 @@ public sealed class UpdatePatientCommandHandler(
         if (entity is null)
             return null;
 
-        if (request.InsurerId is not null &&
-            await repository.GetInsurerByIdAsync(request.InsurerId.Value, ct) is null)
-        {
-            throw new InvalidOperationException(
-                $"La aseguradora {request.InsurerId} no existe en el catálogo.");
-        }
+        await CatalogGuard.ValidateAsync(
+            catalogs,
+            request.DocumentTypeId,
+            request.EthnicityId,
+            request.BloodTypeId,
+            request.CountryId,
+            request.StateId,
+            request.CityId,
+            request.InsurerId,
+            request.Diagnoses,
+            request.Medications,
+            request.Allergies,
+            ct);
 
         entity.MedicalRecordNumber = string.IsNullOrWhiteSpace(request.MedicalRecordNumber)
             ? entity.MedicalRecordNumber
             : request.MedicalRecordNumber.Trim();
         entity.FirstName = request.FirstName.Trim();
-        entity.MiddleName = Normalize(request.MiddleName);
+        entity.MiddleName = PatientOptions.Normalize(request.MiddleName);
         entity.LastName = request.LastName.Trim();
-        entity.DocumentType = Normalize(request.DocumentType);
-        entity.DocumentNumber = Normalize(request.DocumentNumber);
+        entity.DocumentTypeId = request.DocumentTypeId;
+        entity.DocumentNumber = PatientOptions.Normalize(request.DocumentNumber);
         entity.DateOfBirth = request.DateOfBirth;
-        entity.Gender = Normalize(request.Gender);
-        entity.Ethnicity = Normalize(request.Ethnicity);
-        entity.BloodType = Normalize(request.BloodType);
-        entity.Phone = Normalize(request.Phone);
-        entity.Email = Normalize(request.Email);
-        entity.Address = Normalize(request.Address);
-        entity.City = Normalize(request.City);
-        entity.State = Normalize(request.State);
-        entity.PostalCode = Normalize(request.PostalCode);
-        entity.EmergencyContact = Normalize(request.EmergencyContact);
+        entity.Gender = PatientOptions.Normalize(request.Gender);
+        entity.EthnicityId = request.EthnicityId;
+        entity.BloodTypeId = request.BloodTypeId;
+        entity.PhoneCountryCode = PatientOptions.Normalize(request.PhoneCountryCode);
+        entity.PhoneNumber = PatientOptions.Normalize(request.PhoneNumber);
+        entity.Email = PatientOptions.Normalize(request.Email);
+        entity.Address = PatientOptions.Normalize(request.Address);
+        entity.CityId = request.CityId;
+        entity.StateId = request.StateId;
+        entity.CountryId = request.CountryId;
+        entity.PostalCode = PatientOptions.Normalize(request.PostalCode);
+        entity.EmergencyContact = PatientOptions.Normalize(request.EmergencyContact);
         entity.InsurerId = request.InsurerId;
-        entity.MemberId = Normalize(request.MemberId);
-        entity.SmokingStatus = Normalize(request.SmokingStatus);
-        entity.AlcoholStatus = Normalize(request.AlcoholStatus);
-        entity.ExerciseLevel = Normalize(request.ExerciseLevel);
-        entity.Disability = Normalize(request.Disability);
-        entity.HospitalizationHistory = Normalize(request.HospitalizationHistory);
-        entity.SurgeryHistory = Normalize(request.SurgeryHistory);
+        entity.MemberId = PatientOptions.Normalize(request.MemberId);
+        entity.MaritalStatus = PatientOptions.Normalize(request.MaritalStatus);
+        entity.SmokingStatus = PatientOptions.Normalize(request.SmokingStatus);
+        entity.AlcoholStatus = PatientOptions.Normalize(request.AlcoholStatus);
+        entity.ExerciseLevel = PatientOptions.Normalize(request.ExerciseLevel);
+        entity.Disability = PatientOptions.Normalize(request.Disability);
+        entity.HospitalizationHistory = PatientOptions.Normalize(request.HospitalizationHistory);
+        entity.SurgeryHistory = PatientOptions.Normalize(request.SurgeryHistory);
         entity.Status = string.IsNullOrWhiteSpace(request.Status) ? entity.Status : request.Status.Trim();
-        entity.Notes = Normalize(request.Notes);
+        entity.Notes = PatientOptions.Normalize(request.Notes);
         entity.UpdatedAt = DateTime.UtcNow;
 
-        var resolver = new PatientCatalogResolver(repository);
-        var diagnoses = await resolver.ResolveDiagnosesAsync(request.Diagnoses, ct);
-        var medications = await resolver.ResolveMedicationsAsync(request.Medications, ct);
-        var allergies = await resolver.ResolveAllergiesAsync(request.Allergies, ct);
-
-        ReplaceChildren(entity, diagnoses, medications, allergies, request.VitalSigns);
+        ReplaceChildren(entity, request.Diagnoses, request.Medications, request.Allergies, request.VitalSigns);
 
         await repository.UpdateAsync(entity, ct);
 
@@ -108,14 +117,11 @@ public sealed class UpdatePatientCommandHandler(
         return updated is null ? null : PatientDto.FromEntity(updated);
     }
 
-    private static string? Normalize(string? value)
-        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-
     private static void ReplaceChildren(
         PatientProfile entity,
-        IReadOnlyList<ResolvedDiagnosis> diagnoses,
-        IReadOnlyList<ResolvedMedication> medications,
-        IReadOnlyList<ResolvedAllergy> allergies,
+        IReadOnlyList<DiagnosisInput>? diagnoses,
+        IReadOnlyList<MedicationInput>? medications,
+        IReadOnlyList<AllergyInput>? allergies,
         IReadOnlyList<VitalSignInput>? vitalSigns)
     {
         // Las colecciones son reemplazadas por completo: EF borra los huérfanos

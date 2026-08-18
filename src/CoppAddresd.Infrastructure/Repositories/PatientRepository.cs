@@ -11,6 +11,12 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         => await dbContext.PatientProfiles
             .AsNoTracking()
             .Include(x => x.Insurer)
+            .Include(x => x.DocumentType)
+            .Include(x => x.Ethnicity)
+            .Include(x => x.BloodType)
+            .Include(x => x.Country)
+            .Include(x => x.State)
+            .Include(x => x.City)
             .Include(x => x.Diagnoses)
                 .ThenInclude(d => d.Icd10Code)
             .Include(x => x.Medications)
@@ -56,6 +62,7 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
 
         var items = await query
             .Include(x => x.Insurer)
+            .Include(x => x.DocumentType)
             .OrderByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)
@@ -134,90 +141,4 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         => await dbContext.Insurers
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-
-    public async Task<Allergen> GetOrCreateAllergenAsync(string name, CancellationToken ct = default)
-    {
-        var normalized = name.Trim();
-        var existing = await dbContext.Allergens
-            .AsNoTracking()
-            .FirstOrDefaultAsync(a => a.Name == normalized, ct);
-        if (existing is not null)
-            return existing;
-
-        // Carrera segura: ON CONFLICT DO NOTHING garantiza unicidad aun con
-        // peticiones concurrentes; el perdedor relee la fila ganadora.
-        var id = Guid.NewGuid();
-        var inserted = await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"""INSERT INTO app.allergens (id, name, created_at) VALUES ({id}, {normalized}, now()) ON CONFLICT (name) DO NOTHING""",
-            ct);
-
-        if (inserted > 0)
-            return new Allergen { Id = id, Name = normalized, CreatedAt = DateTime.UtcNow };
-
-        return await dbContext.Allergens
-                .AsNoTracking()
-                .FirstOrDefaultAsync(a => a.Name == normalized, ct)
-            ?? throw new InvalidOperationException("No se pudo registrar el alergeno en el catálogo.");
-    }
-
-    public async Task<Icd10Code> GetOrCreateIcd10CodeAsync(string code, string? description, CancellationToken ct = default)
-    {
-        var normalized = code.Trim();
-        var existing = await dbContext.Icd10Codes
-            .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Code == normalized, ct);
-        if (existing is not null)
-            return existing;
-
-        var id = Guid.NewGuid();
-        var inserted = await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"""INSERT INTO app.icd10_codes (id, code, description, created_at) VALUES ({id}, {normalized}, {description}, now()) ON CONFLICT (code) DO NOTHING""",
-            ct);
-
-        if (inserted > 0)
-            return new Icd10Code
-            {
-                Id = id,
-                Code = normalized,
-                Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim(),
-                CreatedAt = DateTime.UtcNow,
-            };
-
-        return await dbContext.Icd10Codes
-                .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Code == normalized, ct)
-            ?? throw new InvalidOperationException("No se pudo registrar el código ICD-10 en el catálogo.");
-    }
-
-    public async Task<Medication> GetOrCreateMedicationAsync(
-        string name, string? ndc, string? rxNorm, string? drugClass, CancellationToken ct = default)
-    {
-        var normalized = name.Trim();
-        var existing = await dbContext.Medications
-            .AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Name == normalized, ct);
-        if (existing is not null)
-            return existing;
-
-        var id = Guid.NewGuid();
-        var inserted = await dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"""INSERT INTO app.medications (id, name, ndc, rx_norm, drug_class, created_at) VALUES ({id}, {normalized}, {ndc}, {rxNorm}, {drugClass}, now()) ON CONFLICT (name) DO NOTHING""",
-            ct);
-
-        if (inserted > 0)
-            return new Medication
-            {
-                Id = id,
-                Name = normalized,
-                Ndc = string.IsNullOrWhiteSpace(ndc) ? null : ndc.Trim(),
-                RxNorm = string.IsNullOrWhiteSpace(rxNorm) ? null : rxNorm.Trim(),
-                DrugClass = string.IsNullOrWhiteSpace(drugClass) ? null : drugClass.Trim(),
-                CreatedAt = DateTime.UtcNow,
-            };
-
-        return await dbContext.Medications
-                .AsNoTracking()
-                .FirstOrDefaultAsync(m => m.Name == normalized, ct)
-            ?? throw new InvalidOperationException("No se pudo registrar el medicamento en el catálogo.");
-    }
 }
