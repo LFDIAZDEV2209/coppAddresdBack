@@ -36,6 +36,11 @@ public class ChatController : ControllerBase
             var result = await _mediator.Send(command, ct);
             return Ok(result);
         }
+        catch (CoppAddresd.Application.Common.AiServiceException ex)
+        {
+            _logger.LogError(ex, "AI Service rechazó el chat: {Status}", ex.StatusCode);
+            return StatusCode(502, new { error = ex.Message });
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Chat request failed");
