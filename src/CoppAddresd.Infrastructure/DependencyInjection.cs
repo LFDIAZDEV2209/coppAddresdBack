@@ -5,6 +5,7 @@ using CoppAddresd.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Infrastructure;
 
@@ -34,6 +35,19 @@ public static class DependencyInjection
         services.AddScoped<IPatientRepository, PatientRepository>();
         services.AddScoped<ICatalogRepository, CatalogRepository>();
         services.AddScoped<IAgentCatalogRepository, AgentCatalogRepository>();
+
+        services.AddMemoryCache();
+        services.Configure<PostalCodeLookupOptions>(
+            configuration.GetSection(PostalCodeLookupOptions.SectionName));
+        services.AddHttpClient("Zippopotam", (serviceProvider, client) =>
+        {
+            var lookupOptions = serviceProvider
+                .GetRequiredService<IOptions<PostalCodeLookupOptions>>().Value;
+            client.BaseAddress = new Uri(lookupOptions.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(lookupOptions.TimeoutSeconds);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CoppAddresd/1.0");
+        });
+        services.AddScoped<IPostalCodeLookupService, ZippopotamPostalCodeLookup>();
 
         AddObjectStorage(services, configuration);
 

@@ -38,6 +38,21 @@ public class CatalogsController(IMediator mediator) : ControllerBase
         [FromQuery] Guid cityId, CancellationToken ct)
         => Ok(await mediator.Send(new ListPostalCodesQuery(cityId), ct));
 
+    /// <summary>
+    /// Autocompletado escalable de códigos postales: consulta un proveedor
+    /// externo (Zippopotam, con caché) con fallback a la BD local. Combina
+    /// país + estado + ciudad y/o código postal (parcial o completo).
+    /// </summary>
+    [HttpGet("postal-codes/search")]
+    public async Task<ActionResult<IReadOnlyList<PostalCodeSearchDto>>> SearchPostalCodes(
+        [FromQuery] string? countryCode,
+        [FromQuery] string? stateCode,
+        [FromQuery] string? city,
+        [FromQuery] string? zip,
+        CancellationToken ct)
+        => Ok(await mediator.Send(
+            new SearchPostalCodesQuery(countryCode, stateCode, city, zip), ct));
+
     [HttpGet("blood-types")]
     public async Task<ActionResult<IReadOnlyList<CatalogOptionDto>>> BloodTypes(CancellationToken ct)
         => Ok(await mediator.Send(new ListBloodTypesQuery(), ct));
