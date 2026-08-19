@@ -10,4 +10,4 @@ public record ChatCommand(
     string? UserId = null)
     : IRequest<ChatResult>;
 
-public record ChatResult(string Reply, string ThreadId, string? ExecutionId = null);
+public record ChatResult(string Reply, string ThreadId, string? ExecutionId = null, string? Agent = null);

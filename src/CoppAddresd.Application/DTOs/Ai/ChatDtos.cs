@@ -7,4 +7,4 @@ public record ChatRequest(
     string? AgentTypeId = null,
     string? UserId = null);
 
-public record ChatResponse(string Reply, string ThreadId, string? ExecutionId = null);
+public record ChatResponse(string Reply, string ThreadId, string? ExecutionId = null, string? Agent = null);

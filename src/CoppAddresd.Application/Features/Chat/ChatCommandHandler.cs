@@ -28,7 +28,6 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
     public async Task<ChatResult> Handle(ChatCommand request, CancellationToken ct)
     {
         _logger.LogInformation("Chat request: Agent={Agent}, ThreadId={ThreadId}", request.Agent, request.ThreadId);
-
         var dto = new DTOs.Ai.ChatRequest(
             request.Message,
             request.Agent,
@@ -40,7 +39,7 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
         {
             var result = await _aiService.ChatAsync(dto, ct);
             _logger.LogInformation("Chat response: ThreadId={ThreadId}", result.ThreadId);
-            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId);
+            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId, result.Agent);
         }
         catch (AiServiceException exc) when (exc.StatusCode == 404 && request.AgentTypeId is not null)
         {
@@ -58,7 +57,7 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
 
             var result = await _aiService.ChatAsync(dto, ct);
             _logger.LogInformation("Chat response (tras re-sync): ThreadId={ThreadId}", result.ThreadId);
-            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId);
+            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId, result.Agent);
         }
     }
 }
