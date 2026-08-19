@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Migrations\Seed\AddPatientCatalogs.sql" />
+    <EmbeddedResource Include="Migrations\Seed\AddProfessionalCatalogs.sql" />
   </ItemGroup>
 
   <PropertyGroup>

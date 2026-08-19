@@ -29,6 +29,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
     public DbSet<Ethnicity> Ethnicities => Set<Ethnicity>();
     public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<Organization> Organizations => Set<Organization>();
+    public DbSet<Clinic> Clinics => Set<Clinic>();
+    public DbSet<Location> Locations => Set<Location>();
+    public DbSet<ProfessionalType> ProfessionalTypes => Set<ProfessionalType>();
+    public DbSet<Specialty> Specialties => Set<Specialty>();
+    public DbSet<Professional> Professionals => Set<Professional>();
+    public DbSet<EmployeeClinic> EmployeeClinics => Set<EmployeeClinic>();
+    public DbSet<ProfessionalLocation> ProfessionalLocations => Set<ProfessionalLocation>();
+    public DbSet<ProfessionalSpecialty> ProfessionalSpecialties => Set<ProfessionalSpecialty>();
+    public DbSet<ProfessionalTypeSpecialty> ProfessionalTypeSpecialties => Set<ProfessionalTypeSpecialty>();
+    public DbSet<ProfessionalLicense> ProfessionalLicenses => Set<ProfessionalLicense>();
 
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
 
