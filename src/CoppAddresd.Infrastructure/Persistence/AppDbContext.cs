@@ -38,6 +38,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AgentDocument> AgentDocuments => Set<AgentDocument>();
     public DbSet<AgentInstance> AgentInstances => Set<AgentInstance>();
 
+    public DbSet<Product> Products => Set<Product>();
+    public DbSet<InventoryEntry> InventoryEntries => Set<InventoryEntry>();
+    public DbSet<InventoryEntryLine> InventoryEntryLines => Set<InventoryEntryLine>();
+    public DbSet<InventoryExit> InventoryExits => Set<InventoryExit>();
+    public DbSet<InventoryExitLine> InventoryExitLines => Set<InventoryExitLine>();
+    public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
+    public DbSet<StoreItem> StoreItems => Set<StoreItem>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
