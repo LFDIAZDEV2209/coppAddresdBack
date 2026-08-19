@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Infrastructure.SeedData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -25,5 +26,7 @@ public sealed class InventoryEntryConfiguration : IEntityTypeConfiguration<Inven
 
         builder.HasIndex(x => x.Reference).IsUnique().HasDatabaseName("ix_inventory_entries_reference");
         builder.HasIndex(x => x.Date).HasDatabaseName("ix_inventory_entries_date");
+
+        builder.HasData(InventorySeedData.Entries);
     }
 }

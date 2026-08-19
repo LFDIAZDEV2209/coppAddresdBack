@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Infrastructure.SeedData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -33,5 +34,7 @@ public sealed class InventoryMovementConfiguration : IEntityTypeConfiguration<In
         builder.HasIndex(x => x.DateTime).HasDatabaseName("ix_inventory_movements_date_time");
         builder.HasIndex(x => x.ProductId).HasDatabaseName("ix_inventory_movements_product_id");
         builder.HasIndex(x => x.Direction).HasDatabaseName("ix_inventory_movements_direction");
+
+        builder.HasData(InventorySeedData.Movements);
     }
 }
