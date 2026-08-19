@@ -15,9 +15,10 @@ public sealed class CreateProductCommandValidator : AbstractValidator<CreateProd
         RuleFor(x => x.Presentation).NotEmpty().WithMessage("La presentación es requerida.").MaximumLength(60);
         RuleFor(x => x.Unit).NotEmpty().WithMessage("La unidad es requerida.").MaximumLength(60);
         RuleFor(x => x.Status).Must(ProductStatuses.IsValid).WithMessage("Estado no válido.");
-        RuleFor(x => x.ExpirationDate).GreaterThanOrEqualTo(DateOnly.FromDateTime(DateTime.Today))
-            .When(x => x.ExpirationDate.HasValue)
-            .WithMessage("La fecha de vencimiento no puede ser en el pasado.");
+        RuleFor(x => x.ExpirationDate)
+            .Must(date => date.HasValue && date.Value.Date >= DateTime.Today)
+            .WithMessage("La fecha de vencimiento no puede ser en el pasado.")
+            .When(x => x.ExpirationDate.HasValue);
         RuleFor(x => x.Stock).GreaterThanOrEqualTo(0);
         RuleFor(x => x.MinimumStock).GreaterThanOrEqualTo(0);
         RuleFor(x => x.MaximumStock).GreaterThanOrEqualTo(0);

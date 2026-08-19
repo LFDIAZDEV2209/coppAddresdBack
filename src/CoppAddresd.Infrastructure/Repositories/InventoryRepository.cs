@@ -174,10 +174,10 @@ public sealed class InventoryRepository(AppDbContext dbContext) : IInventoryRepo
             LowStock: products.Count(p => p.Stock > 0 && p.Stock <= p.MinimumStock),
             OutOfStock: products.Count(p => p.Stock == 0),
             ExpiringSoon: products.Count(p => p.ExpirationDate.HasValue &&
-                p.ExpirationDate.Value <= DateOnly.FromDateTime(DateTime.Today.AddDays(90)) &&
-                p.ExpirationDate.Value > DateOnly.FromDateTime(DateTime.Today)),
+                DateOnly.FromDateTime(p.ExpirationDate.Value) <= DateOnly.FromDateTime(DateTime.Today.AddDays(90)) &&
+                DateOnly.FromDateTime(p.ExpirationDate.Value) > DateOnly.FromDateTime(DateTime.Today)),
             Expired: products.Count(p => p.ExpirationDate.HasValue &&
-                p.ExpirationDate.Value < DateOnly.FromDateTime(DateTime.Today)),
+                DateOnly.FromDateTime(p.ExpirationDate.Value) < DateOnly.FromDateTime(DateTime.Today)),
             Entries: entries,
             Exits: exits,
             MovementSeries: [],
@@ -207,7 +207,7 @@ public sealed class InventoryRepository(AppDbContext dbContext) : IInventoryRepo
             ProductId = productId,
             ProductName = product.Name,
             Direction = direction,
-            Quantity: Math.Abs(delta),
+            Quantity = Math.Abs(delta),
             StockBefore = before,
             StockAfter = product.Stock,
             Lot = product.Lot,
