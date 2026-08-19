@@ -23,6 +23,6 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
         var result = await _aiService.ChatAsync(dto, ct);
         
         _logger.LogInformation("Chat response: ThreadId={ThreadId}", result.ThreadId);
-        return new ChatResult(result.Reply, result.ThreadId);
+        return new ChatResult(result.Reply, result.ThreadId, result.Agent);
     }
 }

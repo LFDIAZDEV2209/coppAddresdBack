@@ -20,6 +20,9 @@ public class ChatController : ControllerBase
         _logger = logger;
     }
 
+    // TODO(seguridad): tras conectar el login del front, volver a [Authorize].
+    // Temporal: anónimo para agilizar la integración del chatbot.
+    [AllowAnonymous]
     [HttpPost]
     public async Task<ActionResult<ChatResult>> Chat(
         [FromBody] ChatRequestDto request,
@@ -38,6 +41,9 @@ public class ChatController : ControllerBase
         }
     }
 
+    // TODO(seguridad): tras conectar el login del front, volver a [Authorize].
+    // Temporal: anónimo para agilizar la integración del chatbot.
+    [AllowAnonymous]
     [HttpPost("stream")]
     public async Task Stream(
         [FromBody] ChatRequestDto request,
