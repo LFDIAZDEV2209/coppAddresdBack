@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.Ai;
 using CoppAddresd.Application.Features.Chat;
@@ -20,6 +21,10 @@ public class AiServiceClient : IAiServiceClient
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         PropertyNameCaseInsensitive = true,
+        // Campos opcionales sin valor no se envían: evita que el ai-service
+        // reciba `agent: null` (rechazado con 422 por pydantic) y deja que use
+        // sus defaults (ej: agent -> "base").
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     public AiServiceClient(
@@ -39,12 +44,15 @@ public class AiServiceClient : IAiServiceClient
         _logger.LogDebug("Calling AI service chat endpoint");
         var payload = new { message = request.Message, agent = request.Agent, thread_id = request.ThreadId };
         
-        var response = await _httpClient.PostAsJsonAsync(_settings.ChatEndpoint, payload, ct);
+        // JsonOpts (snake_case + case-insensitive): el payload anónimo con
+        // `thread_id` se serializa acorde al contrato del ai-service y la
+        // respuesta (`answer`/`thread_id`) se deserializa correctamente.
+        var response = await _httpClient.PostAsJsonAsync(_settings.ChatEndpoint, payload, JsonOpts, ct);
         response.EnsureSuccessStatusCode();
         
-        var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(cancellationToken: ct);
+        var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
-        return new ChatResponse(result!.Reply, result.ThreadId);
+        return new ChatResponse(result!.Answer, result.ThreadId, result.Agent);
     }
 
     public async IAsyncEnumerable<SseEvent> StreamChatAsync(
@@ -147,7 +155,9 @@ public class AiServiceClient : IAiServiceClient
         return JsonSerializer.Deserialize<T>(data, JsonOpts);
     }
 
-    private record ChatResponseJson(string Reply, string ThreadId);
+    // El contrato del ai-service responde `answer`, `thread_id` y `agent`
+    // (snake_case), no `reply`/`threadId` (camelCase Web defaults).
+    private record ChatResponseJson(string Answer, string ThreadId, string? Agent);
     private record DoneJson(string ThreadId);
     private record NodeJson(string Node);
     private record MessageJson(string Type, string? Content);
