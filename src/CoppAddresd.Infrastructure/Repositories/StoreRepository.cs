@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Store;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Infrastructure.Persistence;
@@ -7,6 +8,15 @@ namespace CoppAddresd.Infrastructure.Repositories;
 
 public sealed class StoreRepository(AppDbContext dbContext) : IStoreRepository
 {
+    public async Task<StoreStatsDto> GetStatsAsync(CancellationToken ct = default)
+    {
+        var total = await dbContext.StoreItems.CountAsync(ct);
+        var visible = await dbContext.StoreItems.CountAsync(x => x.Status == "Visible", ct);
+        var hidden = await dbContext.StoreItems.CountAsync(x => x.Status == "Oculto", ct);
+        var featured = await dbContext.StoreItems.CountAsync(x => x.Featured && x.Status == "Visible", ct);
+        return new StoreStatsDto(total, visible, hidden, featured);
+    }
+
     public async Task<StoreItem?> GetStoreItemByIdAsync(Guid id, CancellationToken ct = default)
         => await dbContext.StoreItems
             .AsNoTracking()

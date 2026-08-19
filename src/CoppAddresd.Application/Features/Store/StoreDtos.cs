@@ -30,3 +30,5 @@ public record UpdateStoreItemRequest(
 
 public record PaginatedStoreItemsResult(
     IReadOnlyList<StoreItemListItemDto> Data, int Total, int Page, int PageSize, int TotalPages);
+
+public record StoreStatsDto(int Total, int Visible, int Hidden, int Featured);

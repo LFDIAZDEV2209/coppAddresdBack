@@ -5,6 +5,15 @@ using MediatR;
 
 namespace CoppAddresd.Application.Features.Store;
 
+public record GetStoreStatsQuery : IRequest<StoreStatsDto>;
+
+public sealed class GetStoreStatsQueryHandler(
+    IStoreRepository repository) : IRequestHandler<GetStoreStatsQuery, StoreStatsDto>
+{
+    public Task<StoreStatsDto> Handle(GetStoreStatsQuery _, CancellationToken ct)
+        => repository.GetStatsAsync(ct);
+}
+
 // --- List Store Items ---
 
 public record ListStoreItemsQuery(
@@ -70,7 +79,9 @@ public sealed class CreateStoreItemCommandHandler(
         };
 
         await repository.AddStoreItemAsync(item, ct);
-        return StoreItemDto.FromEntity(item);
+        var created = await repository.GetStoreItemByIdAsync(item.Id, ct)
+            ?? throw new InvalidOperationException("No se pudo leer el ítem creado.");
+        return StoreItemDto.FromEntity(created);
     }
 }
 
@@ -93,7 +104,9 @@ public sealed class UpdateStoreItemCommandHandler(
         item.UpdatedAt = DateTime.UtcNow;
 
         await repository.UpdateStoreItemAsync(item, ct);
-        return StoreItemDto.FromEntity(item);
+        var updated = await repository.GetStoreItemByIdAsync(item.Id, ct)
+            ?? throw new InvalidOperationException("No se pudo leer el ítem actualizado.");
+        return StoreItemDto.FromEntity(updated);
     }
 }
 
