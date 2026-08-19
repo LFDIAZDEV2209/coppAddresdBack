@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.Constants;
 using CoppAddresd.Application.Features.Professionals;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -16,6 +18,7 @@ namespace CoppAddresd.Api.Controllers;
 public class EmployeesController(IMediator mediator) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(PermissionCodes.EmployeesView)]
     public async Task<ActionResult<PaginatedEmployeesResult>> List(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -31,6 +34,7 @@ public class EmployeesController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
+    [RequirePermission(PermissionCodes.EmployeesView)]
     public async Task<ActionResult<EmployeeDto>> GetById(Guid id, CancellationToken ct)
     {
         var employee = await mediator.Send(new GetEmployeeQuery(id), ct);
@@ -41,6 +45,7 @@ public class EmployeesController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission(PermissionCodes.EmployeesCreate)]
     public async Task<ActionResult<EmployeeDto>> Create(
         [FromBody] CreateEmployeeRequest request,
         CancellationToken ct)
@@ -68,6 +73,7 @@ public class EmployeesController(IMediator mediator) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(PermissionCodes.EmployeesUpdate)]
     public async Task<ActionResult<EmployeeDto>> Update(
         Guid id,
         [FromBody] UpdateEmployeeRequest request,

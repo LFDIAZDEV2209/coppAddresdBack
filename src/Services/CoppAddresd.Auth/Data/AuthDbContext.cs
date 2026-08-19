@@ -18,6 +18,8 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<UserApplication> UserApplications => Set<UserApplication>();
+    public DbSet<ScopedRoleAssignment> ScopedRoleAssignments => Set<ScopedRoleAssignment>();
+    public DbSet<ScopedPermissionAssignment> ScopedPermissionAssignments => Set<ScopedPermissionAssignment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -171,6 +173,43 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
                 .WithMany(a => a.UserApplications)
                 .HasForeignKey(ua => ua.ApplicationId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<ScopedRoleAssignment>(b =>
+        {
+            b.ToTable("ScopedRoleAssignments", "auth");
+            b.HasKey(s => s.Id);
+            b.Property(s => s.ScopeType).HasMaxLength(20).IsRequired();
+            b.HasIndex(s => s.UserId);
+
+            b.HasOne(s => s.User)
+                .WithMany()
+                .HasForeignKey(s => s.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne(s => s.Role)
+                .WithMany()
+                .HasForeignKey(s => s.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<ScopedPermissionAssignment>(b =>
+        {
+            b.ToTable("ScopedPermissionAssignments", "auth");
+            b.HasKey(s => s.Id);
+            b.Property(s => s.ScopeType).HasMaxLength(20).IsRequired();
+            b.Property(s => s.Effect).HasMaxLength(10).IsRequired();
+            b.HasIndex(s => s.UserId);
+
+            b.HasOne(s => s.User)
+                .WithMany()
+                .HasForeignKey(s => s.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne(s => s.Permission)
+                .WithMany()
+                .HasForeignKey(s => s.PermissionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -1,4 +1,8 @@
 using System.Text;
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.Configuration;
+using CoppAddresd.Api.Context;
+using CoppAddresd.Api.Security;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Common.Behaviors;
 using CoppAddresd.Application.Features.Media;
@@ -7,6 +11,7 @@ using CoppAddresd.Infrastructure.Extensions;
 using CoppAddresd.Infrastructure.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -49,6 +54,19 @@ public static class ApplicationServiceExtensions
             client.BaseAddress = new Uri(aiSettings.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
         });
+
+        // Introspección de permisos scoped hacia el Auth Service.
+        services.Configure<AuthServiceSettings>(
+            configuration.GetSection(AuthServiceSettings.SectionName));
+        services.AddHttpClient<IScopedAuthorizationClient, ScopedAuthorizationClient>((sp, client) =>
+        {
+            var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+            client.BaseAddress = new Uri(authSettings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+            client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+        }).AddResiliencePolicy();
+
+        services.AddScoped<ICurrentContext, CurrentContext>();
 
         return services;
     }
@@ -113,6 +131,11 @@ public static class ApplicationServiceExtensions
         });
 
         services.AddAuthorization();
+
+        // Autorización por permisos (claims) con política por código de permiso:
+        // [RequirePermission("Patients.View")] sin registrar cada política.
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
         return services;
     }

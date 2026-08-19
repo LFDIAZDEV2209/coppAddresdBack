@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.Constants;
 using CoppAddresd.Application.Features.Professionals;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -13,6 +15,7 @@ public class ProfessionalCatalogsController(IMediator mediator) : ControllerBase
 {
     /// <summary>Catálogo de profesiones con sus especialidades válidas.</summary>
     [HttpGet("professional-types")]
+    [RequirePermission(PermissionCodes.OrganizationsView)]
     public async Task<ActionResult<IReadOnlyList<ProfessionalTypeDto>>> ProfessionalTypes(CancellationToken ct)
     {
         var types = await mediator.Send(new ListProfessionalTypesQuery(), ct);
@@ -21,6 +24,7 @@ public class ProfessionalCatalogsController(IMediator mediator) : ControllerBase
 
     /// <summary>Catálogo de especialidades agrupado por categoría.</summary>
     [HttpGet("specialties")]
+    [RequirePermission(PermissionCodes.OrganizationsView)]
     public async Task<ActionResult<IReadOnlyList<SpecialtyDto>>> Specialties(CancellationToken ct)
     {
         var specialties = await mediator.Send(new ListSpecialtiesQuery(), ct);
