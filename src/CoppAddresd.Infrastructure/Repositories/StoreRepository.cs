@@ -21,7 +21,7 @@ public sealed class StoreRepository(AppDbContext dbContext) : IStoreRepository
     public async Task<(IReadOnlyList<StoreItem> Items, int Total)> ListStoreItemsAsync(
         string? status, int page, int pageSize, CancellationToken ct)
     {
-        var query = dbContext.StoreItems
+        IQueryable<StoreItem> query = dbContext.StoreItems
             .AsNoTracking()
             .Include(s => s.Product);
 

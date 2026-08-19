@@ -18,14 +18,14 @@ public sealed class ListMovementsQueryHandler(
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
 
-        var (items, total) = await repository.ListMovementsAsync(
+        var result = await repository.ListMovementsAsync(
             request.Search, request.Direction, page, pageSize, ct);
 
-        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+        var totalPages = Math.Max(1, (int)Math.Ceiling(result.Total / (double)pageSize));
 
         return new PaginatedMovementsResult(
-            items.Select(InventoryMovementDto.FromEntity).ToList(),
-            total, page, pageSize, totalPages);
+            result.Items.Select(InventoryMovementDto.FromEntity).ToList(),
+            result.Total, page, pageSize, totalPages);
     }
 }
 

@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Inventory;
 using CoppAddresd.Domain.Entities;
 
 namespace CoppAddresd.Application.Interfaces;
@@ -26,7 +27,7 @@ public interface IInventoryRepository
     Task<IReadOnlyList<InventoryExit>> ListExitsAsync(int page, int pageSize, CancellationToken ct = default);
 
     // Movements
-    Task<IReadOnlyList<InventoryMovement>> ListMovementsAsync(
+    Task<(IReadOnlyList<InventoryMovement> Items, int Total)> ListMovementsAsync(
         string? search, string? direction, int page, int pageSize, CancellationToken ct = default);
 
     // Analytics
