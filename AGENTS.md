@@ -36,7 +36,10 @@ Schema auth:    14 tablas (Users, Roles, Permissions, Applications, UserApplicat
 Schema app:     10 tablas (patient_profiles → auth.users, insurers, allergens,
                 icd10_codes, medications, patient_diagnoses, patient_medications,
                 patient_allergies, vital_signs)
-Schema erp:     1 tabla (employees → auth.users)
+Schema erp:     12 tablas (organizations → clinics → locations; employees como
+                núcleo HR con extensión clínica 1:0..1 professionals; catálogos
+                professional_types/specialties + puentes N:N + professional_licenses).
+                Plan de evolución del módulo: docs/modules/patients/PLAN.md
 Schema audit:   1 tabla (activity_logs)
 ```
 

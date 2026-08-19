@@ -35,6 +35,8 @@ public static class DependencyInjection
         services.AddScoped<IPatientRepository, PatientRepository>();
         services.AddScoped<ICatalogRepository, CatalogRepository>();
         services.AddScoped<IAgentCatalogRepository, AgentCatalogRepository>();
+        services.AddScoped<IOrganizationRepository, OrganizationRepository>();
+        services.AddScoped<IEmployeeRepository, EmployeeRepository>();
 
         services.AddMemoryCache();
         services.Configure<PostalCodeLookupOptions>(
