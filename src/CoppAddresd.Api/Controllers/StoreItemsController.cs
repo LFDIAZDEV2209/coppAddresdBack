@@ -10,6 +10,10 @@ namespace CoppAddresd.Api.Controllers;
 [Authorize]
 public class ItemsController(IMediator mediator) : ControllerBase
 {
+    [HttpGet("stats")]
+    public async Task<ActionResult<StoreStatsDto>> Stats(CancellationToken ct)
+        => Ok(await mediator.Send(new GetStoreStatsQuery(), ct));
+
     [HttpGet]
     public async Task<ActionResult<PaginatedStoreItemsResult>> List(
         [FromQuery] string? status = null,

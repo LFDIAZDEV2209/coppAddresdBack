@@ -1,9 +1,11 @@
+using CoppAddresd.Application.Features.Store;
 using CoppAddresd.Domain.Entities;
 
 namespace CoppAddresd.Application.Interfaces;
 
 public interface IStoreRepository
 {
+    Task<StoreStatsDto> GetStatsAsync(CancellationToken ct = default);
     Task<StoreItem?> GetStoreItemByIdAsync(Guid id, CancellationToken ct = default);
     Task<StoreItem?> GetStoreItemByProductIdAsync(Guid productId, CancellationToken ct = default);
     Task<(IReadOnlyList<StoreItem> Items, int Total)> ListStoreItemsAsync(
