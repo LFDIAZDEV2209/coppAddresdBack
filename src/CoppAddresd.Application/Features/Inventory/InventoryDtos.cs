@@ -21,11 +21,17 @@ public record ProductDto(
 
 public record ProductListItemDto(
     Guid Id, string Sku, string Name, string ProductType, string Category,
-    int Stock, int MinimumStock, DateTime? ExpirationDate, string Status, decimal UnitCost)
+    string? ActiveIngredient, string Presentation, string? Concentration,
+    string Unit, string? Supplier, string? Manufacturer, string? Lot,
+    DateTime? ExpirationDate, int Stock, int MinimumStock, int MaximumStock,
+    string? Location, string Status, decimal UnitCost, string? Notes)
 {
     public static ProductListItemDto FromEntity(Domain.Entities.Product p) => new(
         p.Id, p.Sku, p.Name, p.ProductType, p.Category,
-        p.Stock, p.MinimumStock, p.ExpirationDate, p.Status, p.UnitCost);
+        p.ActiveIngredient, p.Presentation, p.Concentration,
+        p.Unit, p.Supplier, p.Manufacturer, p.Lot,
+        p.ExpirationDate, p.Stock, p.MinimumStock, p.MaximumStock,
+        p.Location, p.Status, p.UnitCost, p.Notes);
 }
 
 public record CreateProductRequest(
