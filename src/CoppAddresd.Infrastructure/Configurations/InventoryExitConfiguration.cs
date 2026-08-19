@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Infrastructure.SeedData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -23,5 +24,7 @@ public sealed class InventoryExitConfiguration : IEntityTypeConfiguration<Invent
 
         builder.HasIndex(x => x.Reference).IsUnique().HasDatabaseName("ix_inventory_exits_reference");
         builder.HasIndex(x => x.Date).HasDatabaseName("ix_inventory_exits_date");
+
+        builder.HasData(InventorySeedData.Exits);
     }
 }

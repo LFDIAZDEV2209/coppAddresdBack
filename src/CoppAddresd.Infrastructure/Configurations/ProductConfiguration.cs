@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Infrastructure.SeedData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -39,5 +40,7 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.HasIndex(x => x.ProductType).HasDatabaseName("ix_products_product_type");
         builder.HasIndex(x => x.Category).HasDatabaseName("ix_products_category");
         builder.HasIndex(x => x.Status).HasDatabaseName("ix_products_status");
+
+        builder.HasData(InventorySeedData.Products);
     }
 }

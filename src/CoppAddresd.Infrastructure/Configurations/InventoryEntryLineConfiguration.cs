@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Infrastructure.SeedData;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -30,5 +31,7 @@ public sealed class InventoryEntryLineConfiguration : IEntityTypeConfiguration<I
             .WithMany(p => p.EntryLines)
             .HasForeignKey(x => x.ProductId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasData(InventorySeedData.EntryLines);
     }
 }
