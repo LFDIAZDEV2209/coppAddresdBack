@@ -1,6 +1,7 @@
 using CoppAddresd.Application.Features.Inventory;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Enums;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -168,6 +169,28 @@ public sealed class InventoryRepository(AppDbContext dbContext) : IInventoryRepo
         var exits = await dbContext.InventoryExits.AsNoTracking().CountAsync(ct);
         var movements = await dbContext.InventoryMovements.AsNoTracking().ToListAsync(ct);
 
+        // Últimos 7 días: series de entradas/salidas por día.
+        var start = DateOnly.FromDateTime(DateTime.Today.AddDays(-6));
+        var series = new List<MovementSeriesPoint>();
+        for (var i = 0; i < 7; i++)
+        {
+            var day = start.AddDays(i);
+            var dayStart = day.ToDateTime(TimeOnly.MinValue);
+            var dayEnd = dayStart.AddDays(1);
+            var dayMovements = movements.Where(m => m.DateTime >= dayStart && m.DateTime < dayEnd).ToList();
+            series.Add(new MovementSeriesPoint(
+                day.ToString("MMM d"),
+                dayMovements.Count(m => m.Direction == MovementDirections.Entrada),
+                dayMovements.Count(m => m.Direction == MovementDirections.Salida)));
+        }
+
+        var topMoving = movements
+            .GroupBy(m => m.ProductName)
+            .Select(g => new TopMovingProduct(g.Key, g.Sum(m => m.Quantity)))
+            .OrderByDescending(t => t.Quantity)
+            .Take(5)
+            .ToList();
+
         return new InventoryAnalyticsDto(
             TotalValue: products.Sum(p => p.Stock * p.UnitCost),
             ActiveProducts: products.Count(p => p.Status == "Activo"),
@@ -180,8 +203,8 @@ public sealed class InventoryRepository(AppDbContext dbContext) : IInventoryRepo
                 DateOnly.FromDateTime(p.ExpirationDate.Value) < DateOnly.FromDateTime(DateTime.Today)),
             Entries: entries,
             Exits: exits,
-            MovementSeries: [],
-            TopMoving: [],
+            MovementSeries: series,
+            TopMoving: topMoving,
             CategoryValue: products.GroupBy(p => p.Category)
                 .Select(g => new CategoryValue(g.Key, g.Sum(p => p.Stock * p.UnitCost)))
                 .OrderByDescending(c => c.Value)
