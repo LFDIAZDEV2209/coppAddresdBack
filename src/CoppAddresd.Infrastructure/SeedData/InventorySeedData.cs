@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using System.Globalization;
 
 namespace CoppAddresd.Infrastructure.SeedData;
 
@@ -142,7 +143,7 @@ public static class InventorySeedData
     private static InventoryMovement Movement(string id, string dateTime, string productId, string productName, string direction, int quantity, int stockBefore, int stockAfter, string lot, string user, string reason, string reference)
         => new()
         {
-            Id = Guid.Parse(id), DateTime = DateTime.Parse(dateTime), ProductId = Guid.Parse(productId),
+            Id = Guid.Parse(id), DateTime = DateTime.Parse(dateTime, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal), ProductId = Guid.Parse(productId),
             ProductName = productName, Direction = direction, Quantity = quantity,
             StockBefore = stockBefore, StockAfter = stockAfter, Lot = lot, User = user,
             Reason = reason, Reference = reference
