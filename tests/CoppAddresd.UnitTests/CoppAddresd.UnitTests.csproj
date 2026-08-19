@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\CoppAddresd.Api\CoppAddresd.Api.csproj" />
     <ProjectReference Include="..\..\src\CoppAddresd.Application\CoppAddresd.Application.csproj" />
     <ProjectReference Include="..\..\src\CoppAddresd.Domain\CoppAddresd.Domain.csproj" />
   </ItemGroup>

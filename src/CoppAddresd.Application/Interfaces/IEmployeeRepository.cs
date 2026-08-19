@@ -22,6 +22,9 @@ public interface IEmployeeRepository
     /// <summary>Empleado con asignaciones de clínicas y extensión profesional completa.</summary>
     Task<Employee?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>Empleado por usuario de Auth (contexto del JWT), con clínicas + sedes + extensión.</summary>
+    Task<Employee?> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
+
     Task<bool> EmailExistsInOrganizationAsync(Guid organizationId, string email, Guid? excludeEmployeeId = null, CancellationToken ct = default);
 
     Task<Employee> AddAsync(Employee employee, CancellationToken ct = default);

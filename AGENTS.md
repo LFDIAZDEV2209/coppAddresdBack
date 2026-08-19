@@ -32,7 +32,7 @@ Flujo de dependencias hacia adentro, enforceado solo por referencias csproj:
 
 ```sql
 Schema public:  __EFMigrationsHistory (solo)
-Schema auth:    14 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, etc.)
+Schema auth:    16 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, ScopedRoleAssignments, ScopedPermissionAssignments, etc.)
 Schema app:     10 tablas (patient_profiles → auth.users, insurers, allergens,
                 icd10_codes, medications, patient_diagnoses, patient_medications,
                 patient_allergies, vital_signs)
@@ -84,7 +84,7 @@ POST   /api/permissions/{id}/assign-to-user   # Asignar a usuario [RequirePermis
 DELETE /api/permissions/{id}/assign-to-user   # Remover de usuario [RequirePermission("Permissions.Assign")]
 ```
 
-**Permisos seedeados** (15 total): `Users.View/Create/Update/Delete`, `Roles.View/Create/Update/Delete/Assign`, `Permissions.View/Assign`, `Agents.View/Create/Update/Delete`.
+**Permisos seedeados** (47 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`. Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Physician`, `Nutritionist`, `Psychologist`, `Nurse`, `Receptionist`, `CareCoordinator` (asignables con scope de clínica/org).
 
 **Credenciales admin**: `admin@coppaddresd.com` / `Test@1234` (configurable en `appsettings.json` → `Auth` section).
 

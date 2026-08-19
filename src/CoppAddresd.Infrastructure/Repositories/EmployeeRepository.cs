@@ -62,11 +62,19 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
     }
 
     public async Task<Employee?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.Employees
+        => await QueryDetail().FirstOrDefaultAsync(x => x.Id == id, ct);
+
+    public async Task<Employee?> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
+        => await QueryDetail().FirstOrDefaultAsync(x => x.UserId == userId, ct);
+
+    private IQueryable<Employee> QueryDetail()
+        => dbContext.Employees
             .AsNoTracking()
             .Include(x => x.Organization)
             .Include(x => x.ClinicAssignments)
                 .ThenInclude(a => a.Clinic)
+            .Include(x => x.ClinicAssignments)
+                .ThenInclude(a => a.Clinic.Locations)
             .Include(x => x.Professional)
                 .ThenInclude(p => p!.ProfessionalType)
             .Include(x => x.Professional)
@@ -74,8 +82,7 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
                     .ThenInclude(s => s.Specialty)
             .Include(x => x.Professional)
                 .ThenInclude(p => p!.Licenses)
-                    .ThenInclude(l => l.Specialty)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+                    .ThenInclude(l => l.Specialty);
 
     public async Task<bool> EmailExistsInOrganizationAsync(
         Guid organizationId,

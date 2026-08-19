@@ -1,9 +1,10 @@
 # Módulo de Pacientes / Profesionales — Documentación
 
-Estado: **Fase 1 completada** (domain foundation). El plan maestro vive en
-[`PLAN.md`](PLAN.md) — leer antes de trabajar en este módulo.
+Estado: **Fases 1 y 2 completadas** (domain foundation + authorization con
+scopes). El plan maestro vive en [`PLAN.md`](PLAN.md) — leer antes de trabajar
+en este módulo.
 
-## Alcance actual (Fase 1)
+## Alcance actual (Fase 1 + Fase 2)
 
 ### Estructura organizacional (schema `erp`)
 
@@ -64,6 +65,32 @@ GET    /api/v1/employees/{id}            # detalle con clínicas + extensión pr
 POST   /api/v1/employees                 # crear (extensión profesional opcional)
 PUT    /api/v1/employees/{id}            # PATCH semántico; listas = sync total
 ```
+
+## Autorización por contexto (Fase 2)
+
+Modelo scoped sobre el Auth Service (ver `PLAN.md` → Decisiones):
+
+```
+User
+  ├─ Roles globales (claims JWT) → Permissions globales
+  └─ Roles scoped (auth."ScopedRoleAssignments") → Permissions por clínica/org
+     └─ Overrides Grant/Deny (auth."ScopedPermissionAssignments") — excepciones
+```
+
+- **Cadena de scopes**: Clinic → Organization → Global (más específico gana).
+  La construye la API (conoce la jerarquía de clínicas) y la envía al Auth.
+- **Introspección**: `GET /api/auth/internal/authorize` y
+  `/api/auth/internal/scoped-permissions` (header `X-Internal-Key`). La API
+  cachea en memoria keyed por `security_stamp`: al cambiar una asignación el
+  Auth invalida el stamp → cache miss natural; TTL = vida del token (15 min).
+- **Contexto activo**: header `X-Clinic-Id`/`X-Organization-Id` por request;
+  `ICurrentContext` combina permiso global (claims) + scoped (introspección).
+- **Switcher**: `GET /api/v1/me/context` devuelve org, clínicas (con sedes) y
+  permisos efectivos por clínica — alimenta el selector del frontend.
+- **Gestión**: `POST/DELETE /api/users/{id}/scoped/roles` y
+  `/scoped/permissions` (exigen Roles.Assign / Permissions.Assign).
+- **Endpoints de la API** ahora exigen permiso global vía `[RequirePermission]`
+  (policy por código): Organizations.*, Clinics.*, Locations.*, Employees.*.
 
 ## Reglas del módulo
 

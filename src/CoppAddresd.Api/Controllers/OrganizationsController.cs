@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.Constants;
 using CoppAddresd.Application.Features.Professionals;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -17,6 +19,7 @@ public class OrganizationsController(IMediator mediator) : ControllerBase
 {
     /// <summary>Árbol completo organización → clínicas → sedes.</summary>
     [HttpGet("tree")]
+    [RequirePermission(PermissionCodes.OrganizationsView)]
     public async Task<ActionResult<IReadOnlyList<OrganizationTreeNodeDto>>> Tree(CancellationToken ct)
     {
         var tree = await mediator.Send(new ListOrganizationTreeQuery(), ct);
@@ -24,6 +27,7 @@ public class OrganizationsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission(PermissionCodes.OrganizationsCreate)]
     public async Task<ActionResult<OrganizationDto>> Create(
         [FromBody] CreateOrganizationRequest request,
         CancellationToken ct)
@@ -33,6 +37,7 @@ public class OrganizationsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(PermissionCodes.OrganizationsUpdate)]
     public async Task<ActionResult<OrganizationDto>> Update(
         Guid id,
         [FromBody] UpdateOrganizationRequest request,
@@ -47,6 +52,7 @@ public class OrganizationsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("clinics")]
+    [RequirePermission(PermissionCodes.ClinicsCreate)]
     public async Task<ActionResult<ClinicDto>> CreateClinic(
         [FromBody] CreateClinicRequest request,
         CancellationToken ct)
@@ -57,6 +63,7 @@ public class OrganizationsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPut("clinics/{id:guid}")]
+    [RequirePermission(PermissionCodes.ClinicsUpdate)]
     public async Task<ActionResult<ClinicDto>> UpdateClinic(
         Guid id,
         [FromBody] UpdateClinicRequest request,
@@ -71,6 +78,7 @@ public class OrganizationsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("locations")]
+    [RequirePermission(PermissionCodes.LocationsCreate)]
     public async Task<ActionResult<LocationDto>> CreateLocation(
         [FromBody] CreateLocationRequest request,
         CancellationToken ct)
@@ -89,6 +97,7 @@ public class OrganizationsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPut("locations/{id:guid}")]
+    [RequirePermission(PermissionCodes.LocationsUpdate)]
     public async Task<ActionResult<LocationDto>> UpdateLocation(
         Guid id,
         [FromBody] UpdateLocationRequest request,
