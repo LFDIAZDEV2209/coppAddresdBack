@@ -1617,7 +1617,7 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.HasIndex("CurrentVersionId")
                         .HasDatabaseName("ix_legal_documents_current_version_id");
 
-                    b.ToTable("legal_documents", "app");
+                    b.ToTable("legal_documents", "erp");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.LegalDocumentVersion", b =>
@@ -1666,7 +1666,7 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_legal_document_versions_document_version");
 
-                    b.ToTable("legal_document_versions", "app");
+                    b.ToTable("legal_document_versions", "erp");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Location", b =>
