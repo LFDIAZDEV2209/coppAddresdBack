@@ -2,6 +2,7 @@ using System.Text;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Configuration;
 using CoppAddresd.Api.Context;
+using CoppAddresd.Api.Handlers;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Common.Behaviors;
@@ -39,21 +40,22 @@ public static class ApplicationServiceExtensions
         services.AddValidatorsFromAssembly(typeof(CreateMediaItemCommand).Assembly);
 
         services.AddHttpClient<IAiServiceClient, AiServiceClient>()
-            .AddResiliencePolicy();
+            .AddResiliencePolicy()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
         {
             var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
             client.BaseAddress = new Uri(aiSettings.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
-        });
+        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddHttpClient<IAgentExecutionsQueryService, AgentExecutionsQueryService>((sp, client) =>
         {
             var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
             client.BaseAddress = new Uri(aiSettings.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
-        });
+        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         // Introspección de permisos scoped hacia el Auth Service.
         services.Configure<AuthServiceSettings>(
