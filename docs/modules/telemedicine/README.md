@@ -8,9 +8,10 @@ Fases implementadas:
 - **Fase 2 — IVideoProvider + Twilio**: contrato agnóstico en Application, `TwilioVideoProvider` en Infrastructure (SDK oficial validado contra la cuenta real), validación de firma de webhook, DI config-driven.
 - **Fase 3 — Requests + Appointments + agendamiento**: repositorios del agregado (cita + solicitud), casos de uso MediatR (crear solicitud, confirmar → cita, agendar directo, cancelar, reprogramar), agenda del profesional, validadores, controladores `/api/v1/telemedicine/*`. **Anti doble reserva real en BD**: constraint de exclusión GiST sobre solapamiento de citas activas + índice único parcial de inicio + índice único sobre `request_id` (migración `AddAppointmentOverlapExclusion`). Datos de referencia (profesionales/pacientes/especialidades/sedes) validados contra el backend vía internal endpoints.
 - **Fase 4 — Salas y sesiones**: join-token (creación idempotente de sala Twilio dentro de la ventana), consulta de sala con participantes en vivo, `session/start` y `session/end` (cita `Confirmed→InProgress→Completed`), webhooks del proveedor (firma validada, **idempotentes** por clave única en `tele.telemedicine_webhook_events`, procesamiento atómico), resolución de identidad user→profesional/paciente (internal endpoints `by-user`), permiso `Telemedicine.SessionsManage`. Detalle en la sección Fase 4.
+- **Fase 5 — Encuentro clínico (espacio clínico durante la consulta)**: consulta/guardado/finalización del registro clínico de la cita. `clinical_data` jsonb tipado y extensible + `notes`. Creación perezosa idempotente (1:1 cita→encuentro). Autorización por identidad del profesional o supervisor (`SessionsManage`); el paciente NO accede (PHI). Estados `Draft→Completed` (inmutable) y `Cancelled` (al cancelar una cita con borrador). Detalle en la sección Fase 5.
 - **Fase 8 (adelantada) — Permisos `Telemedicine.*`**: siembra en el Auth Service (`PermissionCodes` + `RoleSeeder`), autorización por claim `permission` en el microservicio (mismo mecanismo que el backend).
 
-Pendiente: Fase 5 (encuentro clínico), Fase 6 (alertas), Fase 7 (datos de referencia vía backend — parcialmente hecho en Fase 3: faltan endpoints de listado/maestros para UI), Fase 9-10 (frontend), Fase 11-12 (testing/hardening).
+Pendiente: Fase 6 (alertas), Fase 7 (datos de referencia vía backend — parcialmente hecho en Fase 3: faltan endpoints de listado/maestros para UI), Fase 9-10 (frontend), Fase 11-12 (testing/hardening). También: `room-ended` sin sesión → NoShow queda para fase futura.
 
 ## Arquitectura
 
@@ -148,7 +149,64 @@ GET /api/v1/internal/telemedicine/patients/by-user/{userId}        # user → pa
 - **Traducción de conflictos EF**: `SaveChangesAsync` envuelve la `PostgresException` en `DbUpdateException`; los repositorios (citas y salas) traducen 23505/23P01 y `DbUpdateConcurrencyException` a 409 vía el helper `DbUpdateExceptionExtensions`. (Latente de Fase 3 corregido.)
 - **Transacciones manuales**: con `EnableRetryOnFailure` (NpgsqlRetryingExecutionStrategy) deben ejecutarse vía `CreateExecutionStrategy()` (`TelemedicineUnitOfWork`), patrón del proyecto.
 
-## Configuración
+## Fase 5 — Encuentro clínico (espacio clínico durante la consulta)
+
+El registro clínico de la cita. **Separación de responsabilidades**: la información
+operativa vive en la cita/sesión/sala; la información clínica vive SOLO en el
+encuentro (`tele.clinical_encounters`, creada en Fase 1). La cita tiene a lo sumo
+un encuentro (índice único en `appointment_id`).
+
+### API
+
+```text
+GET  /api/v1/telemedicine/appointments/{id}/encounter        # registro clínico (404 si no existe aún)
+PUT  /api/v1/telemedicine/appointments/{id}/encounter        # guarda borrador (crea si no existe; crea/actualiza)
+POST /api/v1/telemedicine/appointments/{id}/encounter/complete  # finaliza Draft→Completed (acepta datos finales)
+```
+
+La autorización se resuelve en el handler a partir del JWT (igual que las sesiones):
+solo el **profesional de la cita** (identidad) o un **supervisor** con
+`Telemedicine.SessionsManage`. **El paciente NO accede** a datos clínicos (PHI).
+Por eso los endpoints no llevan `[RequirePermission]`.
+
+### Reglas de negocio
+
+- **Creación perezosa e idempotente**: el primer `PUT` crea el encuentro `Draft`;
+  los siguientes lo actualizan. La carrera entre dos guardados concurrentes se
+  resuelve con el índice único (el perdedor devuelve el existente y aplica sus
+  cambios sobre él — `EncounterRepository.AddAsync`).
+- **Documentar solo durante la consulta**: la cita debe estar `InProgress` o
+  `Completed` (se puede completar la nota después de finalizar). Antes de iniciar
+  o con la cita cancelada/no-show → 409.
+- **Máquina de estados** `Draft → Completed` (final): `PUT` sobre un encuentro
+  `Completed` → 409 (registro clínico inmutable). `POST complete` es idempotente
+  (sobre un `Completed` devuelve el existente, 200).
+- **Completar exige contenido mínimo**: al menos una nota o un campo clínico
+  estructurado → 409 si está vacío.
+- **Integridad al cancelar la cita**: un borrador (`Draft`) se cancela; un
+  registro `Completed` se preserva (la consulta ocurrió).
+- **Datos extensibles**: `clinical_data` jsonb con núcleo TIPADO
+  (`ClinicalDataDto`: MotivoConsulta, Evaluacion, Diagnostico, Plan, Indicaciones,
+  Observaciones, Seguimiento) serializado en camelCase. El ERP puede ampliar el
+  esquema agregando campos al record sin romper (el jsonb es tolerante a campos
+  desconocidos). `notes` = nota libre (varchar 4000).
+- **Vínculo a sesión**: si hay una sesión activa al guardar, se asigna `session_id`.
+
+### Decisiones (Fase 5)
+
+- **Acceso de supervisión vía `SessionsManage`** (no un permiso dedicado
+  `Telemedicine.ClinicalRecords*`): consistente con Fase 4 y mínimo privilegio
+  (solo el profesional + supervisores clínicos). Si el dominio exige separar el
+  acceso clínico del operativo, se agrega un permiso dedicado en una fase futura
+  sin romper (la identidad sigue siendo la vía principal).
+- **Encuentro accesible solo al profesional/supervisor** — el paciente (que sí
+  participa de la sala) NO ve el registro clínico.
+- **Sin `xmin` en el encuentro** (a diferencia de la cita): escritor único (el
+  profesional), riesgo bajo. El `UpdatedAt` da trazabilidad de cambios.
+- **Sin auditoría de cambios clínicos en `tele.`**: el sistema de auditoría por
+  triggers es del backend (schema `audit`); pendiente para hardening (Fase 11-12).
+
+
 
 - `Twilio` (gitignoreado): `AccountSid`, `ApiKeySid`, `ApiKeySecret` (key **región US1**), `AuthToken` (para firma de webhooks), `ValidateWebhookSignature` (`false` solo dev).
 - Gotcha SDK: `TwilioClient.Init(apiKeySid, apiKeySecret, accountSid)` — el orden es (username=ApiKeySid, password=ApiKeySecret, accountSid), NO (accountSid, apiKey, secret).

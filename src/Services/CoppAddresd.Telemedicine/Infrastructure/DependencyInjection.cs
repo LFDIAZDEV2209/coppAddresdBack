@@ -45,6 +45,7 @@ public static class DependencyInjection
         services.AddScoped<IAppointmentRepository, AppointmentRepository>();
         services.AddScoped<IRequestRepository, RequestRepository>();
         services.AddScoped<IRoomRepository, RoomRepository>();
+        services.AddScoped<IEncounterRepository, EncounterRepository>();
         services.AddScoped<ITelemedicineUnitOfWork, TelemedicineUnitOfWork>();
 
         services.Configure<Application.Configuration.TelemedicineOptions>(
