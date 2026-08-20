@@ -72,6 +72,21 @@ public class EmployeesController(IMediator mediator) : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = employee.Id }, employee);
     }
 
+    /// <summary>
+    /// Invita al empleado: crea su usuario en el Auth Service y le envía el
+    /// enlace de primer acceso. En dev (email provider Log) la respuesta trae
+    /// el enlace; en producción llega solo por correo.
+    /// </summary>
+    [HttpPost("{id:guid}/invite")]
+    [RequirePermission(PermissionCodes.EmployeesCreate)]
+    public async Task<ActionResult<InviteEmployeeResult>> Invite(Guid id, CancellationToken ct)
+    {
+        var invitedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var result = await mediator.Send(
+            new InviteEmployeeCommand(id, Guid.TryParse(invitedBy, out var caller) ? caller : null), ct);
+        return Ok(result);
+    }
+
     [HttpPut("{id:guid}")]
     [RequirePermission(PermissionCodes.EmployeesUpdate)]
     public async Task<ActionResult<EmployeeDto>> Update(

@@ -14,6 +14,8 @@ multi-organización, multi-clínica, multi-sede, con permisos por contexto.
 | 0 — Discovery | Diagnóstico completo del módulo actual | ✅ Completado |
 | 1 — Domain foundation | organizations, clinics, locations, professional types, specialties, employees + extensión professionals, licencias, seeds | ✅ Completado |
 | 2 — Authorization con scopes | Tablas auth scoped, introspección, políticas API, switcher de contexto | ✅ Completado |
+| 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado |
+| 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado |
 | 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ⏳ |
 | 4 — Patient scoping | clinic_id/location_id, soft delete, created_by/updated_by, filtros por contexto, página de detalle | ⏳ |
 | 5 — Documents | Repositorio documental + upload UI | ⏳ |
