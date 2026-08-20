@@ -32,11 +32,14 @@ public static class DependencyInjection
         services.AddScoped<IAuditActorContext, HttpAuditActorContext>();
 
         services.AddScoped<IMediaItemRepository, MediaItemRepository>();
+services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IPatientRepository, PatientRepository>();
         services.AddScoped<ICatalogRepository, CatalogRepository>();
         services.AddScoped<IAgentCatalogRepository, AgentCatalogRepository>();
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();
         services.AddScoped<IEmployeeRepository, EmployeeRepository>();
+        services.AddScoped<IInventoryRepository, InventoryRepository>();
+        services.AddScoped<IStoreRepository, StoreRepository>();
 
         services.AddMemoryCache();
         services.Configure<PostalCodeLookupOptions>(

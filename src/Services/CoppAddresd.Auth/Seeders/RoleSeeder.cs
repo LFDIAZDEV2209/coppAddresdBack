@@ -82,8 +82,7 @@ public static class RoleSeeder
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate, PermissionCodes.PatientsDelete,
                 PermissionCodes.PatientsExport, PermissionCodes.PatientsBulkUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload,
-                PermissionCodes.DocumentsDelete,
+                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.DocumentsDelete,
                 PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
             ]),
@@ -98,8 +97,7 @@ public static class RoleSeeder
                 PermissionCodes.ProfessionalsUpdate,
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload,
-                PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
             ]),
         ("ClinicalDirector", "Dirección clínica: supervisa historiales y profesionales",
@@ -115,8 +113,7 @@ public static class RoleSeeder
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload,
-                PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
             ]),
@@ -124,8 +121,7 @@ public static class RoleSeeder
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload,
-                PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
             ]),
@@ -133,23 +129,20 @@ public static class RoleSeeder
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload,
-                PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
             ]),
         ("Nurse", "Enfermería: soporte clínico y registro",
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload,
-                PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
             ]),
         ("Receptionist", "Recepción: agenda, registro de pacientes y documentos",
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload,
-                PermissionCodes.ProfessionalsView,
+                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ProfessionalsView,
             ]),
         ("CareCoordinator", "Coordinación de cuidados: seguimiento del paciente",
             [
@@ -160,3 +153,5 @@ public static class RoleSeeder
             ]),
     ];
 }
+
+

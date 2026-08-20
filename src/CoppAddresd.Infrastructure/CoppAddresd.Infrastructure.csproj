@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\CoppAddresd.Application\CoppAddresd.Application.csproj" />
@@ -20,6 +20,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Migrations\Seed\AddPatientCatalogs.sql" />
     <EmbeddedResource Include="Migrations\Seed\AddProfessionalCatalogs.sql" />
+  <EmbeddedResource Include="Migrations\Seed\AddDocumentCatalogs.sql" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -29,3 +30,5 @@
   </PropertyGroup>
 
 </Project>
+
+

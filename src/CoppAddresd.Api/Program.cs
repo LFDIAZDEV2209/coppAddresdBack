@@ -13,9 +13,15 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
-builder.Services.AddSingleton(new StorageSignatureService(
-    builder.Configuration["Storage:SignatureKey"]
-        ?? "coppaddresd-storage-signature-dev-key-change-in-prod"));
+// Prohibido un valor por defecto de firma en el código: la clave debe venir
+// de configuración segura (appsettings gitignoreado / variables de entorno /
+// secrets manager). Sin ella, falla al arrancar (fail-fast, sin secretos en
+// el repositorio).
+var storageSignatureKey = builder.Configuration["Storage:SignatureKey"]
+    ?? throw new InvalidOperationException(
+        "Storage:SignatureKey no configurado. Define el secreto en appsettings o variables de entorno.");
+
+builder.Services.AddSingleton(new StorageSignatureService(storageSignatureKey));
 
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
