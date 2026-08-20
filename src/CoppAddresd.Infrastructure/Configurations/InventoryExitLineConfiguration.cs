@@ -9,7 +9,7 @@ public sealed class InventoryExitLineConfiguration : IEntityTypeConfiguration<In
 {
     public void Configure(EntityTypeBuilder<InventoryExitLine> builder)
     {
-        builder.ToTable("inventory_exit_lines", "inventory");
+        builder.ToTable("inventory_exit_lines", "erp");
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
