@@ -20,4 +20,7 @@ public interface IAuthInvitationsClient
         string firstName,
         string lastName,
         CancellationToken ct = default);
+
+    /// <summary>Revoca la invitación pendiente (compensación del flujo de creación).</summary>
+    Task RevokeAsync(Guid invitationId, CancellationToken ct = default);
 }

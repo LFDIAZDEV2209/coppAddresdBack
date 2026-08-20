@@ -50,4 +50,21 @@ public class AuthInvitationsClient(
                 ? link.GetString()
                 : null);
     }
+
+    public async Task RevokeAsync(Guid invitationId, CancellationToken ct = default)
+    {
+        var response = await httpClient.PostAsync(
+            $"/api/auth/internal/invitations/{invitationId}/revoke", null, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            logger.LogError("Auth revocación falló: {Status} {Body}",
+                (int)response.StatusCode, body);
+            throw new HttpRequestException(
+                $"El Auth Service rechazó la revocación ({response.StatusCode}).",
+                null,
+                response.StatusCode);
+        }
+    }
 }

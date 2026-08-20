@@ -15,9 +15,10 @@ multi-organización, multi-clínica, multi-sede, con permisos por contexto.
 | 0 — Discovery | Diagnóstico completo del módulo actual | ✅ Completado |
 | 1 — Domain foundation | organizations, clinics, locations, professional types, specialties, employees + extensión professionals, licencias, seeds | ✅ Completado |
 | 2 — Authorization con scopes | Tablas auth scoped, introspección, políticas API, switcher de contexto | ✅ Completado (backend) — UX de gestión pendiente |
-| 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado (backend + wizard) — UX admin pendiente |
+| 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado (backend + wizard + **UX admin**: wizard de creación, orquestación con compensación, gestión de scopes por clínica, detalle) |
 | 4 — Patient scoping | clinic_id/location_id, soft delete, created_by/updated_by, filtros por contexto, página de detalle | ✅ Completado |
-| 5 — Documents | Repositorio documental + upload UI + **storage S3** | ✅ Backend + S3 completo — tab de documentos en frontend pendiente |
+| 5 — Documents | Repositorio documental + upload UI + **storage S3** | ✅ Backend + S3 completo — tab de documentos en frontend y docs de profesionales pendientes |
+| 5b — Seed MediQuer | Org `MediQuer Health` → 2-3 clínicas → sedes + scoped assignments de ejemplo (caso clínica A vs B) | ⏳ Existe org/clínica/sede mínima (1/1/1); expandir |
 | 6 — Clinical history | encounters, clinical_notes, measurements (IMC derivado), goals | ⏳ |
 | 7 — Appointments + Prescriptions reales | Reemplazo de mocks | ⏳ |
 | 8 — Bulk operations | Jobs infra, import/export, acciones masivas (pacientes y profesionales) | ⏳ |
@@ -41,6 +42,9 @@ multi-organización, multi-clínica, multi-sede, con permisos por contexto.
 | IMC y derivados | Derivados en lectura (DTO), no almacenados | Regla de normalización: no columnas calculadas sincronizadas a mano |
 | Notas clínicas | Append-only con enmiendas | Estándar de registros médicos |
 | Soft delete | Solo datos clínicos/directorio; hard delete administrativo | Trazabilidad y requerimientos PHI |
+| Creación de profesional con scopes | El ERP **orquesta**: crea/actualiza `erp.employee_clinics` (asignación) y llama los endpoints scoped del Auth (`POST /api/users/{id}/scoped/roles` y `/scoped/permissions`) en la misma operación | La asignación (erp) y el permiso (auth) viven en dominios distintos; el wizard administrativo debe ejecutarlas de forma atómica (transacción en erp + compensación si el Auth falla) |
+| Documentos de profesionales | `documents.employee_id` nullable (además de `patient_id`), misma infraestructura de storage | Extensión natural del repositorio documental sin polimorfismo mágico ni tablas genéricas; índice por owner |
+| Auto-gestión del profesional | El profesional edita su propio perfil (bio, especialidades, licencias, foto) vía `PUT /employees/{id}/profile`; el admin solo crea datos mínimos | Requisito explícito: onboarding autogestionable, no formularios gigantes del admin |
 
 ## Modelo de datos objetivo (resumen)
 
@@ -58,7 +62,7 @@ erp.employees 1:1 auth.users (nullable hasta invitación)
 app.patient_profiles N─1 erp.clinics / erp.locations (clinic_id/location_id nullable — Fase 4, sin backfill del directorio legacy)
 auth: user_role_scoped_assignments + user_permission_overrides (Fase 2)
 auth.invitations (Fase 3)
-app.documents + catálogos (Fase 5)
+app.documents + catálogos (Fase 5) — owner paciente (`patient_id`) y profesional (`employee_id`) nullable
 app.encounters / clinical_notes / patient_measurements / patient_goals (Fase 6)
 app.appointments / prescriptions + items (Fase 7)
 app.background_jobs (+ colas) (Fase 8)
@@ -99,6 +103,46 @@ Flujo ya construido en el backend: creación de empleado → invitación (`POST 
 
 ## Fases pendientes — plan de implementación
 
+Orden de ejecución recomendado: completar las UX pendientes de Fase 3 y Fase 5 + el
+seed MediQuer expandido **antes** de Fase 6, porque demuestran el modelo de scopes
+multi-clínica que el cliente indeciso necesita validar y no bloquean el resto.
+
+### Completar Fase 3 — Experiencia de profesionales (admin + auto-gestión) ✅ implementado
+
+Flujo objetivo completo (backend de invitación existía; esta iteración añadió la UX y la orquestación):
+
+```text
+Admin crea profesional (datos mínimos)
+  → elige organización / clínicas / sedes
+  → tipo profesional + especialidades
+  → rol por clínica con scope (rol A en Clínica A, rol B en Clínica B)
+  → permisos excepcionales Grant/Deny por contexto
+  → invita → el Auth Service envía email con ENLACE de primer acceso (token 72h, nunca credenciales)
+  → primer login → establece su propia contraseña → completa su perfil → cuenta activa
+```
+
+Implementado en esta iteración:
+
+1. **Wizard de creación admin** (`/professionals/new`, 4 pasos): datos mínimos → organización/clínicas/sedes + rol por clínica → tipo + especialidades (opcional) → revisión + "Crear e invitar".
+2. **Orquestación atómica** (decisión clave): `CreateProfessionalCommand` (POST `/api/v1/professionals`) crea/actualiza `erp.employee_clinics` + `erp.professional_locations`, invita (usuario en Auth + correo) y aplica los roles scoped por clínica en UNA operación con **compensación** (si fallan los scopes se revoca la invitación y se elimina el empleado recién creado → nunca estados a medias). Los endpoints internos del Auth (`POST/GET /api/auth/internal/scoped-assignments`, `POST /api/auth/internal/invitations/{id}/revoke`) permiten el reemplazo atómico con `X-Internal-Key`.
+3. **Gestión de scopes por clínica (UX)**: `GET/PUT /api/v1/professionals/{id}/scopes` + detalle del profesional con tabla de asignaciones por clínica (rol por clínica). Bloque central del requisito "permisos diferentes por clínica".
+4. **Auto-gestión**: `PUT /api/v1/me/profile` (wizard de primer acceso) ya existía; pendiente refinar "Mi perfil" en `/settings` para edición continua del profesional.
+5. **Tests**: `CreateProfessionalCommandHandlerTests` (3): scopes sin invitación → 409; flujo feliz vincula usuario + aplica scopes; fallo de scopes → compensación (revoca + elimina). Verificados end-to-end contra la BD real.
+
+### Completar Fase 5 — Repositorio de documentos (frontend + profesionales)
+
+1. **Tab de documentos en detalle de paciente**: upload directo a S3 con progreso (`media-page` como referencia), listado con versionado, descarga firmada, estados Draft/Ready/Archived.
+2. **Documentos de profesionales** (extensión nueva): columna `employee_id` nullable en `app.documents` + categorías/tipos para profesionales (contratos, licencias, credenciales, CV) + tab en el detalle del profesional. Misma infraestructura de storage, mismos permisos `Documents.*`.
+
+### Seed MediQuer expandido (data seed idempotente)
+
+La org `MediQuer Health` + clínica `MediQuer Central` + `Sede Downtown` ya existen. Expandir a una estructura multi-clínica/multi-sede para demostrar el modelo de scopes:
+
+- **Organización** `MediQuer Health` → **2-3 clínicas** (Central, Norte, Oeste) → **2-4 sedes** por clínica.
+- **Empleados de demostración** con `employee_clinics` + `professional_locations` en varias clínicas.
+- **Scoped assignments de ejemplo**: un nutricionista con `Patients.Read` en Clínica A y `Patients.Read/Update` en Clínica B — el caso exacto del cliente indeciso.
+- Patrón: script generador (`scripts/generate_organization_seed.py`) → `AddOrganizationSeed.sql` (recurso embebido, idempotente).
+
 ### Fase 6 — Clinical history (obesidad y prevención)
 
 Base del valor clínico del ERP. **No implementar entidades por moda**: solo lo que el dominio exige, normalizado.
@@ -132,7 +176,7 @@ Acciones masivas **nunca como loops del frontend**; operaciones de gran volumen 
 2. **Import de pacientes**: importador CSV/Excel (patrón del script `import_patients_from_excel.py` llevado a un job con reporte de errores por fila y validación en lote).
 3. **Export**: exportador paginado a CSV/Excel con permisos `Patients.Export` (ya seedeado).
 4. **Acciones masivas de pacientes**: activar/desactivar, cambiar clínica/sede (con reasignación de contexto), asignar/desasignar profesional responsable, subir documentos en lote, actualización de atributos concretos. Endpoints `POST /patients/bulk/{action}` con request de ids + payload + transacción e idempotencia.
-5. **Acciones masivas de profesionales** (requerimiento nuevo): invitar en lote, asignar/desasignar clínicas con su rol scoped, activar/desactivar, reenviar invitaciones.
+5. **Acciones masivas de profesionales** (requerimiento explícito del cliente): invitar en lote, asignar/desasignar clínicas con su rol scoped, activar/desactivar, reenviar invitaciones — reusando la orquestación atómica de la Fase 3.
 6. **Frontend**: selección múltiple en listados (checkboxes) + barra de acciones + modal de confirmación con resumen y reporte de resultado.
 7. **Tests**: unit (lote, validación parcial, idempotencia) + integración (transacción completa/rollback).
 
@@ -143,13 +187,6 @@ Acciones masivas **nunca como loops del frontend**; operaciones de gran volumen 
 3. **Tests IDOR/seguridad**: suite de integración que valida la frontera de clínica (paciente/documento de otra clínica → 404) y permisos scoped/globales por rol.
 4. **Observabilidad**: Correlation ID ya en logs; agregar métricas por endpoint clínico (latencia, 4xx/5xx) y monitoreo de jobs de bulk.
 5. **Validación de volumen**: pruebas con el directorio importado (200k pacientes) para listados, filtros y export (skills `query-performance`, `pagination`).
-
-### Requerimientos transversales nuevos (integran las fases)
-
-- **Seed de la estructura MediQuer** (organización proveedor principal + clínicas/sedes) como data seed idempotente, para que el equipo demuestre el flujo multi-clínica con scopes reales. Patrón: script generador → `AddOrganizationSeed.sql` (recurso embebido).
-- **Gestión de scopes por clínica (UX)**: detalle del profesional con tabla de asignaciones por clínica (rol + permisos Grant/Deny), usando los endpoints de Auth (`/api/users/{id}/scoped/roles|permissions`) ya existentes.
-- **Acciones masivas de profesionales** integradas con el onboarding (invitar N profesionales con sus clínicas/roles en un solo paso).
-- **Documentos en detalle de paciente (frontend)**: completar la Fase 5 pendiente (tab de documentos con upload directo a S3, versionado y descarga firmada).
 
 ## Reglas de implementación por fase
 

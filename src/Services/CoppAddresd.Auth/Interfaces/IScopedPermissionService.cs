@@ -57,4 +57,37 @@ public interface IScopedPermissionService
         string scopeType,
         Guid? scopeId,
         CancellationToken ct = default);
+
+    /// <summary>Lectura de TODAS las asignaciones scoped del usuario (roles + overrides).</summary>
+    Task<ScopedAssignmentsSnapshot> GetAssignmentsAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reemplazo atómico de las asignaciones scoped del usuario en UNA
+    /// transacción: elimina las actuales que no estén en la lista deseada y
+    /// agrega las faltantes. Lo usa el ERP para orquestar la creación del
+    /// profesional y para la gestión de scopes desde el detalle.
+    /// </summary>
+    Task<(bool Success, string? Error)> ReplaceAssignmentsAsync(
+        Guid userId,
+        IReadOnlyList<ScopedRoleInput> roles,
+        IReadOnlyList<ScopedPermissionInput> permissions,
+        Guid? grantedBy,
+        CancellationToken ct = default);
 }
+
+/// <summary>Rol dentro de un scope (entrada para reemplazo).</summary>
+public record ScopedRoleInput(Guid RoleId, string ScopeType, Guid? ScopeId);
+
+/// <summary>Override Grant/Deny dentro de un scope (entrada para reemplazo).</summary>
+public record ScopedPermissionInput(Guid PermissionId, string ScopeType, Guid? ScopeId, string Effect);
+
+/// <summary>Lectura de las asignaciones scoped actuales de un usuario.</summary>
+public record ScopedAssignmentsSnapshot(
+    IReadOnlyList<ScopedRoleView> Roles,
+    IReadOnlyList<ScopedPermissionView> Permissions);
+
+/// <summary>Rol scoped con nombre (para la UI de gestión).</summary>
+public record ScopedRoleView(Guid RoleId, string RoleName, string ScopeType, Guid? ScopeId);
+
+/// <summary>Override scoped con código de permiso (para la UI de gestión).</summary>
+public record ScopedPermissionView(Guid PermissionId, string PermissionCode, string ScopeType, Guid? ScopeId, string Effect);
