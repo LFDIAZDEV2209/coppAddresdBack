@@ -111,6 +111,20 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
                 .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
     }
 
+    public async Task DeleteAsync(Guid employeeId, CancellationToken ct = default)
+    {
+        var employee = await dbContext.Employees
+            .FirstOrDefaultAsync(x => x.Id == employeeId, ct);
+
+        if (employee is null)
+            return;
+
+        // Las colecciones hijas (profesional, clínicas, especialidades,
+        // licencias) se eliminan por cascada (FK ON DELETE CASCADE).
+        dbContext.Employees.Remove(employee);
+        await dbContext.SaveChangesAsync(ct);
+    }
+
     public async Task CompleteOnboardingAsync(
         Guid employeeId,
         Guid? professionalTypeId,

@@ -138,6 +138,21 @@ public class InvitationsController(
         return Ok(new { success = true });
     }
 
+    /// <summary>Revoca la invitación pendiente. Lo invoca el ERP con X-Internal-Key
+    /// como compensación del flujo de creación de profesionales si falla la
+    /// aplicación de scopes.</summary>
+    [HttpPost("api/auth/internal/invitations/{id:guid}/revoke")]
+    [AllowAnonymous]
+    [RequireInternalKey]
+    public async Task<IActionResult> RevokeInternal(Guid id, CancellationToken ct)
+    {
+        var (success, error) = await invitations.RevokeAsync(id, ct);
+        if (!success)
+            return BadRequest(new { message = error });
+
+        return NoContent();
+    }
+
     [HttpPost("api/invitations/{id:guid}/resend")]
     [Authorize]
     [RequireErpAudience]

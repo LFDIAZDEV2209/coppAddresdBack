@@ -74,6 +74,14 @@ public static class ApplicationServiceExtensions
             client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
         }).AddResiliencePolicy();
 
+        services.AddHttpClient<IAuthScopedAssignmentsClient, AuthScopedAssignmentsClient>((sp, client) =>
+        {
+            var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+            client.BaseAddress = new Uri(authSettings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+            client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+        }).AddResiliencePolicy();
+
         services.AddScoped<ICurrentContext, CurrentContext>();
 
         return services;

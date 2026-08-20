@@ -36,6 +36,13 @@ public interface IEmployeeRepository
     Task SetUserIdAsync(Guid employeeId, Guid userId, CancellationToken ct = default);
 
     /// <summary>
+    /// Elimina físicamente un empleado. Solo como compensación del flujo de
+    /// creación orquestado (el empleado recién creado no tiene historial): el
+    /// borrado administrativo normal usa cambios de estado.
+    /// </summary>
+    Task DeleteAsync(Guid employeeId, CancellationToken ct = default);
+
+    /// <summary>
     /// Completa el onboarding del profesional: actualiza la extensión clínica
     /// (tipo, bio, foto, teléfono), reemplaza especialidades y licencias y, si
     /// <paramref name="completeOnboarding"/> es true, marca
