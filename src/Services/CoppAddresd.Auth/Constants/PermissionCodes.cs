@@ -56,6 +56,7 @@ public static class PermissionCodes
     public const string DocumentsView = "Documents.View";
     public const string DocumentsUpload = "Documents.Upload";
     public const string DocumentsDelete = "Documents.Delete";
+    public const string DocumentsUpdate = "Documents.Update";
 
     public const string ClinicalRecordsView = "ClinicalRecords.View";
     public const string ClinicalRecordsCreate = "ClinicalRecords.Create";
@@ -107,6 +108,7 @@ public static class PermissionCodes
         yield return DocumentsView;
         yield return DocumentsUpload;
         yield return DocumentsDelete;
+        yield return DocumentsUpdate;
         yield return ClinicalRecordsView;
         yield return ClinicalRecordsCreate;
         yield return ClinicalRecordsUpdate;

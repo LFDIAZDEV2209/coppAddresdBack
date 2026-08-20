@@ -32,7 +32,9 @@ public sealed class AgentExecutionsQueryService(
 
         try
         {
-            using var response = await httpClient.GetAsync(endpoint, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            AddInternalKeyHeader(request);
+            using var response = await httpClient.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning("Listado de ejecuciones rechazado: {Status} {Body}",
@@ -60,7 +62,9 @@ public sealed class AgentExecutionsQueryService(
 
         try
         {
-            using var response = await httpClient.GetAsync(endpoint, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            AddInternalKeyHeader(request);
+            using var response = await httpClient.SendAsync(request, ct);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return null;
             if (!response.IsSuccessStatusCode)
@@ -79,6 +83,18 @@ public sealed class AgentExecutionsQueryService(
                 executionId);
             return null;
         }
+    }
+
+    /// <summary>Autentica el canal interno backend → AI Service (X-Internal-Key).</summary>
+    private void AddInternalKeyHeader(HttpRequestMessage request)
+    {
+        if (string.IsNullOrWhiteSpace(settings.Value.InternalApiKey))
+        {
+            logger.LogWarning(
+                "AiService:InternalApiKey no configurada — el AI Service rechazará la llamada (401/503).");
+            return;
+        }
+        request.Headers.TryAddWithoutValidation("X-Internal-Key", settings.Value.InternalApiKey);
     }
 
     private static AgentExecutionSummaryDto ToSummary(ExecutionSummaryJson j) => new(

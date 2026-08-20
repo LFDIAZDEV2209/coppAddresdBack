@@ -16,7 +16,7 @@ multi-organización, multi-clínica, multi-sede, con permisos por contexto.
 | 2 — Authorization con scopes | Tablas auth scoped, introspección, políticas API, switcher de contexto | ✅ Completado |
 | 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado |
 | 4 — Patient scoping | clinic_id/location_id, soft delete, created_by/updated_by, filtros por contexto, página de detalle | ✅ Completado |
-| 5 — Documents | Repositorio documental + upload UI | ⏳ |
+| 5 — Documents | Repositorio documental + upload UI | ✅ Backend completo — frontend pendiente |
 | 6 — Clinical history | encounters, clinical_notes, measurements (IMC derivado), goals | ⏳ |
 | 7 — Appointments + Prescriptions reales | Reemplazo de mocks | ⏳ |
 | 8 — Bulk operations | Jobs infra, import/export, acciones masivas | ⏳ |
@@ -60,9 +60,7 @@ app.encounters / clinical_notes / patient_measurements / patient_goals (Fase 6)
 app.appointments / prescriptions + items (Fase 7)
 ```
 
-## Fase 4 — Patient scoping (implementada)
-
-Decisiones tomadas en la implementación:
+## Fase 4 — Patient scoping (implementada)Decisiones tomadas en la implementación:
 
 - **Frontera de datos = clínica activa** (`X-Clinic-Id` → `ICurrentContext.ActiveClinicId`). El listado filtra por `clinic_id`; el detalle/update/delete de un paciente de otra clínica responde 404 (no se filtra existencia entre clínicas). Sin contexto activo se ve el directorio completo (contexto global).
 - **Permisos por acción**: `PatientsController` usa `HasPermissionAsync("Patients.{View,Create,Update,Delete}")` (claims globales OR introspección scoped) en lugar de `[RequirePermission]`, porque el handler de claims no evalúa permisos scoped de clínica.
@@ -71,6 +69,20 @@ Decisiones tomadas en la implementación:
 - **Auditoría de actor**: `created_by`/`updated_by`/`deleted_by` apuntan a `auth.users` (FK por SQL en la migración, patrón de `user_id`). El actor viene de `ICurrentContext.UserId`; nunca del cuerpo.
 - **Índices**: `ix_patient_profiles_clinic_id`, `ix_patient_profiles_location_id`, `ix_patient_profiles_deleted_at` (regla anti-retenancy + FKs indexadas).
 - **Frontend**: columna "Clínica" en el listado; la fila navega a la nueva página de detalle `/patients/[id]` (reemplaza el dialog de detalle) con secciones: resumen, datos personales, contacto, cobertura, clínica/sede, estilo de vida, diagnósticos, medicamentos, alergias y signos vitales.
+
+## Fase 5 — Documents (backend implementado)
+
+Decisión clave: **metadata en BD + binario en storage** (patrón ya usado por Media). El frontend nunca toca la BD: `upload-intent` valida paciente/tipo/extensión ANTES de subir, devuelve la clave (`documents/{patientId}/{guid}{ext}`) + URL de escritura (PUT con Bearer a `/api/v1/storage/{key}`), y `POST /documents` registra la metadata.
+
+- **Tablas** (`app.`): `documents` (root + versiones), `document_categories` (9), `clinical_document_types` (29, catálogo con extensiones permitidas). Migración `20260820140637_AddPatientDocuments` (combina el módulo de inventario + documentos; los FKs `uploaded_by/created_by/updated_by/deleted_by` a `auth.users` se crean por SQL, patrón Fase 4). Seeding idempotente por script generado (`scripts/generate_document_catalogs_seed.py` → `AddDocumentCatalogs.sql`, recurso embebido).
+- **Versionado**: un documento es una familia root (v1) + versiones hijas (`parent_document_id`). `GET /documents/{id}/versions` devuelve root + hijas ordenado por versión desc. La clínica/paciente de una versión se hereda del root (nunca del cuerpo). Estado: `Draft/Ready/Archived`; `Update` solo metadata (el binario es inmutable — una nueva subida = nueva versión).
+- **Permisos**: `Documents.View/Upload/Update/Delete` (47 totales en Auth); `Documents.Update` añadido a los roles que tenían `DocumentsUpload` (RoleSeeder).
+- **Frontera de datos**: misma regla Fase 4 — con clínica activa (`X-Clinic-Id`), un documento o paciente de otra clínica responde 404; el listado filtra por `clinic_id`. El detalle/download/update/delete validan la frontera vía `GetDocumentQuery`.
+- **Descarga**: `GET /documents/{id}/download` devuelve URL firmada (HMAC `sig`+`exp`, 15 min) para que el navegador abra el binario sin header Bearer (`GET /api/v1/storage/{key}` es `[AllowAnonymous]` solo con URL firmada válida o sesión).
+- **Soft delete en cascada**: `DELETE /documents/{id}` marca eliminada toda la familia (root + versiones) en una transacción.
+- **Validación**: el paciente es obligatorio salvo al crear una versión (con `parentDocumentId`); la extensión del archivo se valida contra el catálogo del tipo en el intent (falla temprano, sin basura en storage).
+- **Tests**: 14 unit tests de handlers (intent/create/update/delete, herencia de clínica, versionado, soft-delete).
+- **Pendiente**: frontend (tab de documentos en detalle de paciente + upload con progreso, siguiendo el patrón de `media-page`).
 
 ## Reglas de implementación por fase
 
