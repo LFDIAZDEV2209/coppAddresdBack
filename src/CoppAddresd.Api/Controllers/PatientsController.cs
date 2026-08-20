@@ -1,3 +1,4 @@
+using CoppAddresd.Api.Context;
 using CoppAddresd.Application.Features.Patients;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +9,7 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/[controller]")]
 [Authorize]
-public class PatientsController(IMediator mediator) : ControllerBase
+public class PatientsController(IMediator mediator, ICurrentContext context) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PaginatedPatientsResult>> List(
@@ -19,16 +20,24 @@ public class PatientsController(IMediator mediator) : ControllerBase
         [FromQuery] Guid? insurerId = null,
         CancellationToken ct = default)
     {
+        if (!await context.HasPermissionAsync("Patients.View", ct))
+            return Forbid();
+
+        // Frontera de datos (Fase 4): con clínica activa solo se ven sus
+        // pacientes; sin contexto activo se ve el directorio completo.
         var result = await mediator.Send(
-            new ListPatientsQuery(page, pageSize, search, status, insurerId), ct);
+            new ListPatientsQuery(page, pageSize, search, status, insurerId, context.ActiveClinicId), ct);
         return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<PatientDto>> GetById(Guid id, CancellationToken ct)
     {
+        if (!await context.HasPermissionAsync("Patients.View", ct))
+            return Forbid();
+
         var patient = await mediator.Send(new GetPatientQuery(id), ct);
-        if (patient is null)
+        if (patient is null || IsOutsideActiveClinic(patient))
             return NotFound(new { message = "Paciente no encontrado" });
 
         return Ok(patient);
@@ -39,6 +48,9 @@ public class PatientsController(IMediator mediator) : ControllerBase
         [FromBody] CreatePatientRequest request,
         CancellationToken ct)
     {
+        if (!await context.HasPermissionAsync("Patients.Create", ct))
+            return Forbid();
+
         var command = new CreatePatientCommand(
             request.MedicalRecordNumber,
             request.FirstName,
@@ -70,6 +82,11 @@ public class PatientsController(IMediator mediator) : ControllerBase
             request.SurgeryHistory,
             request.Status,
             request.Notes,
+            // El paciente se crea en la clínica activa del contexto; nunca se
+            // acepta una clínica del cuerpo (el actor queda en created_by).
+            context.ActiveClinicId,
+            null,
+            context.UserId,
             request.Diagnoses,
             request.Medications,
             request.Allergies,
@@ -85,6 +102,13 @@ public class PatientsController(IMediator mediator) : ControllerBase
         [FromBody] UpdatePatientRequest request,
         CancellationToken ct)
     {
+        if (!await context.HasPermissionAsync("Patients.Update", ct))
+            return Forbid();
+
+        var current = await mediator.Send(new GetPatientQuery(id), ct);
+        if (current is null || IsOutsideActiveClinic(current))
+            return NotFound(new { message = "Paciente no encontrado" });
+
         var command = new UpdatePatientCommand(
             id,
             request.MedicalRecordNumber,
@@ -117,6 +141,7 @@ public class PatientsController(IMediator mediator) : ControllerBase
             request.SurgeryHistory,
             request.Status,
             request.Notes,
+            context.UserId,
             request.Diagnoses,
             request.Medications,
             request.Allergies,
@@ -132,10 +157,26 @@ public class PatientsController(IMediator mediator) : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var deleted = await mediator.Send(new DeletePatientCommand(id), ct);
+        if (!await context.HasPermissionAsync("Patients.Delete", ct))
+            return Forbid();
+
+        var current = await mediator.Send(new GetPatientQuery(id), ct);
+        if (current is null || IsOutsideActiveClinic(current))
+            return NotFound(new { message = "Paciente no encontrado" });
+
+        var deleted = await mediator.Send(new DeletePatientCommand(id, context.UserId), ct);
         if (!deleted)
             return NotFound(new { message = "Paciente no encontrado" });
 
         return NoContent();
     }
+
+    /// <summary>
+    /// Con clínica activa (X-Clinic-Id) un paciente de otra clínica se trata
+    /// como inexistente (404): no se filtra por clínica en el detalle y se
+    /// evita filtrar existencia entre clínicas. El directorio legacy sin
+    /// clínica solo es visible sin contexto activo.
+    /// </summary>
+    private bool IsOutsideActiveClinic(PatientDto patient)
+        => context.ActiveClinicId is { } clinicId && patient.ClinicId != clinicId;
 }

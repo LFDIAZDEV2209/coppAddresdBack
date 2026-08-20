@@ -1,10 +1,10 @@
 # Módulo de Pacientes / Profesionales — Documentación
 
-Estado: **Fases 1, 2 y 3 completadas** (domain foundation + authorization con
-scopes + professional onboarding). El plan maestro vive en
+Estado: **Fases 1, 2, 3 y 4 completadas** (domain foundation + authorization con
+scopes + professional onboarding + patient scoping). El plan maestro vive en
 [`PLAN.md`](PLAN.md) — leer antes de trabajar en este módulo.
 
-## Alcance actual (Fase 1 + Fase 2 + Fase 3)
+## Alcance actual (Fase 1 + Fase 2 + Fase 3 + Fase 4)
 
 ### Estructura organizacional (schema `erp`)
 
@@ -127,10 +127,44 @@ Profesional abre enlace → establece su contraseña (accept, un solo uso)
 - Toda tabla clínica/directorio futura exige `clinic_id` indexado (anti-retenancy).
 - FKs siempre indexadas; borrado físico solo administrativo.
 
+## Patient scoping (Fase 4)
+
+- **Frontera de datos por clínica activa** (`X-Clinic-Id`): el listado filtra por
+  `clinic_id`; detalle/update/delete de un paciente de otra clínica responde 404
+  (sin fuga de existencia entre clínicas). Sin contexto activo se ve el
+  directorio completo. `PatientsController` evalúa `Patients.{View,Create,Update,
+  Delete}` con `HasPermissionAsync` (claims globales OR introspección scoped) —
+  no usa `[RequirePermission]` porque ese handler no resuelve permisos scoped.
+- **Soft delete**: `deleted_at` marca el paciente como eliminado; listado y
+  detalle lo excluyen, y el chequeo de MRN único ignora eliminados. Nunca se
+  borran físicamente los registros clínicos (trazabilidad PHI).
+- **Auditoría de actor**: `created_by` / `updated_by` / `deleted_by` apuntan a
+  `auth.users` (FK por SQL en la migración, patrón de `user_id`); el actor se
+  toma de `ICurrentContext.UserId` — nunca del cuerpo de la petición.
+- **`clinic_id`/`location_id` nullable**: el directorio legacy importado (~200k
+  pacientes) no tiene clínica; sin backfill (decisión documentada). La creación
+  asigna la clínica activa del contexto; `location_id` queda en el modelo sin
+  exponerse aún en la API (no existe contexto activo de sede).
+- **Endpoints**:
+  ```
+  GET    /api/v1/patients            # lista paginada filtrada por clínica activa
+  GET    /api/v1/patients/{id}       # detalle completo (404 si es de otra clínica)
+  POST   /api/v1/patients            # crea en la clínica activa del contexto
+  PUT    /api/v1/patients/{id}       # actualiza (registra updated_by)
+  DELETE /api/v1/patients/{id}       # soft delete (registra el actor)
+  ```
+- **Frontend**: columna "Clínica" en el listado; la fila navega a la nueva
+  página de detalle `/patients/[id]` (reemplaza el dialog) con secciones de
+  resumen, datos personales, contacto, cobertura, clínica/sede, estilo de vida,
+  diagnósticos, medicamentos, alergias y signos vitales.
+
 ## Tests
 
 - Unit: `tests/CoppAddresd.UnitTests/Features/Professionals/` — vocabularios,
   validadores (create/update), handlers con NSubstitute (email duplicado,
   organización inexistente, extensión profesional, normalización).
+- Unit: `tests/CoppAddresd.UnitTests/Features/Patients/PatientScopingTests.cs` —
+  asignación de clínica/actor al crear, `updated_by` en update, soft delete con
+  actor en delete, filtro por clínica en el listado (con y sin contexto).
 - Integración: pendiente — los repositorios nuevos aún no tienen tests contra
   PostgreSQL real (patrón: `COP_TEST_DB_CONNECTION`).
