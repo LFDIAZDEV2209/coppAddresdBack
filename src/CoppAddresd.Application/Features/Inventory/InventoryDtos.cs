@@ -134,9 +134,11 @@ public record InventoryMovementDto(
 public record InventoryAnalyticsDto(
     decimal TotalValue, int ActiveProducts, int LowStock, int OutOfStock,
     int ExpiringSoon, int Expired, int Entries, int Exits,
+    int UnitsEntered, int UnitsExited,
     IReadOnlyList<MovementSeriesPoint> MovementSeries,
     IReadOnlyList<TopMovingProduct> TopMoving,
-    IReadOnlyList<CategoryValue> CategoryValue);
+    IReadOnlyList<CategoryValue> CategoryValue,
+    IReadOnlyList<ProductListItemDto> Products);
 
 public record MovementSeriesPoint(string Label, int Entries, int Exits);
 public record TopMovingProduct(string Name, int Quantity);
