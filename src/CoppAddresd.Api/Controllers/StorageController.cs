@@ -34,15 +34,27 @@ public class StorageController(
     /// <summary>
     /// Genera una URL firmada temporal para leer el objeto sin header Bearer.
     /// Requiere autenticación para firmar; la URL resultante es autocontenida.
+    /// Con el proveedor S3 la URL es un presigned URL real del bucket; con el
+    /// proveedor Local es el proxy del backend con firma HMAC (sig+exp).
     /// </summary>
     [HttpGet("sign")]
-    public ActionResult<object> Sign([FromQuery] string key, [FromQuery] int expiresInSeconds = 900)
+    public async Task<ActionResult<object>> Sign(
+        [FromQuery] string key,
+        [FromQuery] int expiresInSeconds = 900,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(key))
             return BadRequest(new { message = "La clave del objeto es requerida." });
 
         if (expiresInSeconds is <= 0 or > 86400)
             return BadRequest(new { message = "La expiración debe estar entre 1 y 86400 segundos." });
+
+        if (objectStorage.IsCloudStorage)
+        {
+            var cloudUrl = await objectStorage.GetPreSignedUrlAsync(
+                key, TimeSpan.FromSeconds(expiresInSeconds), ct);
+            return Ok(new { url = cloudUrl, expiresInSeconds });
+        }
 
         var expiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
         var signature = signatureService.Sign(key, expiresAt);

@@ -16,6 +16,13 @@ namespace CoppAddresd.Application.Interfaces;
 public interface IObjectStorageService
 {
     /// <summary>
+    /// True si el proveedor es almacenamiento en la nube (S3): genera URLs
+    /// firmadas reales y el navegador sube/descarga directo al proveedor.
+    /// False si usa el proxy del backend (proveedor Local).
+    /// </summary>
+    bool IsCloudStorage { get; }
+
+    /// <summary>
     /// Almacena el contenido bajo la clave indicada (sobrescribe si ya existe) y
     /// devuelve la clave/resolución final del objeto.
     /// </summary>
@@ -59,4 +66,18 @@ public interface IObjectStorageService
     /// (una URL real solo existe en el proveedor AWS S3).
     /// </summary>
     Task<string> GetPreSignedUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default);
+
+    /// <summary>
+    /// Genera una URL firmada de escritura (PUT) para subir un objeto directo al
+    /// proveedor. Con el proveedor Local devuelve la URL del proxy del backend
+    /// (<c>{publicBaseUrl}/api/v1/storage/{{key}}</c>); con S3 devuelve un
+    /// presigned URL real del bucket. <paramref name="publicBaseUrl"/> se ignora
+    /// con S3 y solo se usa para construir el proxy local.
+    /// </summary>
+    Task<string> GetPreSignedUploadUrlAsync(
+        string key,
+        string? contentType,
+        TimeSpan expiry,
+        string publicBaseUrl,
+        CancellationToken ct = default);
 }

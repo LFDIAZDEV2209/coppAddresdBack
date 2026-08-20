@@ -79,16 +79,18 @@ public static class DependencyInjection
 
         if (provider.Equals("S3", StringComparison.OrdinalIgnoreCase))
         {
-            // Punto de extensión para el futuro S3ObjectStorageService (AWSSDK.S3).
-            // Se implementará cuando el equipo entregue las credenciales de AWS.
-            throw new InvalidOperationException(
-                "El proveedor de almacenamiento 'S3' aún no está implementado. " +
-                "Agregue S3ObjectStorageService y el paquete AWSSDK.S3 cuando la " +
-                "configuración de AWS esté disponible.");
+            services.Configure<S3StorageOptions>(
+                configuration.GetSection(S3StorageOptions.SectionName));
+
+            // Singleton: el AmazonS3Client es thread-safe y está diseñado para
+            // reutilizarse. Las credenciales se resuelven por la cadena por defecto
+            // del SDK (IAM role en producción); jamás Access Keys en configuración.
+            services.AddSingleton<IObjectStorageService, S3ObjectStorageService>();
+            return;
         }
 
         throw new InvalidOperationException(
             $"Proveedor de almacenamiento desconocido: '{provider}'. " +
-            "Valores soportados: 'Local'.");
+            "Valores soportados: 'Local', 'S3'.");
     }
 }
