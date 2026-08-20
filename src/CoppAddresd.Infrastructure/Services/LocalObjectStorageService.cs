@@ -30,6 +30,8 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         _rootPath = Path.GetFullPath(root);
     }
 
+    public bool IsCloudStorage => false;
+
     public async Task<string> PutObjectAsync(
         string key,
         Stream content,
@@ -226,6 +228,25 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         _ = expiry;
 
         return Task.FromResult(ResolvePath(key));
+    }
+
+    public Task<string> GetPreSignedUploadUrlAsync(
+        string key,
+        string? contentType,
+        TimeSpan expiry,
+        string publicBaseUrl,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        // Con el proveedor Local la "URL firmada" es el proxy del backend
+        // (PUT /api/v1/storage/{key}). El contentType y la expiración no aplican:
+        // la autorización la resuelve el endpoint con el header Bearer.
+        _ = contentType;
+        _ = expiry;
+
+        var normalizedKey = NormalizeKey(key);
+        return Task.FromResult($"{publicBaseUrl.TrimEnd('/')}/api/v1/storage/{normalizedKey}");
     }
 
     /// <summary>
