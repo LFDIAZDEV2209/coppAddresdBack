@@ -32,7 +32,8 @@ public sealed class CancelTelemedicineAppointmentCommandValidator
 
 public sealed class CancelTelemedicineAppointmentCommandHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData)
+    ITelemedicineReferenceDataService referenceData,
+    IAlertRepository alerts)
     : IRequestHandler<CancelTelemedicineAppointmentCommand, TelemedicineAppointmentDto>
 {
     public async Task<TelemedicineAppointmentDto> Handle(
@@ -78,8 +79,18 @@ public sealed class CancelTelemedicineAppointmentCommandHandler(
 
         await appointments.UpdateAsync(entity, ct);
 
-        var patient = await referenceData.GetPatientAsync(entity.PatientId, ct);
+        // Bandeja: cancelación → al profesional asignado.
         var professional = await referenceData.GetProfessionalAsync(entity.ProfessionalId, ct);
+        var patient = await referenceData.GetPatientAsync(entity.PatientId, ct);
+        if (AlertMaterializer.AppointmentCancelled(
+                professional?.UserId,
+                entity.Id,
+                patient?.FullName ?? "el paciente",
+                request.Reason) is { } alert)
+        {
+            await alerts.AddRangeAsync([alert], ct);
+        }
+
         var specialty = await referenceData.GetSpecialtyAsync(entity.SpecialtyId, ct);
         var location = entity.LocationId is { } locationId
             ? await referenceData.GetLocationAsync(locationId, ct)

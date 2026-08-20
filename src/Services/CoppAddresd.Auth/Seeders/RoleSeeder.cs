@@ -76,6 +76,7 @@ public static class RoleSeeder
         PermissionCodes.TelemedicineAppointmentsCancel,
         PermissionCodes.TelemedicineAppointmentsReschedule,
         PermissionCodes.TelemedicineAgendaView,
+        PermissionCodes.TelemedicineAlertsView,
         // Supervisión de salas/sesiones: lo tienen los roles administrativos
         // (OrgAdmin/ClinicAdmin vía este array y ClinicalDirector explícito).
         // Los profesionales de línea NO: acceden a su sala por identidad (JWT).
@@ -91,6 +92,7 @@ public static class RoleSeeder
         PermissionCodes.TelemedicineAppointmentsCancel,
         PermissionCodes.TelemedicineAppointmentsReschedule,
         PermissionCodes.TelemedicineAgendaView,
+        PermissionCodes.TelemedicineAlertsView,
     ];
 
     private static readonly string[] StaffTelemedicinePermissions =

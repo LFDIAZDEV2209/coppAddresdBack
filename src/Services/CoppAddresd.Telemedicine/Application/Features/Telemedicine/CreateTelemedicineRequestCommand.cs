@@ -43,7 +43,8 @@ public sealed class CreateTelemedicineRequestCommandValidator
 public sealed class CreateTelemedicineRequestCommandHandler(
     IRequestRepository requests,
     ITelemedicineReferenceDataService referenceData,
-    ITelemedicineSettingsProvider settingsProvider)
+    ITelemedicineSettingsProvider settingsProvider,
+    IAlertRepository alerts)
     : IRequestHandler<CreateTelemedicineRequestCommand, TelemedicineRequestDto>
 {
     public async Task<TelemedicineRequestDto> Handle(
@@ -105,6 +106,22 @@ public sealed class CreateTelemedicineRequestCommandHandler(
         };
 
         await requests.AddAsync(entity, ct);
+
+        // Bandeja: nueva solicitud → al profesional que la confirmará (si el
+        // paciente eligió uno; si no, la asigna el staff/agenda).
+        if (entity.ProfessionalId is { } targetProfessionalId)
+        {
+            var targetProfessional = await referenceData.GetProfessionalAsync(targetProfessionalId, ct);
+            if (AlertMaterializer.NewRequest(
+                    targetProfessional?.UserId,
+                    entity.Id,
+                    entity.SpecialtyId,
+                    patient.FullName,
+                    specialty.Name) is { } alert)
+            {
+                await alerts.AddRangeAsync([alert], ct);
+            }
+        }
 
         return new TelemedicineRequestDto(
             entity.Id,

@@ -38,7 +38,8 @@ public sealed class ConfirmTelemedicineRequestCommandHandler(
     IRequestRepository requests,
     IAppointmentRepository appointments,
     ITelemedicineReferenceDataService referenceData,
-    ITelemedicineSettingsProvider settingsProvider)
+    ITelemedicineSettingsProvider settingsProvider,
+    IAlertRepository alerts)
     : IRequestHandler<ConfirmTelemedicineRequestCommand, TelemedicineAppointmentDto>
 {
     public async Task<TelemedicineAppointmentDto> Handle(
@@ -92,6 +93,18 @@ public sealed class ConfirmTelemedicineRequestCommandHandler(
         // Marca la solicitud como convertida (UPDATE dirigido; el índice único
         // sobre request_id evita una doble confirmación si este paso fallara).
         await requests.SetStatusAsync(entity.Id, AppointmentRequestStatus.Converted, ct);
+
+        // Bandeja: cita creada → al profesional asignado.
+        if (AlertMaterializer.NewAppointment(
+                professional.UserId,
+                appointment.Id,
+                appointment.SpecialtyId,
+                patient.FullName,
+                specialty.Name,
+                appointment.ScheduledStart) is { } alert)
+        {
+            await alerts.AddRangeAsync([alert], ct);
+        }
 
         return new TelemedicineAppointmentDto(
             appointment.Id,
