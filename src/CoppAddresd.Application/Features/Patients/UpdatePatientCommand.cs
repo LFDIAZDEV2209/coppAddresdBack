@@ -41,6 +41,7 @@ public record UpdatePatientCommand(
     string? SurgeryHistory,
     string? Status,
     string? Notes,
+    Guid? UpdatedBy,
     IReadOnlyList<DiagnosisInput>? Diagnoses,
     IReadOnlyList<MedicationInput>? Medications,
     IReadOnlyList<AllergyInput>? Allergies,
@@ -105,6 +106,7 @@ public sealed class UpdatePatientCommandHandler(
         entity.Status = string.IsNullOrWhiteSpace(request.Status) ? entity.Status : request.Status.Trim();
         entity.Notes = PatientOptions.Normalize(request.Notes);
         entity.UpdatedAt = DateTime.UtcNow;
+        entity.UpdatedBy = request.UpdatedBy;
 
         ReplaceChildren(entity, request.Diagnoses, request.Medications, request.Allergies, request.VitalSigns);
 

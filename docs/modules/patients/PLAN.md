@@ -15,9 +15,7 @@ multi-organización, multi-clínica, multi-sede, con permisos por contexto.
 | 1 — Domain foundation | organizations, clinics, locations, professional types, specialties, employees + extensión professionals, licencias, seeds | ✅ Completado |
 | 2 — Authorization con scopes | Tablas auth scoped, introspección, políticas API, switcher de contexto | ✅ Completado |
 | 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado |
-| 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado |
-| 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ⏳ |
-| 4 — Patient scoping | clinic_id/location_id, soft delete, created_by/updated_by, filtros por contexto, página de detalle | ⏳ |
+| 4 — Patient scoping | clinic_id/location_id, soft delete, created_by/updated_by, filtros por contexto, página de detalle | ✅ Completado |
 | 5 — Documents | Repositorio documental + upload UI | ⏳ |
 | 6 — Clinical history | encounters, clinical_notes, measurements (IMC derivado), goals | ⏳ |
 | 7 — Appointments + Prescriptions reales | Reemplazo de mocks | ⏳ |
@@ -54,13 +52,25 @@ erp.professionals N─N erp.locations (erp.professional_locations)
 erp.professionals 1─N erp.professional_licenses
 erp.professional_types N─N erp.specialties (catálogo professional_type_specialties)
 erp.employees 1:1 auth.users (nullable hasta invitación)
-app.patient_profiles N─1 erp.clinics / erp.locations / erp.professionals (Fase 4)
+app.patient_profiles N─1 erp.clinics / erp.locations (clinic_id/location_id nullable — Fase 4, sin backfill del directorio legacy)
 auth: user_role_scoped_assignments + user_permission_overrides (Fase 2)
 auth.invitations (Fase 3)
 app.documents + catálogos (Fase 5)
 app.encounters / clinical_notes / patient_measurements / patient_goals (Fase 6)
 app.appointments / prescriptions + items (Fase 7)
 ```
+
+## Fase 4 — Patient scoping (implementada)
+
+Decisiones tomadas en la implementación:
+
+- **Frontera de datos = clínica activa** (`X-Clinic-Id` → `ICurrentContext.ActiveClinicId`). El listado filtra por `clinic_id`; el detalle/update/delete de un paciente de otra clínica responde 404 (no se filtra existencia entre clínicas). Sin contexto activo se ve el directorio completo (contexto global).
+- **Permisos por acción**: `PatientsController` usa `HasPermissionAsync("Patients.{View,Create,Update,Delete}")` (claims globales OR introspección scoped) en lugar de `[RequirePermission]`, porque el handler de claims no evalúa permisos scoped de clínica.
+- **`clinic_id`/`location_id` nullable**: el directorio importado (~200k registros) no tiene clínica; sin backfill (decisión documentada). La creación asigna la clínica activa del contexto (nunca se acepta del cuerpo); `location_id` queda en el modelo sin exponerlo en la API (el contexto activo de sede no existe aún).
+- **Soft delete**: columna `deleted_at` (timestamptz). Listado/detalle excluyen eliminados; `DELETE` solo marca la columna (trazabilidad PHI; las filas hijas se conservan). El chequeo de MRN único excluye eliminados.
+- **Auditoría de actor**: `created_by`/`updated_by`/`deleted_by` apuntan a `auth.users` (FK por SQL en la migración, patrón de `user_id`). El actor viene de `ICurrentContext.UserId`; nunca del cuerpo.
+- **Índices**: `ix_patient_profiles_clinic_id`, `ix_patient_profiles_location_id`, `ix_patient_profiles_deleted_at` (regla anti-retenancy + FKs indexadas).
+- **Frontend**: columna "Clínica" en el listado; la fila navega a la nueva página de detalle `/patients/[id]` (reemplaza el dialog de detalle) con secciones: resumen, datos personales, contacto, cobertura, clínica/sede, estilo de vida, diagnósticos, medicamentos, alergias y signos vitales.
 
 ## Reglas de implementación por fase
 

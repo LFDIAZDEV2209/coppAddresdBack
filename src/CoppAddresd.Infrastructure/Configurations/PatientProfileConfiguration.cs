@@ -135,6 +135,24 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
         builder.Property(x => x.Notes)
             .HasColumnName("notes");
 
+        builder.Property(x => x.ClinicId)
+            .HasColumnName("clinic_id");
+
+        builder.Property(x => x.LocationId)
+            .HasColumnName("location_id");
+
+        // Los actores (created_by/updated_by) apuntan a auth.users; la FK se
+        // crea por SQL en la migración (fuera del modelo EF), igual que user_id.
+        builder.Property(x => x.CreatedBy)
+            .HasColumnName("created_by");
+
+        builder.Property(x => x.UpdatedBy)
+            .HasColumnName("updated_by");
+
+        builder.Property(x => x.DeletedAt)
+            .HasColumnName("deleted_at")
+            .HasColumnType("timestamptz");
+
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")
             .HasColumnType("timestamptz")
@@ -156,6 +174,25 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
 
         builder.HasIndex(x => x.Status)
             .HasDatabaseName("ix_patient_profiles_status");
+
+        builder.HasIndex(x => x.ClinicId)
+            .HasDatabaseName("ix_patient_profiles_clinic_id");
+
+        builder.HasIndex(x => x.LocationId)
+            .HasDatabaseName("ix_patient_profiles_location_id");
+
+        builder.HasIndex(x => x.DeletedAt)
+            .HasDatabaseName("ix_patient_profiles_deleted_at");
+
+        builder.HasOne(x => x.Clinic)
+            .WithMany()
+            .HasForeignKey(x => x.ClinicId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.Location)
+            .WithMany()
+            .HasForeignKey(x => x.LocationId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.Insurer)
             .WithMany(x => x.Patients)

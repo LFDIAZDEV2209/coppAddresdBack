@@ -87,11 +87,33 @@ public sealed class PatientProfile
 
     public string? Notes { get; set; }
 
+    /// <summary>Clínica propietaria del paciente (frontera de datos Fase 4). Null para el directorio legacy importado sin clínica.</summary>
+    public Guid? ClinicId { get; set; }
+
+    /// <summary>Sede donde se atiende habitualmente el paciente. Null si no aplica.</summary>
+    public Guid? LocationId { get; set; }
+
+    /// <summary>Usuario de <c>auth.users</c> que creó el registro (auditoría).</summary>
+    public Guid? CreatedBy { get; set; }
+
+    /// <summary>Último usuario de <c>auth.users</c> que modificó el registro (auditoría).</summary>
+    public Guid? UpdatedBy { get; set; }
+
+    /// <summary>
+    /// Soft delete: cuando no es null el paciente se considera eliminado y se
+    /// excluye de listados y consultas (trazabilidad PHI, nunca hard delete).
+    /// </summary>
+    public DateTime? DeletedAt { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedAt { get; set; }
 
     public Insurer? Insurer { get; set; }
+
+    public Clinic? Clinic { get; set; }
+
+    public Location? Location { get; set; }
 
     public DocumentType? DocumentType { get; set; }
 

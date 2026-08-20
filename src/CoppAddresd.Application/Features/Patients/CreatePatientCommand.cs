@@ -42,6 +42,9 @@ public record CreatePatientCommand(
     string? SurgeryHistory,
     string? Status,
     string? Notes,
+    Guid? ClinicId,
+    Guid? LocationId,
+    Guid? CreatedBy,
     IReadOnlyList<DiagnosisInput>? Diagnoses,
     IReadOnlyList<MedicationInput>? Medications,
     IReadOnlyList<AllergyInput>? Allergies,
@@ -112,6 +115,12 @@ public sealed class CreatePatientCommandHandler(
             SurgeryHistory = PatientOptions.Normalize(request.SurgeryHistory),
             Status = string.IsNullOrWhiteSpace(request.Status) ? "Activo" : request.Status.Trim(),
             Notes = PatientOptions.Normalize(request.Notes),
+            // Frontera de datos (Fase 4): el paciente pertenece a la clínica
+            // activa del contexto; el actor queda registrado para auditoría.
+            ClinicId = request.ClinicId,
+            LocationId = request.LocationId,
+            CreatedBy = request.CreatedBy,
+            UpdatedBy = request.CreatedBy,
             CreatedAt = DateTime.UtcNow,
         };
 
