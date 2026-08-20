@@ -1,6 +1,7 @@
 using CoppAddresd.Api.Extensions;
 using CoppAddresd.Api.Middleware;
 using CoppAddresd.Api.Security;
+using CoppAddresd.Api.Seeders;
 using CoppAddresd.Infrastructure;
 using Microsoft.OpenApi.Models;
 using System.Text.Json.Serialization;
@@ -25,6 +26,13 @@ builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.ConfigureCors(builder.Configuration);
 builder.Services.ConfigureJwtAuthentication(builder.Configuration);
+builder.Services.AddHttpContextAccessor();
+// Handler de propagación de correlation ID: AddHttpMessageHandler<T> resuelve
+// el handler desde DI (obligatorio registrarlo explícitamente).
+builder.Services.AddTransient<CoppAddresd.Api.Handlers.CorrelationIdDelegatingHandler>();
+
+// Seed del catálogo de agentes (idempotente) + sync al AI Service al arrancar.
+builder.Services.AddHostedService<AgentCatalogSeeder>();
 
 builder.Services.AddHealthChecks();
 builder.Services.AddSwaggerGen(options =>

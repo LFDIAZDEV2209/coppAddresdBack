@@ -1,4 +1,5 @@
 using System.Text;
+using CoppAddresd.Api.Handlers;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Common.Behaviors;
 using CoppAddresd.Application.Features.Media;
@@ -34,21 +35,22 @@ public static class ApplicationServiceExtensions
         services.AddValidatorsFromAssembly(typeof(CreateMediaItemCommand).Assembly);
 
         services.AddHttpClient<IAiServiceClient, AiServiceClient>()
-            .AddResiliencePolicy();
+            .AddResiliencePolicy()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
         {
             var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
             client.BaseAddress = new Uri(aiSettings.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
-        });
+        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddHttpClient<IAgentExecutionsQueryService, AgentExecutionsQueryService>((sp, client) =>
         {
             var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
             client.BaseAddress = new Uri(aiSettings.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
-        });
+        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         return services;
     }
