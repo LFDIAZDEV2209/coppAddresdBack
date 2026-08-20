@@ -1,13 +1,17 @@
 using CoppAddresd.Telemedicine.Application;
+using CoppAddresd.Telemedicine.Authorization;
 using CoppAddresd.Telemedicine.Infrastructure;
 using CoppAddresd.Telemedicine.Infrastructure.Extensions;
 using CoppAddresd.Telemedicine.Infrastructure.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo

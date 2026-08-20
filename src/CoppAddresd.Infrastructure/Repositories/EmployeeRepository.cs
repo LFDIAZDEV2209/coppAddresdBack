@@ -65,6 +65,9 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
     public async Task<Employee?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await QueryDetail().FirstOrDefaultAsync(x => x.Id == id, ct);
 
+    public async Task<Employee?> GetByProfessionalIdAsync(Guid professionalId, CancellationToken ct = default)
+        => await QueryDetail().FirstOrDefaultAsync(x => x.Professional != null && x.Professional.Id == professionalId, ct);
+
     public async Task<Employee?> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
         => await QueryDetail().FirstOrDefaultAsync(x => x.UserId == userId, ct);
 

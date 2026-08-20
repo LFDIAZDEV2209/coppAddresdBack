@@ -1,6 +1,9 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
+using CoppAddresd.Telemedicine.Infrastructure.Configuration;
+using CoppAddresd.Telemedicine.Infrastructure.Extensions;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
+using CoppAddresd.Telemedicine.Infrastructure.Repositories;
 using CoppAddresd.Telemedicine.Infrastructure.Services;
 using CoppAddresd.Telemedicine.Infrastructure.VideoProvider;
 using Microsoft.EntityFrameworkCore;
@@ -39,10 +42,37 @@ public static class DependencyInjection
         services.AddMemoryCache();
 
         services.AddScoped<ITelemedicineSettingsProvider, TelemedicineSettingsProvider>();
+        services.AddScoped<IAppointmentRepository, AppointmentRepository>();
+        services.AddScoped<IRequestRepository, RequestRepository>();
+
+        AddBackendReferenceDataClient(services, configuration);
 
         AddVideoProvider(services, configuration);
 
         return services;
+    }
+
+    /// <summary>
+    /// Cliente de datos de referencia hacia el backend del ERP
+    /// (<c>Backend:BaseUrl</c> + header <c>X-Internal-Key</c>), con resiliencia
+    /// estándar del proyecto (reintentos + circuit breaker).
+    /// </summary>
+    private static void AddBackendReferenceDataClient(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.Configure<BackendServiceSettings>(
+            configuration.GetSection(BackendServiceSettings.SectionName));
+
+        services.AddHttpClient<ITelemedicineReferenceDataService, BackendReferenceDataService>(
+                (sp, client) =>
+                {
+                    var settings = sp.GetRequiredService<IOptions<BackendServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(settings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
+                })
+            .AddResiliencePolicy();
     }
 
     /// <summary>

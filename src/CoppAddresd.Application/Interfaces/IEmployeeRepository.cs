@@ -23,6 +23,13 @@ public interface IEmployeeRepository
     /// <summary>Empleado con asignaciones de clínicas y extensión profesional completa.</summary>
     Task<Employee?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Empleado por id de su extensión profesional (<c>erp.professionals</c>),
+    /// con clínicas + sedes + extensión. Para los datos de referencia del
+    /// microservicio de Telemedicina, que referencia al profesional por su id.
+    /// </summary>
+    Task<Employee?> GetByProfessionalIdAsync(Guid professionalId, CancellationToken ct = default);
+
     /// <summary>Empleado por usuario de Auth (contexto del JWT), con clínicas + sedes + extensión.</summary>
     Task<Employee?> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
 

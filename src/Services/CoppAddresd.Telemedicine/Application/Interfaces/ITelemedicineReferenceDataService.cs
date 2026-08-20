@@ -1,0 +1,26 @@
+using CoppAddresd.Telemedicine.Application.ReferenceData;
+
+namespace CoppAddresd.Telemedicine.Application.Interfaces;
+
+/// <summary>
+/// Acceso a los datos de referencia del ERP (profesionales, pacientes,
+/// especialidades, sedes). El dominio de telemedicina referencia estos datos
+/// por Id; su validación de existencia y los datos de la UI vienen del backend
+/// vía internal endpoints (<c>X-Internal-Key</c>). Implementación en
+/// Infrastructure (<see cref="CoppAddresd.Telemedicine.Infrastructure.Services.BackendReferenceDataService"/>),
+/// sustituible en pruebas por un fake.
+/// </summary>
+public interface ITelemedicineReferenceDataService
+{
+    /// <summary>Profesional por su id de <c>erp.professionals</c>; <c>null</c> si no existe.</summary>
+    Task<ProfessionalRefDto?> GetProfessionalAsync(Guid professionalId, CancellationToken ct = default);
+
+    /// <summary>Paciente por su id de <c>app.patient_profiles</c>; <c>null</c> si no existe.</summary>
+    Task<PatientRefDto?> GetPatientAsync(Guid patientId, CancellationToken ct = default);
+
+    /// <summary>Especialidad por id de <c>erp.specialties</c>; <c>null</c> si no existe.</summary>
+    Task<SpecialtyRefDto?> GetSpecialtyAsync(Guid specialtyId, CancellationToken ct = default);
+
+    /// <summary>Sede por id de <c>erp.locations</c>; <c>null</c> si no existe.</summary>
+    Task<LocationRefDto?> GetLocationAsync(Guid locationId, CancellationToken ct = default);
+}
