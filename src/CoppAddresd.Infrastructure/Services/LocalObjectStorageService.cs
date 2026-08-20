@@ -24,7 +24,10 @@ public sealed class LocalObjectStorageService : IObjectStorageService
 
     public LocalObjectStorageService(IOptions<LocalStorageOptions> options)
     {
-        _rootPath = Path.GetFullPath(options.Value.RootPath);
+        // `Path.GetFullPath("")` lanza; RootPath vacío se resuelve al directorio
+        // de trabajo (comportamiento de desarrollo sin configurar).
+        var root = string.IsNullOrWhiteSpace(options.Value.RootPath) ? "." : options.Value.RootPath;
+        _rootPath = Path.GetFullPath(root);
     }
 
     public bool IsCloudStorage => false;

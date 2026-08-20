@@ -96,9 +96,10 @@ public class MediaController(IMediator mediator, IObjectStorageService objectSto
         }
 
         var storageKey = $"media/{folder}/{Guid.NewGuid():N}{extension}";
-        var expiresIn = (int)TimeSpan.FromMinutes(15).TotalSeconds;
 
         var publicBaseUrl = $"{Request.Scheme}://{Request.Host}";
+        var expiresIn = (int)TimeSpan.FromMinutes(15).TotalSeconds;
+
         var presignedUrl = await objectStorage.GetPreSignedUploadUrlAsync(
             storageKey, contentType, TimeSpan.FromSeconds(expiresIn), publicBaseUrl, ct);
 
