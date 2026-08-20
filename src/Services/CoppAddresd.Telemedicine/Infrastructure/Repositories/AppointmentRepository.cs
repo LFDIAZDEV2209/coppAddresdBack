@@ -27,6 +27,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .Include(a => a.Request)
             .Include(a => a.Room)
                 .ThenInclude(r => r!.Sessions)
+            .Include(a => a.Encounter)
             .FirstOrDefaultAsync(a => a.Id == id, ct);
 
     public async Task<TelemedicineAppointment> AddAsync(

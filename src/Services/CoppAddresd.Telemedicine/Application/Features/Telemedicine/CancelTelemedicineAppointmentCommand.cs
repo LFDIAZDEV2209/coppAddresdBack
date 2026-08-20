@@ -58,6 +58,15 @@ public sealed class CancelTelemedicineAppointmentCommandHandler(
         entity.CancelledAt = now;
         entity.UpdatedAt = now.UtcDateTime;
 
+        // Integridad del registro clínico: un borrador de encuentro de una
+        // consulta cancelada no debe quedar huérfano → se cancela. Un encuentro
+        // COMPLETADO se preserva (la consulta ocurrió y su registro es final).
+        if (entity.Encounter is { Status: EncounterStatus.Draft } encounter)
+        {
+            encounter.Status = EncounterStatus.Cancelled;
+            encounter.UpdatedAt = now.UtcDateTime;
+        }
+
         entity.Cancellations.Add(new AppointmentCancellation
         {
             AppointmentId = entity.Id,
