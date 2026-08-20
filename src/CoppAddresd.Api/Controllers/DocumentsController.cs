@@ -2,6 +2,7 @@ using CoppAddresd.Api.Context;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.Features.Documents;
 using CoppAddresd.Application.Features.Patients;
+using CoppAddresd.Application.Interfaces;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,7 +21,8 @@ namespace CoppAddresd.Api.Controllers;
 public class DocumentsController(
     IMediator mediator,
     ICurrentContext context,
-    StorageSignatureService signatureService) : ControllerBase
+    StorageSignatureService signatureService,
+    IObjectStorageService objectStorage) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PaginatedDocumentsResult>> List(
@@ -78,8 +80,10 @@ public class DocumentsController(
     }
 
     /// <summary>
-    /// URL firmada para descargar el binario (GET /api/v1/storage/{{key}}?exp&amp;sig),
-    /// de modo que el navegador pueda abrir/descargar sin header Bearer.
+    /// URL firmada para descargar el binario. Con S3 es un presigned URL real
+    /// del bucket; con el proveedor Local es el proxy
+    /// (<c>GET /api/v1/storage/{{key}}?exp&amp;sig</c>) para que el navegador
+    /// abra/descargue sin header Bearer.
     /// </summary>
     [HttpGet("{id:guid}/download")]
     public async Task<ActionResult<object>> Download(Guid id, CancellationToken ct)
@@ -92,6 +96,13 @@ public class DocumentsController(
             return NotFound(new { message = "Documento no encontrado" });
 
         var expiresInSeconds = 900;
+        if (objectStorage.IsCloudStorage)
+        {
+            var cloudUrl = await objectStorage.GetPreSignedUrlAsync(
+                document.StorageKey, TimeSpan.FromSeconds(expiresInSeconds), ct);
+            return Ok(new { url = cloudUrl, expiresInSeconds });
+        }
+
         var expiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
         var signature = signatureService.Sign(document.StorageKey, expiresAt);
 
@@ -122,7 +133,9 @@ public class DocumentsController(
             request.FileName,
             request.ParentDocumentId), ct);
 
-        var presignedUrl = $"{Request.Scheme}://{Request.Host}/api/v1/storage/{result.StorageKey}";
+        var publicBaseUrl = $"{Request.Scheme}://{Request.Host}";
+        var presignedUrl = await objectStorage.GetPreSignedUploadUrlAsync(
+            result.StorageKey, request.ContentType, TimeSpan.FromSeconds(result.ExpiresInSeconds), publicBaseUrl, ct);
         return Ok(new { result.StorageKey, presignedUrl, result.ExpiresInSeconds });
     }
 
@@ -227,7 +240,8 @@ public record CreateDocumentUploadIntentRequest(
     Guid PatientId,
     Guid DocumentTypeId,
     string FileName,
-    Guid? ParentDocumentId);
+    Guid? ParentDocumentId,
+    string? ContentType = null);
 
 public record CreateDocumentRequest(
     Guid? PatientId,
