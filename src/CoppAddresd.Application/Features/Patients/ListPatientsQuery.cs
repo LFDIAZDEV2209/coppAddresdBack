@@ -5,14 +5,15 @@ namespace CoppAddresd.Application.Features.Patients;
 
 /// <summary>
 /// Lista paginada del directorio de pacientes con filtros opcionales
-/// (búsqueda por nombre/MRN/documento/correo, estado y aseguradora).
+/// (búsqueda por nombre/MRN/documento/correo, estado, aseguradora y clínica).
 /// </summary>
 public record ListPatientsQuery(
     int Page = 1,
     int PageSize = 20,
     string? Search = null,
     string? Status = null,
-    Guid? InsurerId = null)
+    Guid? InsurerId = null,
+    Guid? ClinicId = null)
     : IRequest<PaginatedPatientsResult>;
 
 public sealed class ListPatientsQueryHandler(
@@ -25,7 +26,7 @@ public sealed class ListPatientsQueryHandler(
         var search = string.IsNullOrWhiteSpace(request.Search) ? null : request.Search.Trim();
 
         var (items, total) = await repository.ListAsync(
-            page, pageSize, search, request.Status, request.InsurerId, ct);
+            page, pageSize, search, request.Status, request.InsurerId, request.ClinicId, ct);
 
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 

@@ -1,8 +1,10 @@
+using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Extensions;
 using CoppAddresd.Api.Middleware;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Api.Seeders;
 using CoppAddresd.Infrastructure;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.OpenApi.Models;
 using System.Text.Json.Serialization;
 

@@ -32,11 +32,14 @@ Flujo de dependencias hacia adentro, enforceado solo por referencias csproj:
 
 ```sql
 Schema public:  __EFMigrationsHistory (solo)
-Schema auth:    14 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, etc.)
+Schema auth:    16 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, ScopedRoleAssignments, ScopedPermissionAssignments, etc.)
 Schema app:     10 tablas (patient_profiles → auth.users, insurers, allergens,
                 icd10_codes, medications, patient_diagnoses, patient_medications,
                 patient_allergies, vital_signs)
-Schema erp:     1 tabla (employees → auth.users)
+Schema erp:     12 tablas (organizations → clinics → locations; employees como
+                núcleo HR con extensión clínica 1:0..1 professionals; catálogos
+                professional_types/specialties + puentes N:N + professional_licenses).
+                Plan de evolución del módulo: docs/modules/patients/PLAN.md
 Schema audit:   1 tabla (activity_logs)
 ```
 
@@ -79,9 +82,26 @@ POST   /api/permissions/{id}/assign-to-role    # Asignar a rol [RequirePermissio
 DELETE /api/permissions/{id}/assign-to-role    # Remover de rol [RequirePermission("Permissions.Assign")]
 POST   /api/permissions/{id}/assign-to-user   # Asignar a usuario [RequirePermission("Permissions.Assign")]
 DELETE /api/permissions/{id}/assign-to-user   # Remover de usuario [RequirePermission("Permissions.Assign")]
+
+# Asignaciones con scope (permisos por contexto: clínica/organización)
+POST   /api/users/{id}/scoped/roles           # Rol scoped [RequirePermission("Roles.Assign")]
+DELETE /api/users/{id}/scoped/roles           # Remover rol scoped [RequirePermission("Roles.Assign")]
+POST   /api/users/{id}/scoped/permissions     # Override Grant/Deny scoped [RequirePermission("Permissions.Assign")]
+DELETE /api/users/{id}/scoped/permissions     # Remover override scoped [RequirePermission("Permissions.Assign")]
+
+# Internos (ERP → Auth, header X-Internal-Key)
+GET    /api/auth/internal/authorize           # ¿Permiso en cadena de scopes? (?userId&permissionCode&scopes=Clinic:id|Organization:id|Global)
+GET    /api/auth/internal/scoped-permissions  # Permisos efectivos para una cadena de scopes (?userId&scopes=...)
+POST   /api/auth/internal/invitations         # Crear usuario sin password + acceso ERP + invitación + email (body: email, firstName, lastName)
+
+# Invitaciones de primer acceso (onboarding del profesional)
+GET    /api/invitations/validate?token=       # Validar token (público, no consume)
+POST   /api/invitations/accept                # Establecer password y marcar usada (público: token, password)
+POST   /api/invitations/{id}/resend           # Reenviar (revoca la pendiente) [RequirePermission("Users.Update")]
+POST   /api/invitations/{id}/revoke           # Revocar [RequirePermission("Users.Update")]
 ```
 
-**Permisos seedeados** (15 total): `Users.View/Create/Update/Delete`, `Roles.View/Create/Update/Delete/Assign`, `Permissions.View/Assign`, `Agents.View/Create/Update/Delete`.
+**Permisos seedeados** (47 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`. Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Physician`, `Nutritionist`, `Psychologist`, `Nurse`, `Receptionist`, `CareCoordinator` (asignables con scope de clínica/org).
 
 **Credenciales admin**: `admin@coppaddresd.com` / `Test@1234` (configurable en `appsettings.json` → `Auth` section).
 
@@ -127,6 +147,7 @@ versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de 
 ## Gotchas
 
 - **`appsettings.json` / `appsettings.*.json` están gitignoreados** (`src/CoppAddresd.Api` y `src/Services/CoppAddresd.Auth`). Deben crearse localmente antes de correr. Hay `appsettings.Example.json` solo en Auth.
+- **Storage de objetos**: `Storage:Provider` elige `Local` (filesystem, dev) o `S3` (AWS, prod). Con S3 el `upload-intent`/`download` devuelven presigned URLs reales del bucket `cooppadresd-storage-prod` (región `us-east-2`); las credenciales salen de la cadena por defecto del SDK (IAM role), nunca de Access Keys. Config en `appsettings` + fallback a variables `AWS_REGION`/`AWS_S3_*`. Detalle en `docs/modules/storage/README.md`. Si `Storage:Provider=S3` sin credenciales AWS configuradas, la primera operación de storage fallará con error de credenciales del SDK (fail fast en uso).
 - **JWT debe ser idéntico** entre API y Auth Service (mismo Secret, Issuer, Audience) para que los tokens funcionen.
 - **Auth Service corre migraciones + seeders automáticamente** al iniciar (Program.cs).
 - **`HttpAuditActorContext`** actualmente retorna `ActorType=System`, `UserId=null` — no hay integración con Identity todavía.

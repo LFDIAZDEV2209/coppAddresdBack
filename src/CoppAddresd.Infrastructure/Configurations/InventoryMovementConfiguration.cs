@@ -9,7 +9,7 @@ public sealed class InventoryMovementConfiguration : IEntityTypeConfiguration<In
 {
     public void Configure(EntityTypeBuilder<InventoryMovement> builder)
     {
-        builder.ToTable("inventory_movements", "inventory");
+        builder.ToTable("inventory_movements", "erp");
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");

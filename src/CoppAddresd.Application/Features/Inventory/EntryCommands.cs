@@ -1,6 +1,5 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
-using CoppAddresd.Domain.Enums;
 using MediatR;
 
 namespace CoppAddresd.Application.Features.Inventory;
@@ -76,11 +75,7 @@ public sealed class CreateEntryCommandHandler(
             }).ToList()
         };
 
-        await repository.AddEntryAsync(entry, ct);
-
-        foreach (var line in entry.Lines)
-            await repository.AdjustStockAsync(line.ProductId, line.Quantity, reference,
-                MovementDirections.Entrada, r.Reason, r.Responsible, ct);
+        await repository.CreateEntryAsync(entry, ct);
 
         return InventoryEntryDto.FromEntity(entry);
     }

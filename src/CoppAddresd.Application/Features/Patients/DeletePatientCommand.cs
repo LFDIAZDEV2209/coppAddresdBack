@@ -3,8 +3,11 @@ using MediatR;
 
 namespace CoppAddresd.Application.Features.Patients;
 
-/// <summary>Elimina un paciente del directorio.</summary>
-public record DeletePatientCommand(Guid Id) : IRequest<bool>;
+/// <summary>
+/// Elimina un paciente del directorio (soft delete: marca <c>deleted_at</c> y
+/// conserva la trazabilidad PHI; nunca borrado físico).
+/// </summary>
+public record DeletePatientCommand(Guid Id, Guid? DeletedBy) : IRequest<bool>;
 
 public sealed class DeletePatientCommandHandler(
     IPatientRepository repository) : IRequestHandler<DeletePatientCommand, bool>
@@ -15,7 +18,8 @@ public sealed class DeletePatientCommandHandler(
         if (patient is null)
             return false;
 
-        await repository.DeleteAsync(patient, ct);
+        patient.UpdatedBy = request.DeletedBy;
+        await repository.SoftDeleteAsync(patient, ct);
         return true;
     }
 }
