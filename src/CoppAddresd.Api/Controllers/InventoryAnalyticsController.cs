@@ -11,6 +11,9 @@ namespace CoppAddresd.Api.Controllers;
 public class InventoryAnalyticsController(IMediator mediator) : ControllerBase
 {
     [HttpGet]
-    public async Task<ActionResult<InventoryAnalyticsDto>> Get(CancellationToken ct)
-        => Ok(await mediator.Send(new GetInventoryAnalyticsQuery(), ct));
+    public async Task<ActionResult<InventoryAnalyticsDto>> Get(
+        [FromQuery] DateOnly? from = null,
+        [FromQuery] DateOnly? to = null,
+        CancellationToken ct = default)
+        => Ok(await mediator.Send(new GetInventoryAnalyticsQuery(from, to), ct));
 }

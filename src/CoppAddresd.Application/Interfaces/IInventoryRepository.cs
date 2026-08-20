@@ -18,21 +18,20 @@ public interface IInventoryRepository
 
     // Entries
     Task<InventoryEntry?> GetEntryByIdAsync(Guid id, CancellationToken ct = default);
-    Task<InventoryEntry> AddEntryAsync(InventoryEntry entry, CancellationToken ct = default);
+    Task<InventoryEntry> CreateEntryAsync(InventoryEntry entry, CancellationToken ct = default);
     Task<IReadOnlyList<InventoryEntry>> ListEntriesAsync(int page, int pageSize, CancellationToken ct = default);
 
     // Exits
     Task<InventoryExit?> GetExitByIdAsync(Guid id, CancellationToken ct = default);
-    Task<InventoryExit> AddExitAsync(InventoryExit exit, CancellationToken ct = default);
+    Task<InventoryExit> CreateExitAsync(InventoryExit exit, CancellationToken ct = default);
     Task<IReadOnlyList<InventoryExit>> ListExitsAsync(int page, int pageSize, CancellationToken ct = default);
 
     // Movements
     Task<(IReadOnlyList<InventoryMovement> Items, int Total)> ListMovementsAsync(
-        string? search, string? direction, int page, int pageSize, CancellationToken ct = default);
+        string? search, string? direction, DateOnly? dateFrom, DateOnly? dateTo,
+        int page, int pageSize, CancellationToken ct = default);
 
     // Analytics
-    Task<InventoryAnalyticsDto> GetAnalyticsAsync(CancellationToken ct = default);
+    Task<InventoryAnalyticsDto> GetAnalyticsAsync(DateOnly? dateFrom = null, DateOnly? dateTo = null, CancellationToken ct = default);
 
-    // Stock
-    Task AdjustStockAsync(Guid productId, int delta, string reference, string direction, string reason, string? user, CancellationToken ct = default);
 }
