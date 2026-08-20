@@ -34,6 +34,31 @@ public sealed class ListLegalDocumentsQueryHandler(ILegalDocumentRepository repo
     }
 }
 
+public record ListAllLegalDocumentVersionsQuery : IRequest<IReadOnlyList<LegalDocumentVersionListDto>>;
+
+public sealed class ListAllLegalDocumentVersionsQueryHandler(ILegalDocumentRepository repository)
+    : IRequestHandler<ListAllLegalDocumentVersionsQuery, IReadOnlyList<LegalDocumentVersionListDto>>
+{
+    public async Task<IReadOnlyList<LegalDocumentVersionListDto>> Handle(
+        ListAllLegalDocumentVersionsQuery _, CancellationToken ct)
+    {
+        var versions = await repository.ListAllVersionsAsync(ct);
+        return versions.Select(version => new LegalDocumentVersionListDto(
+            version.DocumentId,
+            version.Document.Code,
+            version.Document.Title,
+            version.Id,
+            version.Major,
+            version.Minor,
+            version.VersionLabel,
+            version.IsPublished,
+            version.Content,
+            version.CreatedBy,
+            version.CreatedAt,
+            version.Id == version.Document.CurrentVersionId)).ToList();
+    }
+}
+
 public record GetLegalDocumentQuery(string Code) : IRequest<LegalDocumentDetailDto?>;
 
 public sealed class GetLegalDocumentQueryHandler(ILegalDocumentRepository repository)

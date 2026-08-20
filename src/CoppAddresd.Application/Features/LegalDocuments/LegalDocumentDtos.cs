@@ -21,6 +21,20 @@ public record LegalDocumentVersionDto(
     DateTime CreatedAt,
     bool IsCurrent);
 
+public record LegalDocumentVersionListDto(
+    Guid DocumentId,
+    string DocumentCode,
+    string DocumentTitle,
+    Guid VersionId,
+    int Major,
+    int Minor,
+    string VersionLabel,
+    bool IsPublished,
+    string Content,
+    string? CreatedBy,
+    DateTime CreatedAt,
+    bool IsCurrent);
+
 public record LegalDocumentDetailDto(
     Guid Id,
     string Code,

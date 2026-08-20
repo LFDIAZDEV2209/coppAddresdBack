@@ -6,6 +6,7 @@ public interface ILegalDocumentRepository
 {
     Task<IReadOnlyList<LegalDocument>> ListAsync(CancellationToken ct = default);
     Task<LegalDocument?> GetByCodeAsync(string code, CancellationToken ct = default);
+    Task<IReadOnlyList<LegalDocumentVersion>> ListAllVersionsAsync(CancellationToken ct = default);
     Task<LegalDocument> SaveDraftAsync(
         string code, string title, string content, string? createdBy, CancellationToken ct = default);
     Task<LegalDocument?> PublishAsync(

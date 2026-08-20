@@ -14,6 +14,10 @@ public sealed class LegalDocumentsController(IMediator mediator) : ControllerBas
     public async Task<ActionResult<IReadOnlyList<LegalDocumentSummaryDto>>> List(CancellationToken ct)
         => Ok(await mediator.Send(new ListLegalDocumentsQuery(), ct));
 
+    [HttpGet("all-versions")]
+    public async Task<ActionResult<IReadOnlyList<LegalDocumentVersionListDto>>> AllVersions(CancellationToken ct)
+        => Ok(await mediator.Send(new ListAllLegalDocumentVersionsQuery(), ct));
+
     [HttpGet("{code}")]
     public async Task<ActionResult<LegalDocumentDetailDto>> Get(string code, CancellationToken ct)
     {
