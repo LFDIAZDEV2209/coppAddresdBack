@@ -58,6 +58,16 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         _client = new AmazonS3Client(config);
     }
 
+    /// <summary>
+    /// Constructor de prueba: permite inyectar un cliente S3 simulado sin tocar
+    /// la cadena de credenciales de AWS. Solo para tests.
+    /// </summary>
+    internal S3ObjectStorageService(IAmazonS3 client, string bucket)
+    {
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _bucket = bucket;
+    }
+
     public bool IsCloudStorage => true;
 
     public async Task<string> PutObjectAsync(
