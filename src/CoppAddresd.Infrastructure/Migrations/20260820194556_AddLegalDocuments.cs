@@ -13,7 +13,7 @@ namespace CoppAddresd.Infrastructure.Migrations
         {
             migrationBuilder.CreateTable(
                 name: "legal_documents",
-                schema: "app",
+                schema: "erp",
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "gen_random_uuid()"),
@@ -30,7 +30,7 @@ namespace CoppAddresd.Infrastructure.Migrations
 
             migrationBuilder.CreateTable(
                 name: "legal_document_versions",
-                schema: "app",
+                schema: "erp",
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "gen_random_uuid()"),
@@ -48,7 +48,7 @@ namespace CoppAddresd.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_legal_document_versions_legal_documents_document_id",
                         column: x => x.document_id,
-                        principalSchema: "app",
+                        principalSchema: "erp",
                         principalTable: "legal_documents",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
@@ -56,21 +56,21 @@ namespace CoppAddresd.Infrastructure.Migrations
 
             migrationBuilder.CreateIndex(
                 name: "ix_legal_document_versions_document_version",
-                schema: "app",
+                schema: "erp",
                 table: "legal_document_versions",
                 columns: new[] { "document_id", "major", "minor" },
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_legal_documents_code",
-                schema: "app",
+                schema: "erp",
                 table: "legal_documents",
                 column: "code",
                 unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_legal_documents_current_version_id",
-                schema: "app",
+                schema: "erp",
                 table: "legal_documents",
                 column: "current_version_id");
         }
@@ -80,11 +80,11 @@ namespace CoppAddresd.Infrastructure.Migrations
         {
             migrationBuilder.DropTable(
                 name: "legal_document_versions",
-                schema: "app");
+                schema: "erp");
 
             migrationBuilder.DropTable(
                 name: "legal_documents",
-                schema: "app");
+                schema: "erp");
         }
     }
 }

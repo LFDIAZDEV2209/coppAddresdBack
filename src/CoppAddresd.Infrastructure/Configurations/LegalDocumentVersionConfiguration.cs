@@ -8,7 +8,7 @@ public sealed class LegalDocumentVersionConfiguration : IEntityTypeConfiguration
 {
     public void Configure(EntityTypeBuilder<LegalDocumentVersion> builder)
     {
-        builder.ToTable("legal_document_versions", "app");
+        builder.ToTable("legal_document_versions", "erp");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         builder.Property(x => x.DocumentId).HasColumnName("document_id").IsRequired();
