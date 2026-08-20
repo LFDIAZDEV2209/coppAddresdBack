@@ -49,20 +49,42 @@ public class AiServiceClient : IAiServiceClient
         user_id = request.UserId,
     };
 
+    /// <summary>
+    /// Header de autenticación del canal interno backend → AI Service. El
+    /// frontend jamás lo conoce; la clave vive solo en configuración
+    /// (appsettings/variables de entorno, gitignoreado).
+    /// </summary>
+    private void AddInternalKeyHeader(HttpRequestMessage request)
+    {
+        if (string.IsNullOrWhiteSpace(_settings.InternalApiKey))
+        {
+            _logger.LogWarning(
+                "AiService:InternalApiKey no configurada — el AI Service rechazará la llamada (401/503).");
+            return;
+        }
+        request.Headers.TryAddWithoutValidation("X-Internal-Key", _settings.InternalApiKey);
+    }
+
     public async Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default)
     {
         _logger.LogDebug("Calling AI service chat endpoint");
         var payload = BuildChatPayload(request);
-        
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.ChatEndpoint)
+        {
+            Content = JsonContent.Create(payload, options: JsonOpts),
+        };
+        AddInternalKeyHeader(httpRequest);
+
         // JsonOpts (snake_case + case-insensitive + WhenWritingNull): el
         // payload se serializa acorde al contrato del ai-service y la
         // respuesta (`answer`/`thread_id`/`execution_id`/`agent`) se
         // deserializa correctamente. Los errores se propagan como
         // AiServiceException para habilitar el re-sync del agente.
-        var response = await _httpClient.PostAsJsonAsync(_settings.ChatEndpoint, payload, JsonOpts, ct);
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
-        
+
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
         return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent);
@@ -101,6 +123,7 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
+        AddInternalKeyHeader(httpRequest);
 
         using var response = await _httpClient.SendAsync(
             httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
