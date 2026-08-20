@@ -1,6 +1,5 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
-using CoppAddresd.Domain.Enums;
 using MediatR;
 
 namespace CoppAddresd.Application.Features.Inventory;
@@ -74,11 +73,7 @@ public sealed class CreateExitCommandHandler(
             }).ToList()
         };
 
-        await repository.AddExitAsync(exit, ct);
-
-        foreach (var line in exit.Lines)
-            await repository.AdjustStockAsync(line.ProductId, -line.Quantity, reference,
-                MovementDirections.Salida, r.Reason, r.Responsible, ct);
+        await repository.CreateExitAsync(exit, ct);
 
         return InventoryExitDto.FromEntity(exit);
     }
