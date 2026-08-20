@@ -9,7 +9,7 @@ public sealed class InventoryExitConfiguration : IEntityTypeConfiguration<Invent
 {
     public void Configure(EntityTypeBuilder<InventoryExit> builder)
     {
-        builder.ToTable("inventory_exits", "inventory");
+        builder.ToTable("inventory_exits", "erp");
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");

@@ -9,7 +9,7 @@ public sealed class StoreItemConfiguration : IEntityTypeConfiguration<StoreItem>
 {
     public void Configure(EntityTypeBuilder<StoreItem> builder)
     {
-        builder.ToTable("store_items", "store");
+        builder.ToTable("store_items", "erp");
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");

@@ -8,8 +8,13 @@ namespace CoppAddresd.Infrastructure.Repositories;
 public sealed class PatientRepository(AppDbContext dbContext) : IPatientRepository
 {
     public async Task<PatientProfile?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.PatientProfiles
+        => await QueryDetail()
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
+
+    private IQueryable<PatientProfile> QueryDetail()
+        => dbContext.PatientProfiles
             .AsNoTracking()
+            .Where(x => x.DeletedAt == null)
             .Include(x => x.Insurer)
             .Include(x => x.DocumentType)
             .Include(x => x.Ethnicity)
@@ -17,18 +22,20 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
             .Include(x => x.Country)
             .Include(x => x.State)
             .Include(x => x.City)
+            .Include(x => x.Clinic)
+            .Include(x => x.Location)
             .Include(x => x.Diagnoses)
                 .ThenInclude(d => d.Icd10Code)
             .Include(x => x.Medications)
                 .ThenInclude(m => m.Medication)
             .Include(x => x.Allergies)
                 .ThenInclude(a => a.Allergen)
-            .Include(x => x.VitalSigns)
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+            .Include(x => x.VitalSigns);
 
     public async Task<PatientProfile?> GetByMedicalRecordNumberAsync(string mrn, CancellationToken ct = default)
         => await dbContext.PatientProfiles
             .AsNoTracking()
+            .Where(x => x.DeletedAt == null)
             .FirstOrDefaultAsync(x => x.MedicalRecordNumber == mrn, ct);
 
     public async Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
@@ -37,9 +44,11 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         string? search,
         string? status,
         Guid? insurerId,
+        Guid? clinicId,
         CancellationToken ct = default)
     {
-        var query = dbContext.PatientProfiles.AsNoTracking();
+        var query = dbContext.PatientProfiles.AsNoTracking()
+            .Where(x => x.DeletedAt == null);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -58,11 +67,18 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         if (insurerId is not null)
             query = query.Where(x => x.InsurerId == insurerId);
 
+        // Frontera de datos (Fase 4): con clínica activa solo se ven sus
+        // pacientes. El directorio legacy sin clínica (clinic_id null) queda
+        // fuera de la vista por clínica; se accede desde el contexto global.
+        if (clinicId is not null)
+            query = query.Where(x => x.ClinicId == clinicId);
+
         var total = await query.CountAsync(ct);
 
         var items = await query
             .Include(x => x.Insurer)
             .Include(x => x.DocumentType)
+            .Include(x => x.Clinic)
             .OrderByDescending(x => x.CreatedAt)
             .ThenByDescending(x => x.Id)
             .Skip((page - 1) * pageSize)
@@ -120,12 +136,16 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         });
     }
 
-    public async Task DeleteAsync(PatientProfile patient, CancellationToken ct = default)
+    public async Task SoftDeleteAsync(PatientProfile patient, CancellationToken ct = default)
     {
-        // Las colecciones hijas se eliminan por cascada (FK ON DELETE CASCADE).
+        // Soft delete: se marca deleted_at y se conservan las filas hijas
+        // (trazabilidad PHI). Nunca se eliminan físicamente los registros.
         await dbContext.PatientProfiles
             .Where(x => x.Id == patient.Id)
-            .ExecuteDeleteAsync(ct);
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.DeletedAt, DateTime.UtcNow)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow)
+                .SetProperty(x => x.UpdatedBy, patient.UpdatedBy), ct);
     }
 
     public async Task<bool> ExistsAsync(Guid id, CancellationToken ct = default)
