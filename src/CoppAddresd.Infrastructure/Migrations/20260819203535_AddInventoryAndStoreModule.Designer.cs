@@ -4,6 +4,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260819203535_AddInventoryAndStoreModule")]
+    partial class AddInventoryAndStoreModule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -764,34 +767,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_inventory_entries_reference");
 
                     b.ToTable("inventory_entries", "inventory");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("30000000-0000-0000-0000-000000000001"),
-                            CreatedAt = new DateTime(2026, 8, 13, 10, 0, 0, 0, DateTimeKind.Utc),
-                            Date = new DateTime(2026, 8, 13, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Document = "FAC-DEMO-001",
-                            Notes = "Carga inicial del catálogo de bienestar.",
-                            Reason = "Compra",
-                            Reference = "ENT-DEMO-001",
-                            Responsible = "Demo seed",
-                            Supplier = "Wellness Foods",
-                            TotalCost = 605000m
-                        },
-                        new
-                        {
-                            Id = new Guid("30000000-0000-0000-0000-000000000002"),
-                            CreatedAt = new DateTime(2026, 8, 16, 14, 0, 0, 0, DateTimeKind.Utc),
-                            Date = new DateTime(2026, 8, 16, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Document = "REM-DEMO-002",
-                            Notes = "Reposición de suplementos y vitaminas.",
-                            Reason = "Recepción de proveedor",
-                            Reference = "ENT-DEMO-002",
-                            Responsible = "Demo seed",
-                            Supplier = "NutriSupply",
-                            TotalCost = 551000m
-                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryEntryLine", b =>
@@ -842,41 +817,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("inventory_entry_lines", "inventory");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("31000000-0000-0000-0000-000000000001"),
-                            EntryId = new Guid("30000000-0000-0000-0000-000000000001"),
-                            ExpirationDate = new DateTime(2027, 6, 30, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Lot = "SNK-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000002"),
-                            ProductName = "Barra de proteína cacao",
-                            Quantity = 80,
-                            UnitCost = 4200m
-                        },
-                        new
-                        {
-                            Id = new Guid("31000000-0000-0000-0000-000000000002"),
-                            EntryId = new Guid("30000000-0000-0000-0000-000000000001"),
-                            ExpirationDate = new DateTime(2027, 4, 12, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Lot = "BEV-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000003"),
-                            ProductName = "Té frío sin azúcar",
-                            Quantity = 60,
-                            UnitCost = 3500m
-                        },
-                        new
-                        {
-                            Id = new Guid("31000000-0000-0000-0000-000000000003"),
-                            EntryId = new Guid("30000000-0000-0000-0000-000000000002"),
-                            ExpirationDate = new DateTime(2028, 1, 20, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Lot = "SUP-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000004"),
-                            ProductName = "Fibra soluble",
-                            Quantity = 25,
-                            UnitCost = 28500m
-                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryExit", b =>
@@ -933,18 +873,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_inventory_exits_reference");
 
                     b.ToTable("inventory_exits", "inventory");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("40000000-0000-0000-0000-000000000001"),
-                            CreatedAt = new DateTime(2026, 8, 18, 16, 0, 0, 0, DateTimeKind.Utc),
-                            Date = new DateTime(2026, 8, 18, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Notes = "Venta demo para visualizar movimientos.",
-                            Reason = "Venta",
-                            Reference = "SAL-DEMO-001",
-                            Responsible = "Demo seed"
-                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryExitLine", b =>
@@ -995,19 +923,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.HasIndex("ProductId");
 
                     b.ToTable("inventory_exit_lines", "inventory");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("41000000-0000-0000-0000-000000000001"),
-                            ExitId = new Guid("40000000-0000-0000-0000-000000000001"),
-                            ExpirationDate = new DateTime(2027, 6, 30, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Lot = "SNK-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000002"),
-                            ProductName = "Barra de proteína cacao",
-                            Quantity = 8,
-                            UnitCost = 4200m
-                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryMovement", b =>
@@ -1082,68 +997,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_inventory_movements_product_id");
 
                     b.ToTable("inventory_movements", "inventory");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("50000000-0000-0000-0000-000000000001"),
-                            DateTime = new DateTime(2026, 8, 13, 10, 0, 0, 0, DateTimeKind.Utc),
-                            Direction = "Entrada",
-                            Lot = "SNK-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000002"),
-                            ProductName = "Barra de proteína cacao",
-                            Quantity = 80,
-                            Reason = "Compra",
-                            Reference = "ENT-DEMO-001",
-                            StockAfter = 96,
-                            StockBefore = 16,
-                            User = "Demo seed"
-                        },
-                        new
-                        {
-                            Id = new Guid("50000000-0000-0000-0000-000000000002"),
-                            DateTime = new DateTime(2026, 8, 13, 10, 0, 0, 0, DateTimeKind.Utc),
-                            Direction = "Entrada",
-                            Lot = "BEV-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000003"),
-                            ProductName = "Té frío sin azúcar",
-                            Quantity = 60,
-                            Reason = "Compra",
-                            Reference = "ENT-DEMO-001",
-                            StockAfter = 72,
-                            StockBefore = 12,
-                            User = "Demo seed"
-                        },
-                        new
-                        {
-                            Id = new Guid("50000000-0000-0000-0000-000000000003"),
-                            DateTime = new DateTime(2026, 8, 16, 14, 0, 0, 0, DateTimeKind.Utc),
-                            Direction = "Entrada",
-                            Lot = "SUP-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000004"),
-                            ProductName = "Fibra soluble",
-                            Quantity = 25,
-                            Reason = "Recepción de proveedor",
-                            Reference = "ENT-DEMO-002",
-                            StockAfter = 44,
-                            StockBefore = 19,
-                            User = "Demo seed"
-                        },
-                        new
-                        {
-                            Id = new Guid("50000000-0000-0000-0000-000000000004"),
-                            DateTime = new DateTime(2026, 8, 18, 16, 0, 0, 0, DateTimeKind.Utc),
-                            Direction = "Salida",
-                            Lot = "SNK-DEMO-01",
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000002"),
-                            ProductName = "Barra de proteína cacao",
-                            Quantity = 8,
-                            Reason = "Venta",
-                            Reference = "SAL-DEMO-001",
-                            StockAfter = 88,
-                            StockBefore = 96,
-                            User = "Demo seed"
-                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.KnowledgeBase", b =>
@@ -1850,278 +1703,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_products_status");
 
                     b.ToTable("products", "inventory");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000001"),
-                            ActiveIngredient = "Acetaminofén",
-                            Category = "Analgésicos",
-                            Concentration = "500 mg",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2027, 10, 15, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Estante A-01",
-                            Lot = "PCT-DEMO-01",
-                            Manufacturer = "Genfar",
-                            MaximumStock = 400,
-                            MinimumStock = 80,
-                            Name = "Paracetamol",
-                            Notes = "Rotación alta.",
-                            Presentation = "Tabletas",
-                            ProductType = "Medicamento",
-                            Sku = "MED-PAR-500",
-                            Status = "Activo",
-                            Stock = 248,
-                            Supplier = "Drogas La Rebaja",
-                            Unit = "Caja x 20",
-                            UnitCost = 4200m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000002"),
-                            Category = "Snacks altos en proteína",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2027, 6, 30, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Estante W-01",
-                            Lot = "SNK-DEMO-01",
-                            Manufacturer = "NutriFit",
-                            MaximumStock = 180,
-                            MinimumStock = 20,
-                            Name = "Barra de proteína cacao",
-                            Notes = "Sin azúcar añadida.",
-                            Presentation = "Barra",
-                            ProductType = "Snack saludable",
-                            Sku = "SNK-PRO-001",
-                            Status = "Activo",
-                            Stock = 96,
-                            Supplier = "Wellness Foods",
-                            Unit = "Unidad x 50 g",
-                            UnitCost = 4200m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000003"),
-                            Category = "Bebidas sin azúcar",
-                            Concentration = "500 ml",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2027, 4, 12, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Nevera W-01",
-                            Lot = "BEV-DEMO-01",
-                            Manufacturer = "Vital Drinks",
-                            MaximumStock = 140,
-                            MinimumStock = 18,
-                            Name = "Té frío sin azúcar",
-                            Notes = "Sabor limón.",
-                            Presentation = "Botella",
-                            ProductType = "Bebida",
-                            Sku = "BEV-TEA-001",
-                            Status = "Activo",
-                            Stock = 72,
-                            Supplier = "Wellness Foods",
-                            Unit = "Unidad",
-                            UnitCost = 3500m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000004"),
-                            ActiveIngredient = "Psyllium",
-                            Category = "Digestión y saciedad",
-                            Concentration = "300 g",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2028, 1, 20, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Estante W-02",
-                            Lot = "SUP-DEMO-01",
-                            Manufacturer = "BioBalance",
-                            MaximumStock = 80,
-                            MinimumStock = 12,
-                            Name = "Fibra soluble",
-                            Notes = "Acompañar con suficiente agua.",
-                            Presentation = "Polvo",
-                            ProductType = "Suplemento",
-                            Sku = "SUP-FIB-001",
-                            Status = "Activo",
-                            Stock = 44,
-                            Supplier = "NutriSupply",
-                            Unit = "Frasco",
-                            UnitCost = 28500m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000005"),
-                            Category = "Despensa saludable",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2027, 11, 10, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Estante W-03",
-                            Lot = "FOO-DEMO-01",
-                            Manufacturer = "Campo Vivo",
-                            MaximumStock = 120,
-                            MinimumStock = 15,
-                            Name = "Avena integral",
-                            Notes = "Ideal para desayunos.",
-                            Presentation = "Hojuelas",
-                            ProductType = "Alimento saludable",
-                            Sku = "FOO-OAT-001",
-                            Status = "Activo",
-                            Stock = 65,
-                            Supplier = "Healthy Market",
-                            Unit = "Bolsa x 500 g",
-                            UnitCost = 6800m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000006"),
-                            Category = "Monitoreo corporal",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Location = "Vitrina D-01",
-                            Lot = "DEV-DEMO-01",
-                            Manufacturer = "HealthTrack",
-                            MaximumStock = 30,
-                            MinimumStock = 4,
-                            Name = "Balanza inteligente",
-                            Notes = "Conectividad Bluetooth.",
-                            Presentation = "Digital",
-                            ProductType = "Dispositivo de salud",
-                            Sku = "DEV-SCL-001",
-                            Status = "Activo",
-                            Stock = 14,
-                            Supplier = "MedTech Supply",
-                            Unit = "Unidad",
-                            UnitCost = 118000m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000007"),
-                            Category = "Entrenamiento en casa",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Location = "Estante F-01",
-                            Lot = "FIT-DEMO-01",
-                            Manufacturer = "MoveWell",
-                            MaximumStock = 60,
-                            MinimumStock = 6,
-                            Name = "Bandas elásticas de resistencia",
-                            Notes = "Tres niveles de resistencia.",
-                            Presentation = "Set",
-                            ProductType = "Equipamiento fitness",
-                            Sku = "FIT-BND-001",
-                            Status = "Activo",
-                            Stock = 28,
-                            Supplier = "Active Supply",
-                            Unit = "Set x 5",
-                            UnitCost = 42000m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000008"),
-                            Category = "Cuidado de la piel",
-                            Concentration = "50+",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2027, 9, 5, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Estante C-01",
-                            Lot = "CARE-DEMO-01",
-                            Manufacturer = "DermaCare",
-                            MaximumStock = 70,
-                            MinimumStock = 8,
-                            Name = "Protector solar SPF 50",
-                            Notes = "Uso diario recomendado.",
-                            Presentation = "Crema",
-                            ProductType = "Cuidado personal",
-                            Sku = "CARE-SUN-001",
-                            Status = "Activo",
-                            Stock = 31,
-                            Supplier = "Wellness Foods",
-                            Unit = "Tubo x 120 ml",
-                            UnitCost = 26000m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000009"),
-                            Category = "Monitoreo de glucosa",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2027, 8, 18, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Estante P-01",
-                            Lot = "PHR-DEMO-01",
-                            Manufacturer = "GlucoSafe",
-                            MaximumStock = 60,
-                            MinimumStock = 8,
-                            Name = "Tiras para glucómetro",
-                            Notes = "Compatibles con GlucoSafe.",
-                            Presentation = "Tiras",
-                            ProductType = "Producto de farmacia",
-                            Sku = "PHR-GLU-001",
-                            Status = "Activo",
-                            Stock = 22,
-                            Supplier = "MedTech Supply",
-                            Unit = "Caja x 50",
-                            UnitCost = 33000m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000010"),
-                            ActiveIngredient = "Colecalciferol",
-                            Category = "Vitaminas",
-                            Concentration = "1000 UI",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2028, 2, 15, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Estante A-02",
-                            Lot = "MED-DEMO-01",
-                            Manufacturer = "HealthLab",
-                            MaximumStock = 100,
-                            MinimumStock = 12,
-                            Name = "Vitamina D3",
-                            Notes = "Venta libre.",
-                            Presentation = "Cápsulas",
-                            ProductType = "Medicamento",
-                            Sku = "MED-VIT-001",
-                            Status = "Activo",
-                            Stock = 53,
-                            Supplier = "NutriSupply",
-                            Unit = "Frasco x 60",
-                            UnitCost = 18500m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000011"),
-                            Category = "Bioseguridad",
-                            Concentration = "Talla M",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            ExpirationDate = new DateTime(2029, 6, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),
-                            Location = "Bodega C-01",
-                            Lot = "INS-DEMO-01",
-                            Manufacturer = "Medline",
-                            MaximumStock = 180,
-                            MinimumStock = 25,
-                            Name = "Guantes de nitrilo",
-                            Presentation = "Guantes",
-                            ProductType = "Insumo médico",
-                            Sku = "INS-GLV-001",
-                            Status = "Activo",
-                            Stock = 84,
-                            Supplier = "Suministros Clínicos",
-                            Unit = "Caja x 100",
-                            UnitCost = 22000m
-                        },
-                        new
-                        {
-                            Id = new Guid("10000000-0000-0000-0000-000000000012"),
-                            Category = "Accesorios saludables",
-                            Concentration = "750 ml",
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Location = "Estante F-02",
-                            Lot = "OTH-DEMO-01",
-                            Manufacturer = "EcoMove",
-                            MaximumStock = 100,
-                            MinimumStock = 10,
-                            Name = "Botella reutilizable",
-                            Notes = "Libre de BPA.",
-                            Presentation = "Botella",
-                            ProductType = "Otro",
-                            Sku = "OTH-BTL-001",
-                            Status = "Activo",
-                            Stock = 40,
-                            Supplier = "Active Supply",
-                            Unit = "Unidad",
-                            UnitCost = 28000m
-                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.State", b =>
@@ -2222,58 +1803,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_store_items_status");
 
                     b.ToTable("store_items", "store");
-
-                    b.HasData(
-                        new
-                        {
-                            Id = new Guid("20000000-0000-0000-0000-000000000001"),
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Snack alto en proteína para controlar el hambre entre comidas.",
-                            Featured = true,
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000002"),
-                            SalePrice = 8900m,
-                            Status = "Visible"
-                        },
-                        new
-                        {
-                            Id = new Guid("20000000-0000-0000-0000-000000000002"),
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Bebida refrescante sin azúcar añadida.",
-                            Featured = true,
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000003"),
-                            SalePrice = 7500m,
-                            Status = "Visible"
-                        },
-                        new
-                        {
-                            Id = new Guid("20000000-0000-0000-0000-000000000003"),
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Apoyo de fibra para una alimentación equilibrada.",
-                            Featured = false,
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000004"),
-                            SalePrice = 49900m,
-                            Status = "Visible"
-                        },
-                        new
-                        {
-                            Id = new Guid("20000000-0000-0000-0000-000000000004"),
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Base versátil para desayunos saludables.",
-                            Featured = false,
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000005"),
-                            SalePrice = 10900m,
-                            Status = "Visible"
-                        },
-                        new
-                        {
-                            Id = new Guid("20000000-0000-0000-0000-000000000005"),
-                            CreatedAt = new DateTime(2026, 8, 1, 0, 0, 0, 0, DateTimeKind.Utc),
-                            Description = "Monitorea tu progreso corporal desde casa.",
-                            Featured = true,
-                            ProductId = new Guid("10000000-0000-0000-0000-000000000006"),
-                            SalePrice = 159000m,
-                            Status = "Visible"
-                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.VitalSign", b =>
