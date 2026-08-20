@@ -19,6 +19,14 @@ public static class TelemedicinePermissionCodes
 
     public const string AgendaView = "Telemedicine.AgendaView";
 
+    /// <summary>
+    /// Supervisión de salas/sesiones: permite unirse, iniciar y finalizar la
+    /// sesión de CUALQUIER cita (supervisor clínico/admin). Los profesionales y
+    /// pacientes de la cita acceden por su identidad (JWT), sin necesitar este
+    /// permiso.
+    /// </summary>
+    public const string SessionsManage = "Telemedicine.SessionsManage";
+
     /// <summary>Todos los códigos del módulo (para el policy provider).</summary>
     public static readonly string[] All =
     [
@@ -30,5 +38,6 @@ public static class TelemedicinePermissionCodes
         AppointmentsCancel,
         AppointmentsReschedule,
         AgendaView,
+        SessionsManage,
     ];
 }

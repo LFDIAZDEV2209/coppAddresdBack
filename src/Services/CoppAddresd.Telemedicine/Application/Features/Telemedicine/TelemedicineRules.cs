@@ -73,7 +73,10 @@ internal static class SchedulingRules
             ? d
             : settings.DefaultAppointmentDurationMinutes;
 
-        var start = scheduledStart;
+        // Npgsql solo admite DateTimeOffset UTC en columnas timestamptz: el
+        // horario llega con el offset del cliente y se normaliza a UTC. Toda
+        // comparación/almacenamiento posterior usa UTC; la UI convierte a local.
+        var start = scheduledStart.ToUniversalTime();
         var end = start.AddMinutes(duration);
 
         if (start < now.AddHours(settings.MinAdvanceBookingHours))

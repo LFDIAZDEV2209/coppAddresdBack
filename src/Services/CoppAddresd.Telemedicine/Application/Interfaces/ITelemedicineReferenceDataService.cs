@@ -18,6 +18,12 @@ public interface ITelemedicineReferenceDataService
     /// <summary>Paciente por su id de <c>app.patient_profiles</c>; <c>null</c> si no existe.</summary>
     Task<PatientRefDto?> GetPatientAsync(Guid patientId, CancellationToken ct = default);
 
+    /// <summary>Profesional del usuario de Auth (contexto del JWT); <c>null</c> si el usuario no es profesional.</summary>
+    Task<ProfessionalRefDto?> GetProfessionalByUserIdAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>Paciente del usuario de Auth (contexto del JWT); <c>null</c> si el usuario no es paciente.</summary>
+    Task<PatientRefDto?> GetPatientByUserIdAsync(Guid userId, CancellationToken ct = default);
+
     /// <summary>Especialidad por id de <c>erp.specialties</c>; <c>null</c> si no existe.</summary>
     Task<SpecialtyRefDto?> GetSpecialtyAsync(Guid specialtyId, CancellationToken ct = default);
 

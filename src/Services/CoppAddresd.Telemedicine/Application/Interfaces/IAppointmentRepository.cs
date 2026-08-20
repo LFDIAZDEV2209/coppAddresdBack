@@ -18,7 +18,8 @@ public interface IAppointmentRepository
 
     /// <summary>
     /// Cita por id TRACKEADA con su historial (cancelaciones/reprogramaciones),
-    /// para mutaciones: añadir hijos al agregado y persistir con SaveChanges.
+    /// sala virtual y sesiones, para mutaciones: añadir hijos al agregado y
+    /// persistir con SaveChanges (flujos de agendamiento y de sala/sesión).
     /// </summary>
     Task<TelemedicineAppointment?> GetForUpdateAsync(
         Guid id,

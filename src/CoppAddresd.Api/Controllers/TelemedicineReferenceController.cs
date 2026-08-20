@@ -60,4 +60,30 @@ public class TelemedicineReferenceController(IMediator mediator) : ControllerBas
         var result = await mediator.Send(new GetTelemedicineLocationRefQuery(id), ct);
         return result is null ? NotFound(new { message = "Sede no encontrada." }) : Ok(result);
     }
+
+    /// <summary>
+    /// Profesional por usuario de Auth (contexto del JWT). Lo usa el microservicio
+    /// para autorizar el acceso a una sala: el profesional de la cita se resuelve
+    /// desde el token, nunca desde un id enviado por el cliente.
+    /// </summary>
+    [HttpGet("professionals/by-user/{userId:guid}")]
+    [ProducesResponseType(typeof(TelemedicineProfessionalRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<TelemedicineProfessionalRefDto>> GetProfessionalByUser(
+        Guid userId, CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetTelemedicineProfessionalByUserIdQuery(userId), ct);
+        return result is null ? NotFound(new { message = "Profesional no encontrado para el usuario." }) : Ok(result);
+    }
+
+    /// <summary>Paciente por usuario de Auth (contexto del JWT), para autorizar el acceso a la sala del paciente.</summary>
+    [HttpGet("patients/by-user/{userId:guid}")]
+    [ProducesResponseType(typeof(TelemedicinePatientRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<TelemedicinePatientRefDto>> GetPatientByUser(
+        Guid userId, CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetTelemedicinePatientByUserIdQuery(userId), ct);
+        return result is null ? NotFound(new { message = "Paciente no encontrado para el usuario." }) : Ok(result);
+    }
 }

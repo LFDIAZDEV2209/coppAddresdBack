@@ -71,6 +71,7 @@ public static class PermissionCodes
     public const string TelemedicineAppointmentsCancel = "Telemedicine.AppointmentsCancel";
     public const string TelemedicineAppointmentsReschedule = "Telemedicine.AppointmentsReschedule";
     public const string TelemedicineAgendaView = "Telemedicine.AgendaView";
+    public const string TelemedicineSessionsManage = "Telemedicine.SessionsManage";
 
     public static IEnumerable<string> GetAll()
     {
@@ -130,6 +131,7 @@ public static class PermissionCodes
         yield return TelemedicineAppointmentsCancel;
         yield return TelemedicineAppointmentsReschedule;
         yield return TelemedicineAgendaView;
+        yield return TelemedicineSessionsManage;
     }
 
     public static string GetModule(string permissionCode)

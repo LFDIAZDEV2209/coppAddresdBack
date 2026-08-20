@@ -97,7 +97,8 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             ProfessionalId = request.ProfessionalId,
             ClinicId = request.ClinicId,
             LocationId = request.LocationId,
-            PreferredStart = request.PreferredStart,
+            // Normaliza a UTC (Npgsql exige offset 0 para timestamptz).
+            PreferredStart = request.PreferredStart?.ToUniversalTime(),
             Reason = request.Reason,
             Status = AppointmentRequestStatus.Pending,
             CreatedBy = request.CreatedBy,
