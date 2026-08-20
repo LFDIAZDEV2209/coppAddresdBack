@@ -21,6 +21,13 @@ public sealed class LegalDocumentRepository(AppDbContext dbContext) : ILegalDocu
             .Include(document => document.Versions)
             .FirstOrDefaultAsync(document => document.Code == code, ct);
 
+    public async Task<IReadOnlyList<LegalDocumentVersion>> ListAllVersionsAsync(CancellationToken ct = default)
+        => await dbContext.LegalDocumentVersions
+            .AsNoTracking()
+            .Include(version => version.Document)
+            .OrderByDescending(version => version.CreatedAt)
+            .ToListAsync(ct);
+
     public async Task<LegalDocument> SaveDraftAsync(
         string code, string title, string content, string? createdBy, CancellationToken ct = default)
     {
