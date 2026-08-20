@@ -14,6 +14,13 @@ namespace CoppAddresd.Api.Controllers;
 [Authorize]
 public class AgentsController(IMediator mediator) : ControllerBase
 {
+    private const string PermissionClaimType = "permission";
+    private const string AgentsViewPermission = "Agents.View";
+
+    /// <summary>El monitoreo de ejecuciones expone inputs/outputs y user_id de
+    /// todos los usuarios: requiere el permiso administrativo `Agents.View`.</summary>
+    private bool IsExecutionAdmin => User.HasClaim(PermissionClaimType, AgentsViewPermission);
+
     // --- Tipos ---
 
     [HttpGet]
@@ -260,6 +267,9 @@ public class AgentsController(IMediator mediator) : ControllerBase
         [FromQuery] int offset = 0,
         CancellationToken ct = default)
     {
+        if (!IsExecutionAdmin)
+            return Forbid();
+
         var result = await mediator.Send(new ListAgentExecutionsQuery(
             agentTypeId, userId, status, fromDate, toDate, limit, offset), ct);
         return Ok(result);
@@ -271,6 +281,9 @@ public class AgentsController(IMediator mediator) : ControllerBase
         string executionId,
         CancellationToken ct)
     {
+        if (!IsExecutionAdmin)
+            return Forbid();
+
         var result = await mediator.Send(new GetAgentExecutionQuery(executionId), ct);
         if (result is null)
             return NotFound(new { message = "Ejecución no encontrada" });
