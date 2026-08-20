@@ -64,6 +64,49 @@ public static class RoleSeeder
         }
     }
 
+    /// <summary>Permisos de telemedicina por perfil (declarados ANTES de DefaultRoles:
+    /// los collection expressions con spread evalúan al inicializar el campo).</summary>
+    private static readonly string[] AllTelemedicinePermissions =
+    [
+        PermissionCodes.TelemedicineRequestsCreate,
+        PermissionCodes.TelemedicineRequestsView,
+        PermissionCodes.TelemedicineRequestsConfirm,
+        PermissionCodes.TelemedicineAppointmentsSchedule,
+        PermissionCodes.TelemedicineAppointmentsView,
+        PermissionCodes.TelemedicineAppointmentsCancel,
+        PermissionCodes.TelemedicineAppointmentsReschedule,
+        PermissionCodes.TelemedicineAgendaView,
+    ];
+
+    private static readonly string[] ProfessionalTelemedicinePermissions =
+    [
+        PermissionCodes.TelemedicineRequestsView,
+        PermissionCodes.TelemedicineRequestsConfirm,
+        PermissionCodes.TelemedicineAppointmentsSchedule,
+        PermissionCodes.TelemedicineAppointmentsView,
+        PermissionCodes.TelemedicineAppointmentsCancel,
+        PermissionCodes.TelemedicineAppointmentsReschedule,
+        PermissionCodes.TelemedicineAgendaView,
+    ];
+
+    private static readonly string[] StaffTelemedicinePermissions =
+    [
+        PermissionCodes.TelemedicineRequestsCreate,
+        PermissionCodes.TelemedicineRequestsView,
+        PermissionCodes.TelemedicineAppointmentsSchedule,
+        PermissionCodes.TelemedicineAppointmentsView,
+        PermissionCodes.TelemedicineAppointmentsCancel,
+        PermissionCodes.TelemedicineAppointmentsReschedule,
+        PermissionCodes.TelemedicineAgendaView,
+    ];
+
+    private static readonly string[] ViewerTelemedicinePermissions =
+    [
+        PermissionCodes.TelemedicineRequestsView,
+        PermissionCodes.TelemedicineAppointmentsView,
+        PermissionCodes.TelemedicineAgendaView,
+    ];
+
     /// <summary>Rol → (descripción, códigos de permiso por defecto).</summary>
     private static readonly (string Role, string Description, string[] Permissions)[] DefaultRoles =
     [
@@ -85,6 +128,7 @@ public static class RoleSeeder
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.DocumentsDelete,
                 PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
+                ..AllTelemedicinePermissions,
             ]),
         ("ClinicAdmin", "Administra una clínica y sus sedes",
             [
@@ -99,6 +143,7 @@ public static class RoleSeeder
                 PermissionCodes.PatientsUpdate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
+                ..AllTelemedicinePermissions,
             ]),
         ("ClinicalDirector", "Dirección clínica: supervisa historiales y profesionales",
             [
@@ -108,6 +153,7 @@ public static class RoleSeeder
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
                 PermissionCodes.EmployeesView,
+                ..ProfessionalTelemedicinePermissions,
             ]),
         ("Physician", "Médico: atiende pacientes y registra historia clínica",
             [
@@ -116,6 +162,7 @@ public static class RoleSeeder
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
+                ..ProfessionalTelemedicinePermissions,
             ]),
         ("Nutritionist", "Nutricionista: manejo de nutrición y pacientes",
             [
@@ -124,6 +171,7 @@ public static class RoleSeeder
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
+                ..ProfessionalTelemedicinePermissions,
             ]),
         ("Psychologist", "Psicólogo: salud conductual y pacientes",
             [
@@ -132,17 +180,20 @@ public static class RoleSeeder
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
+                ..ProfessionalTelemedicinePermissions,
             ]),
         ("Nurse", "Enfermería: soporte clínico y registro",
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsUpdate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
+                ..ViewerTelemedicinePermissions,
             ]),
         ("Receptionist", "Recepción: agenda, registro de pacientes y documentos",
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ProfessionalsView,
+                ..StaffTelemedicinePermissions,
             ]),
         ("CareCoordinator", "Coordinación de cuidados: seguimiento del paciente",
             [
@@ -150,6 +201,7 @@ public static class RoleSeeder
                 PermissionCodes.DocumentsView,
                 PermissionCodes.ClinicalRecordsView,
                 PermissionCodes.ProfessionalsView,
+                ..ViewerTelemedicinePermissions,
             ]),
     ];
 }

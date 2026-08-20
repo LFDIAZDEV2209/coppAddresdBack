@@ -30,6 +30,11 @@ public static class ApplicationServiceExtensions
         services.Configure<AiServiceSettings>(
             configuration.GetSection(AiServiceSettings.SectionName));
 
+        // Clave interna compartida con el microservicio de Telemedicina
+        // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).
+        services.Configure<TelemedicineServiceSettings>(
+            configuration.GetSection(TelemedicineServiceSettings.SectionName));
+
         services.AddMediatR(cfg =>
         {
             cfg.RegisterServicesFromAssembly(typeof(CoppAddresd.Application.Features.Chat.ChatCommand).Assembly);

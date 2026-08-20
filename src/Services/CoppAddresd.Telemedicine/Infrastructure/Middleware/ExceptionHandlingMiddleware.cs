@@ -56,6 +56,7 @@ public sealed class ExceptionHandlingMiddleware(
         BusinessRuleViolationException => (StatusCodes.Status409Conflict, "Conflict"),
         DomainValidationException => (StatusCodes.Status400BadRequest, "Bad Request"),
         RequestValidationException => (StatusCodes.Status400BadRequest, "Bad Request"),
+        UpstreamUnavailableException => (StatusCodes.Status503ServiceUnavailable, "Service Unavailable"),
         _ => null
     };
 

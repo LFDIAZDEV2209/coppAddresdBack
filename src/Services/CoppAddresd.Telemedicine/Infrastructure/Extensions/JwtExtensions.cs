@@ -1,5 +1,7 @@
 using System.Text;
+using CoppAddresd.Telemedicine.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
@@ -47,6 +49,11 @@ public static class JwtExtensions
         });
 
         services.AddAuthorization();
+
+        // Autorización por permisos (claims) con política por código de permiso:
+        // [RequirePermission("Telemedicine.*")] sin registrar cada política.
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
         return services;
     }
