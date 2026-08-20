@@ -40,6 +40,8 @@ public class MyContextController(
                 null,
                 false,
                 null,
+                true,
+                null,
                 [],
                 current.ActiveClinicId));
         }
@@ -81,6 +83,8 @@ public class MyContextController(
             organization,
             employee.Professional is not null,
             employee.Professional?.ProfessionalType?.Name,
+            employee.Professional?.OnboardingCompletedAt is not null,
+            employee.Status,
             clinics,
             current.ActiveClinicId));
     }
@@ -104,5 +108,7 @@ public record MyContextDto(
     MyOrganizationDto? Organization,
     bool IsProfessional,
     string? ProfessionalTypeName,
+    bool OnboardingCompleted,
+    string? EmployeeStatus,
     IReadOnlyList<MyClinicDto> Clinics,
     Guid? ActiveClinicId);

@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Professionals;
 using CoppAddresd.Domain.Entities;
 
 namespace CoppAddresd.Application.Interfaces;
@@ -30,6 +31,27 @@ public interface IEmployeeRepository
     Task<Employee> AddAsync(Employee employee, CancellationToken ct = default);
 
     Task UpdateAsync(Employee employee, CancellationToken ct = default);
+
+    /// <summary>Vincula el usuario de Auth al empleado (tras la invitación).</summary>
+    Task SetUserIdAsync(Guid employeeId, Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Completa el onboarding del profesional: actualiza la extensión clínica
+    /// (tipo, bio, foto, teléfono), reemplaza especialidades y licencias y, si
+    /// <paramref name="completeOnboarding"/> es true, marca
+    /// <c>OnboardingCompletedAt</c> y activa al empleado. Todo en una transacción.
+    /// </summary>
+    Task CompleteOnboardingAsync(
+        Guid employeeId,
+        Guid? professionalTypeId,
+        string? bio,
+        string? photoStorageKey,
+        string? phoneCountryCode,
+        string? phoneNumber,
+        IReadOnlyList<Guid> specialtyIds,
+        IReadOnlyList<LicenseInput> licenses,
+        bool completeOnboarding,
+        CancellationToken ct = default);
 
     Task<Professional> AddProfessionalAsync(Professional professional, CancellationToken ct = default);
 

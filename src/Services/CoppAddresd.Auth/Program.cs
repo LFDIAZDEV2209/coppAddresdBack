@@ -46,6 +46,7 @@ builder.Services.AddAuthJwt(builder.Configuration);
 builder.Services.AddAuthCors(builder.Configuration);
 
 builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
+builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
 
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
@@ -53,9 +54,21 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<IScopedPermissionService, ScopedPermissionService>();
+builder.Services.AddScoped<IInvitationService, InvitationService>();
 builder.Services.AddScoped<ITokenInvalidationService, TokenInvalidationService>();
 // Cualificado: existe Microsoft.AspNetCore.Identity.SecurityStampValidator con el mismo nombre.
 builder.Services.AddScoped<CoppAddresd.Auth.Security.ISecurityStampValidator, CoppAddresd.Auth.Security.SecurityStampValidator>();
+
+// Correos transaccionales: "Log" en dev (imprime en el logger), "Smtp" en prod.
+var emailProvider = builder.Configuration["Email:Provider"] ?? "Log";
+if (emailProvider.Equals("Smtp", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+}
+else
+{
+    builder.Services.AddScoped<IEmailSender, LogEmailSender>();
+}
 
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();

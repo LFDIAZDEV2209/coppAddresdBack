@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Professionals;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Infrastructure.Persistence;
@@ -99,6 +100,128 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
         dbContext.Employees.Add(employee);
         await dbContext.SaveChangesAsync(ct);
         return employee;
+    }
+
+    public async Task SetUserIdAsync(Guid employeeId, Guid userId, CancellationToken ct = default)
+    {
+        await dbContext.Employees
+            .Where(x => x.Id == employeeId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.UserId, userId)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+    }
+
+    public async Task CompleteOnboardingAsync(
+        Guid employeeId,
+        Guid? professionalTypeId,
+        string? bio,
+        string? photoStorageKey,
+        string? phoneCountryCode,
+        string? phoneNumber,
+        IReadOnlyList<Guid> specialtyIds,
+        IReadOnlyList<LicenseInput> licenses,
+        bool completeOnboarding,
+        CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+
+            // Datos HR del empleado (teléfono y, al completar onboarding, estado).
+            await dbContext.Employees
+                .Where(x => x.Id == employeeId)
+                .ExecuteUpdateAsync(setters =>
+                {
+                    setters
+                        .SetProperty(x => x.PhoneCountryCode, phoneCountryCode)
+                        .SetProperty(x => x.PhoneNumber, phoneNumber)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow);
+
+                    if (completeOnboarding)
+                    {
+                        setters.SetProperty(x => x.Status, "Active");
+                    }
+                }, ct);
+
+            // Extensión profesional: reemplazo (tipo, bio, foto, especialidades, licencias).
+            var existingProfessionalId = await dbContext.Professionals
+                .Where(p => p.EmployeeId == employeeId)
+                .Select(p => (Guid?)p.Id)
+                .FirstOrDefaultAsync(ct);
+
+            var now = DateTime.UtcNow;
+            var professionalId = existingProfessionalId ?? Guid.NewGuid();
+
+            if (existingProfessionalId is null)
+            {
+                dbContext.Professionals.Add(new Professional
+                {
+                    Id = professionalId,
+                    EmployeeId = employeeId,
+                    ProfessionalTypeId = professionalTypeId,
+                    Bio = ProfessionalOptions.Normalize(bio),
+                    PhotoStorageKey = ProfessionalOptions.Normalize(photoStorageKey),
+                    OnboardingCompletedAt = completeOnboarding ? now : null,
+                    CreatedAt = now,
+                });
+            }
+            else
+            {
+                await dbContext.Professionals
+                    .Where(p => p.Id == existingProfessionalId)
+                    .ExecuteUpdateAsync(setters =>
+                    {
+                        setters
+                            .SetProperty(p => p.ProfessionalTypeId, professionalTypeId)
+                            .SetProperty(p => p.Bio, ProfessionalOptions.Normalize(bio))
+                            .SetProperty(p => p.PhotoStorageKey, ProfessionalOptions.Normalize(photoStorageKey))
+                            .SetProperty(p => p.UpdatedAt, now);
+
+                        if (completeOnboarding)
+                        {
+                            setters.SetProperty(p => p.OnboardingCompletedAt, now);
+                        }
+                    }, ct);
+
+                await dbContext.ProfessionalSpecialties
+                    .Where(s => s.ProfessionalId == existingProfessionalId)
+                    .ExecuteDeleteAsync(ct);
+                await dbContext.ProfessionalLicenses
+                    .Where(l => l.ProfessionalId == existingProfessionalId)
+                    .ExecuteDeleteAsync(ct);
+            }
+
+            dbContext.ProfessionalSpecialties.AddRange(
+                specialtyIds.Distinct().Select(specialtyId => new ProfessionalSpecialty
+                {
+                    ProfessionalId = professionalId,
+                    SpecialtyId = specialtyId,
+                    IsPrimary = false,
+                    CreatedAt = now,
+                }));
+
+            dbContext.ProfessionalLicenses.AddRange(
+                licenses.Select(l => new ProfessionalLicense
+                {
+                    Id = Guid.NewGuid(),
+                    ProfessionalId = professionalId,
+                    LicenseType = l.LicenseType.Trim(),
+                    SpecialtyId = l.SpecialtyId,
+                    Number = ProfessionalOptions.Normalize(l.Number),
+                    StateId = l.StateId,
+                    Issuer = ProfessionalOptions.Normalize(l.Issuer),
+                    IssuedAt = l.IssuedAt,
+                    ExpiresAt = l.ExpiresAt,
+                    VerificationStatus = string.IsNullOrWhiteSpace(l.VerificationStatus)
+                        ? "Pending"
+                        : l.VerificationStatus.Trim(),
+                    CreatedAt = now,
+                }));
+
+            await dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        });
     }
 
     public async Task UpdateAsync(Employee employee, CancellationToken ct = default)

@@ -82,6 +82,23 @@ POST   /api/permissions/{id}/assign-to-role    # Asignar a rol [RequirePermissio
 DELETE /api/permissions/{id}/assign-to-role    # Remover de rol [RequirePermission("Permissions.Assign")]
 POST   /api/permissions/{id}/assign-to-user   # Asignar a usuario [RequirePermission("Permissions.Assign")]
 DELETE /api/permissions/{id}/assign-to-user   # Remover de usuario [RequirePermission("Permissions.Assign")]
+
+# Asignaciones con scope (permisos por contexto: clínica/organización)
+POST   /api/users/{id}/scoped/roles           # Rol scoped [RequirePermission("Roles.Assign")]
+DELETE /api/users/{id}/scoped/roles           # Remover rol scoped [RequirePermission("Roles.Assign")]
+POST   /api/users/{id}/scoped/permissions     # Override Grant/Deny scoped [RequirePermission("Permissions.Assign")]
+DELETE /api/users/{id}/scoped/permissions     # Remover override scoped [RequirePermission("Permissions.Assign")]
+
+# Internos (ERP → Auth, header X-Internal-Key)
+GET    /api/auth/internal/authorize           # ¿Permiso en cadena de scopes? (?userId&permissionCode&scopes=Clinic:id|Organization:id|Global)
+GET    /api/auth/internal/scoped-permissions  # Permisos efectivos para una cadena de scopes (?userId&scopes=...)
+POST   /api/auth/internal/invitations         # Crear usuario sin password + acceso ERP + invitación + email (body: email, firstName, lastName)
+
+# Invitaciones de primer acceso (onboarding del profesional)
+GET    /api/invitations/validate?token=       # Validar token (público, no consume)
+POST   /api/invitations/accept                # Establecer password y marcar usada (público: token, password)
+POST   /api/invitations/{id}/resend           # Reenviar (revoca la pendiente) [RequirePermission("Users.Update")]
+POST   /api/invitations/{id}/revoke           # Revocar [RequirePermission("Users.Update")]
 ```
 
 **Permisos seedeados** (47 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`. Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Physician`, `Nutritionist`, `Psychologist`, `Nurse`, `Receptionist`, `CareCoordinator` (asignables con scope de clínica/org).

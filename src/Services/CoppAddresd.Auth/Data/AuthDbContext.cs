@@ -20,6 +20,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
     public DbSet<UserApplication> UserApplications => Set<UserApplication>();
     public DbSet<ScopedRoleAssignment> ScopedRoleAssignments => Set<ScopedRoleAssignment>();
     public DbSet<ScopedPermissionAssignment> ScopedPermissionAssignments => Set<ScopedPermissionAssignment>();
+    public DbSet<Invitation> Invitations => Set<Invitation>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -209,6 +210,21 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
             b.HasOne(s => s.Permission)
                 .WithMany()
                 .HasForeignKey(s => s.PermissionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Invitation>(b =>
+        {
+            b.ToTable("Invitations", "auth");
+            b.HasKey(i => i.Id);
+            b.Property(i => i.TokenHash).HasMaxLength(64).IsRequired();
+            b.Property(i => i.ExpiresAt).IsRequired();
+            b.HasIndex(i => i.TokenHash).IsUnique();
+            b.HasIndex(i => i.UserId);
+
+            b.HasOne(i => i.User)
+                .WithMany()
+                .HasForeignKey(i => i.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
