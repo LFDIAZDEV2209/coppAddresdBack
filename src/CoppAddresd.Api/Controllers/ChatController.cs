@@ -1,4 +1,5 @@
-using System.Text;
+using System.Security.Claims;
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Features.Chat;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -20,9 +21,14 @@ public class ChatController : ControllerBase
         _logger = logger;
     }
 
-    // TODO(seguridad): tras conectar el login del front, volver a [Authorize].
-    // Temporal: anónimo para agilizar la integración del chatbot.
-    [AllowAnonymous]
+    /// <summary>
+    /// La identidad del usuario proviene SOLO del JWT autenticado
+    /// (ClaimTypes.NameIdentifier); el body del cliente nunca define quién es
+    /// el usuario ni el propietario de memoria/threads.
+    /// </summary>
+    private string? AuthenticatedUserId =>
+        User.FindFirstValue(ClaimTypes.NameIdentifier);
+
     [HttpPost]
     public async Task<ActionResult<ChatResult>> Chat(
         [FromBody] ChatRequestDto request,
@@ -35,25 +41,24 @@ public class ChatController : ControllerBase
                 request.Agent,
                 request.ThreadId,
                 request.AgentTypeId,
-                request.UserId);
+                AuthenticatedUserId);
             var result = await _mediator.Send(command, ct);
             return Ok(result);
         }
-        catch (CoppAddresd.Application.Common.AiServiceException ex)
+        catch (AiServiceException ex)
         {
-            _logger.LogError(ex, "AI Service rechazó el chat: {Status}", ex.StatusCode);
-            return StatusCode(502, new { error = ex.Message });
+            _logger.LogError(ex,
+                "AI Service rechazó el chat (status {Status}): {Detail}",
+                ex.StatusCode, ex.Detail);
+            return StatusCode(502, new { error = "No fue posible procesar la solicitud." });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Chat request failed");
-            return StatusCode(500, new { error = "AI service unavailable" });
+            return StatusCode(500, new { error = "No fue posible procesar la solicitud." });
         }
     }
 
-    // TODO(seguridad): tras conectar el login del front, volver a [Authorize].
-    // Temporal: anónimo para agilizar la integración del chatbot.
-    [AllowAnonymous]
     [HttpPost("stream")]
     public async Task Stream(
         [FromBody] ChatRequestDto request,
@@ -70,7 +75,7 @@ public class ChatController : ControllerBase
                 request.Agent,
                 request.ThreadId,
                 request.AgentTypeId,
-                request.UserId);
+                AuthenticatedUserId);
             var chunks = await _mediator.Send(command, ct);
 
             await foreach (var chunk in chunks.WithCancellation(ct))
@@ -83,10 +88,19 @@ public class ChatController : ControllerBase
         {
             _logger.LogInformation("Stream cancelled by client");
         }
+        catch (AiServiceException ex)
+        {
+            _logger.LogError(ex,
+                "AI Service rechazó el stream (status {Status}): {Detail}",
+                ex.StatusCode, ex.Detail);
+            var errorPayload = "event: error\ndata: {\"error\":\"No fue posible procesar la solicitud.\"}\n\n";
+            await Response.WriteAsync(errorPayload, ct);
+            await Response.Body.FlushAsync(ct);
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Stream failed");
-            var errorPayload = $"event: error\ndata: {{\"error\":\"{ex.Message}\"}}\n\n";
+            var errorPayload = "event: error\ndata: {\"error\":\"No fue posible procesar la solicitud.\"}\n\n";
             await Response.WriteAsync(errorPayload, ct);
             await Response.Body.FlushAsync(ct);
         }
@@ -97,5 +111,4 @@ public record ChatRequestDto(
     string Message,
     string? Agent = null,
     string? ThreadId = null,
-    string? AgentTypeId = null,
-    string? UserId = null);
+    string? AgentTypeId = null);
