@@ -22,7 +22,13 @@ public static class ServiceCollectionExtensions
         services.AddDbContext<AuthDbContext>(options =>
             options.UseNpgsql(
                 configuration.GetConnectionString("DefaultConnection"),
-                npgsql => npgsql.MigrationsAssembly(typeof(AuthDbContext).Assembly.FullName)));
+                npgsql => npgsql
+                    .MigrationsAssembly(typeof(AuthDbContext).Assembly.FullName)
+                    // Historial de migraciones aislado en el schema auth (mismo
+                    // patrón que Telemedicina con tele.__ef_migrations_history):
+                    // public.__EFMigrationsHistory pertenece al backend. Cada
+                    // microservicio gestiona su propio historial de migraciones.
+                    .MigrationsHistoryTable("__ef_migrations_history", "auth")));
 
         return services;
     }

@@ -4,15 +4,15 @@ using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 
 namespace CoppAddresd.Telemedicine.Infrastructure.Repositories;
 
 /// <summary>
 /// Implementación EF del agregado cita. Los conflictos de concurrencia del
 /// agendamiento (exclusión de solapamiento / índice único parcial) llegan como
-/// <see cref="PostgresException"/> y se traducen a
-/// <see cref="BusinessRuleViolationException"/> para un error amigable (409).
+/// <see cref="DbUpdateException"/> que envuelve la excepción de PostgreSQL y se
+/// traducen a <see cref="BusinessRuleViolationException"/> para un error amigable
+/// (409).
 /// </summary>
 public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAppointmentRepository
 {
@@ -25,6 +25,8 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .Include(a => a.Cancellations)
             .Include(a => a.Reschedules)
             .Include(a => a.Request)
+            .Include(a => a.Room)
+                .ThenInclude(r => r!.Sessions)
             .FirstOrDefaultAsync(a => a.Id == id, ct);
 
     public async Task<TelemedicineAppointment> AddAsync(
@@ -60,6 +62,12 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
                 dbContext.Entry(reschedule).State = EntityState.Added;
             }
         }
+
+        // NOTA: las sesiones NO se fuerzan a Added. A diferencia del historial
+        // append-only (que siempre son hijos nuevos), una sesión existente se
+        // MODIFICA en sus transiciones de estado (Active → Ended); forzarla a
+        // Added intentaría un INSERT contra una fila existente (violación de PK).
+        // Las sesiones nuevas se agregan a la colección y EF las marca Added.
 
         await SaveWithConflictTranslationAsync(ct);
     }
@@ -107,9 +115,12 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         {
             await dbContext.SaveChangesAsync(ct);
         }
-        catch (PostgresException ex) when (
-            ex.SqlState == PostgresErrorCodes.ExclusionViolation
-            || ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new BusinessRuleViolationException(
+                "La cita cambió de estado en otra operación concurrente; reintenta la operación.");
+        }
+        catch (DbUpdateException ex) when (ex.IsExclusionViolation() || ex.IsUniqueViolation())
         {
             throw new BusinessRuleViolationException(
                 "El profesional ya tiene una cita que se solapa con el horario solicitado, o la solicitud ya fue confirmada.");

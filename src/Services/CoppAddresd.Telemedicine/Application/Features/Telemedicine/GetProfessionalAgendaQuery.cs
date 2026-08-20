@@ -23,7 +23,10 @@ public sealed class GetProfessionalAgendaQueryHandler(
         CancellationToken ct)
     {
         var items = await appointments.ListByProfessionalAsync(
-            request.ProfessionalId, request.From, request.To, ct);
+            request.ProfessionalId,
+            request.From.ToUniversalTime(),
+            request.To.ToUniversalTime(),
+            ct);
 
         return await TelemedicineAppointmentMapper.BuildDtosAsync(items, referenceData, ct);
     }

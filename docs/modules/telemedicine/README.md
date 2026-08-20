@@ -7,9 +7,10 @@ Fases implementadas:
 - **Fase 1 — Dominio + persistencia**: schema `tele.` con 9 tablas, migración `AddTelemedicineSchema` aplicada.
 - **Fase 2 — IVideoProvider + Twilio**: contrato agnóstico en Application, `TwilioVideoProvider` en Infrastructure (SDK oficial validado contra la cuenta real), validación de firma de webhook, DI config-driven.
 - **Fase 3 — Requests + Appointments + agendamiento**: repositorios del agregado (cita + solicitud), casos de uso MediatR (crear solicitud, confirmar → cita, agendar directo, cancelar, reprogramar), agenda del profesional, validadores, controladores `/api/v1/telemedicine/*`. **Anti doble reserva real en BD**: constraint de exclusión GiST sobre solapamiento de citas activas + índice único parcial de inicio + índice único sobre `request_id` (migración `AddAppointmentOverlapExclusion`). Datos de referencia (profesionales/pacientes/especialidades/sedes) validados contra el backend vía internal endpoints.
+- **Fase 4 — Salas y sesiones**: join-token (creación idempotente de sala Twilio dentro de la ventana), consulta de sala con participantes en vivo, `session/start` y `session/end` (cita `Confirmed→InProgress→Completed`), webhooks del proveedor (firma validada, **idempotentes** por clave única en `tele.telemedicine_webhook_events`, procesamiento atómico), resolución de identidad user→profesional/paciente (internal endpoints `by-user`), permiso `Telemedicine.SessionsManage`. Detalle en la sección Fase 4.
 - **Fase 8 (adelantada) — Permisos `Telemedicine.*`**: siembra en el Auth Service (`PermissionCodes` + `RoleSeeder`), autorización por claim `permission` en el microservicio (mismo mecanismo que el backend).
 
-Pendiente: Fase 4 (salas/sesiones: join-token, ventana, webhooks, finalización), Fase 5 (encuentro clínico), Fase 6 (alertas), Fase 7 (datos de referencia vía backend — parcialmente hecho en Fase 3: faltan endpoints de listado/maestros para UI), Fase 9-10 (frontend), Fase 11-12 (testing/hardening).
+Pendiente: Fase 5 (encuentro clínico), Fase 6 (alertas), Fase 7 (datos de referencia vía backend — parcialmente hecho en Fase 3: faltan endpoints de listado/maestros para UI), Fase 9-10 (frontend), Fase 11-12 (testing/hardening).
 
 ## Arquitectura
 
@@ -90,6 +91,62 @@ GET /api/v1/internal/telemedicine/locations/{id}
 ```
 
 La lectura en listados deduplica por entidad única (sin N+1). Si el backend no responde → 503 (`UpstreamUnavailableException`).
+
+## Fase 4 — Salas y sesiones (join-token, ventana, webhooks, finalización)
+
+Ciclo de video por cita (estados separados a propósito: cita ≠ sesión ≠ sala):
+
+```text
+Cita Confirmed → (join-token dentro de la ventana) → sala creada en Twilio (lazy)
+Cita Confirmed/InProgress → session/start → sesión Active + cita InProgress
+sesión Active → session/end | webhook room-ended → sesión Ended + sala Ended + cita Completed
+```
+
+### API
+
+```text
+POST /api/v1/telemedicine/appointments/{id}/join-token     # token de acceso (crea la sala si no existe) — participante o supervisor
+GET  /api/v1/telemedicine/appointments/{id}/room           # sala + participantes en vivo — participante o supervisor
+POST /api/v1/telemedicine/appointments/{id}/session/start  # inicia sesión → cita InProgress — profesional o supervisor
+POST /api/v1/telemedicine/appointments/{id}/session/end    # finaliza → cita Completed (idempotente) — profesional o supervisor
+POST /api/v1/telemedicine/webhooks/twilio                  # eventos de Twilio (firma validada, idempotente) — anónimo
+```
+
+La autorización de los 4 primeros se resuelve en el handler a partir del JWT: el participante se deriva de la identidad (user → profesional/paciente de la cita) o del permiso de supervisión `Telemedicine.SessionsManage`. Por eso los endpoints NO llevan `[RequirePermission]`: el paciente (app móvil) no tiene roles ERP y se autoriza por identidad.
+
+### Reglas de negocio
+
+- **Ventana de acceso**: abre `RoomOpenBeforeMinutes` (default 10) antes del inicio y cierra `RoomCloseAfterMinutes` (default 15) después (settings por org/clínica). `join-token`/`session/start` fuera de la ventana → 409.
+- **Sala lazy e idempotente**: se crea en el primer `join-token`/`start` dentro de la ventana. Nombre determinista `apt-{appointmentId}` → idempotencia por índice único `(provider, provider_room_name)` + `UniqueName` de Twilio (una carrera entre dos join-token devuelve la misma sala).
+- **Sesión**: una activa a la vez por cita (`start` doble → 409, protegido además por el token de concurrencia xmin de la cita). `end` es idempotente: sin sesión activa → no-op 200.
+- **Webhooks**: firma `X-Twilio-Signature` validada (deshabilitada en dev, `Twilio:ValidateWebhookSignature`). Clave de idempotencia `(event_type, room_sid, participant_sid)` en `tele.telemedicine_webhook_events` (índice único): los duplicados concurrentes se serializan y el perdedor recibe `Duplicate` con rollback de sus mutaciones. El procesamiento es atómico (reserva de la clave + mutaciones en una transacción).
+  - `room-ended` → sala `Ended`, sesión activa `Ended`, y la cita `InProgress` pasa a `Completed`. Si nunca hubo sesión activa, la cita NO se completa automáticamente (NoShow es una decisión de negocio aparte, fase futura/admin).
+  - `participant-connected` → sala `Active` (si estaba Created/Waiting) + timestamp del evento en la sesión. `participant-disconnected` → solo timestamp.
+- **Completar la sala en Twilio es best-effort** en `session/end`: si Twilio no responde, la sesión/cita se finalizan igual (la sala termina sola o vía webhook).
+
+### Identidad (backend)
+
+El participante se resuelve desde el usuario del JWT, nunca de un id del cliente. Nuevos internal endpoints (X-Internal-Key):
+
+```text
+GET /api/v1/internal/telemedicine/professionals/by-user/{userId}   # user → profesional (erp.professionals) o 404
+GET /api/v1/internal/telemedicine/patients/by-user/{userId}        # user → paciente (app.patient_profiles) o 404
+```
+
+`IEmployeeRepository.GetByUserIdAsync` ya existía; se agregó `IPatientRepository.GetByUserIdAsync` (filtra soft-deleted).
+
+### Datos
+
+- Migración `AddWebhookEventsTable`: `tele.telemedicine_webhook_events` (`event_type`, `room_sid`, `participant_sid` no nulo, `payload_json`, `processed_at`) + índice único `(event_type, room_sid, participant_sid)`.
+- Permiso `Telemedicine.SessionsManage` (Auth, seeder idempotente): Admin/OrgAdmin/ClinicAdmin/ClinicalDirector. Los profesionales de línea NO lo tienen: acceden a su sala por identidad (least privilege).
+
+### Decisiones de Fase 4
+
+- **Un solo permiso de sesión** (`SessionsManage`) en lugar de JoinSession+ManageSession del plan: la identidad ya autoriza al profesional/paciente; un permiso de join adicional sería código muerto.
+- **Historial de migraciones por microservicio**: Auth pasa a `auth.__ef_migrations_history` (aislado de `public.__EFMigrationsHistory` del backend; patrón ya usado por telemedicine con `tele.__ef_migrations_history`). EF no namespacia las IDs por contexto: compartir `public` era fuente de errores (p. ej. `migrations remove` del contexto equivocado).
+- **Horarios en UTC**: Npgsql exige `DateTimeOffset` con offset 0 para `timestamptz`; el horario del cliente (con su offset) se normaliza a UTC en la frontera de aplicación (`SchedulingRules.ResolveSlot`, `PreferredStart`, agenda). La UI convierte a local para mostrar. (Bug latente de Fase 3 corregido en Fase 4.)
+- **Traducción de conflictos EF**: `SaveChangesAsync` envuelve la `PostgresException` en `DbUpdateException`; los repositorios (citas y salas) traducen 23505/23P01 y `DbUpdateConcurrencyException` a 409 vía el helper `DbUpdateExceptionExtensions`. (Latente de Fase 3 corregido.)
+- **Transacciones manuales**: con `EnableRetryOnFailure` (NpgsqlRetryingExecutionStrategy) deben ejecutarse vía `CreateExecutionStrategy()` (`TelemedicineUnitOfWork`), patrón del proyecto.
 
 ## Configuración
 

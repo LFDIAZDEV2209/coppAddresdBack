@@ -41,3 +41,16 @@ public sealed class DomainValidationException : Exception
     {
     }
 }
+
+/// <summary>
+/// El usuario autenticado no está autorizado para la operación (no es
+/// participante de la cita ni tiene el permiso de supervisión). Traducida a
+/// HTTP 403 por el middleware global.
+/// </summary>
+public sealed class ForbiddenException : Exception
+{
+    public ForbiddenException(string message)
+        : base(message)
+    {
+    }
+}

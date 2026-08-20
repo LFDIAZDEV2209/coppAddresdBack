@@ -28,6 +28,14 @@ public sealed class BackendReferenceDataService(
         Guid patientId, CancellationToken ct = default)
         => await GetAsync<PatientRefDto>($"/api/v1/internal/telemedicine/patients/{patientId}", ct);
 
+    public async Task<ProfessionalRefDto?> GetProfessionalByUserIdAsync(
+        Guid userId, CancellationToken ct = default)
+        => await GetAsync<ProfessionalRefDto>($"/api/v1/internal/telemedicine/professionals/by-user/{userId}", ct);
+
+    public async Task<PatientRefDto?> GetPatientByUserIdAsync(
+        Guid userId, CancellationToken ct = default)
+        => await GetAsync<PatientRefDto>($"/api/v1/internal/telemedicine/patients/by-user/{userId}", ct);
+
     public async Task<SpecialtyRefDto?> GetSpecialtyAsync(
         Guid specialtyId, CancellationToken ct = default)
         => await GetAsync<SpecialtyRefDto>($"/api/v1/internal/telemedicine/specialties/{specialtyId}", ct);

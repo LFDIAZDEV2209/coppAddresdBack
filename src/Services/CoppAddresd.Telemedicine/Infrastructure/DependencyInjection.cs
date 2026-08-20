@@ -44,6 +44,11 @@ public static class DependencyInjection
         services.AddScoped<ITelemedicineSettingsProvider, TelemedicineSettingsProvider>();
         services.AddScoped<IAppointmentRepository, AppointmentRepository>();
         services.AddScoped<IRequestRepository, RequestRepository>();
+        services.AddScoped<IRoomRepository, RoomRepository>();
+        services.AddScoped<ITelemedicineUnitOfWork, TelemedicineUnitOfWork>();
+
+        services.Configure<Application.Configuration.TelemedicineOptions>(
+            configuration.GetSection(Application.Configuration.TelemedicineOptions.SectionName));
 
         AddBackendReferenceDataClient(services, configuration);
 
