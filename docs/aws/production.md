@@ -24,6 +24,21 @@ CloudWatch: Logs + Metrics + Alarms
 - AWS: Secrets Manager + IAM role de la task (mínimo privilegio: `secretsmanager:GetSecretValue` sobre el secreto, S3 sobre el bucket propio, SQS sobre la cola propia).
 - Connection string construido en runtime desde Secrets; jamás en logs.
 
+## Storage S3
+
+Recursos ya definidos para el storage de archivos de la plataforma (implementado en el backend):
+
+| Recurso | Valor |
+|---|---|
+| Bucket | `cooppadresd-storage-prod` (región `us-east-2`) |
+| ARN bucket | `arn:aws:s3:::cooppadresd-storage-prod` |
+| ARN objetos | `arn:aws:s3:::cooppadresd-storage-prod/*` |
+| IAM role | `cooppadresd-ec2-s3-access-role` (solo este bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:GetBucketLocation`) |
+
+- El bucket **no es público**: el acceso pasa por presigned URLs SigV4 (PUT/GET firmados con expiración). El backend opera con el IAM role (cadena por defecto del SDK); el navegador sube/descarga directo con el presigned URL.
+- Configuración por variables de entorno: `AWS_REGION`, `AWS_S3_BUCKET`, `AWS_S3_BUCKET_ARN`, `AWS_S3_OBJECT_ARN`, `AWS_S3_IAM_ROLE` (la sección `Storage:S3` del `appsettings` hace fallback a estas variables).
+- En desarrollo contra un bucket de prueba (o LocalStack) se usa `Storage:S3:ServiceUrl`; ver `docs/modules/storage/README.md`.
+
 ## Configuración de la app
 
 - `ASPNETCORE_ENVIRONMENT=Production`; `ForwardedHeaders` para `X-Forwarded-Proto` (TLS termina en ALB).

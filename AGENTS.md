@@ -147,6 +147,7 @@ versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de 
 ## Gotchas
 
 - **`appsettings.json` / `appsettings.*.json` están gitignoreados** (`src/CoppAddresd.Api` y `src/Services/CoppAddresd.Auth`). Deben crearse localmente antes de correr. Hay `appsettings.Example.json` solo en Auth.
+- **Storage de objetos**: `Storage:Provider` elige `Local` (filesystem, dev) o `S3` (AWS, prod). Con S3 el `upload-intent`/`download` devuelven presigned URLs reales del bucket `cooppadresd-storage-prod` (región `us-east-2`); las credenciales salen de la cadena por defecto del SDK (IAM role), nunca de Access Keys. Config en `appsettings` + fallback a variables `AWS_REGION`/`AWS_S3_*`. Detalle en `docs/modules/storage/README.md`. Si `Storage:Provider=S3` sin credenciales AWS configuradas, la primera operación de storage fallará con error de credenciales del SDK (fail fast en uso).
 - **JWT debe ser idéntico** entre API y Auth Service (mismo Secret, Issuer, Audience) para que los tokens funcionen.
 - **Auth Service corre migraciones + seeders automáticamente** al iniciar (Program.cs).
 - **`HttpAuditActorContext`** actualmente retorna `ActorType=System`, `UserId=null` — no hay integración con Identity todavía.

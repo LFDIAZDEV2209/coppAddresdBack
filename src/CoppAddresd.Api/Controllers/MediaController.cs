@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Features.Media;
+using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -10,7 +11,7 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/[controller]")]
 [Authorize]
-public class MediaController(IMediator mediator) : ControllerBase
+public class MediaController(IMediator mediator, IObjectStorageService objectStorage) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<MediaItemDto>>> List(
@@ -95,9 +96,11 @@ public class MediaController(IMediator mediator) : ControllerBase
         }
 
         var storageKey = $"media/{folder}/{Guid.NewGuid():N}{extension}";
-
-        var presignedUrl = $"{Request.Scheme}://{Request.Host}/api/v1/storage/{storageKey}";
         var expiresIn = (int)TimeSpan.FromMinutes(15).TotalSeconds;
+
+        var publicBaseUrl = $"{Request.Scheme}://{Request.Host}";
+        var presignedUrl = await objectStorage.GetPreSignedUploadUrlAsync(
+            storageKey, contentType, TimeSpan.FromSeconds(expiresIn), publicBaseUrl, ct);
 
         return Ok(new UploadIntentResponse(storageKey, presignedUrl, expiresIn));
     }
