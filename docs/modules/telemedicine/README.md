@@ -9,9 +9,10 @@ Fases implementadas:
 - **Fase 3 — Requests + Appointments + agendamiento**: repositorios del agregado (cita + solicitud), casos de uso MediatR (crear solicitud, confirmar → cita, agendar directo, cancelar, reprogramar), agenda del profesional, validadores, controladores `/api/v1/telemedicine/*`. **Anti doble reserva real en BD**: constraint de exclusión GiST sobre solapamiento de citas activas + índice único parcial de inicio + índice único sobre `request_id` (migración `AddAppointmentOverlapExclusion`). Datos de referencia (profesionales/pacientes/especialidades/sedes) validados contra el backend vía internal endpoints.
 - **Fase 4 — Salas y sesiones**: join-token (creación idempotente de sala Twilio dentro de la ventana), consulta de sala con participantes en vivo, `session/start` y `session/end` (cita `Confirmed→InProgress→Completed`), webhooks del proveedor (firma validada, **idempotentes** por clave única en `tele.telemedicine_webhook_events`, procesamiento atómico), resolución de identidad user→profesional/paciente (internal endpoints `by-user`), permiso `Telemedicine.SessionsManage`. Detalle en la sección Fase 4.
 - **Fase 5 — Encuentro clínico (espacio clínico durante la consulta)**: consulta/guardado/finalización del registro clínico de la cita. `clinical_data` jsonb tipado y extensible + `notes`. Creación perezosa idempotente (1:1 cita→encuentro). Autorización por identidad del profesional o supervisor (`SessionsManage`); el paciente NO accede (PHI). Estados `Draft→Completed` (inmutable) y `Cancelled` (al cancelar una cita con borrador). Detalle en la sección Fase 5.
+- **Fase 6 — Bandeja de alertas y notificaciones**: materialización de eventos de dominio en `tele.telemedicine_alerts` (tabla y enums listos desde Fase 1) y endpoints de bandeja del profesional + vista administrativa. Alerta emitida en: nueva solicitud → al profesional elegido; cita creada/confirmada → al profesional asignado; reprogramación → al profesional; cancelación → al profesional; eventos de sesión vía webhook (`participant-connected`/`disconnected`/`room-ended`) → al profesional de la cita. Permiso `Telemedicine.AlertsView` (vista global) vs identidad (bandeja propia del profesional). Detalle en la sección Fase 6.
 - **Fase 8 (adelantada) — Permisos `Telemedicine.*`**: siembra en el Auth Service (`PermissionCodes` + `RoleSeeder`), autorización por claim `permission` en el microservicio (mismo mecanismo que el backend).
 
-Pendiente: Fase 6 (alertas), Fase 7 (datos de referencia vía backend — parcialmente hecho en Fase 3: faltan endpoints de listado/maestros para UI), Fase 9-10 (frontend), Fase 11-12 (testing/hardening). También: `room-ended` sin sesión → NoShow queda para fase futura.
+Pendiente: Fase 7 (datos de referencia vía backend — parcialmente hecho en Fase 3: faltan endpoints de listado/maestros para UI), Fase 9-10 (frontend), Fase 11-12 (testing/hardening). También: `room-ended` sin sesión → NoShow queda para fase futura; alertas al PACIENTE (requieren `PatientRefDto.UserId` + app móvil) y alerta `UpcomingAppointment` (scheduler) quedan para fase futura.
 
 ## Arquitectura
 
@@ -148,6 +149,68 @@ GET /api/v1/internal/telemedicine/patients/by-user/{userId}        # user → pa
 - **Horarios en UTC**: Npgsql exige `DateTimeOffset` con offset 0 para `timestamptz`; el horario del cliente (con su offset) se normaliza a UTC en la frontera de aplicación (`SchedulingRules.ResolveSlot`, `PreferredStart`, agenda). La UI convierte a local para mostrar. (Bug latente de Fase 3 corregido en Fase 4.)
 - **Traducción de conflictos EF**: `SaveChangesAsync` envuelve la `PostgresException` en `DbUpdateException`; los repositorios (citas y salas) traducen 23505/23P01 y `DbUpdateConcurrencyException` a 409 vía el helper `DbUpdateExceptionExtensions`. (Latente de Fase 3 corregido.)
 - **Transacciones manuales**: con `EnableRetryOnFailure` (NpgsqlRetryingExecutionStrategy) deben ejecutarse vía `CreateExecutionStrategy()` (`TelemedicineUnitOfWork`), patrón del proyecto.
+
+## Fase 6 — Bandeja de alertas (materialización de eventos + API)
+
+Las alertas son la **materialización de eventos de dominio** en `tele.telemedicine_alerts`
+(tabla + `AlertType`/`AlertSeverity`/`AlertRecipientType` listos desde Fase 1). El canal de
+entrega (email/push/SMS) es responsabilidad futura y **desacoplada** de este agregado.
+
+### Eventos materializados (quién recibe)
+
+| Evento de dominio | Alerta | Destinatario |
+|---|---|---|
+| Nueva solicitud (`CreateTelemedicineRequest`) | `NewRequest` | Profesional elegido por el paciente |
+| Cita creada/confirmada (`Schedule`/`Confirm`) | `NewAppointment` | Profesional asignado |
+| Reprogramación (`Reschedule`) | `AppointmentRescheduled` | Profesional asignado |
+| Cancelación (`Cancel`) | `AppointmentCancelled` | Profesional asignado |
+| `participant-connected` (webhook) — el participante es el **paciente** | `PatientWaiting` | Profesional |
+| `participant-connected` (webhook) — el participante es el **profesional** | `PatientJoined` | Profesional |
+| `participant-disconnected` (webhook) — el participante es el **paciente** | `ParticipantLeft` | Profesional |
+| `room-ended` (webhook) con sesión | `SessionEnded` | Profesional |
+
+El destinatario se resuelve por el **usuario del JWT** (`ProfessionalRefDto.UserId`), nunca
+por un id del cliente. Si el destinatario no es resoluble (p. ej. profesional sin usuario del
+ERP), la alerta se omite (`AlertMaterializer` devuelve `null`). Las alertas al **paciente**
+quedan para una fase futura: requieren `PatientRefDto.UserId` y la app móvil.
+
+### API
+
+```text
+GET  /api/v1/telemedicine/alerts                    # Bandeja paginada (no leídas primero) ?unreadOnly&page&pageSize
+GET  /api/v1/telemedicine/alerts/summary            # Recuento de no leídas (badge)
+POST /api/v1/telemedicine/alerts/{id}/read          # Marcar una como leída (204) / 404 si no existe para el usuario
+POST /api/v1/telemedicine/alerts/read-all           # Marcar todas como leídas → nº marcadas
+```
+
+**Autorización (en el handler, como las sesiones)**: el profesional (sin
+`Telemedicine.AlertsView`) ve **solo sus propias alertas** (resuelto por identidad del JWT);
+un usuario con `Telemedicine.AlertsView` (roles admin) ve la **bandeja global** y puede marcar
+cualquier alerta. Los endpoints NO llevan `[RequirePermission]`.
+
+### Reglas de negocio
+
+- **Orden estable de la bandeja**: no leídas primero, luego por fecha descendente (cubre el
+  índice `ix_telemedicine_alerts_recipient_user_id_read_at`).
+- **`MarkReadAsync` solo marca si la alerta pertenece al destinatario** (update dirigido con
+  `ExecuteUpdateAsync`; un usuario no puede marcar alertas ajenas).
+- **Best-effort en el webhook**: un fallo al materializar la alerta de sesión NO tumba el
+  procesamiento del webhook (la idempotencia/atomicidad ya las garantiza la clave de evento).
+- **Los profesionales ven su bandeja por identidad; el permiso `AlertsView` es solo la vista
+  administrativa global** (filtrar por clínica/organización es evolución futura, Fase 7/11).
+
+### Decisiones (Fase 6)
+
+- **Un solo permiso de alertas** (`AlertsView`) en lugar de View+Manage: la identidad ya
+  autoriza la bandeja propia del profesional; `AlertsView` añade solo la vista global admin.
+  Se siembra en roles admin (`AllTelemedicinePermissions`) y en los perfiles clínicos
+  (`ProfessionalTelemedicinePermissions`) — el claim habilita la vista global, no es requisito
+  para la bandeja propia.
+- **`AlertMaterializer` como fábrica pura** (Application, sin infraestructura): el handler
+  resuelve destinatario y nombres; la fábrica construye la alerta u omite si no hay destinatario.
+- **Sin migración**: `telemedicine_alerts` y sus índices existen desde Fase 1.
+- **Pendiente transversal**: `UpcomingAppointment` (cita próxima) necesita un scheduler/job;
+  queda fuera de esta fase junto con el canal de entrega externo.
 
 ## Fase 5 — Encuentro clínico (espacio clínico durante la consulta)
 

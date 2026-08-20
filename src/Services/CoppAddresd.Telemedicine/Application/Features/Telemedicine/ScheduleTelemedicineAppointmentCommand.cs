@@ -41,7 +41,8 @@ public sealed class ScheduleTelemedicineAppointmentCommandValidator
 public sealed class ScheduleTelemedicineAppointmentCommandHandler(
     IAppointmentRepository appointments,
     ITelemedicineReferenceDataService referenceData,
-    ITelemedicineSettingsProvider settingsProvider)
+    ITelemedicineSettingsProvider settingsProvider,
+    IAlertRepository alerts)
     : IRequestHandler<ScheduleTelemedicineAppointmentCommand, TelemedicineAppointmentDto>
 {
     public async Task<TelemedicineAppointmentDto> Handle(
@@ -79,6 +80,18 @@ public sealed class ScheduleTelemedicineAppointmentCommandHandler(
         };
 
         await appointments.AddAsync(appointment, ct);
+
+        // Bandeja: cita creada → al profesional asignado.
+        if (AlertMaterializer.NewAppointment(
+                professional.UserId,
+                appointment.Id,
+                appointment.SpecialtyId,
+                patient.FullName,
+                specialty.Name,
+                appointment.ScheduledStart) is { } alert)
+        {
+            await alerts.AddRangeAsync([alert], ct);
+        }
 
         return new TelemedicineAppointmentDto(
             appointment.Id,

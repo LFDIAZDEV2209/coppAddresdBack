@@ -35,7 +35,8 @@ public sealed class RescheduleTelemedicineAppointmentCommandValidator
 public sealed class RescheduleTelemedicineAppointmentCommandHandler(
     IAppointmentRepository appointments,
     ITelemedicineReferenceDataService referenceData,
-    ITelemedicineSettingsProvider settingsProvider)
+    ITelemedicineSettingsProvider settingsProvider,
+    IAlertRepository alerts)
     : IRequestHandler<RescheduleTelemedicineAppointmentCommand, TelemedicineAppointmentDto>
 {
     public async Task<TelemedicineAppointmentDto> Handle(
@@ -94,8 +95,18 @@ public sealed class RescheduleTelemedicineAppointmentCommandHandler(
 
         await appointments.UpdateAsync(entity, ct);
 
-        var patient = await referenceData.GetPatientAsync(entity.PatientId, ct);
+        // Bandeja: reprogramación → al profesional asignado.
         var professional = await referenceData.GetProfessionalAsync(entity.ProfessionalId, ct);
+        var patient = await referenceData.GetPatientAsync(entity.PatientId, ct);
+        if (AlertMaterializer.AppointmentRescheduled(
+                professional?.UserId,
+                entity.Id,
+                patient?.FullName ?? "el paciente",
+                start) is { } alert)
+        {
+            await alerts.AddRangeAsync([alert], ct);
+        }
+
         var specialty = await referenceData.GetSpecialtyAsync(entity.SpecialtyId, ct);
         var location = entity.LocationId is { } locationId
             ? await referenceData.GetLocationAsync(locationId, ct)

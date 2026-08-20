@@ -42,6 +42,8 @@ public sealed class ProcessTwilioWebhookCommandHandler(
     IVideoProvider videoProvider,
     IRoomRepository rooms,
     IAppointmentRepository appointments,
+    ITelemedicineReferenceDataService referenceData,
+    IAlertRepository alerts,
     ITelemedicineUnitOfWork unitOfWork,
     ILogger<ProcessTwilioWebhookCommandHandler> logger)
     : IRequestHandler<ProcessTwilioWebhookCommand, WebhookProcessResult>
@@ -60,6 +62,9 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         var eventType = request.FormParams.GetValueOrDefault("EventType") ?? string.Empty;
         var roomSid = request.FormParams.GetValueOrDefault("RoomSid") ?? string.Empty;
         var participantSid = request.FormParams.GetValueOrDefault("ParticipantSid") ?? string.Empty;
+        // Identity del token Twilio = usuario del JWT (join-token); identifica al
+        // participante para las alertas de la bandeja (profesional vs paciente).
+        var participantIdentity = request.FormParams.GetValueOrDefault("Identity") ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(eventType) || string.IsNullOrWhiteSpace(roomSid))
         {
@@ -84,7 +89,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
                 }, txCt);
 
                 // 2. Aplicar las mutaciones según el tipo de evento.
-                await ApplyEventAsync(eventType, roomSid, now: DateTimeOffset.UtcNow, txCt);
+                await ApplyEventAsync(eventType, roomSid, participantIdentity, now: DateTimeOffset.UtcNow, txCt);
             }, ct);
         }
         catch (BusinessRuleViolationException)
@@ -95,7 +100,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         return new WebhookProcessResult(WebhookProcessOutcome.Processed, eventType);
     }
 
-    private async Task ApplyEventAsync(string eventType, string roomSid, DateTimeOffset now, CancellationToken ct)
+    private async Task ApplyEventAsync(string eventType, string roomSid, string participantIdentity, DateTimeOffset now, CancellationToken ct)
     {
         var room = await rooms.GetForUpdateByProviderRoomSidAsync(roomSid, ct);
         if (room is null)
@@ -114,6 +119,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
                 room.UpdatedAt = now.UtcDateTime;
                 EndActiveSession(room, endReason: "room-ended", endedBy: null, now);
                 await CompleteAppointmentIfInProgressAsync(room.AppointmentId, now, ct);
+                await EmitSessionAlertsAsync(room.AppointmentId, eventType, participantIdentity, ct);
                 break;
 
             case "participant-connected":
@@ -123,10 +129,12 @@ public sealed class ProcessTwilioWebhookCommandHandler(
                     room.UpdatedAt = now.UtcDateTime;
                 }
                 TouchActiveSession(room, now);
+                await EmitSessionAlertsAsync(room.AppointmentId, eventType, participantIdentity, ct);
                 break;
 
             case "participant-disconnected":
                 TouchActiveSession(room, now);
+                await EmitSessionAlertsAsync(room.AppointmentId, eventType, participantIdentity, ct);
                 break;
 
             default:
@@ -136,6 +144,70 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         }
 
         await rooms.UpdateAsync(room, ct);
+    }
+
+    /// <summary>
+    /// Materializa las alertas de la bandeja según el evento del proveedor. El
+    /// participante se identifica por el <c>Identity</c> del token Twilio (que
+    /// es el usuario del JWT): si coincide con el profesional de la cita, la
+    /// alerta avisa al profesional (su identidad) — la alerta al paciente queda
+    /// para una fase futura (app móvil). Best-effort: un fallo aquí no debe
+    /// romper el procesamiento del webhook.
+    /// </summary>
+    private async Task EmitSessionAlertsAsync(
+        Guid appointmentId,
+        string eventType,
+        string participantIdentity,
+        CancellationToken ct)
+    {
+        try
+        {
+            var appointment = await appointments.GetForUpdateAsync(appointmentId, ct);
+            if (appointment is null)
+            {
+                return;
+            }
+
+            var professional = await referenceData.GetProfessionalAsync(appointment.ProfessionalId, ct);
+
+            // Solo el profesional (vía su identidad de usuario) recibe estas
+            // alertas en esta fase.
+            var recipientUserId = professional?.UserId;
+            if (recipientUserId is null)
+            {
+                return;
+            }
+
+            var patientName = (await referenceData.GetPatientAsync(appointment.PatientId, ct))?.FullName
+                              ?? "el paciente";
+
+            var isProfessionalParticipant = Guid.TryParse(participantIdentity, out var participantUserId)
+                                            && participantUserId == recipientUserId;
+
+            TelemedicineAlert? alert = eventType switch
+            {
+                "participant-connected" => isProfessionalParticipant
+                    ? AlertMaterializer.ProfessionalJoined(recipientUserId, appointmentId, patientName)
+                    : AlertMaterializer.PatientWaiting(recipientUserId, appointmentId, patientName),
+                "participant-disconnected" => isProfessionalParticipant
+                    ? null // el profesional no se alerta a sí mismo al salir
+                    : AlertMaterializer.ParticipantLeft(recipientUserId, appointmentId, patientName),
+                "room-ended" => AlertMaterializer.SessionEnded(recipientUserId, appointmentId, patientName),
+                _ => null,
+            };
+
+            if (alert is not null)
+            {
+                await alerts.AddRangeAsync([alert], ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            // La bandeja no debe tumbar el procesamiento del webhook (idempotencia
+            // y atomicidad ya están garantizadas por la clave de evento).
+            logger.LogWarning(ex, "No se pudo materializar la alerta del evento {EventType} de la cita {AppointmentId}.",
+                eventType, appointmentId);
+        }
     }
 
     private static void EndActiveSession(VirtualRoom room, string endReason, Guid? endedBy, DateTimeOffset now)
