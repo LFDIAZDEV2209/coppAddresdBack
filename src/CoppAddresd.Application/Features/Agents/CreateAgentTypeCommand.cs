@@ -12,6 +12,7 @@ public record CreateAgentTypeCommand(
     string? Description,
     string? Specialty,
     string? IconKey,
+    string? Slug,
     string? Metadata)
     : IRequest<AgentTypeDto>;
 
@@ -33,6 +34,7 @@ public sealed class CreateAgentTypeCommandHandler(
             Description = Normalize(request.Description),
             Specialty = Normalize(request.Specialty),
             IconKey = Normalize(request.IconKey),
+            Slug = Normalize(request.Slug),
             Status = AgentStatus.Borrador,
             Metadata = string.IsNullOrWhiteSpace(request.Metadata) ? "{}" : request.Metadata,
             CreatedAt = DateTime.UtcNow,

@@ -137,6 +137,10 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("encounter_date");
 
+                    b.Property<Guid?>("EncounterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("encounter_id");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)")
@@ -173,6 +177,9 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
 
                     b.HasIndex("EncounterDate")
                         .HasDatabaseName("ix_clinical_encounters_encounter_date");
+
+                    b.HasIndex("EncounterId")
+                        .HasDatabaseName("ix_clinical_encounters_encounter_id");
 
                     b.HasIndex("PatientId")
                         .HasDatabaseName("ix_clinical_encounters_patient_id");

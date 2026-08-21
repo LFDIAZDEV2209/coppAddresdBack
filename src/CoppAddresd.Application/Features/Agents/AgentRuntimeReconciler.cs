@@ -44,6 +44,7 @@ internal static class AgentRuntimeReconciler
                 agent.Description,
                 agent.Specialty,
                 agent.IconKey,
+                agent.Slug,
                 version.Config), ct);
             logger.LogInformation(
                 "Runtime re-sincronizado para el agente {AgentTypeId} (v{VersionNumber})",

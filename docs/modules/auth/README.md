@@ -27,12 +27,14 @@ Sistema completo de autenticación JWT con autorización basada en permisos gran
 ├─────────────────────────────────────────────────────────────┤
 │  Authorization                                              │
 │  ├── PermissionPolicyProvider  → Dynamic policy provider    │
-│  ├── PermissionHandler       → Verifica permisos en DB      │
-│  └── RequirePermissionAttribute → [RequirePermission("X")]  │
+│  ├── PermissionHandler       → Autoriza por claims del JWT  │
+│  ├── ErpAudienceHandler      → Exige aud="erp" (ERP admin)  │
+│  ├── RequirePermissionAttribute → [RequirePermission("X")]  │
+│  └── RequireErpAudienceAttribute → [RequireErpAudience]     │
 ├─────────────────────────────────────────────────────────────┤
 │  Security                                                   │
 │  ├── TokenInvalidationService → Invalida via SecurityStamp  │
-│  └── SecurityStampValidator   → Valida stamp en cada request│
+│  └── SecurityStampValidator   → Valida stamp SOLO aud=erp   │
 ├─────────────────────────────────────────────────────────────┤
 │  Data                                                       │
 │  ├── AuthDbContext           → IdentityDbContext<Guid>      │
@@ -49,7 +51,7 @@ Sistema completo de autenticación JWT con autorización basada en permisos gran
 | **Permisos directos + via rol** | Usuario puede tener permisos directos (excepciones) o via rol. |
 | **Refresh tokens en DB** | Rotación automática, revocación en logout/cambio password. |
 | **Refresh token en cookie HttpOnly** | `copp_refresh_token` (Path `/api/auth`, SameSite=Lax, Secure en prod). El JS del navegador nunca ve el token: inmune a XSS persistente. El access token viaja en header Bearer (memoria del cliente). |
-| **SecurityStamp invalidation** | Cambios de password/rol/permiso invalidan tokens inmediatamente. |
+| **SecurityStamp invalidation** | Cambios de password/rol/permiso/desactivación invalidan tokens inmediatamente (validación por request SOLO para audiencia `erp`). |
 | **Schema `auth.` separado** | Consistencia con `audit.`. Previene contaminación de `public.` |
 | **CORS whitelist configurable** | `Cors:Origins` (default `http://localhost:3000`) con `AllowCredentials`; expone `X-Refresh-Status` para distinguir "sin cookie" de "token inválido". |
 
@@ -96,10 +98,11 @@ auth.UserTokens               → Tokens 2FA (Identity)
 3. Validar credenciales con UserManager
 4. Resolver la aplicación por código (auth.applications) — inactiva/desconocida → 401
 5. Verificar UserApplication (usuario + aplicación) — sin acceso → 401
-6. Si OK → generar AccessToken (JWT con aud = código de aplicación) + RefreshToken
-   (ligado a la aplicación en DB)
-7. Response: { accessToken, tokenType, expiresIn } — sin refresh en el body
-8. Set-Cookie copp_refresh_token (HttpOnly): rememberMe=true → 7 días,
+6. Resolver permisos actuales del usuario (directos + via rol) → GetUserAllPermissionCodesAsync
+7. Si OK → generar AccessToken con: aud = código de aplicación, un claim "permission" por cada
+   permiso, y el security stamp actual del usuario + RefreshToken (ligado a la aplicación en DB)
+8. Response: { accessToken, tokenType, expiresIn } — sin refresh en el body
+9. Set-Cookie copp_refresh_token (HttpOnly): rememberMe=true → 7 días,
    rememberMe=false → 8 horas (cookie de sesión)
 ```
 
@@ -181,21 +184,35 @@ propiedad del número.
 ```
 1. Request con Header: Authorization: Bearer <token>
 2. JwtBearer valida firma, issuer, audience (aud ∈ ValidAudiences), expiración
-3. SecurityStampValidator verifica stamp contra DB
-4. PermissionHandler verifica permisos (directos + via rol)
-5. Controller ejecuta acción
+3. SOLO si aud == "erp": SecurityStampValidator verifica el stamp contra la BD
+   (usuario activo + stamp coincide) → mismatch/usuario no encontrado/inactivo → 401
+   Para aud == "app" el stamp NO se valida por request (revocación ≤ 15 min, trade-off aceptado)
+4. PermissionHandler autoriza leyendo los claims "permission" del JWT (cero queries a la BD)
+5. Endpoints de administración ERP (Users/Roles/Permissions) exigen aud == "erp"
+   (política ErpAudience, [RequireErpAudience]): un token "app" — que además
+   skipea el stamp — es rechazado con 403 aunque lleve claims de permiso.
+   Esto cierra el bypass de revocación: sin esto, un staff con UserApplication
+   "app" recibiría sus permisos ERP en un token app y podría administrar ≤ 15 min.
+6. Controller ejecuta acción
 ```
 
 ### Refresh token
 ```
 1. POST /api/auth/refresh (sin body — el token viene de la cookie HttpOnly)
 2. Buscar token en DB
-3. Validar: no expirado, no revocado, aplicación ligada activa
-4. Generar nuevo AccessToken con el MISMO aud de la aplicación ligada
-   + nuevo RefreshToken (rotación, conserva la aplicación)
-5. Marcar token viejo como reemplazado (ReplacedByTokenId)
-6. Set-Cookie con el NUEVO refresh token (rota la cookie)
-7. Response: { accessToken, tokenType, expiresIn }
+3. Validar: no expirado, no revocado, aplicación ligada activa, usuario activo
+4. RECLAMAR el token atómicamente: UPDATE ... SET revoked_at = now()
+   WHERE token = @t AND revoked_at IS NULL. Si afecta 0 filas → el token ya fue
+   usado (replay concurrente) → 401, NO se emite familia nueva. Esto cierra la
+   carrera check-then-act: un token robado rejugado en paralelo con el cliente
+   legítimo ya no produce múltiples sesiones vivas.
+5. Re-calcular permisos actuales (GetUserAllPermissionCodesAsync) — NUNCA copiar
+   claims del token anterior (REQ-CLAIMS-02)
+6. Generar nuevo AccessToken con el MISMO aud de la aplicación ligada
+   + claims "permission" actualizados + nuevo RefreshToken (rotación)
+7. Marcar token viejo como reemplazado (ReplacedByTokenId)
+8. Set-Cookie con el NUEVO refresh token (rota la cookie)
+9. Response: { accessToken, tokenType, expiresIn }
 
 Si la cookie está corrupta/expirada/revocada → 401 + Set-Cookie expirada
 (limpia la cookie automáticamente; el usuario no debe borrarla a mano).
@@ -214,15 +231,61 @@ inválido) — el frontend decide si muestra el banner de sesión expirada.
 
 ### Invalidación de tokens
 ```
-Cambio de password/rol/permiso →
-  UserManager.UpdateSecurityStampAsync() →
+Cambio de password/rol/permiso/desactivación (IsActive → false) →
+  TokenInvalidationService.InvalidateUserTokensAsync() (1 usuario) o
+  InvalidateUsersTokensAsync() (lote: mutaciones de rol/perfil con muchos
+  miembros → UN solo UPDATE WHERE Id IN (...), sin loop por usuario) →
   SecurityStamp en DB cambia →
-  SecurityStampValidator detecta mismatch →
-  Token rechazado →
-  Usuario debe hacer login de nuevo
+  En la audiencia ERP (staff/doctores) el stamp se valida en cada request →
+  Token rechazado con 401 → El usuario debe hacer login de nuevo (revocación INMEDIATA)
+En la audiencia APP (pacientes, ~10M) el stamp NO se valida por request:
+  los tokens viven hasta su expiración natural (≤ 15 min) — trade-off aceptado
+  para mantener el hot path libre de queries a la BD.
 ```
+El CancellationToken del request se propaga a TODAS las invalidaciones; en el
+camino de usuario único UserManager no expone overloads con ct (limitación de
+la API Identity), por lo que la cancelación se verifica explícitamente antes
+de cada operación.
+
+### Endpoints de usuarios con asignaciones (POST/PUT /api/users)
+
+Para eliminar el N+1 del frontend (1 request por rol/permiso), `CreateUserRequest`
+y `UpdateUserRequest` aceptan los conjuntos completos de asignaciones:
+
+- `POST /api/users` — `{ email, password, firstName, lastName, roleIds?, permissionIds? }`.
+  El endpoint sigue `[AllowAnonymous]` para el registro básico, PERO si el request
+  trae `roleIds`/`permissionIds` (no null y no vacíos) se exige caller autenticado
+  con `Users.Create` + `Roles.Assign` + `Permissions.Assign` (403 si es anónimo o le
+  faltan permisos). Nunca se aplican asignaciones en silencio a un caller anónimo.
+  Lleva `[EnableRateLimiting("auth")]` (100 req/min por IP) para acotar el spam de
+  cuentas en el registro público. La carrera de dos POST concurrentes con el mismo
+  email se resuelve con el unique index (DbUpdateException 23505 → "Email ya está
+  registrado", mismo mensaje del pre-chequeo).
+- `PUT /api/users/{id}` — `{ firstName?, lastName?, isActive?, roleIds?, permissionIds? }`.
+  `roleIds`/`permissionIds` son **nullables**: `null` = no tocar la asignación;
+  lista (incluso vacía) = sync total (reemplaza el conjunto). Si se envían, se
+  exige además `Roles.Assign` y `Permissions.Assign` (403 si faltan).
+
+Ambos flujos validan la existencia de cada rol/permiso antes de asignar y
+persisten usuario + asignaciones en **una transacción** (rollback total ante
+cualquier error). Si en edición los roles/permisos cambiaron efectivamente (o el
+usuario se desactivó), el security stamp se bumpea dentro de la misma
+transacción (revocación inmediata de tokens).
+
+Los endpoints de asignación individual (`POST/DELETE /api/roles/user/{id}` y
+`POST/DELETE /api/permissions/user/{id}`) se mantienen para consumidores que
+necesiten deltas.
 
 ## Permisos
+
+### Autorización basada en claims
+
+Desde este cambio, el `PermissionHandler` autoriza leyendo los claims
+`permission` del access token (emitidos en login/refresh con el conjunto de
+permisos ACTUAL del usuario). El hot path de autorización NO consulta la base
+de datos (REQ-CLAIMS-03). La revocación de permisos sigue siendo inmediata
+para ERP vía security stamp (validado por request) y ≤ 15 min para APP
+(expiración natural del token).
 
 ### Módulo Users
 - `Users.View` — Listar/obtener usuarios
@@ -454,8 +517,9 @@ Configurado con `HealthChecks.NpgSql`.
 
 - **Password policy**: 8+ chars, mayúscula, minúscula, número, especial
 - **Lockout**: 15 minutos después de 5 intentos fallidos
-- **Refresh token rotation**: Cada refresh genera nuevo token, invalida el anterior
-- **SecurityStamp**: Cambios críticos invalidan todos los tokens activos
+- **Refresh token rotation**: Cada refresh genera nuevo token, invalida el anterior. La rotación es ATÓMICA (UPDATE condicional `WHERE revoked_at IS NULL`): dos refreshes concurrentes con el mismo token solo permiten una rotación — un token robado rejugado no crea familias múltiples
+- **SecurityStamp**: Cambios críticos (password, roles, permisos, desactivación) invalidan todos los tokens activos; validación por request en la audiencia `erp`. La invalidación por rol/perfil es batch (un solo UPDATE para todos los afectados)
+- **Aislamiento de audiencias**: los endpoints de administración ERP (Users/Roles/Permissions) exigen `aud == "erp"` (política ErpAudience → 403 para tokens `app`). El middleware JWT acepta ambas audiencias conocidas; la garantía cross-audience vive en la capa de autorización
 - **Cookie HttpOnly**: `copp_refresh_token` — invisible para JS, `SameSite=Lax` (mitiga CSRF: las peticiones cross-site no envían la cookie; el bearer es independiente)
 - **Rate limiting**: 100 requests/minuto por IP aplicado a `AuthController` (`[EnableRateLimiting("auth")]`)
 - **Protección OTP**: límites por IP/teléfono/documento + cooldown (SEND) y ventana/intentos/lockout (VERIFY) en `OtpProtectionService` — ver sección *Protección OTP (OtpSecurity)*

@@ -20,6 +20,14 @@ public sealed class ClinicalEncounter
 
     public Guid ProfessionalId { get; set; }
 
+    /// <summary>
+    /// Id del encounter canónico (<c>app.encounters</c>) del core al que se
+    /// linkea este encuentro de telemedicina. Null cuando aún no se publicó el
+    /// registro clínico en el core. El módulo es standalone: no hay navegación
+    /// de objeto y la FK se crea por SQL en la migración (fuera del modelo EF).
+    /// </summary>
+    public Guid? EncounterId { get; set; }
+
     public DateTimeOffset EncounterDate { get; set; } = DateTimeOffset.UtcNow;
 
     public EncounterStatus Status { get; set; } = EncounterStatus.Draft;
