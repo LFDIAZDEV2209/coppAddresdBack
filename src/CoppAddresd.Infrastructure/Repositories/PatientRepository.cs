@@ -38,6 +38,12 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
             .Where(x => x.DeletedAt == null)
             .FirstOrDefaultAsync(x => x.MedicalRecordNumber == mrn, ct);
 
+    public async Task<PatientProfile?> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
+        => await dbContext.PatientProfiles
+            .AsNoTracking()
+            .Where(x => x.DeletedAt == null && x.UserId == userId)
+            .FirstOrDefaultAsync(ct);
+
     public async Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
         int page,
         int pageSize,

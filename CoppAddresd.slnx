@@ -7,9 +7,12 @@
   </Folder>
   <Folder Name="/src/Services/">
     <Project Path="src/Services/CoppAddresd.Auth/CoppAddresd.Auth.csproj" />
+    <Project Path="src/Services/CoppAddresd.Telemedicine/CoppAddresd.Telemedicine.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CoppAddresd.IntegrationTests/CoppAddresd.IntegrationTests.csproj" />
+    <Project Path="tests/CoppAddresd.Telemedicine.IntegrationTests/CoppAddresd.Telemedicine.IntegrationTests.csproj" />
+    <Project Path="tests/CoppAddresd.Telemedicine.UnitTests/CoppAddresd.Telemedicine.UnitTests.csproj" />
     <Project Path="tests/CoppAddresd.UnitTests/CoppAddresd.UnitTests.csproj" />
   </Folder>
 </Solution>

@@ -14,6 +14,9 @@ public interface IPatientRepository
 
     Task<PatientProfile?> GetByMedicalRecordNumberAsync(string mrn, CancellationToken ct = default);
 
+    /// <summary>Paciente por usuario de Auth (contexto del JWT). Excluye eliminados (soft delete).</summary>
+    Task<PatientProfile?> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
+
     /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4).</summary>
     Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
         int page,
