@@ -13,8 +13,10 @@ Fases implementadas:
 - **Fase 7 — Datos de referencia / maestros para la UI**: catálogo de **profesionales clínicos** en el backend (`GET /api/v1/professionals-catalog`, paginado, filtros por especialidad/sede/búsqueda, sin PHI) + endpoints del microservicio para la UI: `GET /api/v1/telemedicine/me` (resuelve profesional/paciente del JWT) y listados admin (`/admin/summary`, `/admin/appointments`, `/admin/requests`, `/admin/sessions`) bajo el nuevo permiso `Telemedicine.AdminView`. Detalle en la sección Fase 7.
 - **Fase 8 (adelantada) — Permisos `Telemedicine.*`**: siembra en el Auth Service (`PermissionCodes` + `RoleSeeder`), autorización por claim `permission` en el microservicio (mismo mecanismo que el backend).
 - **Fase 9-10 — Frontend (`coppaddresd-front`)**: módulo `features/telemedicine/*` (types espejo de los DTOs, services del microservicio 5130 y de catálogos del backend 5122, hooks, componentes) + rutas `/telemedicine/*` (profesional: dashboard, agenda, calendario, solicitudes, alertas, detalle de cita con sala virtual y encuentro clínico; admin: dashboard con KPIs, citas, solicitudes, profesionales, sesiones) protegidas con `PermissionGate` (`Telemedicine.AdminView`). Detalle en la sección Fase 9-10.
+- **Fase 11 — Testing formal**: proyectos `tests/CoppAddresd.Telemedicine.UnitTests` (134 tests: reglas puras de agendamiento/sala/encuentro, materializador de alertas, guard de referencias, mappers, validadores y handlers con fakes en memoria) e `tests/CoppAddresd.Telemedicine.IntegrationTests` (25 tests contra PostgreSQL real en BD aislada `coppaddresd_tele_test_*` — creada, migrada y eliminada por corrida vía `COP_TEST_DB_CONNECTION`): anti doble reserva concurrente (exclusión GiST + índice único parcial), idempotencia del webhook (clave única + rollback), persistencia del agregado, idempotencia de sala/encuentro y fallback de settings.
+- **Fase 12 — Hardening**: auditoría clínica del encuentro — `tele.clinical_encounters` adjunta el trigger `audit.audit_trigger_function` vía migración condicional (`AttachClinicalEncounterAudit`, 4ª migración de `tele.`), y el actor del JWT + correlation id se propagan a los GUC `audit.*` por `AuditTriggerInterceptor`/`HttpAuditActorContext` (el guardado del encuentro usa transacción explícita corta para que el interceptor dispare). Bugs reales corregidos (descubiertos en el E2E de la fase): idempotencia del proveedor ante "Room exists" de Twilio (409/20429 → recupera la sala existente) y tracking `Added` de sesiones nuevas en el agregado (el fixup de EF las marcaba `Modified` → 409 de concurrencia al iniciar sesión tras un join previo). Detalle en la sección Fase 11-12.
 
-Pendiente: Fase 11-12 (testing/hardening). También: `room-ended` sin sesión → NoShow queda para fase futura; alertas al PACIENTE (requieren `PatientRefDto.UserId` + app móvil) y alerta `UpcomingAppointment` (scheduler) quedan para fase futura; la integración con el SDK de video del navegador (Twilio) en la sala virtual queda para una fase posterior (el `join-token` ya se genera y se muestra).
+Pendiente: integración con el SDK de video del navegador (Twilio) en la sala virtual (el `join-token` ya se genera y se muestra); alertas al PACIENTE (requieren `PatientRefDto.UserId` + app móvil); alerta `UpcomingAppointment` (scheduler); `room-ended` sin sesión → NoShow (decisión de negocio aparte); exponer el filtro `clinicId` en la UI admin (el backend ya lo acepta); propagación de actor en el BACKEND (su `HttpAuditActorContext` sigue devolviendo System; el microservicio ya la tiene resuelta vía JWT).
 
 ## Arquitectura
 
@@ -375,6 +377,72 @@ Rutas:
   para una fase posterior (el endpoint ya devuelve el token de acceso).
 - El encuentro clínico usa los campos `ClinicalDataDto` (jsonb tipado) y respeta
   la inmutabilidad del registro `Completed`.
+
+## Fase 11-12 — Testing formal y hardening
+
+### Tests
+
+```bash
+dotnet test tests/CoppAddresd.Telemedicine.UnitTests        # 134 unit (sin BD)
+$env:COP_TEST_DB_CONNECTION="Host=localhost;..."; dotnet test tests/CoppAddresd.Telemedicine.IntegrationTests  # 25 int
+```
+
+- **Unit** (`CoppAddresd.Telemedicine.UnitTests`, fakes en memoria estilo proyecto):
+  reglas de agendamiento (anticipación/ventana/duración/UTC), ventana de sala y
+  autorización por identidad, máquina de estados del encuentro, materializador
+  de alertas, guard de referencias, mappers (sin N+1), validadores y todos los
+  handlers (incluido el webhook: firma, duplicado, room-ended).
+- **Integración** (`CoppAddresd.Telemedicine.IntegrationTests`): BD aislada
+  `coppaddresd_tele_test_<guid>` creada con `TEMPLATE template0` (el template1 del
+  contenedor tiene mismatch de collation), migrada y eliminada por corrida. Cubre
+  la garantía real de anti doble reserva (dos INSERTs concurrentes solapados →
+  uno falla con exclusión GiST), idempotencia del webhook con transacción real
+  (duplicado → rollback sin doble mutación), persistencia del agregado
+  (historial append-only, agenda, listados admin), idempotencia de sala/encuentro
+  (índices únicos) y fallback clínica → organización → defaults.
+- Convención: los tests de una corrida comparten la BD (colección xUnit), por eso
+  cada seed usa profesionales/ids únicos y los conteos se filtran por clave propia.
+
+### Auditoría clínica (PHI)
+
+- Migración `AttachClinicalEncounterAudit` (4ª de `tele.`): adjunta
+  `audit.audit_trigger_function` a `tele.clinical_encounters` de forma
+  **condicional** (solo si el schema `audit` del backend existe en la instancia)
+  e idempotente. `Down` elimina el trigger.
+- `HttpAuditActorContext` (scoped) resuelve el actor desde el JWT del microservicio
+  (NameIdentifier/Email/Role + correlation id del middleware); `AuditTriggerInterceptor`
+  (patrón del backend) propaga los GUC `audit.*` al iniciar cada transacción.
+- El guardado del encuentro (`EncounterRepository.Add/Update`) usa transacción
+  explícita corta: un `SaveChanges` de una sola sentencia no abre transacción y el
+  interceptor nunca dispararía (actor quedaría `SYSTEM`).
+- Verificado E2E: `PUT encounter` de un usuario real → fila en
+  `audit.activity_logs` con `actor_type=USER`, `user_id` del JWT y correlation id.
+
+### Correcciones de bugs (descubiertas en el E2E de hardening)
+
+1. **`TwilioVideoProvider.CreateRoomAsync`**: el SDK lanza `ApiException` "Room
+   exists" (HTTP 409/código 20429) cuando el nombre determinista `apt-{id}` ya
+   está tomado (sala huérfana de un intento previo) en lugar de devolverla. Ahora
+   se recupera la sala existente (`GetRoomAsync` por nombre) → idempotencia real
+   del proveedor.
+2. **Sesiones nuevas en el agregado**: el fixup de EF (RoomId → sala cargada con
+   `ThenInclude Sessions`) marca una sesión agregada a `appointment.Sessions` como
+   `Modified` (clave Guid no generada por BD → asume existente) → `UPDATE` de 0
+   filas → `DbUpdateConcurrencyException` → 409 al iniciar sesión cuando la sala ya
+   existía. Fix: `AppointmentRepository.UpdateAsync` re-trackea con
+   `dbContext.Sessions.Add(session)` las sesiones no cargadas de BD
+   (`_loadedSessionIds`, poblado en `GetForUpdateAsync`); las cargadas conservan su
+   transición Active → Ended. `Entry.State = Added` no sirve (el fixup lo re-marca;
+   `DbSet.Add` sobrevive a DetectChanges — verificado con test de integración).
+
+### Decisiones
+
+- Los tests de integración **no** usan WebApplicationFactory: el valor está en la
+  capa de datos/concurrencia/idempotencia contra PostgreSQL real; la autorización
+  se cubre a nivel de handler (identidad/supervisión).
+- Auditoría SOLO del encuentro clínico en esta fase (PHI); extender a cita/sesión
+  si el dominio lo exige (mismo mecanismo).
+- El actor del BACKEND sigue sin propagarse (pendiente transversal del proyecto).
 
 ## Comandos
 

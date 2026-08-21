@@ -7,6 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Internals expuestos a los ensamblados de prueba (Fase 11): los helpers de
+         dominio (SchedulingRules, SessionSupport, AlertMaterializer, ...) son
+         internal en este proyecto de una sola pieza. -->
+    <InternalsVisibleTo Include="CoppAddresd.Telemedicine.UnitTests" />
+    <InternalsVisibleTo Include="CoppAddresd.Telemedicine.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="EFCore.NamingConventions" Version="10.0.0" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />

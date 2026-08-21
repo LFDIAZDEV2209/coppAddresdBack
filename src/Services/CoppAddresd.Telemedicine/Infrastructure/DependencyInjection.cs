@@ -28,6 +28,9 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException(
                 "ConnectionStrings:DefaultConnection no configurada para Telemedicina.");
 
+        services.AddHttpContextAccessor();
+        services.AddScoped<HttpAuditActorContext>();
+
         services.AddDbContext<TelemedicineDbContext>((serviceProvider, options) =>
             options
                 .UseNpgsql(
@@ -37,7 +40,11 @@ public static class DependencyInjection
                         // Historial de migraciones aislado en el schema tele:
                         // la instancia compartida tiene su historial en public.
                         .MigrationsHistoryTable("__ef_migrations_history", "tele"))
-                .UseSnakeCaseNamingConvention());
+                .UseSnakeCaseNamingConvention()
+                // Auditoría (Fase 12): propaga actor JWT + correlación a los GUC
+                // audit.* al iniciar cada transacción (trigger del encuentro clínico).
+                .AddInterceptors(serviceProvider.GetRequiredService<AuditTriggerInterceptor>()));
+        services.AddScoped<AuditTriggerInterceptor>();
 
         services.AddMemoryCache();
 
