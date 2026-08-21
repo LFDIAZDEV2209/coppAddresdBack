@@ -62,6 +62,10 @@ public static class PermissionCodes
     public const string ClinicalRecordsCreate = "ClinicalRecords.Create";
     public const string ClinicalRecordsUpdate = "ClinicalRecords.Update";
 
+    public const string CommunityView = "Community.View";
+    public const string CommunityModerate = "Community.Moderate";
+    public const string CommunityProfiles = "Community.Profiles";
+
     public static IEnumerable<string> GetAll()
     {
         yield return UsersView;
@@ -112,6 +116,9 @@ public static class PermissionCodes
         yield return ClinicalRecordsView;
         yield return ClinicalRecordsCreate;
         yield return ClinicalRecordsUpdate;
+        yield return CommunityView;
+        yield return CommunityModerate;
+        yield return CommunityProfiles;
     }
 
     public static string GetModule(string permissionCode)
