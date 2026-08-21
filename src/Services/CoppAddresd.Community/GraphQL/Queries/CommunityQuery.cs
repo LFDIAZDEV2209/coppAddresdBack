@@ -111,7 +111,7 @@ var profile = await db.Profiles
         var query = db.Profiles.AsQueryable();
         if (status is not null) query = query.Where(p => p.Status == status);
         if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(p => EF.Functions.ILike(p.DisplayName, $"%{search}%"));
+            query = query.Where(p => EF.Functions.ILike(EF.Functions.Unaccent(p.DisplayName), EF.Functions.Unaccent($"%{search}%")));
         return query
             .OrderBy(p => p.CreatedAt)
             .Skip(skip)
@@ -169,7 +169,7 @@ var profile = await db.Profiles
 
         var query = db.Profiles.Where(p => p.Status == ProfileStatus.Active);
         if (!string.IsNullOrWhiteSpace(search))
-            query = query.Where(p => EF.Functions.ILike(p.DisplayName, $"%{search}%"));
+            query = query.Where(p => EF.Functions.ILike(EF.Functions.Unaccent(p.DisplayName), EF.Functions.Unaccent($"%{search}%")));
 
         var profiles = await query
             .OrderBy(p => p.CreatedAt)
