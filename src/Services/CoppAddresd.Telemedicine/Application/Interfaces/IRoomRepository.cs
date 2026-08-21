@@ -44,11 +44,27 @@ public interface IRoomRepository
     Task UpdateAsync(VirtualRoom room, CancellationToken ct = default);
 
     /// <summary>
-    /// Registra un webhook como procesado. Una violación del índice único
+    /// Registra un webhook como procesado. Una violaciA3n del A-ndice A�nico
     /// (duplicado concurrente o reintento) se traduce a
     /// <see cref="CoppAddresd.Telemedicine.Domain.Exceptions.BusinessRuleViolationException"/>:
-    /// en el flujo transaccional del webhook, el rollback también deshace las
+    /// en el flujo transaccional del webhook, el rollback tambiAcn deshace las
     /// mutaciones del duplicado perdedor.
     /// </summary>
     Task AddWebhookEventAsync(TelemedicineWebhookEvent webhookEvent, CancellationToken ct = default);
+
+    /// <summary>
+    /// Listado administrativo de sesiones de video, paginado y con su cita
+    /// incluida (para resolver paciente/profesional en la UI admin). Filtros
+    /// opcionales por cita y rango de inicio.
+    /// </summary>
+    Task<(IReadOnlyList<TelemedicineSession> Items, int Total)> ListSessionsAsync(
+        Guid? appointmentId,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>Cuenta las sesiones de video activas (KPI del dashboard admin).</summary>
+    Task<int> CountActiveSessionsAsync(CancellationToken ct = default);
 }

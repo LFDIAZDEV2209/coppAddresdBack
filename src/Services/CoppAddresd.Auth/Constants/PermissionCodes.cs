@@ -73,6 +73,8 @@ public static class PermissionCodes
     public const string TelemedicineAgendaView = "Telemedicine.AgendaView";
     public const string TelemedicineAlertsView = "Telemedicine.AlertsView";
     public const string TelemedicineSessionsManage = "Telemedicine.SessionsManage";
+    /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
+    public const string TelemedicineAdminView = "Telemedicine.AdminView";
 
     public static IEnumerable<string> GetAll()
     {
@@ -134,6 +136,7 @@ public static class PermissionCodes
         yield return TelemedicineAgendaView;
         yield return TelemedicineAlertsView;
         yield return TelemedicineSessionsManage;
+        yield return TelemedicineAdminView;
     }
 
     public static string GetModule(string permissionCode)

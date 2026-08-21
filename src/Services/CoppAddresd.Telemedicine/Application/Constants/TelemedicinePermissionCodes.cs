@@ -20,6 +20,13 @@ public static class TelemedicinePermissionCodes
     public const string AgendaView = "Telemedicine.AgendaView";
 
     /// <summary>
+    /// Vista administrativa global: listados de citas, solicitudes, sesiones y
+    /// KPIs del admin. Solo roles administrativos (OrgAdmin/ClinicAdmin); los
+    /// profesionales usan su agenda por identidad.
+    /// </summary>
+    public const string AdminView = "Telemedicine.AdminView";
+
+    /// <summary>
     /// Bandeja de alertas. Los profesionales ven SOLO sus propias alertas por
     /// identidad (JWT); este permiso habilita la vista administrativa global
     /// (todas las alertas, filtrar por clínica es evolución futura).
@@ -47,5 +54,6 @@ public static class TelemedicinePermissionCodes
         AgendaView,
         AlertsView,
         SessionsManage,
+        AdminView,
     ];
 }

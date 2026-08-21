@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Domain.Entities;
+using CoppAddresd.Telemedicine.Domain.Enums;
 
 namespace CoppAddresd.Telemedicine.Application.Interfaces;
 
@@ -55,8 +56,38 @@ public interface IAppointmentRepository
         DateTimeOffset to,
         CancellationToken ct = default);
 
-    /// <summary>Citas de un paciente, de más reciente a más antigua (historial del paciente).</summary>
+    /// <summary>
+    /// Citas de un paciente, de más reciente a más antigua (historial del paciente).
+    /// </summary>
     Task<IReadOnlyList<TelemedicineAppointment>> ListByPatientAsync(
         Guid patientId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Listado administrativo global de citas con filtros opcionales
+    /// (profesional, paciente, clínica, sede, estado, rango), paginado y con
+    /// orden estable por inicio. Es la base de la vista "Citas" del admin.
+    /// </summary>
+    Task<(IReadOnlyList<TelemedicineAppointment> Items, int Total)> ListAdminAsync(
+        Guid? professionalId,
+        Guid? patientId,
+        Guid? clinicId,
+        Guid? locationId,
+        AppointmentStatus? status,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>Cuenta las citas cuyo inicio cae en el rango <c>[from, to)</c>.</summary>
+    Task<int> CountInRangeAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
+    /// <summary>Cuenta las citas en un estado concreto (KPIs del dashboard admin).</summary>
+    Task<int> CountByStatusAsync(
+        AppointmentStatus status,
         CancellationToken ct = default);
 }
