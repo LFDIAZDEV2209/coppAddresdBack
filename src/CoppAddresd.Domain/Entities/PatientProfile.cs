@@ -134,4 +134,7 @@ public sealed class PatientProfile
     public ICollection<PatientAllergy> Allergies { get; set; } = [];
 
     public ICollection<VitalSign> VitalSigns { get; set; } = [];
+
+    /// <summary>Profesionales asignados al paciente (alcance de datos "propios").</summary>
+    public ICollection<PatientProfessionalAssignment> Assignments { get; set; } = [];
 }

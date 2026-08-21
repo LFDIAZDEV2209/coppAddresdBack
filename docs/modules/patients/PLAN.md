@@ -17,6 +17,7 @@ multi-organización, multi-clínica, multi-sede, con permisos por contexto.
 | 2 — Authorization con scopes | Tablas auth scoped, introspección, políticas API, switcher de contexto | ✅ Completado (backend) — UX de gestión pendiente |
 | 3 — Professional onboarding | Invitaciones, email infra, wizard primer acceso + perfil | ✅ Completado (backend + wizard + **UX admin**: wizard de creación, orquestación con compensación, gestión de scopes por clínica, detalle) |
 | 4 — Patient scoping | clinic_id/location_id, soft delete, created_by/updated_by, filtros por contexto, página de detalle | ✅ Completado |
+| 4b — Alcance "propios" | Asignación paciente↔profesional (`app.patient_professionals`), `Patients.ViewOwn` (data scope por identidad del JWT), auto-asignación al crear, endpoints de asignación, UI en el detalle | ✅ Completado |
 | 5 — Documents | Repositorio documental + upload UI + **storage S3** | ✅ Backend + S3 completo — tab de documentos en frontend y docs de profesionales pendientes |
 | 5b — Seed MediQuer | Org `MediQuer Health` → 2-3 clínicas → sedes + scoped assignments de ejemplo (caso clínica A vs B) | ⏳ Existe org/clínica/sede mínima (1/1/1); expandir |
 | 6 — Clinical history | encounters, clinical_notes, measurements (IMC derivado), goals | ⏳ |
@@ -78,6 +79,17 @@ app.background_jobs (+ colas) (Fase 8)
 - **Soft delete**: columna `deleted_at` (timestamptz). Listado/detalle excluyen eliminados; `DELETE` solo marca la columna (trazabilidad PHI). El chequeo de MRN único excluye eliminados.
 - **Auditoría de actor**: `created_by`/`updated_by`/`deleted_by` apuntan a `auth.users` (FK por SQL). El actor viene de `ICurrentContext.UserId`; nunca del cuerpo.
 - **Índices**: `ix_patient_profiles_clinic_id`, `ix_patient_profiles_location_id`, `ix_patient_profiles_deleted_at`.
+
+## Fase 4b — Alcance "propios" (implementada)
+
+Regla de negocio: **un profesional clínico solo consulta y gestiona los pacientes asignados a él** (relación explícita del dominio, no un filtro del frontend).
+
+- **Modelo**: `app.patient_professionals` (PK `patient_id`+`professional_id`, `relationship_type` [Assigned/Primary...], `status` Active/Inactive, `clinic_id`, `created_by`). Índice `(professional_id, status)` para el filtro del alcance; FK a `auth.users` por SQL (patrón del módulo).
+- **Permisos (Auth)**: `Patients.ViewOwn` (ver solo asignados) vs `Patients.View` (directorio del scope, roles administrativos). Los roles clínicos (Physician, Nutritionist, Psychologist, Nurse) migraron a `ViewOwn` y perdieron `Professionals.View` (el módulo Gestión queda fuera de su experiencia). Nuevos códigos: `Prescriptions.{View,Create}`, `Inventory.View`, `Store.View`, `Media.View`, `Audit.View`, `System.AdminSettings` (mínimo privilegio + visibilidad de módulos).
+- **Data scope por identidad**: `ICurrentContext.GetProfessionalIdAsync()` resuelve el profesional del JWT (memo por request). `PatientsController` aplica: full scope (View) o own scope (ViewOwn → solo pacientes con asignación activa hacia el profesional del token). El id **nunca** se acepta del cliente (anti-IDOR): List filtra, GetById/Update/Delete responden 404 fuera del alcance.
+- **Auto-asignación**: si el creador es profesional clínico, el paciente creado queda asignado a él (`CreatePatientCommand.CreatedByProfessionalId`, resuelto del contexto). La asignación de otros profesionales es administrativa (`Patients.Update`); un usuario con alcance propio solo puede asignarse a sí mismo (regla anti-escalada).
+- **Endpoints**: `GET/POST /api/v1/patients/{id}/professionals`, `DELETE /api/v1/patients/{id}/professionals/{professionalId}`.
+- **Frontend**: navegación declarativa por permisos (`lib/config/navigation.ts` → `permission` en módulos/ítems, filtrada por el contexto global ∪ scoped), guard de rutas central (`PermissionRouteGuard` en el layout del dashboard), secciones admin del Sistema (IA/Integraciones) ocultas al profesional, panel "Profesionales asignados" en el detalle del paciente. El recetario usa el mismo listado de pacientes (ya filtrado por identidad en el backend).
 
 ## Fase 5 — Documents + S3 (backend implementado)
 

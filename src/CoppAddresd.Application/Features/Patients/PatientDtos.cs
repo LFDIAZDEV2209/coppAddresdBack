@@ -323,3 +323,6 @@ public record VitalSignInput(
     int? O2Saturation,
     decimal? HeightCm,
     decimal? WeightKg);
+
+/// <summary>Payload de asignación de un profesional a un paciente.</summary>
+public record AssignPatientProfessionalRequest(Guid ProfessionalId, string? RelationshipType);
