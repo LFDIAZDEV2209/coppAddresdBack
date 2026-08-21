@@ -16,9 +16,9 @@ public sealed class ProfileConfiguration : IEntityTypeConfiguration<Profile>
         builder.Property(x => x.Bio).HasColumnName("bio").HasMaxLength(500);
         builder.Property(x => x.AvatarKey).HasColumnName("avatar_key").HasMaxLength(500);
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(20).IsRequired();
-        builder.Property(x => x.ReviewedBy).HasColumnName("reviewed_by");
-        builder.Property(x => x.ReviewedAt).HasColumnName("reviewed_at").HasColumnType("timestamptz");
-        builder.Property(x => x.RejectionReason).HasColumnName("rejection_reason").HasMaxLength(300);
+        builder.Property(x => x.BannedBy).HasColumnName("banned_by");
+        builder.Property(x => x.BannedAt).HasColumnName("banned_at").HasColumnType("timestamptz");
+        builder.Property(x => x.BanReason).HasColumnName("ban_reason").HasMaxLength(300);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz").HasDefaultValueSql("now()").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamptz");
 
