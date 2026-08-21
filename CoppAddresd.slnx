@@ -9,6 +9,7 @@
     <Project Path="src/Services/CoppAddresd.Auth/CoppAddresd.Auth.csproj" />
     <Project Path="src/Services/CoppAddresd.Gateway/CoppAddresd.Gateway.csproj" />
     <Project Path="src/Services/CoppAddresd.Telemedicine/CoppAddresd.Telemedicine.csproj" />
+    <Project Path="src/Services/CoppAddresd.Community/CoppAddresd.Community.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CoppAddresd.Gateway.UnitTests/CoppAddresd.Gateway.UnitTests.csproj" />
