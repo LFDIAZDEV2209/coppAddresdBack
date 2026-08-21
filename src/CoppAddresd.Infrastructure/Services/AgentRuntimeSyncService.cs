@@ -43,6 +43,7 @@ public sealed class AgentRuntimeSyncService(
             payload.Description,
             payload.Specialty,
             payload.IconKey,
+            payload.Slug,
             Config = JsonSerializer.Deserialize<JsonElement>(payload.Config),
         };
 

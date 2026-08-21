@@ -179,11 +179,11 @@ public sealed class AgentCatalogSeeder(
 
             var type = await WithMediator(
                 mediator => mediator.Send(new CreateAgentTypeCommand(
-                    seed.Name, seed.Description, seed.Specialty, seed.IconKey, null), ct), ct);
+                    seed.Name, seed.Description, seed.Specialty, seed.IconKey, null, null), ct), ct);
 
             await WithMediator(
                 mediator => mediator.Send(new UpdateAgentTypeCommand(
-                    type.Id, seed.Name, null, null, null, AgentStatus.Activo.ToString(), null), ct), ct);
+                    type.Id, seed.Name, null, null, null, null, AgentStatus.Activo.ToString(), null), ct), ct);
 
             var version = await WithMediator(
                 mediator => mediator.Send(new CreateAgentTypeVersionCommand(
@@ -217,7 +217,7 @@ public sealed class AgentCatalogSeeder(
 
         await WithMediator(
             mediator => mediator.Send(new UpdateAgentTypeCommand(
-                match.Id, seed.Name, null, null, null, AgentStatus.Activo.ToString(), null), ct), ct);
+                match.Id, seed.Name, null, null, null, null, AgentStatus.Activo.ToString(), null), ct), ct);
 
         var version = await WithMediator(
             mediator => mediator.Send(new CreateAgentTypeVersionCommand(

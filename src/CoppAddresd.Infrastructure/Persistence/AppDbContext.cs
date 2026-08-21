@@ -63,6 +63,21 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
     public DbSet<LegalDocumentVersion> LegalDocumentVersions => Set<LegalDocumentVersion>();
 
+    // Wellness — Centro de Bienestar
+    public DbSet<NutritionPlan> NutritionPlans => Set<NutritionPlan>();
+    public DbSet<NutritionPlanDay> NutritionPlanDays => Set<NutritionPlanDay>();
+    public DbSet<ExerciseRoutine> ExerciseRoutines => Set<ExerciseRoutine>();
+    public DbSet<RoutineExercise> RoutineExercises => Set<RoutineExercise>();
+    public DbSet<RoutineAssignment> RoutineAssignments => Set<RoutineAssignment>();
+    public DbSet<NutritionPlanAssignment> NutritionPlanAssignments => Set<NutritionPlanAssignment>();
+
+    // Clinical Measurements — Mediciones clínicas
+    public DbSet<UnitOfMeasure> UnitOfMeasures => Set<UnitOfMeasure>();
+    public DbSet<MeasurementMetric> MeasurementMetrics => Set<MeasurementMetric>();
+    public DbSet<MeasurementReferenceRange> MeasurementReferenceRanges => Set<MeasurementReferenceRange>();
+    public DbSet<Encounter> Encounters => Set<Encounter>();
+    public DbSet<ClinicalMeasurement> ClinicalMeasurements => Set<ClinicalMeasurement>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
