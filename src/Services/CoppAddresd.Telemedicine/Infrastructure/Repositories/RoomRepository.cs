@@ -1,5 +1,6 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
+using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -87,6 +88,42 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
                 "El webhook del proveedor ya fue procesado.");
         }
     }
+
+    public async Task<(IReadOnlyList<TelemedicineSession> Items, int Total)> ListSessionsAsync(
+        Guid? appointmentId,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Sessions.AsNoTracking();
+
+        if (appointmentId is not null)
+            query = query.Where(s => s.AppointmentId == appointmentId);
+
+        if (from is not null)
+            query = query.Where(s => s.StartedAt >= from || s.CreatedAt >= from);
+
+        if (to is not null)
+            query = query.Where(s => s.StartedAt < to || s.CreatedAt < to);
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .Include(s => s.Appointment)
+            .OrderByDescending(s => s.StartedAt ?? s.CreatedAt)
+            .ThenByDescending(s => s.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    public async Task<int> CountActiveSessionsAsync(CancellationToken ct = default)
+        => await dbContext.Sessions.CountAsync(
+            s => s.Status == TelemedicineSessionStatus.Active, ct);
 
     private IQueryable<VirtualRoom> Query(bool includeSessions)
     {

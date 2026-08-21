@@ -81,6 +81,8 @@ public static class RoleSeeder
         // (OrgAdmin/ClinicAdmin vía este array y ClinicalDirector explícito).
         // Los profesionales de línea NO: acceden a su sala por identidad (JWT).
         PermissionCodes.TelemedicineSessionsManage,
+        // Vista administrativa global (listados de citas/solicitudes/sesiones y KPIs).
+        PermissionCodes.TelemedicineAdminView,
     ];
 
     private static readonly string[] ProfessionalTelemedicinePermissions =

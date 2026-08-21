@@ -10,9 +10,11 @@ Fases implementadas:
 - **Fase 4 — Salas y sesiones**: join-token (creación idempotente de sala Twilio dentro de la ventana), consulta de sala con participantes en vivo, `session/start` y `session/end` (cita `Confirmed→InProgress→Completed`), webhooks del proveedor (firma validada, **idempotentes** por clave única en `tele.telemedicine_webhook_events`, procesamiento atómico), resolución de identidad user→profesional/paciente (internal endpoints `by-user`), permiso `Telemedicine.SessionsManage`. Detalle en la sección Fase 4.
 - **Fase 5 — Encuentro clínico (espacio clínico durante la consulta)**: consulta/guardado/finalización del registro clínico de la cita. `clinical_data` jsonb tipado y extensible + `notes`. Creación perezosa idempotente (1:1 cita→encuentro). Autorización por identidad del profesional o supervisor (`SessionsManage`); el paciente NO accede (PHI). Estados `Draft→Completed` (inmutable) y `Cancelled` (al cancelar una cita con borrador). Detalle en la sección Fase 5.
 - **Fase 6 — Bandeja de alertas y notificaciones**: materialización de eventos de dominio en `tele.telemedicine_alerts` (tabla y enums listos desde Fase 1) y endpoints de bandeja del profesional + vista administrativa. Alerta emitida en: nueva solicitud → al profesional elegido; cita creada/confirmada → al profesional asignado; reprogramación → al profesional; cancelación → al profesional; eventos de sesión vía webhook (`participant-connected`/`disconnected`/`room-ended`) → al profesional de la cita. Permiso `Telemedicine.AlertsView` (vista global) vs identidad (bandeja propia del profesional). Detalle en la sección Fase 6.
+- **Fase 7 — Datos de referencia / maestros para la UI**: catálogo de **profesionales clínicos** en el backend (`GET /api/v1/professionals-catalog`, paginado, filtros por especialidad/sede/búsqueda, sin PHI) + endpoints del microservicio para la UI: `GET /api/v1/telemedicine/me` (resuelve profesional/paciente del JWT) y listados admin (`/admin/summary`, `/admin/appointments`, `/admin/requests`, `/admin/sessions`) bajo el nuevo permiso `Telemedicine.AdminView`. Detalle en la sección Fase 7.
 - **Fase 8 (adelantada) — Permisos `Telemedicine.*`**: siembra en el Auth Service (`PermissionCodes` + `RoleSeeder`), autorización por claim `permission` en el microservicio (mismo mecanismo que el backend).
+- **Fase 9-10 — Frontend (`coppaddresd-front`)**: módulo `features/telemedicine/*` (types espejo de los DTOs, services del microservicio 5130 y de catálogos del backend 5122, hooks, componentes) + rutas `/telemedicine/*` (profesional: dashboard, agenda, calendario, solicitudes, alertas, detalle de cita con sala virtual y encuentro clínico; admin: dashboard con KPIs, citas, solicitudes, profesionales, sesiones) protegidas con `PermissionGate` (`Telemedicine.AdminView`). Detalle en la sección Fase 9-10.
 
-Pendiente: Fase 7 (datos de referencia vía backend — parcialmente hecho en Fase 3: faltan endpoints de listado/maestros para UI), Fase 9-10 (frontend), Fase 11-12 (testing/hardening). También: `room-ended` sin sesión → NoShow queda para fase futura; alertas al PACIENTE (requieren `PatientRefDto.UserId` + app móvil) y alerta `UpcomingAppointment` (scheduler) quedan para fase futura.
+Pendiente: Fase 11-12 (testing/hardening). También: `room-ended` sin sesión → NoShow queda para fase futura; alertas al PACIENTE (requieren `PatientRefDto.UserId` + app móvil) y alerta `UpcomingAppointment` (scheduler) quedan para fase futura; la integración con el SDK de video del navegador (Twilio) en la sala virtual queda para una fase posterior (el `join-token` ya se genera y se muestra).
 
 ## Arquitectura
 
@@ -275,6 +277,104 @@ Por eso los endpoints no llevan `[RequirePermission]`.
 - Gotcha SDK: `TwilioClient.Init(apiKeySid, apiKeySecret, accountSid)` — el orden es (username=ApiKeySid, password=ApiKeySecret, accountSid), NO (accountSid, apiKey, secret).
 - `Telemedicine:Provider` = `twilio` (default).
 - `Backend` (clave compartida con el backend del ERP): `BaseUrl` (`http://localhost:5122`), `InternalApiKey` (gitignoreado; mismo valor que `Telemedicine:InternalApiKey` del backend), `TimeoutSeconds`. El backend valida el header `X-Internal-Key` con `RequireInternalKeyAttribute`.
+
+## Fase 7 — Datos de referencia / maestros para la UI
+
+La Fase 7 cierra la brecha de **listados/maestros para la UI** (los internal
+endpoints por-Id ya existían desde Fase 3):
+
+### Backend (`CoppAddresd.Api`)
+
+- **`GET /api/v1/professionals-catalog`** — catálogo de profesionales clínicos
+  (empleados con extensión clínica) con sus especialidades y sedes, paginado y
+  filtrable (búsqueda, estado, especialidad, sede, organización, clínica).
+  Accesible para **cualquier usuario autenticado** (como `/specialties` y
+  `/professional-types`): la UI lo usa para elegir profesional al crear/confirmar
+  solicitudes y para el directorio admin. Sin PHI: solo identidad, profesión,
+  especialidades, sedes y estado.
+  - Query: `ListProfessionalsCatalogQuery` (Application/Features/Professionals).
+  - Repositorio: `IEmployeeRepository.ListProfessionalsAsync` (filtros + includes
+    de especialidades/sedes, orden estable por nombre).
+  - Endpoint en `ProfessionalCatalogsController`.
+
+### Microservicio (`CoppAddresd.Telemedicine`)
+
+- **`GET /api/v1/telemedicine/me`** — contexto del usuario autenticado:
+  profesional y/o paciente resueltos **por el JWT** (`GetCurrentUserContextQuery`).
+  Es el "me" que el frontend usa para saber si el usuario es profesional (y su
+  `professionalId`) sin adivinar ids. Accesible a cualquier usuario autenticado.
+- **Listados admin** (requieren el permiso `Telemedicine.AdminView`, solo roles
+  administrativos; los profesionales usan su agenda por identidad):
+  - `GET /api/v1/telemedicine/admin/summary` — KPIs (citas hoy, pendientes,
+    completadas, solicitudes pendientes, sesiones activas, alertas no leídas).
+  - `GET /api/v1/telemedicine/admin/appointments` — citas paginadas con filtros
+    (profesional, paciente, clínica, sede, estado, rango).
+  - `GET /api/v1/telemedicine/admin/requests` — solicitudes paginadas con filtros
+    (estado, profesional, paciente, rango). También es la bandeja del profesional
+    cuando se filtra por su `professionalId`.
+  - `GET /api/v1/telemedicine/admin/sessions` — sesiones de video con cita,
+    paciente y profesional resueltos.
+- **Permiso `Telemedicine.AdminView`** nuevo, sembrado en Auth
+  (`PermissionCodes.cs` + `RoleSeeder.AllTelemedicinePermissions`) y declarado en
+  el microservicio (`TelemedicinePermissionCodes`). Asignado a Admin,
+  OrganizationAdmin y ClinicAdmin.
+
+### Decisiones (Fase 7)
+
+- Los **maestros viven en el backend** (dueño de los datos) y la UI los consume
+  por `apiUrl`; el microservicio solo expone lo propio de telemedicina (`me` y
+  admin). Exponer los catálogos también vía el microservicio sería duplicación.
+- **Un solo permiso admin** (`AdminView`) para todos los listados globales
+  (mismo criterio que `AlertsView` en Fase 6): identidad cubre el resto.
+- El catálogo de profesionales es **público-autenticado** (sin PHI) para que el
+  paciente (app móvil futura) pueda elegir profesional al crear una solicitud.
+- **Sin migración**: no se agregó ninguna tabla; todo fueron lecturas y un permiso.
+
+## Fase 9-10 — Frontend (`coppaddresd-front`)
+
+Módulo **`features/telemedicine/`** + rutas bajo **`/telemedicine`**:
+
+```
+features/telemedicine/
+├── types/index.ts            # Espejo de DTOs y enums del microservicio
+├── services/
+│   ├── telemedicine-service.ts   # Cliente del microservicio (5130, /api/v1/telemedicine/*)
+│   └── reference-service.ts      # Catálogos del backend (5122: professionals-catalog, specialties, tree, patients)
+├── hooks/                    # use-current-user, use-agenda, use-alerts, use-admin (listados + summary)
+├── utils/format.ts           # Etiquetas de estados en español + colores + formato de fechas
+└── components/               # ProfessionalDashboard, ProfessionalAgenda, ProfessionalCalendar,
+                              #   ProfessionalRequests, AlertsPage, AppointmentDetail (sala + encuentro),
+                              #   AdminDashboard, AdminAppointments, AdminRequests, AdminSessions,
+                              #   AdminProfessionals, PermissionGate
+```
+
+Rutas:
+
+| Ruta | Vista | Acceso |
+|---|---|---|
+| `/telemedicine` | Dashboard del profesional (KPIs, próximas citas) | Cualquier autenticado (si es profesional) |
+| `/telemedicine/agenda` | Mi agenda (día/semana/mes + cancelar/reprogramar) | Cualquier autenticado (si es profesional) |
+| `/telemedicine/calendario` | Calendario mensual con citas | Cualquier autenticado (si es profesional) |
+| `/telemedicine/solicitudes` | Bandeja del profesional (confirmar solicitudes) | Cualquier autenticado (si es profesional) |
+| `/telemedicine/alertas` | Bandeja de alertas (mark-read / read-all) | Cualquier autenticado |
+| `/telemedicine/citas/[id]` | Detalle: sala virtual (join-token, start/end) + encuentro clínico | Profesional de la cita o supervisor |
+| `/telemedicine/admin` | Dashboard admin (KPIs) | `Telemedicine.AdminView` |
+| `/telemedicine/admin/citas` | Todas las citas | `Telemedicine.AdminView` |
+| `/telemedicine/admin/solicitudes` | Todas las solicitudes | `Telemedicine.AdminView` |
+| `/telemedicine/admin/profesionales` | Catálogo de profesionales | `Telemedicine.AdminView` |
+| `/telemedicine/admin/sesiones` | Sesiones de video | `Telemedicine.AdminView` |
+
+### Notas de la UI
+
+- La URL del microservicio se configura con `NEXT_PUBLIC_TELEMEDICINE_API_URL`
+  (default `http://localhost:5130`) en `lib/config/env.ts` (ver `.env.example`).
+- `PermissionGate` oculta la navegación sin el permiso, pero **la autorización
+  real siempre la aplica el microservicio** (mínimo privilegio en la UI).
+- La sala virtual genera el **join-token** y muestra el estado de la sala y los
+  participantes; la integración con el SDK de video del navegador (Twilio) queda
+  para una fase posterior (el endpoint ya devuelve el token de acceso).
+- El encuentro clínico usa los campos `ClinicalDataDto` (jsonb tipado) y respeta
+  la inmutabilidad del registro `Completed`.
 
 ## Comandos
 

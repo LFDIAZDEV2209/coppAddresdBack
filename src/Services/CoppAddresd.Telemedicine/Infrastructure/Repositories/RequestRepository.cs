@@ -75,4 +75,48 @@ public sealed class RequestRepository(TelemedicineDbContext dbContext) : IReques
 
         return (items, total);
     }
+
+    public async Task<(IReadOnlyList<TelemedicineRequest> Items, int Total)> ListAdminAsync(
+        AppointmentRequestStatus? status,
+        Guid? professionalId,
+        Guid? patientId,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Requests.AsNoTracking();
+
+        if (status is { } s)
+            query = query.Where(r => r.Status == s);
+
+        if (professionalId is not null)
+            query = query.Where(r => r.ProfessionalId == professionalId);
+
+        if (patientId is not null)
+            query = query.Where(r => r.PatientId == patientId);
+
+        if (from is not null)
+            query = query.Where(r => r.CreatedAt >= from);
+
+        if (to is not null)
+            query = query.Where(r => r.CreatedAt < to);
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderByDescending(r => r.CreatedAt)
+            .ThenByDescending(r => r.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    public async Task<int> CountByStatusAsync(
+        AppointmentRequestStatus status,
+        CancellationToken ct = default)
+        => await dbContext.Requests.CountAsync(r => r.Status == status, ct);
 }

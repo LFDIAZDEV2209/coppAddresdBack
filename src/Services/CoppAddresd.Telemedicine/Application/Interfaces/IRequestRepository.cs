@@ -34,4 +34,25 @@ public interface IRequestRepository
         int page,
         int pageSize,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Listado administrativo global de solicitudes con filtros opcionales
+    /// (estado, profesional, paciente, rango), paginado. Base de la vista
+    /// "Solicitudes" del admin y de la bandeja del profesional (sus solicitudes
+    /// pendientes de confirmar).
+    /// </summary>
+    Task<(IReadOnlyList<TelemedicineRequest> Items, int Total)> ListAdminAsync(
+        AppointmentRequestStatus? status,
+        Guid? professionalId,
+        Guid? patientId,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>Cuenta las solicitudes en un estado concreto (KPIs del dashboard admin).</summary>
+    Task<int> CountByStatusAsync(
+        AppointmentRequestStatus status,
+        CancellationToken ct = default);
 }

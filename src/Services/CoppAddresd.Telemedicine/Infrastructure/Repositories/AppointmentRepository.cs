@@ -110,6 +110,65 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .OrderByDescending(a => a.ScheduledStart)
             .ToListAsync(ct);
 
+    public async Task<(IReadOnlyList<TelemedicineAppointment> Items, int Total)> ListAdminAsync(
+        Guid? professionalId,
+        Guid? patientId,
+        Guid? clinicId,
+        Guid? locationId,
+        AppointmentStatus? status,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Appointments.AsNoTracking();
+
+        if (professionalId is not null)
+            query = query.Where(a => a.ProfessionalId == professionalId);
+
+        if (patientId is not null)
+            query = query.Where(a => a.PatientId == patientId);
+
+        if (clinicId is not null)
+            query = query.Where(a => a.ClinicId == clinicId);
+
+        if (locationId is not null)
+            query = query.Where(a => a.LocationId == locationId);
+
+        if (status is not null)
+            query = query.Where(a => a.Status == status);
+
+        if (from is not null)
+            query = query.Where(a => a.ScheduledStart >= from);
+
+        if (to is not null)
+            query = query.Where(a => a.ScheduledStart < to);
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .OrderByDescending(a => a.ScheduledStart)
+            .ThenByDescending(a => a.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    public async Task<int> CountInRangeAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+        => await dbContext.Appointments
+            .CountAsync(a => a.ScheduledStart >= from && a.ScheduledStart < to, ct);
+
+    public async Task<int> CountByStatusAsync(
+        AppointmentStatus status,
+        CancellationToken ct = default)
+        => await dbContext.Appointments.CountAsync(a => a.Status == status, ct);
+
     private async Task SaveWithConflictTranslationAsync(CancellationToken ct)
     {
         try
