@@ -282,6 +282,48 @@ var profile = await db.Profiles
         return friendIds.Select(id => byId[id]).ToList();
     }
 
+    /// <summary>Seguidores de cualquier perfil (orden por fecha de seguimiento, más reciente primero).</summary>
+    [Authorize]
+    public async Task<List<Profile>> ProfileFollowers(
+        Guid profileId,
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var ids = await db.Follows
+            .Where(f => f.FollowingProfileId == profileId)
+            .OrderByDescending(f => f.CreatedAt)
+            .Select(f => f.FollowerProfileId)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+        var loaded = await db.Profiles.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+        var byId = loaded.ToDictionary(p => p.Id);
+        return ids.Select(id => byId[id]).ToList();
+    }
+
+    /// <summary>Perfiles que sigue cualquier perfil (orden por fecha de seguimiento, más reciente primero).</summary>
+    [Authorize]
+    public async Task<List<Profile>> ProfileFollowing(
+        Guid profileId,
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var ids = await db.Follows
+            .Where(f => f.FollowerProfileId == profileId)
+            .OrderByDescending(f => f.CreatedAt)
+            .Select(f => f.FollowingProfileId)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+        var loaded = await db.Profiles.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+        var byId = loaded.ToDictionary(p => p.Id);
+        return ids.Select(id => byId[id]).ToList();
+    }
+
     /// <summary>Resumen de conversaciones del usuario (último mensaje por interlocutor).</summary>
     [Authorize]
     public async Task<List<Conversation>> Conversations(
