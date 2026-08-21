@@ -22,8 +22,13 @@ public sealed class CommunityQuery
         var userId = CurrentUserId(http);
         if (userId is null) return null;
 
-        var profile = await db.Profiles
-            .Include(p => p.Posts)
+var profile = await db.Profiles
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Likes)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.UserId == userId, ct);
         if (profile is not null) return profile;
 
