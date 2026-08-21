@@ -20,6 +20,13 @@ public record LoginRequest
     [StringLength(50, ErrorMessage = "Número de identificación inválido")]
     public string? DocumentNumber { get; init; }
 
+    /// <summary>
+    /// Número de identificación del paciente (login alternativo de la app móvil
+    /// con <c>application:"app"</c>). Cuando se informa, el usuario se resuelve
+    /// a través de <c>app.patient_profiles</c> en lugar del correo.
+    /// </summary>
+    // Note: DocumentNumber is defined above
+
     [Required(ErrorMessage = "Password es requerido")]
     public string Password { get; init; } = string.Empty;
 
