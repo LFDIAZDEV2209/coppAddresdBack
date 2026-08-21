@@ -48,11 +48,21 @@ var profile = await db.Profiles
     }
 
     [Authorize]
-    public Task<Profile?> Profile(
+    public async Task<Profile?> Profile(
         Guid id,
         [Service] CommunityDbContext db,
         CancellationToken ct)
-        => db.Profiles.FirstOrDefaultAsync(p => p.Id == id, ct);
+    {
+        var profile = await db.Profiles
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Likes)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+        return profile;
+    }
 
     /// <summary>Feed de publicaciones no eliminadas (orden por fecha, pin primero).</summary>
     [Authorize]
