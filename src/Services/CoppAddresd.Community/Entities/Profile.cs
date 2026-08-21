@@ -1,11 +1,10 @@
 namespace CoppAddresd.Community.Entities;
 
-/// <summary>Estado de revisión del perfil de un usuario en la comunidad.</summary>
+/// <summary>Estado del perfil de un usuario en la comunidad (sin revisión previa: activo por defecto, baneo posterior).</summary>
 public enum ProfileStatus
 {
-    Pending = 1,
-    Approved = 2,
-    Rejected = 3,
+    Active = 1,
+    Banned = 2,
 }
 
 /// <summary>Perfil público de un usuario de la comunidad (referencia a auth.users).</summary>
@@ -23,13 +22,13 @@ public sealed class Profile
     /// <summary>Clave del avatar en el storage (text-only por ahora: NULL).</summary>
     public string? AvatarKey { get; set; }
 
-    public ProfileStatus Status { get; set; } = ProfileStatus.Pending;
+    public ProfileStatus Status { get; set; } = ProfileStatus.Active;
 
-    public Guid? ReviewedBy { get; set; }
+    public Guid? BannedBy { get; set; }
 
-    public DateTime? ReviewedAt { get; set; }
+    public DateTime? BannedAt { get; set; }
 
-    public string? RejectionReason { get; set; }
+    public string? BanReason { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
