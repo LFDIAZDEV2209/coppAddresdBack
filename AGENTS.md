@@ -1,6 +1,6 @@
 # CoppAddresd Backend — Agent Guide
 
-.NET 10 / C# 13 backend, Clean Architecture. **Estado actual**: Auth Service completo, integración AI Chat, sistema de auditoría PostgreSQL.
+.NET 10 / C# 13 backend, Clean Architecture. **Estado actual**: Auth Service completo (OTP por identificación con Twilio Verify SMS + protección OtpSecurity), integración AI Chat, sistema de auditoría PostgreSQL.
 
 ## Commands
 
@@ -25,7 +25,7 @@ Flujo de dependencias hacia adentro, enforceado solo por referencias csproj:
 - `src/CoppAddresd.Application` — handlers MediatR en `Features/`, FluentValidation, DTOs, interfaces. Deps: Domain. **Contenido real**: `ChatCommand/Handler`, `StreamChatCommand/Handler`, `IAiServiceClient`, `AiServiceSettings`.
 - `src/CoppAddresd.Infrastructure` — EF Core, PostgreSQL (Npgsql), Identity, JWT. Deps: Domain, Application. **Contenido real**: `AppDbContext` (audit), `AiServiceClient` con Polly resilience, `AuditTriggerInterceptor` (GUC-based).
 - `src/CoppAddresd.Api` — minimal API host. Deps: Application, Infrastructure. **Contenido real**: `ChatController` (sync + SSE streaming), JWT auth, CORS, Swagger.
-- `src/Services/CoppAddresd.Auth` — **servicio web standalone**, no referencia otros proyectos (solo NuGet: JwtBearer, Identity EF, Npgsql). **Contenido real**: Identity completo, JWT + refresh tokens, permisos granulares, roles, usuarios, seeders, rate limiting, health checks.
+- `src/Services/CoppAddresd.Auth` — **servicio web standalone**, no referencia otros proyectos (solo NuGet: JwtBearer, Identity EF, Npgsql, Twilio). **Contenido real**: Identity completo, JWT + refresh tokens, permisos granulares, roles, usuarios, seeders, rate limiting, health checks, **OTP por identificación** (PHONE → Twilio Verify SMS vía `ITwilioOtpService`/`TwilioOtpService`; EMAIL → flujo local con `auth.otp_codes`) y **motor de protección OTP** (`IOtpProtectionService`/`OtpProtectionService`, en memoria, límites por IP/teléfono/documento + cooldown + lockout).
 - `src/Services/CoppAddresd.Telemedicine` — **servicio web standalone** (Clean Architecture por carpetas, precedente: Auth Service), no referencia otros proyectos. **Contenido real**: telemedicina (solicitudes, citas, agenda, calendario, salas virtuales, encuentros, alertas, listados admin globales), schema `tele.` propio, JWT del Auth Service, video con Twilio (`IVideoProvider` desacoplado), anti doble reserva con exclusión GiST, **auditoría clínica** (trigger `audit.*` en `clinical_encounters` + propagación del actor del JWT vía `AuditTriggerInterceptor`/`HttpAuditActorContext`, guardado del encuentro en transacción explícita). **Tests propios (Fase 11-12)**: `tests/CoppAddresd.Telemedicine.UnitTests` (134, fakes en memoria) e `tests/CoppAddresd.Telemedicine.IntegrationTests` (25, BD aislada `coppaddresd_tele_test_*` vía `COP_TEST_DB_CONNECTION`; anti doble reserva concurrente + idempotencia webhook/sala/encuentro). Endpoints de la UI: `GET /api/v1/telemedicine/me` (contexto del JWT) y `GET /admin/*` (listados globales, permiso `Telemedicine.AdminView`). El catálogo de profesionales para la UI vive en el backend (`GET /api/v1/professionals-catalog`). Doc: `docs/modules/telemedicine/README.md`.
 
 `CoppAddresd.slnx` es el nuevo formato XML de soluciones — `.sln` plano no existe. Herramientas esperando `.sln` fallarán.
@@ -121,6 +121,42 @@ POST   /api/invitations/{id}/revoke           # Revocar [RequirePermission("User
 
 **CORS**: whitelist configurable en `Cors:Origins` (default `http://localhost:3000`) con `AllowCredentials` y expone `X-Refresh-Status`. La API principal usa la misma whitelist pero sin credentials (solo Bearer).
 
+## Auth Service — OTP por identificación y protección
+
+```
+POST   /api/auth/id-lookup  # Buscar paciente por documento → contactos enmascarados
+POST   /api/auth/send-otp   # Enviar OTP: PHONE → Twilio Verify SMS; EMAIL → local (auth.otp_codes)
+POST   /api/auth/verify-otp # Verificar OTP: PHONE → Twilio Check (approved); EMAIL → hash local
+```
+
+**Canal PHONE** (Twilio Verify V2, SMS): `OtpService` → `ITwilioOtpService` →
+`TwilioOtpService` (único que conoce el SDK). Twilio genera/almacena/verifica el
+código; PHONE **no genera OTP local, no usa `auth.otp_codes` ni devuelve
+devCode**. Teléfono en E.164 (ej. Colombia `3053924819` → `+573053924819`).
+
+**Canal EMAIL**: flujo local intacto (hash SHA-256 + salt, expiración 5 min,
+máx. 5 intentos, `auth.otp_codes`, devCode solo en Development). No usa Twilio.
+
+**Protección `OtpSecurity`** (adicional al rate limiter global): SEND por IP
+5/min + 30/h, teléfono 3/min + 10/h + 20/día, cooldown 60 s, documento 5/h;
+VERIFY por IP 30/min, teléfono 10/5 min, máx. 5 fallos, lockout 300 s.
+`CheckCanSend`/`CheckCanVerify` no consumen cuota; `RegisterSend` solo tras
+aceptación de Twilio; bloqueos locales (cooldown/límites/lockout) → **429** con
+el shape del rate limiter + `Retry-After`, **antes** de llamar a Twilio.
+
+**Limitación actual**: `OtpProtectionService` es **en memoria** (Singleton) —
+los contadores se reinician al reiniciar y NO se comparten entre réplicas;
+si el Auth Service escala horizontalmente, migrar a Redis/`IDistributedCache`.
+
+**Errores**: `TwilioOtpException` (400 inválido, 429 rate limit Twilio 60203,
+503 proveedor/deshabilitado, 502 resto) y `OtpProtectionException` (429 local),
+mapeadas en `GlobalExceptionHandlerMiddleware`; nunca se exponen credenciales,
+stack traces ni razones internas de bloqueo.
+
+**Validación real realizada** (Fases 5A–6B-04C): SMS real, cooldown 429,
+verificación `approved` + JWT/refresh/cookie, 5 fallos → 401, 6º intento →
+429 lockout + Retry-After sin llamar a Twilio.
+
 ## Chat/AI Integration — Endpoints
 
 ```
@@ -165,6 +201,8 @@ versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de 
 - **Telemedicine NO corre migraciones al iniciar** (a diferencia de Auth): aplicar con `dotnet ef database update --project src/Services/CoppAddresd.Telemedicine --startup-project src/Services/CoppAddresd.Telemedicine`. Para nuevas migraciones usar siempre `--output-dir Infrastructure/Migrations` (`MigrationsDirectory` del csproj no se honra). Gotchas: la exclusión GiST requiere extensión `btree_gist` (la crea la migración); `TwilioClient.Init(apiKeySid, apiKeySecret, accountSid)` — el orden es (username, password, accountSid); NO usar `SetRegion` con Twilio Video. Detalle completo: `docs/modules/telemedicine/README.md`.
 - **`HttpAuditActorContext`** actualmente retorna `ActorType=System`, `UserId=null` — no hay integración con Identity todavía.
 - **Tests de integración** requieren PostgreSQL real (no InMemory). Configurar variable `COP_TEST_DB_CONNECTION`.
+- **`OtpProtectionService` es en memoria** (Singleton): contadores se reinician al reiniciar el Auth Service y no se comparten entre réplicas — si se escala horizontalmente, migrar a Redis/`IDistributedCache`.
+- **Twilio Verify puede devolver 429/60203** (rate limit por número) aunque la protección local permita el envío: el error se propaga como `TwilioOtpException` (RateLimited → 429) y `RegisterSend` NO se ejecuta (no consume cuota local).
 - **`AiServiceClient` mapea el contrato del AI Service** (`answer`/`thread_id`/`execution_id`) con `JsonPropertyName` — si el AI Service cambia el schema, ajustar `ChatResponseJson`.
 - **Comentarios/docs en español** por convención del README.
 

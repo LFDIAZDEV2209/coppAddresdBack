@@ -18,9 +18,10 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<UserApplication> UserApplications => Set<UserApplication>();
-    public DbSet<ScopedRoleAssignment> ScopedRoleAssignments => Set<ScopedRoleAssignment>();
+public DbSet<ScopedRoleAssignment> ScopedRoleAssignments => Set<ScopedRoleAssignment>();
     public DbSet<ScopedPermissionAssignment> ScopedPermissionAssignments => Set<ScopedPermissionAssignment>();
     public DbSet<Invitation> Invitations => Set<Invitation>();
+    public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -176,7 +177,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
-        builder.Entity<ScopedRoleAssignment>(b =>
+builder.Entity<ScopedRoleAssignment>(b =>
         {
             b.ToTable("ScopedRoleAssignments", "auth");
             b.HasKey(s => s.Id);
@@ -226,6 +227,18 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
                 .WithMany()
                 .HasForeignKey(i => i.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<OtpCode>(b =>
+        {
+            b.ToTable("OtpCodes", "auth");
+            b.HasKey(o => o.Id);
+            b.Property(o => o.DocumentNumber).HasMaxLength(50).IsRequired();
+            b.Property(o => o.Channel).HasMaxLength(20).IsRequired();
+            b.Property(o => o.Target).HasMaxLength(320).IsRequired();
+            b.Property(o => o.CodeHash).HasMaxLength(128).IsRequired();
+            b.Property(o => o.Salt).HasMaxLength(128).IsRequired();
+            b.HasIndex(o => o.DocumentNumber);
         });
     }
 }
