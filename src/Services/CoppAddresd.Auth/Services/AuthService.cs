@@ -38,14 +38,59 @@ public class AuthService : IAuthService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Autentica a un usuario. Soporta dos modos de resolución de identidad:
+    /// 1. Por correo (ERP): cuando <c>DocumentNumber</c> es nulo o vacío, el
+    ///    usuario se resuelve con <see cref="UserManager{TUser}.FindByEmailAsync"/>.
+    /// 2. Por número de documento (app móvil): cuando <c>DocumentNumber</c> se
+    ///    informa, se busca primero el <c>user_id</c> en
+    ///    <c>app.patient_profiles</c> y luego el usuario por su Id. Esto permite
+    ///    al paciente iniciar sesión con su número de identificación en la
+    ///    aplicación "app" sin conocer su correo.
+    /// En ambos casos se conservan las validaciones existentes (activo,
+    /// password, aplicación existente y acceso por UserApplication).
+    /// </summary>
     public async Task<TokenResult?> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        var user = await _userManager.FindByEmailAsync(request.Email);
-        
-        if (user is null)
+        ApplicationUser? user;
+
+        if (string.IsNullOrWhiteSpace(request.DocumentNumber))
         {
-            _logger.LogWarning("Login failed: user not found for email {Email}", request.Email);
-            return null;
+            // Modo ERP: resolución por correo (comportamiento original).
+            user = await _userManager.FindByEmailAsync(request.Email);
+
+            if (user is null)
+            {
+                _logger.LogWarning("Login failed: user not found for email {Email}", request.Email);
+                return null;
+            }
+        }
+        else
+        {
+            // Modo app móvil: resolver el usuario a través del paciente.
+            var patient = await _dbContext.Database
+                .SqlQueryRaw<PatientUserIdRow>(
+                    "SELECT \"user_id\" AS \"UserId\" FROM app.patient_profiles WHERE \"document_number\" = {0} AND \"deleted_at\" IS NULL LIMIT 1",
+                    request.DocumentNumber)
+                .FirstOrDefaultAsync(ct);
+
+            if (patient is null || patient.UserId == Guid.Empty)
+            {
+                _logger.LogWarning(
+                    "Login failed: no patient profile linked to document number {DocumentNumber}",
+                    request.DocumentNumber);
+                return null;
+            }
+
+            user = await _userManager.FindByIdAsync(patient.UserId.ToString());
+
+            if (user is null)
+            {
+                _logger.LogWarning(
+                    "Login failed: user {UserId} not found for document number {DocumentNumber}",
+                    patient.UserId, request.DocumentNumber);
+                return null;
+            }
         }
 
         if (!user.IsActive)
@@ -260,5 +305,15 @@ public class AuthService : IAuthService
         _logger.LogInformation("Password changed for user {UserId}, all tokens invalidated", userId);
 
         return (true, null);
+    }
+
+    /// <summary>
+    /// Fila de proyección para la consulta raw que resuelve el <c>user_id</c>
+    /// vinculado a un número de documento en <c>app.patient_profiles</c>. El
+    /// mapeo de columna se hace por nombre mediante el alias <c>AS "UserId"</c>.
+    /// </summary>
+    private sealed record PatientUserIdRow
+    {
+        public Guid UserId { get; set; }
     }
 }

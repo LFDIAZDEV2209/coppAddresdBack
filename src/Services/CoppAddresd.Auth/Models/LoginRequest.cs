@@ -4,9 +4,19 @@ namespace CoppAddresd.Auth.Models;
 
 public record LoginRequest
 {
-    [Required(ErrorMessage = "Email es requerido")]
-    [EmailAddress(ErrorMessage = "Email inválido")]
+    /// <summary>
+    /// Correo electrónico del usuario. Opcional: se usa para el login del ERP.
+    /// Para el login móvil de pacientes puede omitirse en favor de
+    /// <see cref="DocumentNumber"/>.
+    /// </summary>
     public string Email { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Número de identificación del paciente (login alternativo de la app móvil
+    /// con <c>application:"app"</c>). Cuando se informa, el usuario se resuelve
+    /// a través de <c>app.patient_profiles</c> en lugar del correo.
+    /// </summary>
+    public string? DocumentNumber { get; init; }
 
     [Required(ErrorMessage = "Password es requerido")]
     public string Password { get; init; } = string.Empty;
