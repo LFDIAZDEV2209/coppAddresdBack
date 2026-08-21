@@ -46,6 +46,7 @@ builder.Services.AddAuthJwt(builder.Configuration);
 builder.Services.AddAuthCors(builder.Configuration);
 
 builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
+builder.Services.Configure<DevPatientSettings>(builder.Configuration.GetSection(DevPatientSettings.SectionName));
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
 
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -121,9 +122,11 @@ using (var scope = app.Services.CreateScope())
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
     var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;
+    var devPatientSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DevPatientSettings>>().Value;
 
     await AdminSeeder.SeedAsync(dbContext, userManager, roleManager, authSettings, logger);
     await ApplicationSeeder.SeedAsync(dbContext, userManager, authSettings.AdminEmail, logger);
+    await DevPatientSeeder.SeedAsync(dbContext, userManager, devPatientSettings, logger);
     await RoleSeeder.SeedAsync(dbContext, logger);
 }
 
