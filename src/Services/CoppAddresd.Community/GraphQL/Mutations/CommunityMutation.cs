@@ -3,6 +3,7 @@ using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.Persistence;
 using HotChocolate;
 using HotChocolate.Authorization;
+using HotChocolate.Subscriptions;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
 
@@ -220,6 +221,94 @@ var reply = new Comment
         post.DeletedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return post;
+    }
+
+    // --- Seguimiento ---
+
+    public async Task<Profile> FollowUser(
+        Guid profileId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        if (profileId == profile.Id) throw new GraphQLException("No puedes seguirte a ti mismo.");
+        var target = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId, ct)
+            ?? throw new GraphQLException("No se encontró el perfil.");
+        if (target.Status != ProfileStatus.Active)
+            throw new GraphQLException("Este perfil no está disponible.");
+        if (!await db.Follows.AnyAsync(f => f.FollowerProfileId == profile.Id && f.FollowingProfileId == profileId, ct))
+        {
+            db.Follows.Add(new Follow
+            {
+                Id = Guid.NewGuid(),
+                FollowerProfileId = profile.Id,
+                FollowingProfileId = profileId,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync(ct);
+        }
+        return target;
+    }
+
+    public async Task<Profile> UnfollowUser(
+        Guid profileId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        var target = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId, ct)
+            ?? throw new GraphQLException("No se encontró el perfil.");
+        var follow = await db.Follows.FirstOrDefaultAsync(
+            f => f.FollowerProfileId == profile.Id && f.FollowingProfileId == profileId, ct);
+        if (follow is not null)
+        {
+            db.Follows.Remove(follow);
+            await db.SaveChangesAsync(ct);
+        }
+        return target;
+    }
+
+    // --- Mensajería privada ---
+
+    public async Task<Message> SendMessage(
+        Guid recipientProfileId,
+        string body,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        body = body.Trim();
+        if (body.Length == 0) throw new GraphQLException("Escribe un mensaje.");
+        var recipient = await db.Profiles.FirstOrDefaultAsync(p => p.Id == recipientProfileId, ct)
+            ?? throw new GraphQLException("No se encontró el destinatario.");
+        if (recipient.Status != ProfileStatus.Active)
+            throw new GraphQLException("Este perfil no está disponible.");
+        var iFollow = await db.Follows.AnyAsync(
+            f => f.FollowerProfileId == profile.Id && f.FollowingProfileId == recipientProfileId, ct);
+        var followsMe = await db.Follows.AnyAsync(
+            f => f.FollowerProfileId == recipientProfileId && f.FollowingProfileId == profile.Id, ct);
+        if (!iFollow || !followsMe)
+            throw new GraphQLException("Solo puedes escribir a tus amigos de la comunidad.");
+
+        var message = new Message
+        {
+            Id = Guid.NewGuid(),
+            SenderProfileId = profile.Id,
+            RecipientProfileId = recipientProfileId,
+            Body = body,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Messages.Add(message);
+        await db.SaveChangesAsync(ct);
+
+        var key = string.Join(':', new[] { profile.Id.ToString(), recipientProfileId.ToString() }
+            .OrderBy(x => x, StringComparer.Ordinal));
+        await sender.SendAsync($"message_{key}", message);
+        return message;
     }
 
     private static async Task<Profile> RequireProfileAsync(

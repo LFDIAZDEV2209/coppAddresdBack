@@ -1,6 +1,7 @@
 using System.Text;
 using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
+using CoppAddresd.Community.GraphQL.Subscriptions;
 using CoppAddresd.Community.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -60,6 +61,7 @@ builder.Services
     .AddGraphQLServer()
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
+    .AddSubscriptionType<CommunitySubscription>()
     .AddAuthorization()
     .AddInMemorySubscriptions();
 
