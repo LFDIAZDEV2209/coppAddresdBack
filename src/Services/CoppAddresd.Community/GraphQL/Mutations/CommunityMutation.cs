@@ -20,9 +20,7 @@ public sealed class CommunityMutation
         [Service] IHttpContextAccessor http,
         CancellationToken ct)
     {
-        var userId = CommunityQuery.CurrentUserId(http);
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct)
-            ?? throw new GraphQLException("No tienes perfil en la comunidad.");
+        var profile = await RequireProfileAsync(db, http, ct);
 
         profile.DisplayName = displayName;
         profile.Bio = bio;
@@ -164,23 +162,7 @@ public sealed class CommunityMutation
     // --- Moderación (admin) ---
 
     [Authorize(Policy = "CommunityModerator")]
-    public async Task<Profile?> ApproveProfile(
-        Guid id,
-        [Service] CommunityDbContext db,
-        [Service] IHttpContextAccessor http,
-        CancellationToken ct)
-    {
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id, ct)
-            ?? throw new GraphQLException("No se encontró el perfil.");
-        profile.Status = ProfileStatus.Approved;
-        profile.ReviewedBy = CommunityQuery.CurrentUserId(http);
-        profile.ReviewedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-        return profile;
-    }
-
-    [Authorize(Policy = "CommunityModerator")]
-    public async Task<Profile?> RejectProfile(
+    public async Task<Profile?> BanProfile(
         Guid id,
         string? reason,
         [Service] CommunityDbContext db,
@@ -189,10 +171,26 @@ public sealed class CommunityMutation
     {
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new GraphQLException("No se encontró el perfil.");
-        profile.Status = ProfileStatus.Rejected;
-        profile.ReviewedBy = CommunityQuery.CurrentUserId(http);
-        profile.ReviewedAt = DateTime.UtcNow;
-        profile.RejectionReason = reason;
+        profile.Status = ProfileStatus.Banned;
+        profile.BannedBy = CommunityQuery.CurrentUserId(http);
+        profile.BannedAt = DateTime.UtcNow;
+        profile.BanReason = reason;
+        await db.SaveChangesAsync(ct);
+        return profile;
+    }
+
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<Profile?> UnbanProfile(
+        Guid id,
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == id, ct)
+            ?? throw new GraphQLException("No se encontró el perfil.");
+        profile.Status = ProfileStatus.Active;
+        profile.BannedBy = null;
+        profile.BannedAt = null;
+        profile.BanReason = null;
         await db.SaveChangesAsync(ct);
         return profile;
     }
@@ -228,8 +226,11 @@ public sealed class CommunityMutation
         CommunityDbContext db, IHttpContextAccessor http, CancellationToken ct)
     {
         var userId = CommunityQuery.CurrentUserId(http);
-        return await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct)
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct)
             ?? throw new GraphQLException("Crea tu perfil de comunidad primero.");
+        if (profile.Status != ProfileStatus.Active)
+            throw new GraphQLException("Tu perfil está suspendido en la comunidad.");
+        return profile;
     }
 }
 
