@@ -59,6 +59,8 @@ public sealed class CommunityQuery
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Comments)
+            .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .Where(p => p.DeletedAt == null)
             .OrderByDescending(p => p.Pinned)
             .ThenByDescending(p => p.CreatedAt)
@@ -76,6 +78,8 @@ public sealed class CommunityQuery
             .Include(p => p.Likes)
             .Include(p => p.Comments)
             .ThenInclude(c => c.Replies)
+            .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null, ct);
 
     /// <summary>Lista de perfiles con filtros opcionales por estado y búsqueda (moderador).</summary>
