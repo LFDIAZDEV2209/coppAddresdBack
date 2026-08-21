@@ -131,12 +131,12 @@ public sealed class CommunityMutation
         var profile = await RequireProfileAsync(db, http, ct);
         var parent = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId, ct)
             ?? throw new GraphQLException("No encontraste el comentario.");
-        var reply = new Comment
+var reply = new Comment
         {
             Id = Guid.NewGuid(),
             PostId = parent.PostId,
             ProfileId = profile.Id,
-            ParentCommentId = parent.Id,
+            ParentCommentId = parent.ParentCommentId ?? parent.Id,
             Body = body,
             CreatedAt = DateTime.UtcNow,
         };
