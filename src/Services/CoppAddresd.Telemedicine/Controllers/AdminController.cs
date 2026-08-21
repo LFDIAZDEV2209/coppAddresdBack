@@ -27,6 +27,19 @@ public class AdminController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<AdminSummaryDto>> Summary(CancellationToken ct)
         => Ok(await mediator.Send(new GetAdminSummaryQuery(ActiveClinicId()), ct));
 
+    /// <summary>
+    /// Analytics del dashboard administrativo: KPIs globales, serie temporal de
+    /// citas, distribución por estado y por hora, actividad por profesional y
+    /// próximas citas. Rango opcional (default: últimos 30 días).
+    /// </summary>
+    [HttpGet("analytics")]
+    [ProducesResponseType(typeof(DashboardAnalyticsDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<DashboardAnalyticsDto>> Analytics(
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        CancellationToken ct = default)
+        => Ok(await mediator.Send(new GetDashboardAnalyticsQuery(null, from, to), ct));
+
     /// <summary>Listado global de citas con filtros (profesional, paciente, clínica, sede, estado, rango).</summary>
     [HttpGet("appointments")]
     [ProducesResponseType(typeof(PaginatedAdminAppointmentsResult), StatusCodes.Status200OK)]
@@ -97,6 +110,36 @@ public class MeController(IMediator mediator) : ControllerBase
     {
         var result = await mediator.Send(new GetCurrentUserContextQuery(CurrentUserId()), ct);
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Analytics del dashboard del profesional (por identidad del JWT, nunca por
+    /// un id del cliente): KPIs propios, serie temporal, distribución por estado
+    /// y por hora, y sus próximas citas. No incluye actividad de otros
+    /// profesionales. Si el usuario no tiene perfil clínico, 403.
+    /// </summary>
+    [HttpGet("analytics")]
+    [ProducesResponseType(typeof(DashboardAnalyticsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<DashboardAnalyticsDto>> Analytics(
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        CancellationToken ct = default)
+    {
+        var userId = CurrentUserId();
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized();
+        }
+
+        var context = await mediator.Send(new GetCurrentUserContextQuery(userId), ct);
+        if (context.Professional is null)
+        {
+            return Forbid();
+        }
+
+        return Ok(await mediator.Send(
+            new GetDashboardAnalyticsQuery(context.Professional.Id, from, to), ct));
     }
 
     private Guid CurrentUserId()
