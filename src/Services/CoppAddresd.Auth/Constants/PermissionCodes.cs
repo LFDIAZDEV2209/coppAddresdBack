@@ -52,6 +52,13 @@ public static class PermissionCodes
     public const string PatientsDelete = "Patients.Delete";
     public const string PatientsExport = "Patients.Export";
     public const string PatientsBulkUpdate = "Patients.BulkUpdate";
+    /// <summary>Alcance de datos "propios": solo los pacientes asignados al profesional autenticado (data scope por identidad).</summary>
+    public const string PatientsViewOwn = "Patients.ViewOwn";
+
+    /// <summary>Recetario: ver recetas y pacientes del ámbito propio.</summary>
+    public const string PrescriptionsView = "Prescriptions.View";
+    /// <summary>Recetario: crear recetas.</summary>
+    public const string PrescriptionsCreate = "Prescriptions.Create";
 
     public const string DocumentsView = "Documents.View";
     public const string DocumentsUpload = "Documents.Upload";
@@ -75,6 +82,15 @@ public static class PermissionCodes
     public const string TelemedicineSessionsManage = "Telemedicine.SessionsManage";
     /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
     public const string TelemedicineAdminView = "Telemedicine.AdminView";
+
+    // Módulos de la plataforma sin flujo clínico (visibilidad de navegación y
+    // acceso futuro de sus endpoints): el profesional clínico no los tiene.
+    public const string InventoryView = "Inventory.View";
+    public const string StoreView = "Store.View";
+    public const string MediaView = "Media.View";
+    public const string AuditView = "Audit.View";
+    /// <summary>Configuraciones administrativas del módulo Sistema (IA, integraciones, etc.).</summary>
+    public const string SystemAdminSettings = "System.AdminSettings";
 
     public static IEnumerable<string> GetAll()
     {
@@ -119,6 +135,9 @@ public static class PermissionCodes
         yield return PatientsDelete;
         yield return PatientsExport;
         yield return PatientsBulkUpdate;
+        yield return PatientsViewOwn;
+        yield return PrescriptionsView;
+        yield return PrescriptionsCreate;
         yield return DocumentsView;
         yield return DocumentsUpload;
         yield return DocumentsDelete;
@@ -137,6 +156,11 @@ public static class PermissionCodes
         yield return TelemedicineAlertsView;
         yield return TelemedicineSessionsManage;
         yield return TelemedicineAdminView;
+        yield return InventoryView;
+        yield return StoreView;
+        yield return MediaView;
+        yield return AuditView;
+        yield return SystemAdminSettings;
     }
 
     public static string GetModule(string permissionCode)

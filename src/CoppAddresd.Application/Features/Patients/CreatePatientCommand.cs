@@ -45,6 +45,7 @@ public record CreatePatientCommand(
     Guid? ClinicId,
     Guid? LocationId,
     Guid? CreatedBy,
+    Guid? CreatedByProfessionalId,
     IReadOnlyList<DiagnosisInput>? Diagnoses,
     IReadOnlyList<MedicationInput>? Medications,
     IReadOnlyList<AllergyInput>? Allergies,
@@ -127,6 +128,27 @@ public sealed class CreatePatientCommandHandler(
         ApplyChildren(entity, request.Diagnoses, request.Medications, request.Allergies, request.VitalSigns);
 
         await repository.AddAsync(entity, ct);
+
+        // Auto-asignación (regla de negocio): si el creador es un profesional
+        // clínico, el paciente queda asignado a él ("mis pacientes"). El id se
+        // resuelve en el backend desde la identidad del JWT (CreatePatientCommand
+        // lo recibe del ICurrentContext, nunca del payload).
+        if (request.CreatedByProfessionalId is { } professionalId)
+        {
+            try
+            {
+                await repository.AssignProfessionalAsync(
+                    entity.Id, professionalId, entity.ClinicId, "Assigned", request.CreatedBy, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // El paciente ya quedó creado; la asignación es recuperable por
+                // el administrador (nunca se aborta la creación por esto).
+                logger.LogWarning(ex,
+                    "No se pudo auto-asignar el paciente {Id} al profesional {ProfessionalId}",
+                    entity.Id, professionalId);
+            }
+        }
 
         logger.LogInformation("Paciente creado: {Id} ({FirstName} {LastName})",
             entity.Id, entity.FirstName, entity.LastName);

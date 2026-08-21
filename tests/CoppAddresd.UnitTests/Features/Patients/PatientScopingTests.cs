@@ -92,6 +92,7 @@ public class PatientScopingTests
             ClinicId: clinicId,
             LocationId: null,
             CreatedBy: userId,
+            CreatedByProfessionalId: null,
             Diagnoses: null,
             Medications: null,
             Allergies: null,
@@ -213,7 +214,7 @@ public class PatientScopingTests
             ClinicId = clinicId,
         };
 
-        _repository.ListAsync(1, 20, null, null, null, clinicId, Arg.Any<CancellationToken>())
+        _repository.ListAsync(1, 20, null, null, null, clinicId, null, Arg.Any<CancellationToken>())
             .Returns((new[] { patient }, 1));
 
         var handler = new ListPatientsQueryHandler(_repository);
@@ -230,7 +231,7 @@ public class PatientScopingTests
     {
         _repository.ListAsync(
                 Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<string?>(),
-                Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .Returns((new List<PatientProfile>(), 0));
 
         var handler = new ListPatientsQueryHandler(_repository);
@@ -239,6 +240,7 @@ public class PatientScopingTests
 
         await _repository.Received(1).ListAsync(
             Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<string?>(),
-            Arg.Any<Guid?>(), Arg.Is<Guid?>(v => v == null), Arg.Any<CancellationToken>());
+            Arg.Any<Guid?>(), Arg.Is<Guid?>(v => v == null), Arg.Is<Guid?>(v => v == null),
+            Arg.Any<CancellationToken>());
     }
 }
