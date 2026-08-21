@@ -28,21 +28,49 @@ public sealed class TwilioVideoProvider(
         InitClient();
 
         // Idempotencia por UniqueName: si la sala in-progress ya existe con ese
-        // nombre, Twilio la devuelve en lugar de crear una duplicada.
-        var room = await RoomResource.CreateAsync(new CreateRoomOptions
+        // nombre, Twilio la devuelve en lugar de crear una duplicada. Sin embargo,
+        // el SDK lanza ApiException 409/20429 "Room exists" cuando el nombre ya
+        // está tomado (p. ej. un intento previo del mismo join-token creó la sala
+        // y falló antes de persistir en BD): en ese caso se recupera la existente.
+        try
         {
-            UniqueName = request.RoomName,
-            Type = MapType(request.Type),
-            MaxParticipants = request.MaxParticipants,
-            StatusCallback = request.StatusCallbackUrl is null
-                ? null
-                : new Uri(request.StatusCallbackUrl)
-        });
+            var room = await RoomResource.CreateAsync(new CreateRoomOptions
+            {
+                UniqueName = request.RoomName,
+                Type = MapType(request.Type),
+                MaxParticipants = request.MaxParticipants,
+                StatusCallback = request.StatusCallbackUrl is null
+                    ? null
+                    : new Uri(request.StatusCallbackUrl)
+            });
 
-        logger.LogInformation("Room Twilio creada: {RoomSid} ({RoomName})", room.Sid, room.UniqueName);
+            logger.LogInformation("Room Twilio creada: {RoomSid} ({RoomName})", room.Sid, room.UniqueName);
 
-        return MapRoom(room);
+            return MapRoom(room);
+        }
+        catch (ApiException ex) when (IsRoomExistsError(ex))
+        {
+            // Reintento del mismo join-token / sala huérfana en Twilio: devolver
+            // la existente (idempotencia real del proveedor). Si no se recupera,
+            // se propaga el error original.
+            logger.LogInformation(
+                "Room Twilio ya existía ({RoomName}); se devuelve la existente. " +
+                "Detalle: status={Status} code={Code}",
+                request.RoomName, ex.Status, ex.Code);
+
+            var existing = await GetRoomAsync(request.RoomName, ct);
+            return existing ?? throw ex;
+        }
     }
+
+    /// <summary>
+    /// El SDK lanza "Room exists" con HTTP 409 / código Twilio 20429 (o el
+    /// mensaje directo): la sala con ese UniqueName ya existe en el proveedor.
+    /// </summary>
+    private static bool IsRoomExistsError(ApiException ex)
+        => ex.Status == 409
+           || ex.Code == 20429
+           || ex.Message.Contains("Room exists", StringComparison.OrdinalIgnoreCase);
 
     public async Task<RoomInfo?> GetRoomAsync(string providerRoomSidOrName, CancellationToken ct)
     {

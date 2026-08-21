@@ -16,12 +16,20 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Repositories;
 /// </summary>
 public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAppointmentRepository
 {
+    /// <summary>
+    /// Ids de las sesiones cargadas de BD en <see cref="GetForUpdateAsync"/> (vía
+    /// el Include de la sala). Distingue una sesión NUEVA (agregada al agregado)
+    /// de una cargada que transiciona de estado (Active → Ended).
+    /// </summary>
+    private readonly HashSet<Guid> _loadedSessionIds = [];
+
     public async Task<TelemedicineAppointment?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await dbContext.Appointments.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Id == id, ct);
 
     public async Task<TelemedicineAppointment?> GetForUpdateAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.Appointments
+    {
+        var appointment = await dbContext.Appointments
             .Include(a => a.Cancellations)
             .Include(a => a.Reschedules)
             .Include(a => a.Request)
@@ -29,6 +37,16 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
                 .ThenInclude(r => r!.Sessions)
             .Include(a => a.Encounter)
             .FirstOrDefaultAsync(a => a.Id == id, ct);
+
+        // El fixup de EF puebla appointment.Sessions desde la sala cargada: las
+        // sesiones conocidas son las de la sala (referencia para el estado Added).
+        if (appointment?.Room is not null)
+        {
+            _loadedSessionIds.UnionWith(appointment.Room.Sessions.Select(s => s.Id));
+        }
+
+        return appointment;
+    }
 
     public async Task<TelemedicineAppointment> AddAsync(
         TelemedicineAppointment appointment,
@@ -64,11 +82,21 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             }
         }
 
-        // NOTA: las sesiones NO se fuerzan a Added. A diferencia del historial
-        // append-only (que siempre son hijos nuevos), una sesión existente se
-        // MODIFICA en sus transiciones de estado (Active → Ended); forzarla a
-        // Added intentaría un INSERT contra una fila existente (violación de PK).
-        // Las sesiones nuevas se agregan a la colección y EF las marca Added.
+        // NOTA: las sesiones NUEVAS se re-trackean con DbSet.Add. El fixup de EF
+        // (RoomId → sala cargada con ThenInclude Sessions) marca una sesión
+        // agregada a la colección del agregado como Modified — por su clave Guid
+        // no generada por BD, el fixup asume que ya existe — lo que genera un
+        // UPDATE contra una fila inexistente (DbUpdateConcurrency → 409).
+        // DbSet.Add sobrevive a DetectChanges; Entry.State = Added no (el fixup
+        // lo re-marca). Las sesiones cargadas de BD conservan su estado para la
+        // transición Active → Ended.
+        foreach (var session in appointment.Sessions)
+        {
+            if (!_loadedSessionIds.Contains(session.Id))
+            {
+                dbContext.Sessions.Add(session);
+            }
+        }
 
         await SaveWithConflictTranslationAsync(ct);
     }

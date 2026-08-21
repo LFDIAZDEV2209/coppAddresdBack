@@ -34,7 +34,7 @@ public sealed class EncounterRepository(TelemedicineDbContext dbContext) : IEnco
 
         try
         {
-            await dbContext.SaveChangesAsync(ct);
+            await SaveWithAuditContextAsync(ct);
             return encounter;
         }
         catch (DbUpdateException ex) when (ex.IsUniqueViolation())
@@ -50,5 +50,25 @@ public sealed class EncounterRepository(TelemedicineDbContext dbContext) : IEnco
     }
 
     public async Task UpdateAsync(ClinicalEncounter encounter, CancellationToken ct = default)
-        => await dbContext.SaveChangesAsync(ct);
+        => await SaveWithAuditContextAsync(ct);
+
+    /// <summary>
+    /// Transacción explícita corta (patrón <c>CreateExecutionStrategy</c> del
+    /// proyecto): habilita la propagación del actor del JWT a los GUC
+    /// <c>audit.*</c> (el interceptor dispara en BEGIN), que el trigger del
+    /// registro clínico lee para atribuir quién modificó la PHI. Un
+    /// <c>SaveChanges</c> de una sola sentencia no abre transacción y la
+    /// auditoría quedaría con actor <c>SYSTEM</c>.
+    /// </summary>
+    private async Task SaveWithAuditContextAsync(CancellationToken ct)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            await dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        });
+    }
 }
