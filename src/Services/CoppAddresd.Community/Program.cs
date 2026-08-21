@@ -15,6 +15,10 @@ builder.Services.AddDbContext<CommunityDbContext>(options =>
     options.UseNpgsql(connectionString, npgsql =>
         npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community")));
 
+builder.Services.AddHttpContextAccessor();
+
+builder.Services.AddHttpContextAccessor();
+
 var jwt = builder.Configuration.GetSection("Jwt");
 var secret = jwt["Secret"]!;
 var issuer = jwt["Issuer"]!;
