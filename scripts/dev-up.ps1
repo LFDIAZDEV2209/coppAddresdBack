@@ -41,7 +41,7 @@ if (-not (Test-Path $compose)) {
 }
 Push-Location $root
 try {
-  docker compose up -d postgres 2>&1 | Out-Host
+  docker compose up -d postgres
   if ($LASTEXITCODE -ne 0) { throw 'docker compose up fallo. Revisa que Docker este corriendo.' }
 } finally { Pop-Location }
 
