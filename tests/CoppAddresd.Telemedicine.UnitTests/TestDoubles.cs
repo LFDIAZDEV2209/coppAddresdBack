@@ -258,8 +258,83 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
     public Task<int> CountInRangeAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
         => Task.FromResult(Items.Count(a => a.ScheduledStart >= from && a.ScheduledStart < to));
 
+    public Task<int> CountInRangeAsync(Guid? professionalId, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        => Task.FromResult(Items.Count(a =>
+            (professionalId == null || a.ProfessionalId == professionalId)
+            && a.ScheduledStart >= from && a.ScheduledStart < to));
+
     public Task<int> CountByStatusAsync(AppointmentStatus status, CancellationToken ct = default)
         => Task.FromResult(Items.Count(a => a.Status == status));
+
+    public Task<IReadOnlyList<DailyAppointmentCount>> CountGroupedByDayAsync(
+        Guid? professionalId, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<DailyAppointmentCount>>(Items
+            .Where(a => (professionalId == null || a.ProfessionalId == professionalId)
+                        && a.ScheduledStart >= from && a.ScheduledStart < to)
+            .GroupBy(a => a.ScheduledStart.Date)
+            .Select(g => new DailyAppointmentCount(g.Key, g.Count()))
+            .OrderBy(x => x.Day)
+            .ToList());
+
+    public Task<IReadOnlyList<AppointmentStatusCount>> CountGroupedByStatusAsync(
+        Guid? professionalId, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<AppointmentStatusCount>>(Items
+            .Where(a => (professionalId == null || a.ProfessionalId == professionalId)
+                        && a.ScheduledStart >= from && a.ScheduledStart < to)
+            .GroupBy(a => a.Status)
+            .Select(g => new AppointmentStatusCount(g.Key, g.Count()))
+            .OrderBy(x => x.Status)
+            .ToList());
+
+    public Task<IReadOnlyList<HourlyAppointmentCount>> CountGroupedByHourAsync(
+        Guid? professionalId, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<HourlyAppointmentCount>>(Items
+            .Where(a => (professionalId == null || a.ProfessionalId == professionalId)
+                        && a.ScheduledStart >= from && a.ScheduledStart < to)
+            .GroupBy(a => a.ScheduledStart.Hour)
+            .Select(g => new HourlyAppointmentCount(g.Key, g.Count()))
+            .OrderBy(x => x.Hour)
+            .ToList());
+
+    public Task<IReadOnlyList<ProfessionalAppointmentActivity>> CountGroupedByProfessionalAsync(
+        DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<ProfessionalAppointmentActivity>>(Items
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to)
+            .GroupBy(a => a.ProfessionalId)
+            .Select(g => new ProfessionalAppointmentActivity(
+                g.Key,
+                g.Count(),
+                g.Count(a => a.Status == AppointmentStatus.Completed),
+                g.Count(a => a.Status == AppointmentStatus.Cancelled),
+                g.Select(a => a.PatientId).Distinct().Count()))
+            .OrderByDescending(x => x.Total)
+            .ToList());
+
+    public Task<int> CountDistinctPatientsAsync(
+        Guid? professionalId, DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        => Task.FromResult(Items
+            .Where(a => (professionalId == null || a.ProfessionalId == professionalId)
+                        && a.ScheduledStart >= from && a.ScheduledStart < to)
+            .Select(a => a.PatientId)
+            .Distinct()
+            .Count());
+
+    public Task<int> CountDistinctProfessionalsAsync(
+        DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
+        => Task.FromResult(Items
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to)
+            .Select(a => a.ProfessionalId)
+            .Distinct()
+            .Count());
+
+    public Task<IReadOnlyList<TelemedicineAppointment>> ListUpcomingAsync(
+        Guid? professionalId, DateTimeOffset from, int limit, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<TelemedicineAppointment>>(Items
+            .Where(a => (professionalId == null || a.ProfessionalId == professionalId)
+                        && a.ScheduledStart >= from)
+            .OrderBy(a => a.ScheduledStart)
+            .Take(limit)
+            .ToList());
 }
 
 /// <summary>Repositorio de solicitudes en memoria.</summary>
