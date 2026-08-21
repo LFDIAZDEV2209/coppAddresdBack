@@ -65,6 +65,73 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
     public async Task<Employee?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await QueryDetail().FirstOrDefaultAsync(x => x.Id == id, ct);
 
+    public async Task<(IReadOnlyList<Employee> Items, int Total)> ListProfessionalsAsync(
+        int page,
+        int pageSize,
+        string? search,
+        string? status,
+        Guid? specialtyId,
+        Guid? locationId,
+        Guid? organizationId,
+        Guid? clinicId,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Employees
+            .AsNoTracking()
+            // Catálogo de profesionales clínicos: solo empleados con extensión.
+            .Where(x => x.Professional != null);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.FirstName, pattern) ||
+                EF.Functions.ILike(x.LastName, pattern) ||
+                EF.Functions.ILike(x.Email, pattern));
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(x => x.Status == status);
+
+        if (specialtyId is not null)
+            query = query.Where(x =>
+                x.Professional!.Specialties.Any(s => s.SpecialtyId == specialtyId));
+
+        if (locationId is not null)
+            query = query.Where(x =>
+                x.ClinicAssignments.Any(a =>
+                    a.Status == "Active" && a.Clinic.Locations.Any(l => l.Id == locationId)));
+
+        if (organizationId is not null)
+            query = query.Where(x => x.OrganizationId == organizationId);
+
+        if (clinicId is not null)
+            query = query.Where(x =>
+                x.ClinicAssignments.Any(a => a.ClinicId == clinicId && a.Status == "Active"));
+
+        var total = await query.CountAsync(ct);
+
+        var items = await query
+            .Include(x => x.Professional)
+                .ThenInclude(p => p!.ProfessionalType)
+            .Include(x => x.Professional)
+                .ThenInclude(p => p!.Specialties)
+                    .ThenInclude(s => s.Specialty)
+            .Include(x => x.ClinicAssignments)
+                .ThenInclude(a => a.Clinic)
+                    .ThenInclude(c => c.Locations)
+            .OrderBy(x => x.FirstName)
+            .ThenBy(x => x.LastName)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    public async Task<Employee?> GetByProfessionalIdAsync(Guid professionalId, CancellationToken ct = default)
+        => await QueryDetail().FirstOrDefaultAsync(x => x.Professional != null && x.Professional.Id == professionalId, ct);
+
     public async Task<Employee?> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
         => await QueryDetail().FirstOrDefaultAsync(x => x.UserId == userId, ct);
 

@@ -10,7 +10,8 @@ dotnet test                                   # all tests (xUnit)
 dotnet test tests/CoppAddresd.UnitTests       # unit tests only
 dotnet test --filter "FullyQualifiedName~X"   # single test
 dotnet run --project src/CoppAddresd.Api      # main API (http://localhost:5122, https 7258)
-dotnet run --project src/Services/CoppAddresd.Auth  # auth service (http://localhost:5058, https 7230)
+dotnet run --project src/Services/CoppAddresd.Auth  # auth service (http://localhost:5123, https 7230)
+dotnet run --project src/Services/CoppAddresd.Telemedicine  # telemedicine service (http://localhost:5130, https 7130)
 dotnet --version                              # necesita 10.0+
 ```
 
@@ -25,6 +26,7 @@ Flujo de dependencias hacia adentro, enforceado solo por referencias csproj:
 - `src/CoppAddresd.Infrastructure` — EF Core, PostgreSQL (Npgsql), Identity, JWT. Deps: Domain, Application. **Contenido real**: `AppDbContext` (audit), `AiServiceClient` con Polly resilience, `AuditTriggerInterceptor` (GUC-based).
 - `src/CoppAddresd.Api` — minimal API host. Deps: Application, Infrastructure. **Contenido real**: `ChatController` (sync + SSE streaming), JWT auth, CORS, Swagger.
 - `src/Services/CoppAddresd.Auth` — **servicio web standalone**, no referencia otros proyectos (solo NuGet: JwtBearer, Identity EF, Npgsql). **Contenido real**: Identity completo, JWT + refresh tokens, permisos granulares, roles, usuarios, seeders, rate limiting, health checks.
+- `src/Services/CoppAddresd.Telemedicine` — **servicio web standalone** (Clean Architecture por carpetas, precedente: Auth Service), no referencia otros proyectos. **Contenido real**: telemedicina (solicitudes, citas, agenda, calendario, salas virtuales, encuentros, alertas, listados admin globales), schema `tele.` propio, JWT del Auth Service, video con Twilio (`IVideoProvider` desacoplado), anti doble reserva con exclusión GiST, **auditoría clínica** (trigger `audit.*` en `clinical_encounters` + propagación del actor del JWT vía `AuditTriggerInterceptor`/`HttpAuditActorContext`, guardado del encuentro en transacción explícita). **Tests propios (Fase 11-12)**: `tests/CoppAddresd.Telemedicine.UnitTests` (134, fakes en memoria) e `tests/CoppAddresd.Telemedicine.IntegrationTests` (25, BD aislada `coppaddresd_tele_test_*` vía `COP_TEST_DB_CONNECTION`; anti doble reserva concurrente + idempotencia webhook/sala/encuentro). Endpoints de la UI: `GET /api/v1/telemedicine/me` (contexto del JWT) y `GET /admin/*` (listados globales, permiso `Telemedicine.AdminView`). El catálogo de profesionales para la UI vive en el backend (`GET /api/v1/professionals-catalog`). Doc: `docs/modules/telemedicine/README.md`.
 
 `CoppAddresd.slnx` es el nuevo formato XML de soluciones — `.sln` plano no existe. Herramientas esperando `.sln` fallarán.
 
@@ -41,6 +43,16 @@ Schema erp:     12 tablas (organizations → clinics → locations; employees co
                 professional_types/specialties + puentes N:N + professional_licenses).
                 Plan de evolución del módulo: docs/modules/patients/PLAN.md
 Schema audit:   1 tabla (activity_logs)
+Schema tele:    10 tablas (telemedicine_requests, telemedicine_appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
+
+# Historial de migraciones por microservicio (NO compartir public):
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (13 migraciones)
+#   - Auth (AuthDbContext):   auth.__ef_migrations_history (5 migraciones, aislada)
+#   - Telemedicina:           tele.__ef_migrations_history (4 migraciones, aislada)
+# EF no namespacia las IDs por contexto: compartir la tabla public mezclaba las
+# migraciones de Auth y del backend (errores de 'migrations remove' del contexto
+# equivocado, auditoría ambigua). Cada DbContext configura su historial con
+# npgsql.MigrationsHistoryTable("__ef_migrations_history", "<schema>").
 ```
 
 **Regla**: Cada módulo tiene su schema. Auth usa `auth.`, auditoría usa `audit.`, la app móvil `app.`, el ERP `erp.`; `public` se mantiene mínimo.
@@ -101,7 +113,7 @@ POST   /api/invitations/{id}/resend           # Reenviar (revoca la pendiente) [
 POST   /api/invitations/{id}/revoke           # Revocar [RequirePermission("Users.Update")]
 ```
 
-**Permisos seedeados** (47 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`. Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Physician`, `Nutritionist`, `Psychologist`, `Nurse`, `Receptionist`, `CareCoordinator` (asignables con scope de clínica/org).
+**Permisos seedeados** (59 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`, `Telemedicine.*` (incluye `Telemedicine.AdminView` para listados admin globales). Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Physician`, `Nutritionist`, `Psychologist`, `Nurse`, `Receptionist`, `CareCoordinator` (asignables con scope de clínica/org).
 
 **Credenciales admin**: `admin@coppaddresd.com` / `Test@1234` (configurable en `appsettings.json` → `Auth` section).
 
@@ -146,10 +158,11 @@ versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de 
 
 ## Gotchas
 
-- **`appsettings.json` / `appsettings.*.json` están gitignoreados** (`src/CoppAddresd.Api` y `src/Services/CoppAddresd.Auth`). Deben crearse localmente antes de correr. Hay `appsettings.Example.json` solo en Auth.
+- **`appsettings.json` / `appsettings.*.json` están gitignoreados** (`src/CoppAddresd.Api`, `src/Services/CoppAddresd.Auth` y `src/Services/CoppAddresd.Telemedicine`). Deben crearse localmente antes de correr. Hay `appsettings.Example.json` solo en Auth.
 - **Storage de objetos**: `Storage:Provider` elige `Local` (filesystem, dev) o `S3` (AWS, prod). Con S3 el `upload-intent`/`download` devuelven presigned URLs reales del bucket `cooppadresd-storage-prod` (región `us-east-2`); las credenciales salen de la cadena por defecto del SDK (IAM role), nunca de Access Keys. Config en `appsettings` + fallback a variables `AWS_REGION`/`AWS_S3_*`. Detalle en `docs/modules/storage/README.md`. Si `Storage:Provider=S3` sin credenciales AWS configuradas, la primera operación de storage fallará con error de credenciales del SDK (fail fast en uso).
 - **JWT debe ser idéntico** entre API y Auth Service (mismo Secret, Issuer, Audience) para que los tokens funcionen.
 - **Auth Service corre migraciones + seeders automáticamente** al iniciar (Program.cs).
+- **Telemedicine NO corre migraciones al iniciar** (a diferencia de Auth): aplicar con `dotnet ef database update --project src/Services/CoppAddresd.Telemedicine --startup-project src/Services/CoppAddresd.Telemedicine`. Para nuevas migraciones usar siempre `--output-dir Infrastructure/Migrations` (`MigrationsDirectory` del csproj no se honra). Gotchas: la exclusión GiST requiere extensión `btree_gist` (la crea la migración); `TwilioClient.Init(apiKeySid, apiKeySecret, accountSid)` — el orden es (username, password, accountSid); NO usar `SetRegion` con Twilio Video. Detalle completo: `docs/modules/telemedicine/README.md`.
 - **`HttpAuditActorContext`** actualmente retorna `ActorType=System`, `UserId=null` — no hay integración con Identity todavía.
 - **Tests de integración** requieren PostgreSQL real (no InMemory). Configurar variable `COP_TEST_DB_CONNECTION`.
 - **`AiServiceClient` mapea el contrato del AI Service** (`answer`/`thread_id`/`execution_id`) con `JsonPropertyName` — si el AI Service cambia el schema, ajustar `ChatResponseJson`.

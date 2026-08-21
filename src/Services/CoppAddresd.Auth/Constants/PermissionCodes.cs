@@ -62,6 +62,20 @@ public static class PermissionCodes
     public const string ClinicalRecordsCreate = "ClinicalRecords.Create";
     public const string ClinicalRecordsUpdate = "ClinicalRecords.Update";
 
+    // Telemedicina (módulo consumido por el microservicio de Telemedicina).
+    public const string TelemedicineRequestsCreate = "Telemedicine.RequestsCreate";
+    public const string TelemedicineRequestsView = "Telemedicine.RequestsView";
+    public const string TelemedicineRequestsConfirm = "Telemedicine.RequestsConfirm";
+    public const string TelemedicineAppointmentsSchedule = "Telemedicine.AppointmentsSchedule";
+    public const string TelemedicineAppointmentsView = "Telemedicine.AppointmentsView";
+    public const string TelemedicineAppointmentsCancel = "Telemedicine.AppointmentsCancel";
+    public const string TelemedicineAppointmentsReschedule = "Telemedicine.AppointmentsReschedule";
+    public const string TelemedicineAgendaView = "Telemedicine.AgendaView";
+    public const string TelemedicineAlertsView = "Telemedicine.AlertsView";
+    public const string TelemedicineSessionsManage = "Telemedicine.SessionsManage";
+    /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
+    public const string TelemedicineAdminView = "Telemedicine.AdminView";
+
     public static IEnumerable<string> GetAll()
     {
         yield return UsersView;
@@ -112,6 +126,17 @@ public static class PermissionCodes
         yield return ClinicalRecordsView;
         yield return ClinicalRecordsCreate;
         yield return ClinicalRecordsUpdate;
+        yield return TelemedicineRequestsCreate;
+        yield return TelemedicineRequestsView;
+        yield return TelemedicineRequestsConfirm;
+        yield return TelemedicineAppointmentsSchedule;
+        yield return TelemedicineAppointmentsView;
+        yield return TelemedicineAppointmentsCancel;
+        yield return TelemedicineAppointmentsReschedule;
+        yield return TelemedicineAgendaView;
+        yield return TelemedicineAlertsView;
+        yield return TelemedicineSessionsManage;
+        yield return TelemedicineAdminView;
     }
 
     public static string GetModule(string permissionCode)

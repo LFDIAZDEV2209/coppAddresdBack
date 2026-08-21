@@ -23,8 +23,33 @@ public interface IEmployeeRepository
     /// <summary>Empleado con asignaciones de clínicas y extensión profesional completa.</summary>
     Task<Employee?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Empleado por id de su extensión profesional (<c>erp.professionals</c>),
+    /// con clínicas + sedes + extensión. Para los datos de referencia del
+    /// microservicio de Telemedicina, que referencia al profesional por su id.
+    /// </summary>
+    Task<Employee?> GetByProfessionalIdAsync(Guid professionalId, CancellationToken ct = default);
+
     /// <summary>Empleado por usuario de Auth (contexto del JWT), con clínicas + sedes + extensión.</summary>
     Task<Employee?> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lista paginada de profesionales clínicos (empleados con extensión
+    /// <see cref="Professional"/>) con sus especialidades y sedes de atención.
+    /// Es el catálogo que consume la UI (elegir profesional al crear una
+    /// solicitud de telemedicina, directorio admin). Filtros opcionales:
+    /// búsqueda, estado, especialidad, sede, organización y clínica.
+    /// </summary>
+    Task<(IReadOnlyList<Employee> Items, int Total)> ListProfessionalsAsync(
+        int page,
+        int pageSize,
+        string? search,
+        string? status,
+        Guid? specialtyId,
+        Guid? locationId,
+        Guid? organizationId,
+        Guid? clinicId,
+        CancellationToken ct = default);
 
     Task<bool> EmailExistsInOrganizationAsync(Guid organizationId, string email, Guid? excludeEmployeeId = null, CancellationToken ct = default);
 
