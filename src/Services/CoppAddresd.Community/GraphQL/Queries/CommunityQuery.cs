@@ -119,7 +119,7 @@ var profile = await db.Profiles
             .ToListAsync(ct);
     }
 
-    /// <summary>Feed de publicaciones de los perfiles que sigo más las mías propias.</summary>
+    /// <summary>Feed de publicaciones de los perfiles que sigo (sin incluir las propias).</summary>
     [Authorize]
     public async Task<IReadOnlyList<Post>> FollowingFeed(
         [Service] CommunityDbContext db,
@@ -144,7 +144,7 @@ var profile = await db.Profiles
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
-            .Where(p => p.DeletedAt == null && (p.ProfileId == profile.Id || followingIds.Contains(p.ProfileId)))
+            .Where(p => p.DeletedAt == null && followingIds.Contains(p.ProfileId))
             .OrderByDescending(p => p.Pinned)
             .ThenByDescending(p => p.CreatedAt)
             .Skip(skip)
