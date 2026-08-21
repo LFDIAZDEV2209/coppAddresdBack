@@ -14,7 +14,7 @@ foreach ($f in $files) {
   $name = $f.BaseName
   $id = [int](Get-Content $f.FullName -Raw)
   if (Get-Process -Id $id -ErrorAction SilentlyContinue) {
-    taskkill /PID $id /T /F 2>&1 | Out-Null
+    & taskkill /PID $id /T /F 2>$null | Out-Null
     Write-Host ("detenido {0} (PID {1})" -f $name, $id) -ForegroundColor Green
   } else {
     Write-Host ("{0} ya no corria (PID {1})" -f $name, $id) -ForegroundColor Yellow
