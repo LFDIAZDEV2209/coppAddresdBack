@@ -54,8 +54,10 @@ public sealed class CommunityQuery
         int take = 20,
         int skip = 0,
         CancellationToken ct = default)
-        => await db.Posts
+=> await db.Posts
             .Include(p => p.Profile)
+            .Include(p => p.Likes)
+            .Include(p => p.Comments)
             .Where(p => p.DeletedAt == null)
             .OrderByDescending(p => p.Pinned)
             .ThenByDescending(p => p.CreatedAt)
@@ -68,8 +70,9 @@ public sealed class CommunityQuery
         Guid id,
         [Service] CommunityDbContext db,
         CancellationToken ct)
-        => db.Posts
+=> db.Posts
             .Include(p => p.Profile)
+            .Include(p => p.Likes)
             .Include(p => p.Comments)
             .ThenInclude(c => c.Replies)
             .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null, ct);
