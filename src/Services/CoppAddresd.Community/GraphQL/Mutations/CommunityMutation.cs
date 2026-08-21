@@ -211,6 +211,19 @@ public sealed class CommunityMutation
         return post;
     }
 
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<Post?> ModerateDeletePost(
+        Guid id,
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var post = await db.Posts.FirstOrDefaultAsync(p => p.Id == id, ct)
+            ?? throw new GraphQLException("No se encontró la publicación.");
+        post.DeletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return post;
+    }
+
     private static async Task<Profile> RequireProfileAsync(
         CommunityDbContext db, IHttpContextAccessor http, CancellationToken ct)
     {
