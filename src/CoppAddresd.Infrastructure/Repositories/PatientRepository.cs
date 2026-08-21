@@ -51,6 +51,7 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         string? status,
         Guid? insurerId,
         Guid? clinicId,
+        Guid? professionalId,
         CancellationToken ct = default)
     {
         var query = dbContext.PatientProfiles.AsNoTracking()
@@ -78,6 +79,13 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         // fuera de la vista por clínica; se accede desde el contexto global.
         if (clinicId is not null)
             query = query.Where(x => x.ClinicId == clinicId);
+
+        // Alcance "propios" (profesional clínico): solo pacientes con una
+        // asignación activa hacia él. El id NUNCA viene del cliente: lo
+        // resuelve el backend desde la identidad del JWT.
+        if (professionalId is not null)
+            query = query.Where(x =>
+                x.Assignments.Any(a => a.ProfessionalId == professionalId && a.Status == "Active"));
 
         var total = await query.CountAsync(ct);
 
@@ -167,4 +175,103 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         => await dbContext.Insurers
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id, ct);
+
+    public async Task<bool> IsAssignedToProfessionalAsync(Guid patientId, Guid professionalId, CancellationToken ct = default)
+        => await dbContext.PatientProfessionalAssignments
+            .AsNoTracking()
+            .AnyAsync(a => a.PatientId == patientId
+                && a.ProfessionalId == professionalId
+                && a.Status == "Active", ct);
+
+    public async Task AssignProfessionalAsync(
+        Guid patientId,
+        Guid professionalId,
+        Guid? clinicId,
+        string relationshipType,
+        Guid? createdBy,
+        CancellationToken ct = default)
+    {
+        var existing = await dbContext.PatientProfessionalAssignments
+            .FirstOrDefaultAsync(a => a.PatientId == patientId && a.ProfessionalId == professionalId, ct);
+
+        if (existing is null)
+        {
+            dbContext.PatientProfessionalAssignments.Add(new PatientProfessionalAssignment
+            {
+                PatientId = patientId,
+                ProfessionalId = professionalId,
+                ClinicId = clinicId,
+                RelationshipType = relationshipType,
+                Status = "Active",
+                CreatedBy = createdBy,
+                CreatedAt = DateTime.UtcNow,
+            });
+        }
+        else
+        {
+            // Idempotente: reactiva la asignación existente.
+            existing.Status = "Active";
+            existing.RelationshipType = relationshipType;
+            existing.ClinicId = clinicId;
+            existing.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await dbContext.SaveChangesAsync(ct);
+    }
+
+    public async Task RemoveProfessionalAsync(Guid patientId, Guid professionalId, CancellationToken ct = default)
+    {
+        // Soft: conserva la trazabilidad de la asignación (historial clínico).
+        await dbContext.PatientProfessionalAssignments
+            .Where(a => a.PatientId == patientId && a.ProfessionalId == professionalId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(a => a.Status, "Inactive")
+                .SetProperty(a => a.UpdatedAt, DateTime.UtcNow), ct);
+    }
+
+    public async Task<IReadOnlyList<PatientProfessionalAssignmentView>> ListAssignmentsAsync(
+        Guid patientId,
+        CancellationToken ct = default)
+    {
+        var assignments = await dbContext.PatientProfessionalAssignments
+            .AsNoTracking()
+            .Where(a => a.PatientId == patientId)
+            .OrderByDescending(a => a.Status == "Active")
+            .ThenByDescending(a => a.CreatedAt)
+            .ToListAsync(ct);
+
+        if (assignments.Count == 0)
+        {
+            return [];
+        }
+
+        // El nombre del profesional vive en erp.employees (núcleo HR); la
+        // asignación referencia erp.professionals. Dos consultas: sin N+1.
+        var professionalIds = assignments.Select(a => a.ProfessionalId).Distinct().ToList();
+
+        var employees = await dbContext.Employees
+            .AsNoTracking()
+            .Where(e => e.Professional != null && professionalIds.Contains(e.Professional!.Id))
+            .Select(e => new
+            {
+                e.Professional!.Id,
+                FullName = $"{e.FirstName} {e.MiddleName} {e.LastName}".Trim(),
+                TypeName = e.Professional!.ProfessionalType != null
+                    ? e.Professional.ProfessionalType.Name
+                    : null,
+            })
+            .ToListAsync(ct);
+
+        var byId = employees.ToDictionary(x => x.Id);
+
+        return assignments
+            .Select(a => new PatientProfessionalAssignmentView(
+                a.ProfessionalId,
+                byId.GetValueOrDefault(a.ProfessionalId)?.FullName ?? "Profesional",
+                byId.GetValueOrDefault(a.ProfessionalId)?.TypeName,
+                a.RelationshipType,
+                a.Status,
+                a.CreatedAt))
+            .ToList();
+    }
 }

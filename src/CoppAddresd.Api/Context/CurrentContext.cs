@@ -27,6 +27,14 @@ public interface ICurrentContext
 
     /// <summary>¿Tiene el permiso globalmente (claims) o en el contexto activo (scoped)?</summary>
     Task<bool> HasPermissionAsync(string permissionCode, CancellationToken ct = default);
+
+    /// <summary>
+    /// Id del profesional clínico asociado al usuario autenticado
+    /// (<c>erp.professionals</c>), o null si el usuario no es profesional.
+    /// Se deriva SIEMPRE de la identidad del JWT, nunca de parámetros del
+    /// cliente: es la base del alcance de datos "propios".
+    /// </summary>
+    Task<Guid?> GetProfessionalIdAsync(CancellationToken ct = default);
 }
 
 public class CurrentContext(
@@ -35,6 +43,11 @@ public class CurrentContext(
     AppDbContext dbContext) : ICurrentContext
 {
     private const string SecurityStampClaim = "security_stamp";
+
+    // Memo por petición: la resolución del profesional consulta la BD una sola
+    // vez (puede pedirse en varios puntos del request).
+    private Guid? _professionalId;
+    private bool _professionalIdResolved;
 
     public Guid? UserId
     {
@@ -104,5 +117,24 @@ public class CurrentContext(
     {
         var value = httpContextAccessor.HttpContext?.Request.Headers[header].ToString();
         return Guid.TryParse(value, out var id) ? id : null;
+    }
+
+    public async Task<Guid?> GetProfessionalIdAsync(CancellationToken ct = default)
+    {
+        if (_professionalIdResolved)
+        {
+            return _professionalId;
+        }
+
+        _professionalId = UserId is { } userId
+            ? await dbContext.Employees
+                .AsNoTracking()
+                .Where(e => e.UserId == userId && e.Professional != null)
+                .Select(e => (Guid?)e.Professional!.Id)
+                .FirstOrDefaultAsync(ct)
+            : null;
+
+        _professionalIdResolved = true;
+        return _professionalId;
     }
 }
