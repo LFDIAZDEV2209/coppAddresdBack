@@ -4,6 +4,7 @@ using CoppAddresd.Telemedicine.Infrastructure.Configuration;
 using CoppAddresd.Telemedicine.Infrastructure.Extensions;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
 using CoppAddresd.Telemedicine.Infrastructure.Repositories;
+using CoppAddresd.Telemedicine.Infrastructure.Security;
 using CoppAddresd.Telemedicine.Infrastructure.Services;
 using CoppAddresd.Telemedicine.Infrastructure.VideoProvider;
 using Microsoft.EntityFrameworkCore;
@@ -61,9 +62,35 @@ public static class DependencyInjection
 
         AddBackendReferenceDataClient(services, configuration);
 
+        AddAuthScopedAuthorizationClient(services, configuration);
+
         AddVideoProvider(services, configuration);
 
         return services;
+    }
+
+    /// <summary>
+    /// Cliente de introspección de permisos hacia el Auth Service
+    /// (<c>AuthService:BaseUrl</c> + header <c>X-Internal-Key</c>): evalúa los
+    /// permisos efectivos (claims ∪ scoped por clínica) de los roles asignados
+    /// con scope, con resiliencia estándar del proyecto.
+    /// </summary>
+    private static void AddAuthScopedAuthorizationClient(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.Configure<AuthServiceSettings>(
+            configuration.GetSection(AuthServiceSettings.SectionName));
+
+        services.AddHttpClient<ITelemedicineScopedAuthorizationClient, TelemedicineScopedAuthorizationClient>(
+                (sp, client) =>
+                {
+                    var settings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(settings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
+                })
+            .AddResiliencePolicy();
     }
 
     /// <summary>

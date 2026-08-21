@@ -16,6 +16,42 @@ namespace CoppAddresd.Auth.Seeders;
 /// </summary>
 public static class RoleSeeder
 {
+    /// <summary>
+    /// Permisos de módulos administrativos (inventario, tienda, contenido,
+    /// auditoría y configuraciones del sistema): los roles clínicos NO los
+    /// tienen (mínimo privilegio); los roles staff/admin sí, para conservar el
+    /// acceso actual a los módulos.
+    /// </summary>
+    private static readonly string[] ModuleAdminPermissions =
+    [
+        PermissionCodes.InventoryView,
+        PermissionCodes.StoreView,
+        PermissionCodes.MediaView,
+        PermissionCodes.AuditView,
+        PermissionCodes.SystemAdminSettings,
+    ];
+
+    /// <summary>Recetario (solo pacientes del ámbito propio del profesional).</summary>
+    private static readonly string[] PrescriberPermissions =
+    [
+        PermissionCodes.PrescriptionsView,
+        PermissionCodes.PrescriptionsCreate,
+    ];
+
+    /// <summary>
+    /// Defaults revocados por convención: códigos que dejaron de ser parte del
+    /// rol por defecto y deben retirarse de asignaciones existentes (idempotente).
+    /// Solo se revocan estos códigos explícitos; nunca toca asignaciones manuales
+    /// de otros permisos.
+    /// </summary>
+    private static readonly (string Role, string[] Codes)[] RevokedDefaults =
+    [
+        ("Physician", [PermissionCodes.PatientsView, PermissionCodes.ProfessionalsView]),
+        ("Nutritionist", [PermissionCodes.PatientsView, PermissionCodes.ProfessionalsView]),
+        ("Psychologist", [PermissionCodes.PatientsView, PermissionCodes.ProfessionalsView]),
+        ("Nurse", [PermissionCodes.PatientsView, PermissionCodes.ProfessionalsView]),
+    ];
+
     public static async Task SeedAsync(AuthDbContext dbContext, ILogger logger, CancellationToken ct = default)
     {
         logger.LogInformation("Seeding organizational roles...");
@@ -60,6 +96,29 @@ public static class RoleSeeder
                 dbContext.RolePermissions.AddRange(toAssign);
                 await dbContext.SaveChangesAsync(ct);
                 logger.LogInformation("Rol {Role}: asignados {Count} permisos por defecto", roleName, toAssign.Count);
+            }
+        }
+
+        // Revocación de defaults (idempotente): aplica solo a los códigos
+        // declarados en RevokedDefaults, para que el cambio de convención
+        // (p. ej. Patients.View → Patients.ViewOwn) se refleje en BD existentes.
+        foreach (var (roleName, codes) in RevokedDefaults)
+        {
+            var role = await dbContext.Roles
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.Name == roleName, ct);
+            if (role is null)
+            {
+                continue;
+            }
+
+            var revoked = await dbContext.RolePermissions
+                .Where(rp => rp.RoleId == role.Id && codes.Contains(rp.Permission.Code))
+                .ExecuteDeleteAsync(ct);
+
+            if (revoked > 0)
+            {
+                logger.LogInformation("Rol {Role}: revocados {Count} permisos por convención de defaults", roleName, revoked);
             }
         }
     }
@@ -137,6 +196,8 @@ public static class RoleSeeder
                 PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 ..AllTelemedicinePermissions,
+                ..ModuleAdminPermissions,
+                ..PrescriberPermissions,
             ]),
         ("ClinicAdmin", "Administra una clínica y sus sedes",
             [
@@ -152,6 +213,8 @@ public static class RoleSeeder
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 ..AllTelemedicinePermissions,
+                ..ModuleAdminPermissions,
+                ..PrescriberPermissions,
             ]),
         ("ClinicalDirector", "Dirección clínica: supervisa historiales y profesionales",
             [
@@ -163,46 +226,51 @@ public static class RoleSeeder
                 PermissionCodes.EmployeesView,
                 PermissionCodes.TelemedicineSessionsManage,
                 ..ProfessionalTelemedicinePermissions,
+                ..ModuleAdminPermissions,
+                ..PrescriberPermissions,
             ]),
         ("Physician", "Médico: atiende pacientes y registra historia clínica",
             [
-                PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
+                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
-                PermissionCodes.ProfessionalsView,
+                ..PrescriberPermissions,
                 ..ProfessionalTelemedicinePermissions,
             ]),
         ("Nutritionist", "Nutricionista: manejo de nutrición y pacientes",
             [
-                PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
+                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
-                PermissionCodes.ProfessionalsView,
+                ..PrescriberPermissions,
                 ..ProfessionalTelemedicinePermissions,
             ]),
         ("Psychologist", "Psicólogo: salud conductual y pacientes",
             [
-                PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
+                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
-                PermissionCodes.ProfessionalsView,
+                ..PrescriberPermissions,
                 ..ProfessionalTelemedicinePermissions,
             ]),
         ("Nurse", "Enfermería: soporte clínico y registro",
             [
-                PermissionCodes.PatientsView, PermissionCodes.PatientsUpdate,
+                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsUpdate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
+                PermissionCodes.PrescriptionsView,
                 ..ViewerTelemedicinePermissions,
             ]),
         ("Receptionist", "Recepción: agenda, registro de pacientes y documentos",
             [
                 PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
                 PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ProfessionalsView,
+                PermissionCodes.PrescriptionsView,
                 ..StaffTelemedicinePermissions,
+                ..ModuleAdminPermissions,
             ]),
         ("CareCoordinator", "Coordinación de cuidados: seguimiento del paciente",
             [
@@ -210,7 +278,9 @@ public static class RoleSeeder
                 PermissionCodes.DocumentsView,
                 PermissionCodes.ClinicalRecordsView,
                 PermissionCodes.ProfessionalsView,
+                PermissionCodes.PrescriptionsView,
                 ..ViewerTelemedicinePermissions,
+                ..ModuleAdminPermissions,
             ]),
     ];
 }

@@ -35,9 +35,10 @@ Flujo de dependencias hacia adentro, enforceado solo por referencias csproj:
 ```sql
 Schema public:  __EFMigrationsHistory (solo)
 Schema auth:    16 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, ScopedRoleAssignments, ScopedPermissionAssignments, etc.)
-Schema app:     10 tablas (patient_profiles → auth.users, insurers, allergens,
-                icd10_codes, medications, patient_diagnoses, patient_medications,
-                patient_allergies, vital_signs)
+Schema app:     11 tablas (patient_profiles → auth.users, patient_professionals
+                (asignación paciente↔profesional, base del alcance "propios"),
+                insurers, allergens, icd10_codes, medications, patient_diagnoses,
+                patient_medications, patient_allergies, vital_signs)
 Schema erp:     12 tablas (organizations → clinics → locations; employees como
                 núcleo HR con extensión clínica 1:0..1 professionals; catálogos
                 professional_types/specialties + puentes N:N + professional_licenses).
@@ -46,7 +47,7 @@ Schema audit:   1 tabla (activity_logs)
 Schema tele:    10 tablas (telemedicine_requests, telemedicine_appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
 
 # Historial de migraciones por microservicio (NO compartir public):
-#   - Backend (AppDbContext): public.__EFMigrationsHistory (13 migraciones)
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (16 migraciones)
 #   - Auth (AuthDbContext):   auth.__ef_migrations_history (5 migraciones, aislada)
 #   - Telemedicina:           tele.__ef_migrations_history (4 migraciones, aislada)
 # EF no namespacia las IDs por contexto: compartir la tabla public mezclaba las
