@@ -59,6 +59,8 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<InventoryExitLine> InventoryExitLines => Set<InventoryExitLine>();
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
     public DbSet<StoreItem> StoreItems => Set<StoreItem>();
+    public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
+    public DbSet<LegalDocumentVersion> LegalDocumentVersions => Set<LegalDocumentVersion>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
