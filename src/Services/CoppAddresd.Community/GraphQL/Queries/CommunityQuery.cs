@@ -4,6 +4,7 @@ using HotChocolate;
 using HotChocolate.Authorization;
 using HotChocolate.Types;
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL;
 using System.Security.Claims;
 
 namespace CoppAddresd.Community.GraphQL.Queries;
@@ -11,7 +12,7 @@ namespace CoppAddresd.Community.GraphQL.Queries;
 /// <summary>Consultas públicas y autenticadas de la comunidad.</summary>
 public sealed class CommunityQuery
 {
-    /// <summary>Perfil del usuario autenticado (se crea en estado Pending la primera vez).</summary>
+    /// <summary>Perfil del usuario autenticado (se crea en estado Active la primera vez, sin revisión previa).</summary>
     [Authorize]
     public async Task<Profile?> Me(
         [Service] CommunityDbContext db,
@@ -26,13 +27,13 @@ public sealed class CommunityQuery
             .FirstOrDefaultAsync(p => p.UserId == userId, ct);
         if (profile is not null) return profile;
 
-        // Auto-provisión: primer acceso crea un perfil pendiente de revisión.
+        // Auto-provisión: primer acceso crea un perfil activo (sin revisión previa).
         var created = new Profile
         {
             Id = Guid.NewGuid(),
             UserId = userId.Value,
             DisplayName = "Miembro ANTARES",
-            Status = ProfileStatus.Pending,
+            Status = ProfileStatus.Active,
             CreatedAt = DateTime.UtcNow,
         };
         db.Profiles.Add(created);
@@ -77,15 +78,26 @@ public sealed class CommunityQuery
             .ThenInclude(c => c.Replies)
             .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null, ct);
 
-    /// <summary>Perfiles pendientes de revisión (admin).</summary>
+    /// <summary>Lista de perfiles con filtros opcionales por estado y búsqueda (moderador).</summary>
     [Authorize(Policy = "CommunityModerator")]
-    public Task<List<Profile>> PendingProfiles(
+    public Task<List<Profile>> Profiles(
+        ProfileStatus? status,
+        string? search,
         [Service] CommunityDbContext db,
-        CancellationToken ct)
-        => db.Profiles
-            .Where(p => p.Status == ProfileStatus.Pending)
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var query = db.Profiles.AsQueryable();
+        if (status is not null) query = query.Where(p => p.Status == status);
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(p => EF.Functions.ILike(p.DisplayName, $"%{search}%"));
+        return query
             .OrderBy(p => p.CreatedAt)
+            .Skip(skip)
+            .Take(take)
             .ToListAsync(ct);
+    }
 
     internal static Guid? CurrentUserId(IHttpContextAccessor http)
         => Guid.TryParse(http.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
