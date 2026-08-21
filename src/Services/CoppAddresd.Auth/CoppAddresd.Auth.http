@@ -12,10 +12,50 @@ Content-Type: application/json
   "password": "Test@1234"
 }
 
-> {%
-    client.global.set("access_token", response.body.accessToken);
-    client.global.set("refresh_token", response.body.refreshToken);
+> {% 
+    client.global.set("access_token", response.body.accessToken); 
+    client.global.set("refresh_token", response.body.refreshToken); 
 %}
+
+### Login por número de identificación (app móvil)
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "documentNumber": "32534534",
+  "password": "Test@1234",
+  "application": "app",
+  "rememberMe": true
+}
+
+### Primer inicio de sesión: consultar contactos por ID
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/id-lookup
+Content-Type: application/json
+
+{
+  "documentNumber": "32534534",
+  "application": "app"
+}
+
+### Primer inicio de sesión: enviar OTP al contacto elegido (devCode en Development)
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/send-otp
+Content-Type: application/json
+
+{
+  "documentNumber": "32534534",
+  "contactId": "email"
+}
+
+### Primer inicio de sesión: verificar OTP y completar login
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/verify-otp
+Content-Type: application/json
+
+{
+  "documentNumber": "32534534",
+  "otp": "123456",
+  "application": "app",
+  "rememberMe": true
+}
 
 ### Refresh token
 POST {{CoppAddresd.Auth_HostAddress}}/api/auth/refresh

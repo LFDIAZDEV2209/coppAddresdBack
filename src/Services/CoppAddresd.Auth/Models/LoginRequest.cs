@@ -4,9 +4,21 @@ namespace CoppAddresd.Auth.Models;
 
 public record LoginRequest
 {
-    [Required(ErrorMessage = "Email es requerido")]
+    /// <summary>
+    /// Correo del usuario. Alternativa a <see cref="DocumentNumber"/>: el login
+    /// acepta correo (staff/ERP) o número de identificación (pacientes, app).
+    /// Debe enviarse uno de los dos.
+    /// </summary>
     [EmailAddress(ErrorMessage = "Email inválido")]
-    public string Email { get; init; } = string.Empty;
+    public string? Email { get; init; }
+
+    /// <summary>
+    /// Número de identificación del paciente (login de la app móvil). Se
+    /// resuelve contra <c>app.patient_profiles</c> para localizar al usuario
+    /// vinculado.
+    /// </summary>
+    [StringLength(50, ErrorMessage = "Número de identificación inválido")]
+    public string? DocumentNumber { get; init; }
 
     [Required(ErrorMessage = "Password es requerido")]
     public string Password { get; init; } = string.Empty;

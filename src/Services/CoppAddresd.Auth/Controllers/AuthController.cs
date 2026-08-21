@@ -17,11 +17,13 @@ public class AuthController : ControllerBase
     private const int SessionCookieMaxAgeHours = 8;
 
     private readonly IAuthService _authService;
+    private readonly IOtpService _otpService;
     private readonly IHostEnvironment _environment;
 
-    public AuthController(IAuthService authService, IHostEnvironment environment)
+    public AuthController(IAuthService authService, IOtpService otpService, IHostEnvironment environment)
     {
         _authService = authService;
+        _otpService = otpService;
         _environment = environment;
     }
 
@@ -35,6 +37,70 @@ public class AuthController : ControllerBase
         if (result is null)
         {
             return Unauthorized(new { message = "Credenciales inválidas" });
+        }
+
+        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
+
+        return Ok(new LoginResponse(
+            AccessToken: result.AccessToken,
+            TokenType: result.TokenType,
+            ExpiresIn: result.ExpiresIn));
+    }
+
+    /// <summary>
+    /// Primer inicio de sesión por número de identificación: devuelve los
+    /// correos y teléfonos asociados al ID (enmascarados) para que el usuario
+    /// elija por dónde recibe el código OTP.
+    /// </summary>
+    [HttpPost("id-lookup")]
+    public async Task<ActionResult<IdLookupResponse>> IdLookup(
+        [FromBody] IdLookupRequest request,
+        CancellationToken ct)
+    {
+        var result = await _otpService.LookupByIdAsync(request, ct);
+
+        if (result is null)
+        {
+            return NotFound(new { message = "El número de identificación no está registrado" });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Envía el código OTP al método de contacto elegido. En desarrollo la
+    /// respuesta incluye <c>devCode</c> para pruebas end-to-end.
+    /// </summary>
+    [HttpPost("send-otp")]
+    public async Task<ActionResult<SendOtpResponse>> SendOtp(
+        [FromBody] SendOtpRequest request,
+        CancellationToken ct)
+    {
+        var (success, error, result) = await _otpService.SendOtpAsync(request, ct);
+
+        if (!success)
+        {
+            return BadRequest(new { message = error });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Verifica el OTP y completa el primer inicio de sesión: aprovisiona la
+    /// cuenta (si no existe), la vincula al perfil del paciente, otorga acceso
+    /// a la aplicación y emite los tokens de sesión (refresh en cookie HttpOnly).
+    /// </summary>
+    [HttpPost("verify-otp")]
+    public async Task<ActionResult<LoginResponse>> VerifyOtp(
+        [FromBody] VerifyOtpRequest request,
+        CancellationToken ct)
+    {
+        var result = await _otpService.VerifyOtpAsync(request, ct);
+
+        if (result is null)
+        {
+            return Unauthorized(new { message = "Código inválido o expirado" });
         }
 
         SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
