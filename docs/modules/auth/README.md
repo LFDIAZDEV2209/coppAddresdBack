@@ -376,13 +376,19 @@ conocidos (`erp`, `app`).
 
 Al iniciar, Auth Service automáticamente:
 
-1. Aplica migraciones pendientes
-2. Seedea 15 permisos (idempotente)
-3. Crea rol "Admin" si no existe
-4. Crea usuario admin con todos los permisos
-5. Seedea aplicaciones `erp` y `app` (idempotente)
-6. Asigna acceso al ERP al usuario admin
-7. Retro-asigna refresh tokens legacy al ERP
+1. Recoloca el historial de migraciones si hace falta (`AuthMigrationHistoryRelocator`):
+   copia las IDs de Auth desde `public."__EFMigrationsHistory"` (tabla
+   compartida heredada del backend) hacia `auth.__ef_migrations_history` y, si
+   las tablas de `auth.` ya existen, las marca como aplicadas. Sin este paso,
+   al aislar el historial EF reintenta `InitialCreate` y falla con `42P07`
+   (relación ya existe). Idempotente; en bases nuevas no inserta nada.
+2. Aplica migraciones pendientes (`auth.__ef_migrations_history`, 6 migraciones)
+3. Seedea 15 permisos (idempotente)
+4. Crea rol "Admin" si no existe
+5. Crea usuario admin con todos los permisos
+6. Seedea aplicaciones `erp` y `app` (idempotente)
+7. Asigna acceso al ERP al usuario admin
+8. Retro-asigna refresh tokens legacy al ERP
 
 ## Rate limiting
 

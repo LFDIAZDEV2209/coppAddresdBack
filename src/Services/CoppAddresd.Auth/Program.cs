@@ -146,6 +146,11 @@ using (var scope = app.Services.CreateScope())
     var dbContext = services.GetRequiredService<AuthDbContext>();
     var logger = services.GetRequiredService<ILogger<Program>>();
 
+    // Recoloca el historial desde public."__EFMigrationsHistory" (compartido
+    // con el backend) hacia auth.__ef_migrations_history. Sin esto, en bases
+    // ya migradas EF reintenta InitialCreate y falla con 42P07.
+    await AuthMigrationHistoryRelocator.RelocateAsync(dbContext, logger);
+
     await dbContext.Database.MigrateAsync();
 
     await PermissionSeeder.SeedAsync(dbContext, logger);
