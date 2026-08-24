@@ -55,7 +55,7 @@ builder.Services.AddCors(options =>
 {
     var origins = builder.Configuration["Cors:Origins"]
         ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        ?? ["http://localhost:3000"];
+        ?? ["http://localhost:3000", "http://localhost:5080"];
 
     options.AddPolicy("TelemedicineCors", policy =>
         policy.WithOrigins(origins)

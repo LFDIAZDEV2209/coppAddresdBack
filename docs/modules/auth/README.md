@@ -247,12 +247,12 @@ camino de usuario único UserManager no expone overloads con ct (limitación de
 la API Identity), por lo que la cancelación se verifica explícitamente antes
 de cada operación.
 
-### Endpoints de usuarios con asignaciones (POST/PUT /api/users)
+### Endpoints de usuarios con asignaciones (POST/PUT /api/auth/users)
 
 Para eliminar el N+1 del frontend (1 request por rol/permiso), `CreateUserRequest`
 y `UpdateUserRequest` aceptan los conjuntos completos de asignaciones:
 
-- `POST /api/users` — `{ email, password, firstName, lastName, roleIds?, permissionIds? }`.
+- `POST /api/auth/users` — `{ email, password, firstName, lastName, roleIds?, permissionIds? }`.
   El endpoint sigue `[AllowAnonymous]` para el registro básico, PERO si el request
   trae `roleIds`/`permissionIds` (no null y no vacíos) se exige caller autenticado
   con `Users.Create` + `Roles.Assign` + `Permissions.Assign` (403 si es anónimo o le
@@ -261,7 +261,7 @@ y `UpdateUserRequest` aceptan los conjuntos completos de asignaciones:
   cuentas en el registro público. La carrera de dos POST concurrentes con el mismo
   email se resuelve con el unique index (DbUpdateException 23505 → "Email ya está
   registrado", mismo mensaje del pre-chequeo).
-- `PUT /api/users/{id}` — `{ firstName?, lastName?, isActive?, roleIds?, permissionIds? }`.
+- `PUT /api/auth/users/{id}` — `{ firstName?, lastName?, isActive?, roleIds?, permissionIds? }`.
   `roleIds`/`permissionIds` son **nullables**: `null` = no tocar la asignación;
   lista (incluso vacía) = sync total (reemplaza el conjunto). Si se envían, se
   exige además `Roles.Assign` y `Permissions.Assign` (403 si faltan).
@@ -272,8 +272,8 @@ cualquier error). Si en edición los roles/permisos cambiaron efectivamente (o e
 usuario se desactivó), el security stamp se bumpea dentro de la misma
 transacción (revocación inmediata de tokens).
 
-Los endpoints de asignación individual (`POST/DELETE /api/roles/user/{id}` y
-`POST/DELETE /api/permissions/user/{id}`) se mantienen para consumidores que
+Los endpoints de asignación individual (`POST/DELETE /api/auth/roles/user/{id}` y
+`POST/DELETE /api/auth/permissions/user/{id}`) se mantienen para consumidores que
 necesiten deltas.
 
 ## Permisos
@@ -537,7 +537,7 @@ curl -c jar.txt -X POST http://localhost:5058/api/auth/login \
   -d '{"email":"admin@coppaddresd.com","password":"Test@1234","rememberMe":true,"application":"erp"}'
 
 # Usar token
-curl http://localhost:5058/api/me \
+curl http://localhost:5058/api/auth/me \
   -H "Authorization: Bearer <accessToken>"
 
 # Refresh — usa la cookie del jar (sin body)

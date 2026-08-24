@@ -100,7 +100,7 @@ public static class ApplicationServiceExtensions
     {
         var origins = configuration["Cors:Origins"]
             ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            ?? ["http://localhost:3000"];
+            ?? ["http://localhost:3000", "http://localhost:5080"];
 
         services.AddCors(options =>
         {
