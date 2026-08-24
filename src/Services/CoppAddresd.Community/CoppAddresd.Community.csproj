@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>CoppAddresd.Community.IntegrationTests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="HotChocolate.AspNetCore" Version="16.6.1" />
     <PackageReference Include="HotChocolate.AspNetCore.Authorization" Version="16.6.1" />
     <PackageReference Include="HotChocolate.Data" Version="16.6.1" />
