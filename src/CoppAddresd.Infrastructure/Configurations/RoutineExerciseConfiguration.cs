@@ -42,6 +42,22 @@ public sealed class RoutineExerciseConfiguration : IEntityTypeConfiguration<Rout
             .HasColumnName("weight_kg")
             .HasPrecision(6, 2);
 
+        builder.Property(x => x.TargetMuscle)
+            .HasColumnName("target_muscle");
+
+        builder.Property(x => x.Equipment)
+            .HasColumnName("equipment");
+
+        builder.Property(x => x.Tempo)
+            .HasColumnName("tempo")
+            .HasMaxLength(20);
+
+        builder.Property(x => x.Rpe)
+            .HasColumnName("rpe");
+
+        builder.Property(x => x.Tips)
+            .HasColumnName("tips");
+
         builder.Property(x => x.MediaId)
             .HasColumnName("media_id");
 

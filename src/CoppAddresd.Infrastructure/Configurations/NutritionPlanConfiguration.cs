@@ -34,6 +34,28 @@ public sealed class NutritionPlanConfiguration : IEntityTypeConfiguration<Nutrit
         builder.Property(x => x.DailyCalorieTarget)
             .HasColumnName("daily_calorie_target");
 
+        builder.Property(x => x.DailyProteinTarget)
+            .HasColumnName("daily_protein_target")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.DailyCarbsTarget)
+            .HasColumnName("daily_carbs_target")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.DailyFatTarget)
+            .HasColumnName("daily_fat_target")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.DailyFiberTarget)
+            .HasColumnName("daily_fiber_target")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.Allergens)
+            .HasColumnName("allergens");
+
+        builder.Property(x => x.MealTiming)
+            .HasColumnName("meal_timing");
+
         builder.Property(x => x.IsTemplate)
             .HasColumnName("is_template")
             .HasDefaultValue(true);

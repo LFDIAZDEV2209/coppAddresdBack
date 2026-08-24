@@ -26,6 +26,21 @@ public sealed class NutritionPlanDay
     /// <summary>Calorías estimadas de esta comida.</summary>
     public int? Calories { get; set; }
 
+    /// <summary>Gramos de proteína.</summary>
+    public decimal? ProteinG { get; set; }
+
+    /// <summary>Gramos de carbohidratos.</summary>
+    public decimal? CarbsG { get; set; }
+
+    /// <summary>Gramos de grasa.</summary>
+    public decimal? FatG { get; set; }
+
+    /// <summary>Gramos de fibra.</summary>
+    public decimal? FiberG { get; set; }
+
+    /// <summary>Meta de agua en ml para esta comida.</summary>
+    public int? WaterMl { get; set; }
+
     /// <summary>Notas adicionales (porciones, preparación, etc.).</summary>
     public string? Notes { get; set; }
 

@@ -35,6 +35,25 @@ public sealed class NutritionPlanDayConfiguration : IEntityTypeConfiguration<Nut
         builder.Property(x => x.Calories)
             .HasColumnName("calories");
 
+        builder.Property(x => x.ProteinG)
+            .HasColumnName("protein_g")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.CarbsG)
+            .HasColumnName("carbs_g")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.FatG)
+            .HasColumnName("fat_g")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.FiberG)
+            .HasColumnName("fiber_g")
+            .HasPrecision(6, 2);
+
+        builder.Property(x => x.WaterMl)
+            .HasColumnName("water_ml");
+
         builder.Property(x => x.Notes)
             .HasColumnName("notes");
 
