@@ -135,6 +135,10 @@ public sealed class PatientProfile
 
     public ICollection<VitalSign> VitalSigns { get; set; } = [];
 
-    /// <summary>Profesionales asignados al paciente (alcance de datos "propios").</summary>
+/// <summary>Profesionales asignados al paciente (alcance de datos "propios").</summary>
     public ICollection<PatientProfessionalAssignment> Assignments { get; set; } = [];
+
+    public ICollection<NutritionPlan> NutritionPlans { get; set; } = [];
+
+    public ICollection<RoutineAssignment> RoutineAssignments { get; set; } = [];
 }

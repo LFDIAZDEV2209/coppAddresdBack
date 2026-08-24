@@ -87,3 +87,7 @@ logs/
 Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+
+# appsettings.Example.json SI se versiona: referencia de configuracion para otros desarrolladores
+!appsettings.Example.json

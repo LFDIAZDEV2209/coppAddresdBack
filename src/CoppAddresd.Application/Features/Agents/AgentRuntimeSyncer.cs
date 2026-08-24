@@ -28,6 +28,7 @@ internal static class AgentRuntimeSyncer
                 agentType.Description,
                 agentType.Specialty,
                 agentType.IconKey,
+                agentType.Slug,
                 version.Config), ct);
         }
         catch (Exception ex)

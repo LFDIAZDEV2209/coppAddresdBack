@@ -4,7 +4,10 @@ using CoppAddresd.Api.Middleware;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Api.Seeders;
 using CoppAddresd.Infrastructure;
+using CoppAddresd.Infrastructure.HealthChecks;
+using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
 using System.Text.Json.Serialization;
 
@@ -36,7 +39,15 @@ builder.Services.AddTransient<CoppAddresd.Api.Handlers.CorrelationIdDelegatingHa
 // Seed del catálogo de agentes (idempotente) + sync al AI Service al arrancar.
 builder.Services.AddHostedService<AgentCatalogSeeder>();
 
-builder.Services.AddHealthChecks();
+// Seed del catálogo de mediciones clínicas (unidades, métricas y rangos).
+builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
+
+// Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
+// paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
+// (no incluido en el shared framework de .NET 10), así que se usa un check
+// propio con CanConnectAsync: sin dependencias NuGet adicionales.
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database");
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo

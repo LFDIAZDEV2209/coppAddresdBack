@@ -16,6 +16,7 @@ public class AuthService : IAuthService
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly ITokenService _tokenService;
     private readonly IPermissionService _permissionService;
+    private readonly IPatientLookupService _patientLookup;
     private readonly AuthDbContext _dbContext;
     private readonly JwtSettings _jwtSettings;
     private readonly ILogger<AuthService> _logger;
@@ -25,6 +26,7 @@ public class AuthService : IAuthService
         SignInManager<ApplicationUser> signInManager,
         ITokenService tokenService,
         IPermissionService permissionService,
+        IPatientLookupService patientLookup,
         AuthDbContext dbContext,
         IOptions<JwtSettings> jwtSettings,
         ILogger<AuthService> logger)
@@ -33,18 +35,51 @@ public class AuthService : IAuthService
         _signInManager = signInManager;
         _tokenService = tokenService;
         _permissionService = permissionService;
+        _patientLookup = patientLookup;
         _dbContext = dbContext;
         _jwtSettings = jwtSettings.Value;
         _logger = logger;
     }
 
-    public async Task<TokenResult?> LoginAsync(LoginRequest request, CancellationToken ct = default)
+    /// <summary>
+    /// Resuelve el usuario por correo (staff/ERP) o por número de identificación
+    /// (pacientes, app móvil) viajando por <c>app.patient_profiles</c>.
+    /// </summary>
+    private async Task<ApplicationUser?> ResolveUserAsync(LoginRequest request, CancellationToken ct)
     {
+        if (!string.IsNullOrWhiteSpace(request.DocumentNumber))
+        {
+            var patient = await _patientLookup.FindByDocumentNumberAsync(request.DocumentNumber, ct);
+            if (patient?.UserId is Guid userId)
+            {
+                return await _userManager.FindByIdAsync(userId.ToString());
+            }
+
+            _logger.LogWarning("Login failed: no user linked to document {Document}", request.DocumentNumber);
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+        {
+            _logger.LogWarning("Login failed: neither email nor document provided");
+            return null;
+        }
+
         var user = await _userManager.FindByEmailAsync(request.Email);
-        
         if (user is null)
         {
             _logger.LogWarning("Login failed: user not found for email {Email}", request.Email);
+        }
+        return user;
+    }
+
+    public async Task<TokenResult?> LoginAsync(LoginRequest request, CancellationToken ct = default)
+    {
+        var user = await ResolveUserAsync(request, ct);
+
+        if (user is null)
+        {
+            _logger.LogWarning("Login failed: user not found for identifier");
             return null;
         }
 

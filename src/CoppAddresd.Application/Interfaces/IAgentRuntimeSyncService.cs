@@ -9,6 +9,7 @@ public record AgentRuntimeConfigPayload(
     string? Description,
     string? Specialty,
     string? IconKey,
+    string? Slug,
     string Config);
 
 /// <summary>Payload de ingestión de un documento al AI Service (blob en base64).</summary>

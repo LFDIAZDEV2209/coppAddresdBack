@@ -197,7 +197,7 @@ namespace CoppAddresd.Auth.Migrations
                     b.ToTable("UserRoleAssignments", "auth");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Auth.Entities.Invitation", b =>
+modelBuilder.Entity("CoppAddresd.Auth.Entities.Invitation", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -234,6 +234,56 @@ namespace CoppAddresd.Auth.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Invitations", "auth");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.OtpCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DocumentNumber")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Salt")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DocumentNumber");
+
+                    b.ToTable("OtpCodes", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.Permission", b =>

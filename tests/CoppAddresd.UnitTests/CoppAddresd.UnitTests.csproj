@@ -15,9 +15,26 @@
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Moq" Version="4.20.72" />
-    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="NSubstitute" Version="6.2.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <!-- 2.1.11 bundle vulnerable (CVE-2025-6965, SQLite < 3.50.2): solo afecta a
+         los tests en memoria, pero se sube a 2.1.13 para no arrastrar la advisory. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Services\CoppAddresd.Auth\CoppAddresd.Auth.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- El Auth Service es un proyecto Web: expone tipos del shared framework
+         (IHostEnvironment, UserManager, Identity, etc.) que los tests necesitan. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
   <ItemGroup>
@@ -25,6 +42,7 @@
     <ProjectReference Include="..\..\src\CoppAddresd.Application\CoppAddresd.Application.csproj" />
     <ProjectReference Include="..\..\src\CoppAddresd.Domain\CoppAddresd.Domain.csproj" />
     <ProjectReference Include="..\..\src\CoppAddresd.Infrastructure\CoppAddresd.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Services\CoppAddresd.Auth\CoppAddresd.Auth.csproj" />
   </ItemGroup>
 
   <ItemGroup>
