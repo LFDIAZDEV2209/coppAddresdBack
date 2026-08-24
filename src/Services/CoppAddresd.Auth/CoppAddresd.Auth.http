@@ -71,15 +71,15 @@ Content-Type: application/json
 %}
 
 ### Get current user info
-GET {{CoppAddresd.Auth_HostAddress}}/api/me
+GET {{CoppAddresd.Auth_HostAddress}}/api/auth/me
 Authorization: Bearer {{access_token}}
 
 ### List users
-GET {{CoppAddresd.Auth_HostAddress}}/api/users
+GET {{CoppAddresd.Auth_HostAddress}}/api/auth/users
 Authorization: Bearer {{access_token}}
 
 ### Create user
-POST {{CoppAddresd.Auth_HostAddress}}/api/users
+POST {{CoppAddresd.Auth_HostAddress}}/api/auth/users
 Content-Type: application/json
 
 {
@@ -90,11 +90,11 @@ Content-Type: application/json
 }
 
 ### List roles
-GET {{CoppAddresd.Auth_HostAddress}}/api/roles
+GET {{CoppAddresd.Auth_HostAddress}}/api/auth/roles
 Authorization: Bearer {{access_token}}
 
 ### List permissions
-GET {{CoppAddresd.Auth_HostAddress}}/api/permissions
+GET {{CoppAddresd.Auth_HostAddress}}/api/auth/permissions
 Authorization: Bearer {{access_token}}
 
 ### Logout

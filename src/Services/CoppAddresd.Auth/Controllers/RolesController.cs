@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace CoppAddresd.Auth.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/auth/roles")]
 [Authorize]
 [RequireErpAudience]
 public class RolesController : ControllerBase

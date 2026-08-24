@@ -72,35 +72,35 @@ POST   /api/auth/refresh            # Refresh con la cookie (sin body) — rotac
 POST   /api/auth/logout             # Revoca todos los refresh del usuario + limpia cookie. Sin [Authorize]
 POST   /api/auth/change-password    # Cambiar password [Authorize]
 
-GET    /api/me                      # Info del usuario actual + roles + permisos [Authorize]
+GET    /api/auth/me                 # Info del usuario actual + roles + permisos [Authorize]
 
-GET    /api/users                   # Listar usuarios [RequirePermission("Users.View")]
-POST   /api/users                   # Crear usuario [AllowAnonymous]
-GET    /api/users/{id}              # Obtener usuario [RequirePermission("Users.View")]
-PUT    /api/users/{id}              # Actualizar usuario [RequirePermission("Users.Update")]
-DELETE /api/users/{id}              # Eliminar usuario [RequirePermission("Users.Delete")]
+GET    /api/auth/users               # Listar usuarios [RequirePermission("Users.View")]
+POST   /api/auth/users               # Crear usuario [AllowAnonymous]
+GET    /api/auth/users/{id}          # Obtener usuario [RequirePermission("Users.View")]
+PUT    /api/auth/users/{id}          # Actualizar usuario [RequirePermission("Users.Update")]
+DELETE /api/auth/users/{id}          # Eliminar usuario [RequirePermission("Users.Delete")]
 
-GET    /api/roles                   # Listar roles [RequirePermission("Roles.View")]
-POST   /api/roles                   # Crear rol [RequirePermission("Roles.Create")]
-PUT    /api/roles/{id}              # Actualizar rol [RequirePermission("Roles.Update")]
-DELETE /api/roles/{id}              # Eliminar rol [RequirePermission("Roles.Delete")]
-POST   /api/roles/{id}/assign       # Asignar rol a usuario [RequirePermission("Roles.Assign")]
-DELETE /api/roles/{id}/assign       # Remover rol de usuario [RequirePermission("Roles.Assign")]
+GET    /api/auth/roles               # Listar roles [RequirePermission("Roles.View")]
+POST   /api/auth/roles               # Crear rol [RequirePermission("Roles.Create")]
+PUT    /api/auth/roles/{id}          # Actualizar rol [RequirePermission("Roles.Update")]
+DELETE /api/auth/roles/{id}          # Eliminar rol [RequirePermission("Roles.Delete")]
+POST   /api/auth/roles/{id}/assign   # Asignar rol a usuario [RequirePermission("Roles.Assign")]
+DELETE /api/auth/roles/{id}/assign   # Remover rol de usuario [RequirePermission("Roles.Assign")]
 
-GET    /api/permissions             # Listar permisos [RequirePermission("Permissions.View")]
-POST   /api/permissions             # Crear permiso [RequirePermission("Permissions.View")]
-PUT    /api/permissions/{id}        # Actualizar permiso [RequirePermission("Permissions.View")]
-DELETE /api/permissions/{id}        # Eliminar permiso [RequirePermission("Permissions.View")]
-POST   /api/permissions/{id}/assign-to-role    # Asignar a rol [RequirePermission("Permissions.Assign")]
-DELETE /api/permissions/{id}/assign-to-role    # Remover de rol [RequirePermission("Permissions.Assign")]
-POST   /api/permissions/{id}/assign-to-user   # Asignar a usuario [RequirePermission("Permissions.Assign")]
-DELETE /api/permissions/{id}/assign-to-user   # Remover de usuario [RequirePermission("Permissions.Assign")]
+GET    /api/auth/permissions         # Listar permisos [RequirePermission("Permissions.View")]
+POST   /api/auth/permissions         # Crear permiso [RequirePermission("Permissions.View")]
+PUT    /api/auth/permissions/{id}    # Actualizar permiso [RequirePermission("Permissions.View")]
+DELETE /api/auth/permissions/{id}    # Eliminar permiso [RequirePermission("Permissions.View")]
+POST   /api/auth/permissions/{id}/assign-to-role    # Asignar a rol [RequirePermission("Permissions.Assign")]
+DELETE /api/auth/permissions/{id}/assign-to-role    # Remover de rol [RequirePermission("Permissions.Assign")]
+POST   /api/auth/permissions/{id}/assign-to-user   # Asignar a usuario [RequirePermission("Permissions.Assign")]
+DELETE /api/auth/permissions/{id}/assign-to-user   # Remover de usuario [RequirePermission("Permissions.Assign")]
 
 # Asignaciones con scope (permisos por contexto: clínica/organización)
-POST   /api/users/{id}/scoped/roles           # Rol scoped [RequirePermission("Roles.Assign")]
-DELETE /api/users/{id}/scoped/roles           # Remover rol scoped [RequirePermission("Roles.Assign")]
-POST   /api/users/{id}/scoped/permissions     # Override Grant/Deny scoped [RequirePermission("Permissions.Assign")]
-DELETE /api/users/{id}/scoped/permissions     # Remover override scoped [RequirePermission("Permissions.Assign")]
+POST   /api/auth/users/{id}/scoped/roles           # Rol scoped [RequirePermission("Roles.Assign")]
+DELETE /api/auth/users/{id}/scoped/roles           # Remover rol scoped [RequirePermission("Roles.Assign")]
+POST   /api/auth/users/{id}/scoped/permissions     # Override Grant/Deny scoped [RequirePermission("Permissions.Assign")]
+DELETE /api/auth/users/{id}/scoped/permissions     # Remover override scoped [RequirePermission("Permissions.Assign")]
 
 # Internos (ERP → Auth, header X-Internal-Key)
 GET    /api/auth/internal/authorize           # ¿Permiso en cadena de scopes? (?userId&permissionCode&scopes=Clinic:id|Organization:id|Global)
@@ -108,10 +108,10 @@ GET    /api/auth/internal/scoped-permissions  # Permisos efectivos para una cade
 POST   /api/auth/internal/invitations         # Crear usuario sin password + acceso ERP + invitación + email (body: email, firstName, lastName)
 
 # Invitaciones de primer acceso (onboarding del profesional)
-GET    /api/invitations/validate?token=       # Validar token (público, no consume)
-POST   /api/invitations/accept                # Establecer password y marcar usada (público: token, password)
-POST   /api/invitations/{id}/resend           # Reenviar (revoca la pendiente) [RequirePermission("Users.Update")]
-POST   /api/invitations/{id}/revoke           # Revocar [RequirePermission("Users.Update")]
+GET    /api/auth/invitations/validate?token=       # Validar token (público, no consume)
+POST   /api/auth/invitations/accept                # Establecer password y marcar usada (público: token, password)
+POST   /api/auth/invitations/{id}/resend           # Reenviar (revoca la pendiente) [RequirePermission("Users.Update")]
+POST   /api/auth/invitations/{id}/revoke           # Revocar [RequirePermission("Users.Update")]
 ```
 
 **Permisos seedeados** (59 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`, `Telemedicine.*` (incluye `Telemedicine.AdminView` para listados admin globales). Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Physician`, `Nutritionist`, `Psychologist`, `Nurse`, `Receptionist`, `CareCoordinator` (asignables con scope de clínica/org).

@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace CoppAddresd.Auth.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/auth/users")]
 [Authorize]
 [RequireErpAudience]
 public class UsersController : ControllerBase

@@ -87,7 +87,7 @@ User
   `ICurrentContext` combina permiso global (claims) + scoped (introspección).
 - **Switcher**: `GET /api/v1/me/context` devuelve org, clínicas (con sedes) y
   permisos efectivos por clínica — alimenta el selector del frontend.
-- **Gestión**: `POST/DELETE /api/users/{id}/scoped/roles` y
+- **Gestión**: `POST/DELETE /api/auth/users/{id}/scoped/roles` y
   `/scoped/permissions` (exigen Roles.Assign / Permissions.Assign).
 - **Endpoints de la API** ahora exigen permiso global vía `[RequirePermission]`
   (policy por código): Organizations.*, Clinics.*, Locations.*, Employees.*.
@@ -111,7 +111,7 @@ Profesional abre enlace → establece su contraseña (accept, un solo uso)
   exigir el permiso administrativo Employees.Update).
 - Catálogos de profesiones/especialidades accesibles a cualquier usuario
   autenticado (datos de referencia para el wizard).
-- Reenvío y revocación: `POST /api/invitations/{id}/resend|revoke` (exigen
+- Reenvío y revocación: `POST /api/auth/invitations/{id}/resend|revoke` (exigen
   Users.Update). Reenviar revoca la pendiente y crea una nueva.
 
 ## Reglas del módulo
