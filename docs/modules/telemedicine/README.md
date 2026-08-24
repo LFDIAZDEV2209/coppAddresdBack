@@ -305,6 +305,21 @@ endpoints por-Id ya existían desde Fase 3):
   profesional y/o paciente resueltos **por el JWT** (`GetCurrentUserContextQuery`).
   Es el "me" que el frontend usa para saber si el usuario es profesional (y su
   `professionalId`) sin adivinar ids. Accesible a cualquier usuario autenticado.
+- **Analytics del dashboard** (`GetDashboardAnalyticsQuery`): payload completo
+  para las gráficas del dashboard — KPIs, serie temporal diaria, distribución
+  por estado y por hora, actividad por profesional y próximas citas. Sin
+  migración: solo agrupaciones de lectura (proyección ligera + agrupación en
+  memoria, porque Npgsql no traduce `DateTimeOffset.Date`/enums-string en
+  GroupBy; rango acotado del dashboard). Consultas **secuenciales**: EF Core no
+  permite operaciones concurrentes sobre el mismo DbContext scoped.
+  - `GET /api/v1/telemedicine/admin/analytics?from&to` — vista **global**
+    (`Telemedicine.AdminView`): incluye actividad por profesional y
+    profesionales activos. `from`/`to` opcionales (default: últimos 30 días).
+  - `GET /api/v1/telemedicine/me/analytics?from&to` — solo las citas del
+    profesional resuelto **por el JWT** (identidad, nunca un id del cliente):
+    sin actividad de otros profesionales; 403 si el usuario no es profesional.
+  - La serie temporal se entrega **por día completa** (días sin citas en 0) y el
+    frontend agrupa por semana/mes client-side.
 - **Listados admin** (requieren el permiso `Telemedicine.AdminView`, solo roles
   administrativos; los profesionales usan su agenda por identidad):
   - `GET /api/v1/telemedicine/admin/summary` — KPIs (citas hoy, pendientes,
@@ -342,25 +357,29 @@ features/telemedicine/
 ├── services/
 │   ├── telemedicine-service.ts   # Cliente del microservicio (5130, /api/v1/telemedicine/*)
 │   └── reference-service.ts      # Catálogos del backend (5122: professionals-catalog, specialties, tree, patients)
-├── hooks/                    # use-current-user, use-agenda, use-alerts, use-admin (listados + summary)
+├── hooks/                    # use-current-user, use-agenda, use-alerts, use-admin (listados + summary),
+│                             #   use-dashboard-analytics (analytics admin/me)
 ├── utils/format.ts           # Etiquetas de estados en español + colores + formato de fechas
 └── components/               # ProfessionalDashboard, ProfessionalAgenda, ProfessionalCalendar,
                               #   ProfessionalRequests, AlertsPage, AppointmentDetail (sala + encuentro),
                               #   AdminDashboard, AdminAppointments, AdminRequests, AdminSessions,
-                              #   AdminProfessionals, PermissionGate
+                              #   AdminProfessionals, PermissionGate,
+                              #   dashboard/ (DashboardChartCard, AppointmentsTrendChart,
+                              #     StatusDistributionChart, ProfessionalActivityChart,
+                              #     HourlyDistributionChart, UpcomingAppointments, QuickActions)
 ```
 
 Rutas:
 
 | Ruta | Vista | Acceso |
 |---|---|---|
-| `/telemedicine` | Dashboard del profesional (KPIs, próximas citas) | Cualquier autenticado (si es profesional) |
+| `/telemedicine` | Dashboard: admin global (KPIs, gráficas, próximas) o profesional (sus métricas) | Cualquier autenticado |
 | `/telemedicine/agenda` | Mi agenda (día/semana/mes + cancelar/reprogramar) | Cualquier autenticado (si es profesional) |
 | `/telemedicine/calendario` | Calendario mensual con citas | Cualquier autenticado (si es profesional) |
 | `/telemedicine/solicitudes` | Bandeja del profesional (confirmar solicitudes) | Cualquier autenticado (si es profesional) |
 | `/telemedicine/alertas` | Bandeja de alertas (mark-read / read-all) | Cualquier autenticado |
 | `/telemedicine/citas/[id]` | Detalle: sala virtual (join-token, start/end) + encuentro clínico | Profesional de la cita o supervisor |
-| `/telemedicine/admin` | Dashboard admin (KPIs) | `Telemedicine.AdminView` |
+| `/telemedicine/admin` | Dashboard admin (KPIs, gráficas, próximas citas) | `Telemedicine.AdminView` |
 | `/telemedicine/admin/citas` | Todas las citas | `Telemedicine.AdminView` |
 | `/telemedicine/admin/solicitudes` | Todas las solicitudes | `Telemedicine.AdminView` |
 | `/telemedicine/admin/profesionales` | Catálogo de profesionales | `Telemedicine.AdminView` |
@@ -402,6 +421,26 @@ $env:COP_TEST_DB_CONNECTION="Host=localhost;..."; dotnet test tests/CoppAddresd.
   (índices únicos) y fallback clínica → organización → defaults.
 - Convención: los tests de una corrida comparten la BD (colección xUnit), por eso
   cada seed usa profesionales/ids únicos y los conteos se filtran por clave propia.
+
+### Datos de prueba (seed)
+
+`coppAddresdBack/scripts/seed_telemedicine.py` genera un volumen realista y bien
+relacionado para probar el dashboard y las vistas en el frontend: solicitudes en
+estados variados, ~900 citas distribuidas en -60..+14 días (estados coherentes
+con la fecha: pasadas → Completed/NoShow/Cancelled, hoy → mixto, futuras →
+Confirmed), salas + sesiones + encuentros clínicos para completadas recientes e
+InProgress de hoy, y alertas por profesional. Usa los profesionales reales de
+`erp.professionals` (con su `user_id`) y pacientes reales de `app.patient_profiles`.
+
+```bash
+# Desde ai-service (entorno uv con psycopg):
+uv run --with psycopg[binary] python ../coppAddresdBack/scripts/seed_telemedicine.py
+```
+
+Idempotente: borra y recrea solo lo marcado con su `created_by` (SEED_USER_ID),
+nunca toca datos de otros orígenes. Respeta las reglas de la BD: anti doble
+reserva (no solapa citas ACTIVAS del mismo profesional ni repite inicios
+exactos), una solicitud Converted → una sola cita (`request_id` único).
 
 ### Auditoría clínica (PHI)
 

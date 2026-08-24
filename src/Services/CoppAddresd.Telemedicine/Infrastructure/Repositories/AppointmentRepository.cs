@@ -192,10 +192,174 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         => await dbContext.Appointments
             .CountAsync(a => a.ScheduledStart >= from && a.ScheduledStart < to, ct);
 
+    public async Task<int> CountInRangeAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            query = query.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        return await query.CountAsync(ct);
+    }
+
     public async Task<int> CountByStatusAsync(
         AppointmentStatus status,
         CancellationToken ct = default)
         => await dbContext.Appointments.CountAsync(a => a.Status == status, ct);
+
+    // --- Analytics del dashboard (agrupaciones en BD, sin traer entidades) ---
+
+    public async Task<IReadOnlyList<DailyAppointmentCount>> CountGroupedByDayAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            query = query.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        // Npgsql no traduce DateTimeOffset.Date en GroupBy (date_trunc no está
+        // expuesto en EF.Functions 10); se proyectan solo los inicios y se agrupa
+        // por día en memoria. El rango del dashboard es acotado (30-90 días), así
+        // que la fila proyectada es ligera (una columna).
+        var starts = await query.Select(a => a.ScheduledStart).ToListAsync(ct);
+
+        return starts
+            .GroupBy(s => new DateTimeOffset(s.Year, s.Month, s.Day, 0, 0, 0, s.Offset))
+            .Select(g => new DailyAppointmentCount(g.Key, g.Count()))
+            .OrderBy(x => x.Day)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<AppointmentStatusCount>> CountGroupedByStatusAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            query = query.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        // Los enums se persisten como string y Npgsql no traduce GroupBy sobre
+        // ellos (mismo patrón que el agrupado por día): proyección ligera del
+        // estado y agrupación en memoria (rango acotado del dashboard).
+        var statuses = await query.Select(a => a.Status).ToListAsync(ct);
+
+        return statuses
+            .GroupBy(s => s)
+            .Select(g => new AppointmentStatusCount(g.Key, g.Count()))
+            .OrderBy(x => x.Status)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<HourlyAppointmentCount>> CountGroupedByHourAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            query = query.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        var starts = await query.Select(a => a.ScheduledStart).ToListAsync(ct);
+
+        return starts
+            .GroupBy(s => s.Hour)
+            .Select(g => new HourlyAppointmentCount(g.Key, g.Count()))
+            .OrderBy(x => x.Hour)
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<ProfessionalAppointmentActivity>> CountGroupedByProfessionalAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+    {
+        var rows = await dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to)
+            .Select(a => new { a.ProfessionalId, a.PatientId, a.Status })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(r => r.ProfessionalId)
+            .Select(g => new ProfessionalAppointmentActivity(
+                g.Key,
+                g.Count(),
+                g.Count(r => r.Status == AppointmentStatus.Completed),
+                g.Count(r => r.Status == AppointmentStatus.Cancelled),
+                g.Select(r => r.PatientId).Distinct().Count()))
+            .OrderByDescending(x => x.Total)
+            .ToList();
+    }
+
+    public async Task<int> CountDistinctPatientsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            query = query.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        return await query.Select(a => a.PatientId).Distinct().CountAsync(ct);
+    }
+
+    public async Task<int> CountDistinctProfessionalsAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default)
+        => await dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to)
+            .Select(a => a.ProfessionalId)
+            .Distinct()
+            .CountAsync(ct);
+
+    public async Task<IReadOnlyList<TelemedicineAppointment>> ListUpcomingAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var query = dbContext.Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from);
+
+        if (professionalId is not null)
+        {
+            query = query.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        return await query
+            .OrderBy(a => a.ScheduledStart)
+            .Take(limit)
+            .ToListAsync(ct);
+    }
 
     private async Task SaveWithConflictTranslationAsync(CancellationToken ct)
     {
