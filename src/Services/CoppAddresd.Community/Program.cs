@@ -1,4 +1,5 @@
 using System.Text;
+using CoppAddresd.Community.GraphQL;
 using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.GraphQL.Subscriptions;
@@ -15,8 +16,6 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddDbContext<CommunityDbContext>(options =>
     options.UseNpgsql(connectionString, npgsql =>
         npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community")));
-
-builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddHttpContextAccessor();
 
@@ -63,7 +62,8 @@ builder.Services
     .AddMutationType<CommunityMutation>()
     .AddSubscriptionType<CommunitySubscription>()
     .AddAuthorization()
-    .AddInMemorySubscriptions();
+    .AddInMemorySubscriptions()
+    .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
 
 builder.Services.AddHealthChecks();
 
@@ -78,8 +78,9 @@ using (var scope = app.Services.CreateScope())
 app.UseCors("CommunityCors");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseWebSockets();
 
-app.MapGraphQL();
+app.MapGraphQL().WithOptions(o => o.Tool.Enable = false);
 app.MapHealthChecks("/health");
 app.MapGraphQLWebSocket();
 

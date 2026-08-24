@@ -16,6 +16,8 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<Like> Likes => Set<Like>();
     public DbSet<Follow> Follows => Set<Follow>();
     public DbSet<Message> Messages => Set<Message>();
+    public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
+    public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

@@ -64,25 +64,64 @@ var profile = await db.Profiles
         return profile;
     }
 
-    /// <summary>Feed de publicaciones no eliminadas (orden por fecha, pin primero).</summary>
+    /// <summary>
+    /// Feed de publicaciones no eliminadas (orden por fecha, pin primero) con filtros
+    /// opcionales de moderación: por autor (coincidencia parcial, sin acentos), por
+    /// texto del cuerpo (coincidencia parcial, sin acentos) y por rango de fechas.
+    /// </summary>
+    /// <param name="db">Contexto de la comunidad.</param>
+    /// <param name="author">Filtra por autor (coincidencia parcial, sin acentos).</param>
+    /// <param name="search">Filtra por texto en el cuerpo (coincidencia parcial, sin acentos).</param>
+    /// <param name="from">Incluye publicaciones creadas a partir de esta fecha (inclusive).</param>
+    /// <param name="to">Incluye publicaciones creadas hasta el final de este día (inclusive).</param>
+    /// <param name="take">Cantidad máxima de resultados a devolver.</param>
+    /// <param name="skip">Cantidad de resultados a omitir (paginación).</param>
+    /// <param name="ct">Token de cancelación.</param>
     [Authorize]
     public async Task<IReadOnlyList<Post>> Feed(
         [Service] CommunityDbContext db,
+        string? author = null,
+        string? search = null,
+        DateTime? from = null,
+        DateTime? to = null,
         int take = 20,
         int skip = 0,
         CancellationToken ct = default)
-=> await db.Posts
+    {
+        var query = db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
-            .Where(p => p.DeletedAt == null)
+            .Where(p => p.DeletedAt == null);
+
+        // Filtro por autor: coincidencia parcial e insensible a acentos (ILike + Unaccent),
+        // siguiendo el mismo patrón de búsqueda de perfiles en Profiles(...).
+        if (!string.IsNullOrWhiteSpace(author))
+            query = query.Where(p => EF.Functions.ILike(
+                EF.Functions.Unaccent(p.Profile.DisplayName),
+                EF.Functions.Unaccent($"%{author}%")));
+
+        // Filtro por texto del cuerpo: coincidencia parcial e insensible a acentos.
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(p => EF.Functions.ILike(
+                EF.Functions.Unaccent(p.Body),
+                EF.Functions.Unaccent($"%{search}%")));
+
+        // Filtro por fecha de creación (rango inclusivo por día en `to`).
+        if (from is not null)
+            query = query.Where(p => p.CreatedAt >= from);
+        if (to is not null)
+            query = query.Where(p => p.CreatedAt < to.Value.AddDays(1));
+
+        return await query
             .OrderByDescending(p => p.Pinned)
             .ThenByDescending(p => p.CreatedAt)
             .Skip(skip)
             .Take(take)
             .ToListAsync(ct);
+    }
 
     [Authorize]
     public Task<Post?> Post(
@@ -334,30 +373,38 @@ var profile = await db.Profiles
         int skip = 0)
     {
         var profile = await RequireMyProfileAsync(db, http, ct);
-        var messages = await db.Messages
-            .Where(m => m.SenderProfileId == profile.Id || m.RecipientProfileId == profile.Id)
-            .OrderByDescending(m => m.CreatedAt)
-            .ToListAsync(ct);
 
-        var groups = messages
-            .GroupBy(m => m.SenderProfileId == profile.Id ? m.RecipientProfileId : m.SenderProfileId)
-            .Select(g => new
-            {
-                PeerId = g.Key,
-                LastMessage = g.OrderByDescending(m => m.CreatedAt).First(),
-            })
-            .OrderByDescending(x => x.LastMessage.CreatedAt)
-            .Skip(skip)
-            .Take(take)
-            .ToList();
+        // "Último mensaje por par" en el propio servidor (DISTINCT ON en PostgreSQL):
+        // evita cargar todo el historial del usuario en memoria para agruparlo.
+        var sql = """
+            SELECT y.id, y.sender_profile_id, y.recipient_profile_id, y.conversation_id, y.body, y.created_at
+            FROM (
+                SELECT DISTINCT ON (x.peer_id) x.id, x.sender_profile_id, x.recipient_profile_id,
+                       x.conversation_id, x.body, x.created_at
+                FROM (
+                    SELECT m.id, m.sender_profile_id, m.recipient_profile_id, m.conversation_id, m.body, m.created_at,
+                           CASE WHEN m.sender_profile_id = {0}
+                                THEN m.recipient_profile_id ELSE m.sender_profile_id END AS peer_id
+                    FROM community.messages m
+                    WHERE (m.sender_profile_id = {0} OR m.recipient_profile_id = {0})
+                      AND m.conversation_id IS NULL
+                ) x
+                ORDER BY x.peer_id, x.created_at DESC
+            ) y
+            ORDER BY y.created_at DESC
+            LIMIT {1} OFFSET {2}
+            """;
+        var latest = await db.Messages.FromSqlRaw(sql, profile.Id, take, skip).ToListAsync(ct);
 
-        var peerIds = groups.Select(g => g.PeerId).ToList();
+        // En Conversations solo aparecen mensajes 1:1 (conversation_id IS NULL), por
+        // lo que recipient_profile_id siempre es no nulo; el ! es seguro aquí.
+        var peerIds = latest.Select(m => m.SenderProfileId == profile.Id ? m.RecipientProfileId!.Value : m.SenderProfileId).ToList();
         var peers = await db.Profiles.Where(p => peerIds.Contains(p.Id)).ToListAsync(ct);
         var byId = peers.ToDictionary(p => p.Id);
-        return groups.Select(g => new Conversation
+        return latest.Select(m => new Conversation
         {
-            Peer = byId[g.PeerId],
-            LastMessage = g.LastMessage,
+            Peer = byId[m.SenderProfileId == profile.Id ? m.RecipientProfileId!.Value : m.SenderProfileId],
+            LastMessage = m,
         }).ToList();
     }
 
@@ -373,12 +420,131 @@ var profile = await db.Profiles
     {
         var profile = await RequireMyProfileAsync(db, http, ct);
         return await db.Messages
-            .Where(m => (m.SenderProfileId == profile.Id && m.RecipientProfileId == peerId)
-                     || (m.SenderProfileId == peerId && m.RecipientProfileId == profile.Id))
+            .Where(m => ((m.SenderProfileId == profile.Id && m.RecipientProfileId == peerId)
+                      || (m.SenderProfileId == peerId && m.RecipientProfileId == profile.Id))
+                      && m.ConversationId == null)
             .OrderByDescending(m => m.CreatedAt)
             .Skip(skip)
             .Take(take)
             .ToListAsync(ct);
+    }
+
+    /// <summary>Mis grupos de chat: con último mensaje y cantidad de miembros (sin N+1).</summary>
+    [Authorize]
+    public async Task<IReadOnlyList<ChatGroup>> Groups(
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var profile = await RequireMyProfileAsync(db, http, ct);
+        var myGroupIds = await db.ChatGroupMembers
+            .Where(m => m.ProfileId == profile.Id)
+            .Select(m => m.GroupId)
+            .ToListAsync(ct);
+        if (myGroupIds.Count == 0) return [];
+
+        var groups = await db.ChatGroups
+            .Where(g => myGroupIds.Contains(g.Id))
+            .ToListAsync(ct);
+        var groupIds = groups.Select(g => g.Id).ToList();
+
+        // Cantidad de miembros por grupo en una sola consulta (evita N+1).
+        var memberCounts = await db.ChatGroupMembers
+            .Where(m => groupIds.Contains(m.GroupId))
+            .GroupBy(m => m.GroupId)
+            .Select(g => new { GroupId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var countById = memberCounts.ToDictionary(x => x.GroupId, x => x.Count);
+
+        // Último mensaje por grupo con DISTINCT ON (una sola consulta).
+        var lastSql = """
+            SELECT DISTINCT ON (m.conversation_id) m.id, m.sender_profile_id, m.recipient_profile_id,
+                   m.conversation_id, m.body, m.created_at
+            FROM community.messages m
+            WHERE m.conversation_id = ANY({0})
+            ORDER BY m.conversation_id, m.created_at DESC
+            """;
+        var lastMessages = await db.Messages.FromSqlRaw(lastSql, groupIds.ToArray()).ToListAsync(ct);
+        var lastByGroup = lastMessages.ToDictionary(m => m.ConversationId!.Value, m => m);
+
+        foreach (var g in groups)
+        {
+            g.MemberCount = countById.GetValueOrDefault(g.Id, 0);
+            lastByGroup.TryGetValue(g.Id, out var last);
+            g.LastMessage = last;
+        }
+
+        // Grupos con mensaje más reciente primero; los que no tienen mensaje van al final.
+        return groups
+            .OrderByDescending(g => g.LastMessage?.CreatedAt ?? DateTime.MinValue)
+            .ThenByDescending(g => g.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToList();
+    }
+
+    /// <summary>Historial de un grupo de chat (más recientes primero). Requiere ser miembro.</summary>
+    [Authorize]
+    public async Task<IReadOnlyList<Message>> Group(
+        Guid groupId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var profile = await RequireMyProfileAsync(db, http, ct);
+        var isMember = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct);
+        if (!isMember) throw new GraphQLException("No eres miembro de este grupo.");
+
+        return await db.Messages
+            .Where(m => m.ConversationId == groupId)
+            .OrderByDescending(m => m.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>Miembros de un grupo de chat. Requiere ser miembro.</summary>
+    [Authorize]
+    public async Task<IReadOnlyList<Profile>> GroupMembers(
+        Guid groupId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireMyProfileAsync(db, http, ct);
+        var isMember = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct);
+        if (!isMember) throw new GraphQLException("No eres miembro de este grupo.");
+
+        var profileIds = await db.ChatGroupMembers
+            .Where(m => m.GroupId == groupId)
+            .Select(m => m.ProfileId)
+            .ToListAsync(ct);
+        return await db.Profiles.Where(p => profileIds.Contains(p.Id)).ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Valida autenticación, perfil y membresía al grupo. Lanza 'No estás autenticado.',
+    /// 'Crea tu perfil de comunidad primero.' o 'No eres miembro de este grupo.' según corresponda.
+    /// </summary>
+    internal static async Task<ChatGroup> RequireGroupMembershipAsync(
+        CommunityDbContext db, IHttpContextAccessor http, Guid groupId, CancellationToken ct)
+    {
+        var userId = CurrentUserId(http);
+        if (userId is null) throw new GraphQLException("No estás autenticado.");
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct)
+            ?? throw new GraphQLException("Crea tu perfil de comunidad primero.");
+        var group = await db.ChatGroups.FirstOrDefaultAsync(g => g.Id == groupId, ct)
+            ?? throw new GraphQLException("No se encontró el grupo.");
+        var isMember = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct);
+        if (!isMember) throw new GraphQLException("No eres miembro de este grupo.");
+        return group;
     }
 
     private static async Task<Profile> RequireMyProfileAsync(

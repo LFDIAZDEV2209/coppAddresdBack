@@ -32,10 +32,11 @@ public sealed class CommunityMutation
 
     // --- Publicaciones ---
 
-    public async Task<Post> CreatePost(
+public async Task<Post> CreatePost(
         string body,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
         CancellationToken ct)
     {
         var profile = await RequireProfileAsync(db, http, ct);
@@ -48,6 +49,7 @@ public sealed class CommunityMutation
         };
         db.Posts.Add(post);
         await db.SaveChangesAsync(ct);
+        await sender.SendAsync("post_added", post);
         return post;
     }
 
@@ -272,6 +274,232 @@ var reply = new Comment
 
     // --- Mensajería privada ---
 
+    /// <summary>
+    /// Valida que <paramref name="otherProfileId"/> sea amigo mutuo del perfil
+    /// <paramref name="myProfileId"/>: yo lo sigo Y él me sigue (mismo criterio que SendMessage).
+    /// </summary>
+    private static async Task AssertMutualFriendAsync(
+        CommunityDbContext db, Guid myProfileId, Guid otherProfileId, CancellationToken ct)
+    {
+        var iFollow = await db.Follows.AnyAsync(
+            f => f.FollowerProfileId == myProfileId && f.FollowingProfileId == otherProfileId, ct);
+        var followsMe = await db.Follows.AnyAsync(
+            f => f.FollowerProfileId == otherProfileId && f.FollowingProfileId == myProfileId, ct);
+        if (!iFollow || !followsMe)
+            throw new GraphQLException("Solo puedes añadir a tus amigos de la comunidad.");
+    }
+
+    // --- Chats grupales ---
+
+    public async Task<ChatGroup> CreateGroup(
+        string name,
+        List<Guid> memberProfileIds,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        name = name.Trim();
+        if (name.Length < 3 || name.Length > 100)
+            throw new GraphQLException("El nombre del grupo debe tener entre 3 y 100 caracteres.");
+
+        var requested = (memberProfileIds ?? []).Distinct().ToList();
+        if (requested.Count == 0)
+            throw new GraphQLException("Agrega al menos un miembro.");
+
+        // El creador siempre forma parte del grupo (aunque no se pase en la lista).
+        var memberSet = requested.ToList();
+        if (!memberSet.Contains(profile.Id)) memberSet.Add(profile.Id);
+
+        // Validamos a los demás miembros: deben existir, estar activos y ser amigos mutuos.
+        var otherIds = requested.Where(id => id != profile.Id).ToList();
+        if (otherIds.Count > 0)
+        {
+            var profiles = await db.Profiles.Where(p => otherIds.Contains(p.Id)).ToListAsync(ct);
+            foreach (var id in otherIds)
+            {
+                var target = profiles.FirstOrDefault(p => p.Id == id);
+                if (target is null || target.Status != ProfileStatus.Active)
+                    throw new GraphQLException("Este perfil no está disponible.");
+                await AssertMutualFriendAsync(db, profile.Id, id, ct);
+            }
+        }
+
+        var group = new ChatGroup
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            CreatedByProfileId = profile.Id,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.ChatGroups.Add(group);
+        foreach (var id in memberSet)
+        {
+            db.ChatGroupMembers.Add(new ChatGroupMember
+            {
+                GroupId = group.Id,
+                ProfileId = id,
+                JoinedAt = DateTime.UtcNow,
+            });
+        }
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync($"group_{group.Id}_changed", group);
+        return group;
+    }
+
+    public async Task<ChatGroup> RenameGroup(
+        Guid groupId,
+        string name,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        name = name.Trim();
+        if (name.Length < 3 || name.Length > 100)
+            throw new GraphQLException("El nombre del grupo debe tener entre 3 y 100 caracteres.");
+
+        var group = await db.ChatGroups.FirstOrDefaultAsync(g => g.Id == groupId, ct)
+            ?? throw new GraphQLException("No se encontró el grupo.");
+        var isMember = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct);
+        if (!isMember) throw new GraphQLException("No eres miembro de este grupo.");
+
+        group.Name = name;
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync($"group_{group.Id}_changed", group);
+        return group;
+    }
+
+    public async Task<ChatGroup> AddGroupMember(
+        Guid groupId,
+        Guid profileId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        var group = await db.ChatGroups.FirstOrDefaultAsync(g => g.Id == groupId, ct)
+            ?? throw new GraphQLException("No se encontró el grupo.");
+        var isMember = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct);
+        if (!isMember) throw new GraphQLException("No eres miembro de este grupo.");
+
+        var target = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId, ct)
+            ?? throw new GraphQLException("Este perfil no está disponible.");
+        if (target.Status != ProfileStatus.Active)
+            throw new GraphQLException("Este perfil no está disponible.");
+
+        var already = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profileId, ct);
+        if (already) throw new GraphQLException("Ya es miembro de este grupo.");
+
+        await AssertMutualFriendAsync(db, profile.Id, profileId, ct);
+
+        db.ChatGroupMembers.Add(new ChatGroupMember
+        {
+            GroupId = groupId,
+            ProfileId = profileId,
+            JoinedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync($"group_{group.Id}_changed", group);
+        return group;
+    }
+
+    public async Task<ChatGroup> RemoveGroupMember(
+        Guid groupId,
+        Guid profileId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        var group = await db.ChatGroups.FirstOrDefaultAsync(g => g.Id == groupId, ct)
+            ?? throw new GraphQLException("No se encontró el grupo.");
+        var isMember = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct);
+        if (!isMember) throw new GraphQLException("No eres miembro de este grupo.");
+        if (profileId == group.CreatedByProfileId)
+            throw new GraphQLException("No puedes quitar al creador del grupo.");
+        if (profileId == profile.Id)
+            throw new GraphQLException("Usa Salir del grupo para abandonarlo.");
+
+        var target = await db.ChatGroupMembers.FirstOrDefaultAsync(
+            m => m.GroupId == groupId && m.ProfileId == profileId, ct)
+            ?? throw new GraphQLException("Este perfil no es miembro del grupo.");
+        db.ChatGroupMembers.Remove(target);
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync($"group_{group.Id}_changed", group);
+        return group;
+    }
+
+    public async Task<ChatGroup> LeaveGroup(
+        Guid groupId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        var group = await db.ChatGroups.FirstOrDefaultAsync(g => g.Id == groupId, ct)
+            ?? throw new GraphQLException("No se encontró el grupo.");
+        var membership = await db.ChatGroupMembers.FirstOrDefaultAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct)
+            ?? throw new GraphQLException("No eres miembro de este grupo.");
+
+        db.ChatGroupMembers.Remove(membership);
+        await db.SaveChangesAsync(ct);
+
+        var remaining = await db.ChatGroupMembers.CountAsync(m => m.GroupId == groupId, ct);
+        if (remaining == 0)
+        {
+            // El grupo se queda vacío: se elimina (las membresías y mensajes se borran en cascada).
+            db.ChatGroups.Remove(group);
+            await db.SaveChangesAsync(ct);
+            return group;
+        }
+
+        await sender.SendAsync($"group_{group.Id}_changed", group);
+        return group;
+    }
+
+    public async Task<Message> SendGroupMessage(
+        Guid groupId,
+        string body,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        body = body.Trim();
+        if (body.Length == 0) throw new GraphQLException("Escribe un mensaje.");
+        if (body.Length > 1000) throw new GraphQLException("El mensaje no puede superar los 1000 caracteres.");
+
+        var isMember = await db.ChatGroupMembers.AnyAsync(
+            m => m.GroupId == groupId && m.ProfileId == profile.Id, ct);
+        if (!isMember) throw new GraphQLException("No eres miembro de este grupo.");
+
+        var message = new Message
+        {
+            Id = Guid.NewGuid(),
+            SenderProfileId = profile.Id,
+            ConversationId = groupId,
+            RecipientProfileId = null,
+            Body = body,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.Messages.Add(message);
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync($"group_{groupId}", message);
+        return message;
+    }
+
     public async Task<Message> SendMessage(
         Guid recipientProfileId,
         string body,
@@ -283,6 +511,7 @@ var reply = new Comment
         var profile = await RequireProfileAsync(db, http, ct);
         body = body.Trim();
         if (body.Length == 0) throw new GraphQLException("Escribe un mensaje.");
+        if (body.Length > 1000) throw new GraphQLException("El mensaje no puede superar los 1000 caracteres.");
         var recipient = await db.Profiles.FirstOrDefaultAsync(p => p.Id == recipientProfileId, ct)
             ?? throw new GraphQLException("No se encontró el destinatario.");
         if (recipient.Status != ProfileStatus.Active)

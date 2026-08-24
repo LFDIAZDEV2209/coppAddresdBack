@@ -14,6 +14,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/CoppAddresd.Gateway.UnitTests/CoppAddresd.Gateway.UnitTests.csproj" />
     <Project Path="tests/CoppAddresd.Gateway.IntegrationTests/CoppAddresd.Gateway.IntegrationTests.csproj" />
+    <Project Path="tests/CoppAddresd.Community.IntegrationTests/CoppAddresd.Community.IntegrationTests.csproj" />
     <Project Path="tests/CoppAddresd.IntegrationTests/CoppAddresd.IntegrationTests.csproj" />
     <Project Path="tests/CoppAddresd.Telemedicine.IntegrationTests/CoppAddresd.Telemedicine.IntegrationTests.csproj" />
     <Project Path="tests/CoppAddresd.Telemedicine.UnitTests/CoppAddresd.Telemedicine.UnitTests.csproj" />
