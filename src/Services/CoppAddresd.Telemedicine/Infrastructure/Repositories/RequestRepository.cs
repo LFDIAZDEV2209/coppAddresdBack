@@ -9,22 +9,20 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Repositories;
 /// <summary>Implementación EF del repositorio de solicitudes de telemedicina.</summary>
 public sealed class RequestRepository(TelemedicineDbContext dbContext) : IRequestRepository
 {
-    public async Task<TelemedicineRequest?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.Requests.AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Id == id, ct);
+    public async Task<TelemedicineRequest?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        await dbContext.Requests.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
 
     public async Task<TelemedicineRequest> AddAsync(
         TelemedicineRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         dbContext.Requests.Add(request);
         await dbContext.SaveChangesAsync(ct);
         return request;
     }
 
-    public async Task UpdateAsync(
-        TelemedicineRequest request,
-        CancellationToken ct = default)
+    public async Task UpdateAsync(TelemedicineRequest request, CancellationToken ct = default)
     {
         dbContext.Requests.Update(request);
         await dbContext.SaveChangesAsync(ct);
@@ -33,31 +31,41 @@ public sealed class RequestRepository(TelemedicineDbContext dbContext) : IReques
     public async Task SetStatusAsync(
         Guid requestId,
         AppointmentRequestStatus status,
-        CancellationToken ct = default)
-        => await dbContext.Requests
-            .Where(r => r.Id == requestId)
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Requests.Where(r => r.Id == requestId)
             .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(r => r.Status, status)
-                    .SetProperty(r => r.UpdatedAt, DateTime.UtcNow),
-                ct);
+                setters =>
+                    setters
+                        .SetProperty(r => r.Status, status)
+                        .SetProperty(r => r.UpdatedAt, DateTime.UtcNow),
+                ct
+            );
 
     public async Task<IReadOnlyList<TelemedicineRequest>> ListByPatientAsync(
         Guid patientId,
-        CancellationToken ct = default)
-        => await dbContext.Requests.AsNoTracking()
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Requests.AsNoTracking()
             .Where(r => r.PatientId == patientId)
             .OrderByDescending(r => r.CreatedAt)
             .ToListAsync(ct);
 
-    public async Task<(IReadOnlyList<TelemedicineRequest> Items, int Total)> ListByOrganizationAsync(
+    public async Task<(
+        IReadOnlyList<TelemedicineRequest> Items,
+        int Total
+    )> ListByOrganizationAsync(
         Guid organizationId,
         AppointmentRequestStatus? status,
         int page,
         int pageSize,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Requests.AsNoTracking()
+        var query = dbContext
+            .Requests.AsNoTracking()
             .Where(r => r.OrganizationId == organizationId);
 
         if (status is { } s)
@@ -84,7 +92,8 @@ public sealed class RequestRepository(TelemedicineDbContext dbContext) : IReques
         DateTimeOffset? to,
         int page,
         int pageSize,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var query = dbContext.Requests.AsNoTracking();
 
@@ -117,6 +126,15 @@ public sealed class RequestRepository(TelemedicineDbContext dbContext) : IReques
 
     public async Task<int> CountByStatusAsync(
         AppointmentRequestStatus status,
-        CancellationToken ct = default)
-        => await dbContext.Requests.CountAsync(r => r.Status == status, ct);
+        CancellationToken ct = default
+    ) => await dbContext.Requests.CountAsync(r => r.Status == status, ct);
+
+    public async Task<int> CountByStatusAsync(
+        AppointmentRequestStatus status,
+        Guid professionalId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Requests.AsNoTracking()
+            .CountAsync(r => r.Status == status && r.ProfessionalId == professionalId, ct);
 }
