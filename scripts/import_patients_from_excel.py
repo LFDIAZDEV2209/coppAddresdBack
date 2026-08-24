@@ -96,6 +96,15 @@ def clean(value) -> str | None:
     return text or None
 
 
+def normalize_rxnorm(value) -> str | None:
+    """Normaliza RxNorm: quita el prefijo 'RxNorm:', espacios y comas (typos
+    del origen, ej. 'RxNorm:2200,644' -> '2200644')."""
+    if value is None:
+        return None
+    text = value.replace("RxNorm:", "").replace(",", "").replace(" ", "")
+    return text or None
+
+
 def find_col(header: list[object], prefix: str) -> int:
     """Localiza una columna por prefijo (robusto ante caracteres corruptos del encabezado)."""
     for idx, name in enumerate(header):
@@ -211,7 +220,7 @@ def main() -> None:
                 if not name or name.lower() == "no medication":
                     continue
                 ndc_v = clean(row[col[f"NDC Med {slot}"]])
-                rxnorm_v = clean(row[col[f"RxNorm Med {slot}"]])
+                rxnorm_v = normalize_rxnorm(clean(row[col[f"RxNorm Med {slot}"]]))
                 drugclass_v = clean(row[col[f"Drug Class Med {slot}"]]) if f"Drug Class Med {slot}" in col else None
                 if name not in medication_ids:
                     entry = new_medications.setdefault(name, (None, None, None))

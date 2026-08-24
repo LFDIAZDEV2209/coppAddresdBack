@@ -22,6 +22,9 @@ public sealed class AgentType
     /// <summary>Clave de icono para la UI (lucide).</summary>
     public string? IconKey { get; set; }
 
+    /// <summary>Alias de routing (opcional, no único). Ej. "nutrition".</summary>
+    public string? Slug { get; set; }
+
     public AgentStatus Status { get; set; } = AgentStatus.Borrador;
 
     /// <summary>Metadatos libres en JSON.</summary>

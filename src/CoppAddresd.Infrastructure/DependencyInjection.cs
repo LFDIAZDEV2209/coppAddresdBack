@@ -41,6 +41,7 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IInventoryRepository, InventoryRepository>();
         services.AddScoped<IStoreRepository, StoreRepository>();
         services.AddScoped<ILegalDocumentRepository, LegalDocumentRepository>();
+        services.AddScoped<IWellnessRepository, WellnessRepository>();
 
         services.AddMemoryCache();
         services.Configure<PostalCodeLookupOptions>(

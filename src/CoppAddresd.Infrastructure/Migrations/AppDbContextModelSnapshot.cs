@@ -283,6 +283,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(120)")
                         .HasColumnName("name");
 
+                    b.Property<string>("Slug")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("slug");
+
                     b.Property<string>("Specialty")
                         .HasMaxLength(120)
                         .HasColumnType("character varying(120)")
@@ -563,6 +568,86 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_clinical_document_types_code");
 
                     b.ToTable("clinical_document_types", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ClinicalMeasurement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid?>("EncounterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("encounter_id");
+
+                    b.Property<Guid>("MetricId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("metric_id");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<DateTime>("ObservedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("observed_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("recorded_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unit_id");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EncounterId")
+                        .HasDatabaseName("ix_clinical_measurements_encounter_id");
+
+                    b.HasIndex("MetricId")
+                        .HasDatabaseName("ix_clinical_measurements_metric_id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_clinical_measurements_patient_id");
+
+                    b.HasIndex("UnitId")
+                        .HasDatabaseName("ix_clinical_measurements_unit_id");
+
+                    b.HasIndex("PatientId", "ObservedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_clinical_measurements_patient_observed");
+
+                    b.ToTable("clinical_measurements", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Country", b =>
@@ -966,6 +1051,83 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("employee_clinics", "erp");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.Encounter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("ended_at");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("ProfessionalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("professional_id");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("planned")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_encounters_patient_id");
+
+                    b.HasIndex("ProfessionalId")
+                        .HasDatabaseName("ix_encounters_professional_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_encounters_status");
+
+                    b.HasIndex("Type")
+                        .HasDatabaseName("ix_encounters_type");
+
+                    b.ToTable("encounters", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Ethnicity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1003,6 +1165,76 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_ethnicities_code");
 
                     b.ToTable("ethnicities", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ExerciseRoutine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int>("Category")
+                        .HasMaxLength(20)
+                        .HasColumnType("integer")
+                        .HasColumnName("category");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<int>("Difficulty")
+                        .HasMaxLength(20)
+                        .HasColumnType("integer")
+                        .HasColumnName("difficulty");
+
+                    b.Property<int?>("EstimatedMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("estimated_minutes");
+
+                    b.Property<Guid?>("MediaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("media_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category")
+                        .HasDatabaseName("ix_exercise_routines_category");
+
+                    b.HasIndex("MediaId");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_exercise_routines_status");
+
+                    b.ToTable("exercise_routines", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Icd10Code", b =>
@@ -1752,6 +1984,124 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("locations", "erp");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.MeasurementMetric", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("code");
+
+                    b.Property<Guid>("DefaultUnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("default_unit_id");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_measurement_metrics_code");
+
+                    b.HasIndex("DefaultUnitId")
+                        .HasDatabaseName("ix_measurement_metrics_default_unit_id");
+
+                    b.ToTable("measurement_metrics", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.MeasurementReferenceRange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int?>("AgeMax")
+                        .HasColumnType("integer")
+                        .HasColumnName("age_max");
+
+                    b.Property<int?>("AgeMin")
+                        .HasColumnType("integer")
+                        .HasColumnName("age_min");
+
+                    b.Property<string>("Gender")
+                        .HasMaxLength(1)
+                        .HasColumnType("character varying(1)")
+                        .HasColumnName("gender");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<decimal?>("MaxValue")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("max_value");
+
+                    b.Property<Guid>("MetricId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("metric_id");
+
+                    b.Property<decimal?>("MinValue")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("min_value");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<int>("Priority")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("priority");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unit_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MetricId")
+                        .HasDatabaseName("ix_measurement_reference_ranges_metric_id");
+
+                    b.HasIndex("UnitId")
+                        .HasDatabaseName("ix_measurement_reference_ranges_unit_id");
+
+                    b.ToTable("measurement_reference_ranges", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.MediaItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1904,6 +2254,220 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_medications_name");
 
                     b.ToTable("medications", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<int?>("DailyCalorieTarget")
+                        .HasColumnType("integer")
+                        .HasColumnName("daily_calorie_target");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<int>("DurationDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_days");
+
+                    b.Property<bool>("IsTemplate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_template");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid?>("SourcePlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_plan_id");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("status");
+
+                    b.Property<string>("TargetCondition")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("target_condition");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsTemplate")
+                        .HasDatabaseName("ix_nutrition_plans_is_template");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_nutrition_plans_patient_id");
+
+                    b.HasIndex("SourcePlanId")
+                        .HasDatabaseName("ix_nutrition_plans_source_plan_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_nutrition_plans_status");
+
+                    b.ToTable("nutrition_plans", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlanAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plan_id");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_nutrition_plan_assignments_patient_id");
+
+                    b.HasIndex("PlanId")
+                        .HasDatabaseName("ix_nutrition_plan_assignments_plan_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_nutrition_plan_assignments_status");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_nutrition_plan_assignments_patient_status");
+
+                    b.ToTable("nutrition_plan_assignments", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlanDay", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int?>("Calories")
+                        .HasColumnType("integer")
+                        .HasColumnName("calories");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("DayNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("day_number");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Foods")
+                        .HasColumnType("text")
+                        .HasColumnName("foods");
+
+                    b.Property<int>("MealType")
+                        .HasMaxLength(20)
+                        .HasColumnType("integer")
+                        .HasColumnName("meal_type");
+
+                    b.Property<Guid?>("MediaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("media_id");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plan_id");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaId");
+
+                    b.HasIndex("PlanId", "DayNumber", "MealType")
+                        .HasDatabaseName("ix_nutrition_plan_days_plan_day_meal");
+
+                    b.ToTable("nutrition_plan_days", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Organization", b =>
@@ -3033,6 +3597,148 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("professional_type_specialties", "erp");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.RoutineAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime?>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<int>("Frequency")
+                        .HasMaxLength(30)
+                        .HasColumnType("integer")
+                        .HasColumnName("frequency");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("RoutineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("routine_id");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<int>("Status")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_routine_assignments_patient_id");
+
+                    b.HasIndex("RoutineId")
+                        .HasDatabaseName("ix_routine_assignments_routine_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_routine_assignments_status");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_routine_assignments_patient_status");
+
+                    b.ToTable("routine_assignments", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.RoutineExercise", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<int?>("DurationSecs")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_secs");
+
+                    b.Property<Guid?>("MediaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("media_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int?>("Repetitions")
+                        .HasColumnType("integer")
+                        .HasColumnName("repetitions");
+
+                    b.Property<int?>("RestSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("rest_seconds");
+
+                    b.Property<Guid>("RoutineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("routine_id");
+
+                    b.Property<int?>("Sets")
+                        .HasColumnType("integer")
+                        .HasColumnName("sets");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<decimal?>("WeightKg")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("weight_kg");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaId");
+
+                    b.HasIndex("RoutineId", "SortOrder")
+                        .HasDatabaseName("ix_routine_exercises_routine_sort");
+
+                    b.ToTable("routine_exercises", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Specialty", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3238,6 +3944,47 @@ namespace CoppAddresd.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.UnitOfMeasure", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("code");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("symbol");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_unit_of_measures_code");
+
+                    b.ToTable("unit_of_measures", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.VitalSign", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3377,6 +4124,40 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Category");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ClinicalMeasurement", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.Encounter", "Encounter")
+                        .WithMany("Measurements")
+                        .HasForeignKey("EncounterId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.MeasurementMetric", "Metric")
+                        .WithMany("Measurements")
+                        .HasForeignKey("MetricId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.UnitOfMeasure", "Unit")
+                        .WithMany("Measurements")
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Encounter");
+
+                    b.Navigation("Metric");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Unit");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Document", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.Clinic", "Clinic")
@@ -3451,6 +4232,35 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Clinic");
 
                     b.Navigation("Employee");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.Encounter", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.Professional", "Professional")
+                        .WithMany()
+                        .HasForeignKey("ProfessionalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Professional");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ExerciseRoutine", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.MediaItem", "Media")
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Media");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryEntryLine", b =>
@@ -3547,6 +4357,90 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Clinic");
 
                     b.Navigation("State");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.MeasurementMetric", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.UnitOfMeasure", "DefaultUnit")
+                        .WithMany("Metrics")
+                        .HasForeignKey("DefaultUnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DefaultUnit");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.MeasurementReferenceRange", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.MeasurementMetric", "Metric")
+                        .WithMany("ReferenceRanges")
+                        .HasForeignKey("MetricId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.UnitOfMeasure", "Unit")
+                        .WithMany("ReferenceRanges")
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Metric");
+
+                    b.Navigation("Unit");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlan", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany("NutritionPlans")
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.NutritionPlan", "SourcePlan")
+                        .WithMany()
+                        .HasForeignKey("SourcePlanId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("SourcePlan");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlanAssignment", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.NutritionPlan", "Plan")
+                        .WithMany()
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Plan");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlanDay", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.MediaItem", "Media")
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.NutritionPlan", "Plan")
+                        .WithMany("Days")
+                        .HasForeignKey("PlanId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Media");
+
+                    b.Navigation("Plan");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientAllergy", b =>
@@ -3802,6 +4696,43 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Specialty");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.RoutineAssignment", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany("RoutineAssignments")
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ExerciseRoutine", "Routine")
+                        .WithMany()
+                        .HasForeignKey("RoutineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Routine");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.RoutineExercise", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.MediaItem", "Media")
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ExerciseRoutine", "Routine")
+                        .WithMany("Exercises")
+                        .HasForeignKey("RoutineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Media");
+
+                    b.Navigation("Routine");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.State", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.Country", "Country")
@@ -3879,6 +4810,16 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Professional");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.Encounter", b =>
+                {
+                    b.Navigation("Measurements");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ExerciseRoutine", b =>
+                {
+                    b.Navigation("Exercises");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Icd10Code", b =>
                 {
                     b.Navigation("Diagnoses");
@@ -3914,9 +4855,21 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("ProfessionalLocations");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.MeasurementMetric", b =>
+                {
+                    b.Navigation("Measurements");
+
+                    b.Navigation("ReferenceRanges");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Medication", b =>
                 {
                     b.Navigation("PatientMedications");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlan", b =>
+                {
+                    b.Navigation("Days");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Organization", b =>
@@ -3935,6 +4888,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Diagnoses");
 
                     b.Navigation("Medications");
+
+                    b.Navigation("NutritionPlans");
+
+                    b.Navigation("RoutineAssignments");
 
                     b.Navigation("VitalSigns");
                 });
@@ -3976,6 +4933,15 @@ namespace CoppAddresd.Infrastructure.Migrations
             modelBuilder.Entity("CoppAddresd.Domain.Entities.State", b =>
                 {
                     b.Navigation("Cities");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.UnitOfMeasure", b =>
+                {
+                    b.Navigation("Measurements");
+
+                    b.Navigation("Metrics");
+
+                    b.Navigation("ReferenceRanges");
                 });
 #pragma warning restore 612, 618
         }

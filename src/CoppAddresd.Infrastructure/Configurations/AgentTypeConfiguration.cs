@@ -29,6 +29,10 @@ public sealed class AgentTypeConfiguration : IEntityTypeConfiguration<AgentType>
             .HasColumnName("specialty")
             .HasMaxLength(120);
 
+        builder.Property(x => x.Slug)
+            .HasColumnName("slug")
+            .HasMaxLength(50);
+
         builder.Property(x => x.IconKey)
             .HasColumnName("icon_key")
             .HasMaxLength(64);

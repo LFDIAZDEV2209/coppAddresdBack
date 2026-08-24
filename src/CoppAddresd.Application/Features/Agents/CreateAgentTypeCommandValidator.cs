@@ -14,5 +14,6 @@ public sealed class CreateAgentTypeCommandValidator : AbstractValidator<CreateAg
         RuleFor(x => x.Description).MaximumLength(500);
         RuleFor(x => x.Specialty).MaximumLength(100);
         RuleFor(x => x.IconKey).MaximumLength(50);
+        RuleFor(x => x.Slug).MaximumLength(50);
     }
 }

@@ -20,6 +20,12 @@ public sealed class EncounterConfiguration : IEntityTypeConfiguration<ClinicalEn
         builder.HasIndex(x => x.PatientId);
         builder.HasIndex(x => x.ProfessionalId);
         builder.HasIndex(x => x.EncounterDate);
+
+        // EncounterId → encounter_id (uuid nullable, convención snake_case).
+        // La FK hacia app.encounters (encounter canónico del core) se crea por
+        // SQL en la migración, fuera del modelo EF (igual que los FKs externos
+        // hacia auth.users): este servicio es standalone y no conoce el tipo.
+        builder.HasIndex(x => x.EncounterId);
     }
 }
 

@@ -10,6 +10,7 @@ public record AgentTypeDto(
     string? Description,
     string? Specialty,
     string? IconKey,
+    string? Slug,
     AgentStatus Status,
     string Metadata,
     Guid? ActiveVersionId,
@@ -23,6 +24,7 @@ public record AgentTypeDto(
         entity.Description,
         entity.Specialty,
         entity.IconKey,
+        entity.Slug,
         entity.Status,
         entity.Metadata,
         entity.ActiveVersionId,
@@ -139,6 +141,7 @@ public record AgentTypeRequest(
     string? Description,
     string? Specialty,
     string? IconKey,
+    string? Slug,
     string? Status,
     string? Metadata);
 

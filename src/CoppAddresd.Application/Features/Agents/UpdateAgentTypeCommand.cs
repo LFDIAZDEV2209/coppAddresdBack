@@ -12,6 +12,7 @@ public record UpdateAgentTypeCommand(
     string? Description,
     string? Specialty,
     string? IconKey,
+    string? Slug,
     string? Status,
     string? Metadata)
     : IRequest<AgentTypeDto>;
@@ -37,6 +38,7 @@ public sealed class UpdateAgentTypeCommandHandler(
         if (request.Description is not null) entity.Description = Normalize(request.Description);
         if (request.Specialty is not null) entity.Specialty = Normalize(request.Specialty);
         if (request.IconKey is not null) entity.IconKey = Normalize(request.IconKey);
+        if (request.Slug is not null) entity.Slug = Normalize(request.Slug);
         if (request.Metadata is not null) entity.Metadata = request.Metadata;
 
         if (!string.IsNullOrWhiteSpace(request.Status))

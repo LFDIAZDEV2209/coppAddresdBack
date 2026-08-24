@@ -64,6 +64,7 @@ public class AgentsController(IMediator mediator) : ControllerBase
                 request.Description,
                 request.Specialty,
                 request.IconKey,
+                request.Slug,
                 request.Metadata), ct);
 
         return CreatedAtAction(nameof(GetAgentType), new { id = result.Id }, result);
@@ -82,6 +83,7 @@ public class AgentsController(IMediator mediator) : ControllerBase
                 request.Description,
                 request.Specialty,
                 request.IconKey,
+                request.Slug,
                 request.Status,
                 request.Metadata), ct);
 
