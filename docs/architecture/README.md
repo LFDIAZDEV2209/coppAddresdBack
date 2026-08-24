@@ -94,6 +94,7 @@ GET /api/v1/orders?page=1&pageSize=20
 | 2026-08-10 | SSE para chat streaming | Server-Sent Events sobre HTTP. Compatible con navegadores, simple, unidireccional (suficiente para streaming de LLM). |
 | 2026-08-10 | Polly resilience para AI Service | Retry (3 intentos, backoff exponencial) + circuit breaker (5 fallos, 30s). Tolerancia a fallos sin código complejo. |
 | 2026-08-10 | Auditoría trigger-based + GUC | Trigger PostgreSQL automático + EF interceptor con `set_config(..., true)` para propagar actor. Zero código en handlers. |
+| 2026-08-24 | Gateway YARP standalone (puerto 5080) + plan AWS | Único punto de entrada pública (web/móvil/webhooks); CORS centralizado, internals con `X-Internal-Key`, split SSE en AWS. Detalle completo: `docs/architecture/gateway.md`. |
 
 ## Deuda técnica / pendientes
 

@@ -13,7 +13,7 @@ namespace CoppAddresd.Auth.Controllers;
 /// los permisos de asignación (Roles.Assign / Permissions.Assign) + aud ERP.
 /// </summary>
 [ApiController]
-[Route("api/users/{userId:guid}/scoped")]
+[Route("api/auth/users/{userId:guid}/scoped")]
 [Authorize]
 [RequireErpAudience]
 public class ScopedAssignmentsController(
