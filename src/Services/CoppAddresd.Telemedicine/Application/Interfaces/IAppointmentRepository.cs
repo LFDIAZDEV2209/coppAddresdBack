@@ -86,8 +86,80 @@ public interface IAppointmentRepository
         DateTimeOffset to,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Cuenta las citas cuyo inicio cae en el rango <c>[from, to)</c>,
+    /// opcionalmente filtradas por profesional (KPIs del dashboard del profesional).
+    /// </summary>
+    Task<int> CountInRangeAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
     /// <summary>Cuenta las citas en un estado concreto (KPIs del dashboard admin).</summary>
     Task<int> CountByStatusAsync(
         AppointmentStatus status,
+        CancellationToken ct = default);
+
+    // --- Analytics del dashboard (gráficas; opcionalmente filtrado por profesional) ---
+
+    /// <summary>
+    /// Conteo de citas agrupadas por día en el rango <c>[from, to)</c>, con todas
+    /// las horas del día UTC-0 (fecha normalizada a medianoche). Si
+    /// <paramref name="professionalId"/> no es null, solo las de ese profesional.
+    /// </summary>
+    Task<IReadOnlyList<DailyAppointmentCount>> CountGroupedByDayAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Conteo de citas por estado en el rango <c>[from, to)</c> (distribución del
+    /// dashboard). <paramref name="professionalId"/> opcional: perfil del profesional.
+    /// </summary>
+    Task<IReadOnlyList<AppointmentStatusCount>> CountGroupedByStatusAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Conteo de citas por hora del día en el rango <c>[from, to)</c> (franjas de
+    /// mayor demanda). <paramref name="professionalId"/> opcional: perfil del profesional.
+    /// </summary>
+    Task<IReadOnlyList<HourlyAppointmentCount>> CountGroupedByHourAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Actividad agregada por profesional en el rango (solo vista admin: citas,
+    /// completadas, canceladas y pacientes únicos). Sin filtro de profesional.
+    /// </summary>
+    Task<IReadOnlyList<ProfessionalAppointmentActivity>> CountGroupedByProfessionalAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
+    /// <summary>Pacientes únicos con al menos una cita en el rango (atendidos).</summary>
+    Task<int> CountDistinctPatientsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
+    /// <summary>Profesionales con al menos una cita en el rango (activos).</summary>
+    Task<int> CountDistinctProfessionalsAsync(
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default);
+
+    /// <summary>Próximas citas desde <paramref name="from"/> (futuras, ordenadas por inicio).</summary>
+    Task<IReadOnlyList<TelemedicineAppointment>> ListUpcomingAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        int limit,
         CancellationToken ct = default);
 }
