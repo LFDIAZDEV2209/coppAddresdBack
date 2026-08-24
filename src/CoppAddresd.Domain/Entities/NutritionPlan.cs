@@ -24,6 +24,24 @@ public sealed class NutritionPlan
     /// <summary>Meta calórica diaria en kcal.</summary>
     public int? DailyCalorieTarget { get; set; }
 
+    /// <summary>Gramos diarios objetivo de proteína.</summary>
+    public decimal? DailyProteinTarget { get; set; }
+
+    /// <summary>Gramos diarios objetivo de carbohidratos.</summary>
+    public decimal? DailyCarbsTarget { get; set; }
+
+    /// <summary>Gramos diarios objetivo de grasa.</summary>
+    public decimal? DailyFatTarget { get; set; }
+
+    /// <summary>Gramos diarios objetivo de fibra.</summary>
+    public decimal? DailyFiberTarget { get; set; }
+
+    /// <summary>Restricciones/alergias del paciente (gluten, lactosa, frutos secos, etc.).</summary>
+    public string? Allergens { get; set; }
+
+    /// <summary>Horarios preferidos de comida (ej: "7:00, 12:00, 15:30, 19:00").</summary>
+    public string? MealTiming { get; set; }
+
     /// <summary>True = template de la biblioteca; False = plan personalizado de un paciente.</summary>
     public bool IsTemplate { get; set; } = true;
 

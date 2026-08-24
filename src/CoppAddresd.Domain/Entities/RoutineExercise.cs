@@ -29,6 +29,21 @@ public sealed class RoutineExercise
     /// <summary>Peso recomendado en kg (null si es peso corporal).</summary>
     public decimal? WeightKg { get; set; }
 
+    /// <summary>Músculo objetivo de este ejercicio.</summary>
+    public string? TargetMuscle { get; set; }
+
+    /// <summary>Equipamiento para este ejercicio.</summary>
+    public string? Equipment { get; set; }
+
+    /// <summary>Tempo del ejercicio (ej: "2-1-2" = 2s bajar, 1s pausa, 2s subir).</summary>
+    public string? Tempo { get; set; }
+
+    /// <summary>Esfuerzo percibido (1-10).</summary>
+    public int? Rpe { get; set; }
+
+    /// <summary>Tips de forma/ejecución.</summary>
+    public string? Tips { get; set; }
+
     /// <summary>FK opcional a MediaItem para video/imagen del ejercicio.</summary>
     public Guid? MediaId { get; set; }
 

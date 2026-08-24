@@ -40,6 +40,18 @@ public sealed class ExerciseRoutineConfiguration : IEntityTypeConfiguration<Exer
             .HasMaxLength(20)
             .HasDefaultValue(NutritionPlanStatus.Draft);
 
+        builder.Property(x => x.TargetMuscles)
+            .HasColumnName("target_muscles");
+
+        builder.Property(x => x.Equipment)
+            .HasColumnName("equipment");
+
+        builder.Property(x => x.WarmupNotes)
+            .HasColumnName("warmup_notes");
+
+        builder.Property(x => x.CooldownNotes)
+            .HasColumnName("cooldown_notes");
+
         builder.Property(x => x.MediaId)
             .HasColumnName("media_id");
 
