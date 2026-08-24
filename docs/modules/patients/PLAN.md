@@ -43,7 +43,7 @@ multi-organización, multi-clínica, multi-sede, con permisos por contexto.
 | IMC y derivados | Derivados en lectura (DTO), no almacenados | Regla de normalización: no columnas calculadas sincronizadas a mano |
 | Notas clínicas | Append-only con enmiendas | Estándar de registros médicos |
 | Soft delete | Solo datos clínicos/directorio; hard delete administrativo | Trazabilidad y requerimientos PHI |
-| Creación de profesional con scopes | El ERP **orquesta**: crea/actualiza `erp.employee_clinics` (asignación) y llama los endpoints scoped del Auth (`POST /api/users/{id}/scoped/roles` y `/scoped/permissions`) en la misma operación | La asignación (erp) y el permiso (auth) viven en dominios distintos; el wizard administrativo debe ejecutarlas de forma atómica (transacción en erp + compensación si el Auth falla) |
+| Creación de profesional con scopes | El ERP **orquesta**: crea/actualiza `erp.employee_clinics` (asignación) y llama los endpoints scoped del Auth (`POST /api/auth/users/{id}/scoped/roles` y `/scoped/permissions`) en la misma operación | La asignación (erp) y el permiso (auth) viven en dominios distintos; el wizard administrativo debe ejecutarlas de forma atómica (transacción en erp + compensación si el Auth falla) |
 | Documentos de profesionales | `documents.employee_id` nullable (además de `patient_id`), misma infraestructura de storage | Extensión natural del repositorio documental sin polimorfismo mágico ni tablas genéricas; índice por owner |
 | Auto-gestión del profesional | El profesional edita su propio perfil (bio, especialidades, licencias, foto) vía `PUT /employees/{id}/profile`; el admin solo crea datos mínimos | Requisito explícito: onboarding autogestionable, no formularios gigantes del admin |
 

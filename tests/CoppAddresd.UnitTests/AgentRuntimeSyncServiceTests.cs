@@ -57,7 +57,7 @@ public class AgentRuntimeSyncServiceTests
 
         var configJson = """{"system_prompt":"p","memory_config":{"enabled":true}}""";
         await client.SyncAgentConfigAsync(new AgentRuntimeConfigPayload(
-            Guid.NewGuid(), Guid.NewGuid(), 1, "Agent", "desc", "gen", "icon", configJson));
+            Guid.NewGuid(), Guid.NewGuid(), 1, "Agent", "desc", "gen", "icon", null, configJson));
 
         var request = handler.Requests.Single();
         Assert.Equal("secret-internal-key", request.Headers["X-Internal-Key"]);

@@ -20,9 +20,9 @@ Nuevo proyecto .NET 10 standalone `CoppAddresd.Gateway` (YARP.ReverseProxy, puer
 
 ### Decision: SSE con `ActivityTimeout` + `ForwarderRequestReadTimeout`
 
-**Choice**: `HttpClient` del cluster `api` configurado con `ActivityTimeout=00:05:00` (300 s), `ResponseDrainTimeout=00:01:00`. YARP v2.3+ ya reenvía streams sin buffering por defecto con `SocketsHttpHandler`; se añade `MetadataTransform` para garantizar `Content-Type: text/event-stream` cuando el backend lo emite.
+**Choice**: cluster `api` con `HttpClient.Timeout=00:05:00` (300 s) para SSE y `HttpRequest.ActivityTimeout=00:10:00` (600 s) — configurado en `appsettings.json` (base, heredado en Docker). YARP v2.3+ ya reenvía streams sin buffering por defecto con `SocketsHttpHandler`; no se añade `MetadataTransform` (se evita reescribir `Content-Type`).
 **Alternatives**: WebSocket (descartado: backend usa SSE); buffering chunked (descartado: corta el stream).
-**Rationale**: 60 s de stream continuo es el requisito mínimo (REQ-GW-007); 300 s da margen para respuestas largas del AI Service.
+**Rationale**: 60 s de stream continuo es el requisito mínimo (REQ-GW-007); `ActivityTimeout` de 10 min da margen amplio para respuestas largas del AI Service.
 
 ### Decision: Frontend colapsa a `NEXT_PUBLIC_GATEWAY_URL`
 
@@ -108,7 +108,7 @@ Cliente (cookie actualizada en dominio del gateway)
       },
       "telemedRoute": {
         "ClusterId": "telemedicine",
-        "Priority": 200,
+        "Priority": 300,
         "Match": { "Path": "/api/v1/telemedicine/{**catch-all}" },
         "Transforms": [
           { "ResponseHeader": "X-Refresh-Status", "Append": "false" }
@@ -116,7 +116,7 @@ Cliente (cookie actualizada en dominio del gateway)
       },
       "apiRoute": {
         "ClusterId": "api",
-        "Priority": 300,
+        "Priority": 200,
         "Match": { "Path": "/api/v1/{**catch-all}" }
       }
     },
@@ -127,7 +127,8 @@ Cliente (cookie actualizada en dominio del gateway)
       },
       "api": {
         "Destinations": { "primary": { "Address": "http://localhost:5122/" } },
-        "HttpClient": { "Timeout": "00:05:00" }
+        "HttpClient": { "Timeout": "00:05:00" },
+        "HttpRequest": { "ActivityTimeout": "00:10:00" }
       },
       "telemedicine": {
         "Destinations": { "primary": { "Address": "http://localhost:5130/" } }
@@ -152,7 +153,7 @@ Cliente (cookie actualizada en dominio del gateway)
 }
 ```
 
-Notas: orden por `Priority` (mayor primero): `telemedRoute(200)` antes que `apiRoute(300)`. YARP reenvía `Authorization`/`Cookie`/`X-Twilio-Signature`/`X-Forwarded-*` por defecto (`HttpTransformer.Default`). NO añadir transforms que reescriban el body o `Content-Type` para `/api/v1/telemedicine/webhooks/twilio`.
+Notas: en YARP una ruta con `Priority` MÁS ALTO se evalúa PRIMERO. Para que `telemedRoute` venza al catch-all de `apiRoute` (que también casa `/api/v1/telemedicine/*`), `telemedRoute` lleva el priority más alto (300) y `apiRoute` 200, `authRoute` 100. YARP reenvía `Authorization`/`Cookie`/`X-Twilio-Signature`/`X-Forwarded-*` por defecto (`HttpTransformer.Default`). NO añadir transforms que reescriban el body o `Content-Type` para `/api/v1/telemedicine/webhooks/twilio`.
 
 **`InternalKeyMiddleware.cs`** (núcleo):
 
@@ -265,7 +266,7 @@ Reemplazo en cada servicio:
 | Aspecto | Local (YARP) | AWS |
 |---|---|---|
 | Path routing | `Routes` en `appsettings` | API Gateway REST API con resources anidados (`/api`, `/api/auth`, `/api/v1`, `/api/v1/telemedicine`, `/api/v1/chat`) |
-| SSE `/api/v1/chat/stream` | YARP cluster `api` con `ActivityTimeout=300s` | **NO API Gateway**: ALB/CloudFront → ECS `CoppAddresd.Api` (API Gateway corta streams largos) |
+| SSE `/api/v1/chat/stream` | YARP cluster `api` con `HttpClient.Timeout=00:05:00` + `HttpRequest.ActivityTimeout=00:10:00` | **NO API Gateway**: ALB/CloudFront → ECS `CoppAddresd.Api` (API Gateway corta streams largos) |
 | Custom domain | `localhost:5080` | `api.coppaddresd.com` (placeholder) en Route 53 + ACM |
 | JWT authorizer | Backend valida JWT | API Gateway JWT authorizer reutilizando Secret/Issuer/Audience del Auth Service vía Secrets Manager |
 | Throttling | Rate limit en backend | API Gateway usage plans + API keys |

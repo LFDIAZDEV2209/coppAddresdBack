@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace CoppAddresd.Auth.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/auth/me")]
 [Authorize]
 public class MeController : ControllerBase
 {

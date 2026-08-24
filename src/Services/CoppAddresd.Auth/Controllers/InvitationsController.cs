@@ -101,7 +101,7 @@ public class InvitationsController(
     }
 
     /// <summary>Valida el token (página pública de aceptación). No lo consume.</summary>
-    [HttpGet("api/invitations/validate")]
+    [HttpGet("api/auth/invitations/validate")]
     [AllowAnonymous]
     public async Task<ActionResult<object>> Validate([FromQuery] string token, CancellationToken ct)
     {
@@ -123,7 +123,7 @@ public class InvitationsController(
     }
 
     /// <summary>Acepta la invitación: establece el password y la marca usada.</summary>
-    [HttpPost("api/invitations/accept")]
+    [HttpPost("api/auth/invitations/accept")]
     [AllowAnonymous]
     public async Task<ActionResult<object>> Accept(
         [FromBody] AcceptInvitationRequest request,
@@ -153,7 +153,7 @@ public class InvitationsController(
         return NoContent();
     }
 
-    [HttpPost("api/invitations/{id:guid}/resend")]
+    [HttpPost("api/auth/invitations/{id:guid}/resend")]
     [Authorize]
     [RequireErpAudience]
     [RequirePermission(PermissionCodes.UsersUpdate)]
@@ -180,7 +180,7 @@ public class InvitationsController(
         });
     }
 
-    [HttpPost("api/invitations/{id:guid}/revoke")]
+    [HttpPost("api/auth/invitations/{id:guid}/revoke")]
     [Authorize]
     [RequireErpAudience]
     [RequirePermission(PermissionCodes.UsersUpdate)]
