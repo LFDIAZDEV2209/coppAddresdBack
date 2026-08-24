@@ -49,6 +49,7 @@ public async Task<Post> CreatePost(
         };
         db.Posts.Add(post);
         await db.SaveChangesAsync(ct);
+        await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
         await sender.SendAsync("post_added", post);
         return post;
     }

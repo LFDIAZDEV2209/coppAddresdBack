@@ -93,27 +93,26 @@ if (Test-Path $compose) {
 if (-not $Watch) {
   Write-Host ''
   Draw-Banner "BUILDING SOLUTION" 'Cyan'
-  Write-Host "  Building all 5 projects in parallel (fail fast)..." -ForegroundColor Cyan
+  Write-Host "  Building all 5 projects (fail fast)..." -ForegroundColor Cyan
 
-  $builds = @()
+  $failed = $false
   foreach ($s in $services) {
-    $log = Join-Path $logs ($s.Name + '.build.log')
-    $p = Start-Process -FilePath 'dotnet' -ArgumentList @('build', $s.Project) `
-      -WorkingDirectory $root -RedirectStandardOutput $log -RedirectStandardError $log `
-      -WindowStyle Hidden -PassThru
-    $builds += [pscustomobject]@{ Name = $s.Name; Proc = $p; Log = $log }
-    Write-Host ("  Building {0}..." -f $s.Name.PadRight(16)) -ForegroundColor $s.Color
+    $outLog = Join-Path $logs ($s.Name + '.build.log')
+    $errLog = Join-Path $logs ($s.Name + '.build.err')
+    Write-Host ("  Building {0}..." -f $s.Name.PadRight(16)) -NoNewline -ForegroundColor $s.Color
+    & dotnet build $s.Project *> $outLog
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host " FAILED" -ForegroundColor Red
+      $failed = $true
+      Write-Host ("    See {0}" -f $outLog) -ForegroundColor Red
+    } else {
+      Write-Host " OK" -ForegroundColor Green
+    }
   }
 
-  foreach ($b in $builds) { $b.Proc.WaitForExit() }
-
-  $failedBuilds = $builds | Where-Object { $_.Proc.ExitCode -ne 0 }
-  if ($failedBuilds.Count -gt 0) {
+  if ($failed) {
     Write-Host ''
-    Write-Host "  BUILD FAILED. Fix the following project(s) before starting:" -ForegroundColor Red
-    foreach ($b in $failedBuilds) {
-      Write-Host ("    - {0} (see {1})" -f $b.Name, $b.Log) -ForegroundColor Red
-    }
+    Write-Host "  BUILD FAILED. Fix the project(s) above before starting." -ForegroundColor Red
     Write-Host ''
     Write-Host "  Aborting dev-up. No services were started." -ForegroundColor Red
     exit 1
