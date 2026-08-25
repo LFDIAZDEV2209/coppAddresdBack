@@ -14,28 +14,28 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 internal static class ReferenceDataGuard
 {
     public static async Task<ProfessionalRefDto> RequireProfessionalAsync(
-        ITelemedicineReferenceDataService service,
+        IAppointmentReferenceDataService service,
         Guid id,
         CancellationToken ct)
         => await service.GetProfessionalAsync(id, ct)
            ?? throw new NotFoundException("Profesional", id);
 
     public static async Task<PatientRefDto> RequirePatientAsync(
-        ITelemedicineReferenceDataService service,
+        IAppointmentReferenceDataService service,
         Guid id,
         CancellationToken ct)
         => await service.GetPatientAsync(id, ct)
            ?? throw new NotFoundException("Paciente", id);
 
     public static async Task<SpecialtyRefDto> RequireSpecialtyAsync(
-        ITelemedicineReferenceDataService service,
+        IAppointmentReferenceDataService service,
         Guid id,
         CancellationToken ct)
         => await service.GetSpecialtyAsync(id, ct)
            ?? throw new NotFoundException("Especialidad", id);
 
     public static async Task<LocationRefDto?> RequireLocationAsync(
-        ITelemedicineReferenceDataService service,
+        IAppointmentReferenceDataService service,
         Guid? id,
         CancellationToken ct)
     {

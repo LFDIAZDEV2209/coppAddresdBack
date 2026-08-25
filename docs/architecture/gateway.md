@@ -30,7 +30,10 @@ Cliente (web :3000 / móvil Vite :5173 / webhook Twilio / ERP)
         │              │                │
         ▼              ▼                ▼
    Auth :5123      Api :5122       Telemedicine :5130
-   /api/auth/*     /api/v1/*       /api/v1/telemedicine/*
+   /api/auth/*     /api/v1/*       /api/v1/telemedicine/*  (me, requests, alerts,
+                                                             admin, webhooks)
+                                    /api/v1/appointments/*  (citas, encuentros,
+                                                             sesiones — path nuevo)
    (Auth consolida todos sus endpoints
     bajo /api/auth/*: me, users, roles,
     permissions, invitations e internal)
@@ -41,9 +44,11 @@ Cliente (web :3000 / móvil Vite :5173 / webhook Twilio / ERP)
 | # | Path | Prioridad | Cluster | Destino dev | Notas |
 |---|------|-----------|---------|-------------|-------|
 | 1 | `/api/auth/{**catch-all}` | 100 | `auth` | `http://localhost:5123/` | Login OTP, refresh, logout, me, users, roles, permissions, invitations e internal. **El Auth Service consolida todos sus endpoints bajo este prefijo**, por eso no hacen falta rutas extra fuera de él |
-| 2 | `/api/v1/telemedicine/{**catch-all}` | 300 | `telemedicine` | `http://localhost:5130/` | Incluye webhooks Twilio. Priority más alto que apiRoute: su catch-all también casa `/api/v1/telemedicine/*`, así que debe evaluarse primero (en YARP mayor prioridad se evalúa antes) |
-| 3 | `/api/v1/{**catch-all}` | 200 | `api` | `http://localhost:5122/` | Chat, agents, professionals-catalog, internal API |
-| 4 | `/api/auth/internal/*` y `/api/v1/internal/*` | — | **drop** | — | `404` sin `X-Internal-Key` válida (REQ-GW-006) |
+| 2 | `/api/v1/appointments/{**catch-all}` | 310 | `telemedicine` | `http://localhost:5130/` | **Path canónico nuevo de las citas** (fase 4+5 del rename telemedicine→appointments). Priority mayor que apiRoute (310 vs 200): su catch-all también casa `/api/v1/appointments/*` |
+| 3 | `/api/v1/telemedicine/{**catch-all}` | 300 | `telemedicine` | `http://localhost:5130/` | Rutas que aún NO migraron: me, requests, alerts, admin, webhooks Twilio. Priority más alto que apiRoute (300 vs 200) |
+| 4 | `/api/v1/telemedicine/appointments/{**catch-all}` | 300 | `telemedicine` | `http://localhost:5130/` | **Alias deprecado (zero-downtime)**: reescribe a `/api/v1/appointments/{**catch-all}` vía transform `PathPattern`. Mismo priority (300) que telemedRoute: gana por especificidad (prefijo más largo). Retirar cuando el frontend use el path nuevo |
+| 5 | `/api/v1/{**catch-all}` | 200 | `api` | `http://localhost:5122/` | Chat, agents, professionals-catalog, internal API |
+| 6 | `/api/auth/internal/*` y `/api/v1/internal/*` | — | **drop** | — | `404` sin `X-Internal-Key` válida (REQ-GW-006) |
 
 > El gateway enruta todo el tráfico del Auth Service con **una sola ruta** (`authRoute`: `/api/auth/{**catch-all}`). Antes existían `authApis*Route` separadas (`/api/me`, `/api/users`, `/api/roles`, `/api/permissions`, `/api/invitations`) porque esos endpoints vivían fuera de `/api/auth/*`; tras consolidarlos bajo ese prefijo ya no se necesitan y se eliminaron. Los paths `/api/me|users|roles|permissions|invitations` sin el prefijo `/api/auth/` ya **no** se enrutan (404), coherente con el contrato del Auth Service. El `appsettings.Docker.json` solo sobreescribe `Clusters` (nombres de servicio); las rutas se heredan de `appsettings.json` por el merge del config pipeline.
 

@@ -11,14 +11,14 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 public sealed record GetProfessionalAgendaQuery(
     Guid ProfessionalId,
     DateTimeOffset From,
-    DateTimeOffset To) : IRequest<IReadOnlyList<TelemedicineAppointmentDto>>;
+    DateTimeOffset To) : IRequest<IReadOnlyList<AppointmentDto>>;
 
 public sealed class GetProfessionalAgendaQueryHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData)
-    : IRequestHandler<GetProfessionalAgendaQuery, IReadOnlyList<TelemedicineAppointmentDto>>
+    IAppointmentReferenceDataService referenceData)
+    : IRequestHandler<GetProfessionalAgendaQuery, IReadOnlyList<AppointmentDto>>
 {
-    public async Task<IReadOnlyList<TelemedicineAppointmentDto>> Handle(
+    public async Task<IReadOnlyList<AppointmentDto>> Handle(
         GetProfessionalAgendaQuery request,
         CancellationToken ct)
     {
@@ -28,6 +28,6 @@ public sealed class GetProfessionalAgendaQueryHandler(
             request.To.ToUniversalTime(),
             ct);
 
-        return await TelemedicineAppointmentMapper.BuildDtosAsync(items, referenceData, ct);
+        return await AppointmentMapper.BuildDtosAsync(items, referenceData, ct);
     }
 }

@@ -10,7 +10,7 @@ namespace CoppAddresd.Application.Features.Telemedicine;
 // para validar existencia y poblar la UI; sin PHI innecesaria.
 
 /// <summary>Profesional (extensión clínica del empleado). Id = id de <c>erp.professionals</c>.</summary>
-public sealed record TelemedicineProfessionalRefDto(
+public sealed record AppointmentProfessionalRefDto(
     Guid Id,
     Guid EmployeeId,
     Guid? UserId,
@@ -21,20 +21,20 @@ public sealed record TelemedicineProfessionalRefDto(
     IReadOnlyList<Guid> ClinicIds);
 
 /// <summary>Paciente del schema <c>app</c> (sin PHI clínica, solo identidad + contexto).</summary>
-public sealed record TelemedicinePatientRefDto(
+public sealed record AppointmentPatientRefDto(
     Guid Id,
     string FullName,
     string? Email,
     Guid? ClinicId,
     Guid? LocationId);
 
-public sealed record TelemedicineSpecialtyRefDto(
+public sealed record AppointmentSpecialtyRefDto(
     Guid Id,
     string Code,
     string Name,
     string Category);
 
-public sealed record TelemedicineLocationRefDto(
+public sealed record AppointmentLocationRefDto(
     Guid Id,
     string Name,
     Guid ClinicId,
@@ -43,34 +43,34 @@ public sealed record TelemedicineLocationRefDto(
 // Queries (retornan null si el id no existe → el microservicio traduce a su
 // propia NotFoundException con el mensaje de dominio correcto).
 
-public sealed record GetTelemedicineProfessionalRefQuery(Guid ProfessionalId)
-    : IRequest<TelemedicineProfessionalRefDto?>;
+public sealed record GetAppointmentProfessionalRefQuery(Guid ProfessionalId)
+    : IRequest<AppointmentProfessionalRefDto?>;
 
-public sealed record GetTelemedicinePatientRefQuery(Guid PatientId)
-    : IRequest<TelemedicinePatientRefDto?>;
+public sealed record GetAppointmentPatientRefQuery(Guid PatientId)
+    : IRequest<AppointmentPatientRefDto?>;
 
-public sealed record GetTelemedicineSpecialtyRefQuery(Guid SpecialtyId)
-    : IRequest<TelemedicineSpecialtyRefDto?>;
+public sealed record GetAppointmentSpecialtyRefQuery(Guid SpecialtyId)
+    : IRequest<AppointmentSpecialtyRefDto?>;
 
-public sealed record GetTelemedicineLocationRefQuery(Guid LocationId)
-    : IRequest<TelemedicineLocationRefDto?>;
+public sealed record GetAppointmentLocationRefQuery(Guid LocationId)
+    : IRequest<AppointmentLocationRefDto?>;
 
 // Resolución por usuario de Auth (contexto del JWT). El microservicio la usa
 // para autorizar acceso a una sala: el participante debe ser el profesional o
 // el paciente de la cita, y esto se deriva del userId del token, nunca de un
 // id enviado por el cliente.
 
-public sealed record GetTelemedicineProfessionalByUserIdQuery(Guid UserId)
-    : IRequest<TelemedicineProfessionalRefDto?>;
+public sealed record GetAppointmentProfessionalByUserIdQuery(Guid UserId)
+    : IRequest<AppointmentProfessionalRefDto?>;
 
-public sealed record GetTelemedicinePatientByUserIdQuery(Guid UserId)
-    : IRequest<TelemedicinePatientRefDto?>;
+public sealed record GetAppointmentPatientByUserIdQuery(Guid UserId)
+    : IRequest<AppointmentPatientRefDto?>;
 
-public sealed class GetTelemedicineProfessionalRefQueryHandler(
-    IEmployeeRepository employees) : IRequestHandler<GetTelemedicineProfessionalRefQuery, TelemedicineProfessionalRefDto?>
+public sealed class GetAppointmentProfessionalRefQueryHandler(
+    IEmployeeRepository employees) : IRequestHandler<GetAppointmentProfessionalRefQuery, AppointmentProfessionalRefDto?>
 {
-    public async Task<TelemedicineProfessionalRefDto?> Handle(
-        GetTelemedicineProfessionalRefQuery request,
+    public async Task<AppointmentProfessionalRefDto?> Handle(
+        GetAppointmentProfessionalRefQuery request,
         CancellationToken ct)
     {
         var employee = await employees.GetByProfessionalIdAsync(request.ProfessionalId, ct);
@@ -79,7 +79,7 @@ public sealed class GetTelemedicineProfessionalRefQueryHandler(
             return null;
         }
 
-        return new TelemedicineProfessionalRefDto(
+        return new AppointmentProfessionalRefDto(
             employee.Professional.Id,
             employee.Id,
             employee.UserId,
@@ -95,11 +95,11 @@ public sealed class GetTelemedicineProfessionalRefQueryHandler(
     }
 }
 
-public sealed class GetTelemedicinePatientRefQueryHandler(
-    IPatientRepository patients) : IRequestHandler<GetTelemedicinePatientRefQuery, TelemedicinePatientRefDto?>
+public sealed class GetAppointmentPatientRefQueryHandler(
+    IPatientRepository patients) : IRequestHandler<GetAppointmentPatientRefQuery, AppointmentPatientRefDto?>
 {
-    public async Task<TelemedicinePatientRefDto?> Handle(
-        GetTelemedicinePatientRefQuery request,
+    public async Task<AppointmentPatientRefDto?> Handle(
+        GetAppointmentPatientRefQuery request,
         CancellationToken ct)
     {
         var patient = await patients.GetByIdAsync(request.PatientId, ct);
@@ -108,7 +108,7 @@ public sealed class GetTelemedicinePatientRefQueryHandler(
             return null;
         }
 
-        return new TelemedicinePatientRefDto(
+        return new AppointmentPatientRefDto(
             patient.Id,
             $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Trim(),
             patient.Email,
@@ -117,11 +117,11 @@ public sealed class GetTelemedicinePatientRefQueryHandler(
     }
 }
 
-public sealed class GetTelemedicineSpecialtyRefQueryHandler(
-    IOrganizationRepository organizations) : IRequestHandler<GetTelemedicineSpecialtyRefQuery, TelemedicineSpecialtyRefDto?>
+public sealed class GetAppointmentSpecialtyRefQueryHandler(
+    IOrganizationRepository organizations) : IRequestHandler<GetAppointmentSpecialtyRefQuery, AppointmentSpecialtyRefDto?>
 {
-    public async Task<TelemedicineSpecialtyRefDto?> Handle(
-        GetTelemedicineSpecialtyRefQuery request,
+    public async Task<AppointmentSpecialtyRefDto?> Handle(
+        GetAppointmentSpecialtyRefQuery request,
         CancellationToken ct)
     {
         var specialty = await organizations.GetSpecialtyByIdAsync(request.SpecialtyId, ct);
@@ -130,7 +130,7 @@ public sealed class GetTelemedicineSpecialtyRefQueryHandler(
             return null;
         }
 
-        return new TelemedicineSpecialtyRefDto(
+        return new AppointmentSpecialtyRefDto(
             specialty.Id,
             specialty.Code,
             specialty.Name,
@@ -138,11 +138,11 @@ public sealed class GetTelemedicineSpecialtyRefQueryHandler(
     }
 }
 
-public sealed class GetTelemedicineLocationRefQueryHandler(
-    IOrganizationRepository organizations) : IRequestHandler<GetTelemedicineLocationRefQuery, TelemedicineLocationRefDto?>
+public sealed class GetAppointmentLocationRefQueryHandler(
+    IOrganizationRepository organizations) : IRequestHandler<GetAppointmentLocationRefQuery, AppointmentLocationRefDto?>
 {
-    public async Task<TelemedicineLocationRefDto?> Handle(
-        GetTelemedicineLocationRefQuery request,
+    public async Task<AppointmentLocationRefDto?> Handle(
+        GetAppointmentLocationRefQuery request,
         CancellationToken ct)
     {
         var location = await organizations.GetLocationByIdAsync(request.LocationId, ct);
@@ -151,7 +151,7 @@ public sealed class GetTelemedicineLocationRefQueryHandler(
             return null;
         }
 
-        return new TelemedicineLocationRefDto(
+        return new AppointmentLocationRefDto(
             location.Id,
             location.Name,
             location.ClinicId,
@@ -159,11 +159,11 @@ public sealed class GetTelemedicineLocationRefQueryHandler(
     }
 }
 
-public sealed class GetTelemedicineProfessionalByUserIdQueryHandler(
-    IEmployeeRepository employees) : IRequestHandler<GetTelemedicineProfessionalByUserIdQuery, TelemedicineProfessionalRefDto?>
+public sealed class GetAppointmentProfessionalByUserIdQueryHandler(
+    IEmployeeRepository employees) : IRequestHandler<GetAppointmentProfessionalByUserIdQuery, AppointmentProfessionalRefDto?>
 {
-    public async Task<TelemedicineProfessionalRefDto?> Handle(
-        GetTelemedicineProfessionalByUserIdQuery request,
+    public async Task<AppointmentProfessionalRefDto?> Handle(
+        GetAppointmentProfessionalByUserIdQuery request,
         CancellationToken ct)
     {
         var employee = await employees.GetByUserIdAsync(request.UserId, ct);
@@ -172,7 +172,7 @@ public sealed class GetTelemedicineProfessionalByUserIdQueryHandler(
             return null;
         }
 
-        return new TelemedicineProfessionalRefDto(
+        return new AppointmentProfessionalRefDto(
             employee.Professional.Id,
             employee.Id,
             employee.UserId,
@@ -188,11 +188,11 @@ public sealed class GetTelemedicineProfessionalByUserIdQueryHandler(
     }
 }
 
-public sealed class GetTelemedicinePatientByUserIdQueryHandler(
-    IPatientRepository patients) : IRequestHandler<GetTelemedicinePatientByUserIdQuery, TelemedicinePatientRefDto?>
+public sealed class GetAppointmentPatientByUserIdQueryHandler(
+    IPatientRepository patients) : IRequestHandler<GetAppointmentPatientByUserIdQuery, AppointmentPatientRefDto?>
 {
-    public async Task<TelemedicinePatientRefDto?> Handle(
-        GetTelemedicinePatientByUserIdQuery request,
+    public async Task<AppointmentPatientRefDto?> Handle(
+        GetAppointmentPatientByUserIdQuery request,
         CancellationToken ct)
     {
         var patient = await patients.GetByUserIdAsync(request.UserId, ct);
@@ -201,7 +201,7 @@ public sealed class GetTelemedicinePatientByUserIdQueryHandler(
             return null;
         }
 
-        return new TelemedicinePatientRefDto(
+        return new AppointmentPatientRefDto(
             patient.Id,
             $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Trim(),
             patient.Email,

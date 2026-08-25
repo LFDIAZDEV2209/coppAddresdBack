@@ -19,7 +19,7 @@ public sealed record ListAlertsQuery(
 
 public sealed class ListAlertsQueryHandler(
     IAlertRepository alerts,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<ListAlertsQuery, PaginatedAlertsResult>
 {
     public async Task<PaginatedAlertsResult> Handle(ListAlertsQuery request, CancellationToken ct)

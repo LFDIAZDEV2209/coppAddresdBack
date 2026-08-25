@@ -3,10 +3,10 @@ using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
-/// Constructor de DTOs de cita (TelemedicineAppointmentMapper.BuildDtosAsync):
+/// Constructor de DTOs de cita (AppointmentMapper.BuildDtosAsync):
 /// enriquece con nombres del ERP deduplicando los fetch por entidad única.
 /// </summary>
-public class TelemedicineAppointmentMapperTests
+public class AppointmentMapperTests
 {
     private readonly FakeReferenceDataService _referenceData = new();
 
@@ -19,7 +19,7 @@ public class TelemedicineAppointmentMapperTests
         _referenceData.Specialties[appointment.SpecialtyId] = TestData.Specialty();
         _referenceData.Locations[TestData.LocationId] = TestData.Location();
 
-        var dtos = await TelemedicineAppointmentMapper.BuildDtosAsync(
+        var dtos = await AppointmentMapper.BuildDtosAsync(
             [appointment], _referenceData, CancellationToken.None);
 
         var dto = Assert.Single(dtos);
@@ -35,7 +35,7 @@ public class TelemedicineAppointmentMapperTests
     {
         var appointment = TestData.Appointment();
 
-        var dtos = await TelemedicineAppointmentMapper.BuildDtosAsync(
+        var dtos = await AppointmentMapper.BuildDtosAsync(
             [appointment], _referenceData, CancellationToken.None);
 
         var dto = Assert.Single(dtos);
@@ -51,7 +51,7 @@ public class TelemedicineAppointmentMapperTests
     {
         var appointment = TestData.Appointment(locationId: null);
 
-        var dtos = await TelemedicineAppointmentMapper.BuildDtosAsync(
+        var dtos = await AppointmentMapper.BuildDtosAsync(
             [appointment], _referenceData, CancellationToken.None);
 
         Assert.Null(Assert.Single(dtos).LocationName);
@@ -66,7 +66,7 @@ public class TelemedicineAppointmentMapperTests
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
         _referenceData.Specialties[TestData.SpecialtyId] = TestData.Specialty();
 
-        var dtos = await TelemedicineAppointmentMapper.BuildDtosAsync(
+        var dtos = await AppointmentMapper.BuildDtosAsync(
             [a1, a2], _referenceData, CancellationToken.None);
 
         Assert.Equal(2, dtos.Count);

@@ -20,7 +20,7 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 public sealed record StartSessionCommand(
     Guid AppointmentId,
     Guid UserId,
-    bool HasManagePermission) : IRequest<TelemedicineAppointmentDto>;
+    bool HasManagePermission) : IRequest<AppointmentDto>;
 
 public sealed class StartSessionCommandValidator : AbstractValidator<StartSessionCommand>
 {
@@ -34,12 +34,12 @@ public sealed class StartSessionCommandValidator : AbstractValidator<StartSessio
 public sealed class StartSessionCommandHandler(
     IAppointmentRepository appointments,
     IVideoProvider videoProvider,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
     IOptions<TelemedicineOptions> options)
-    : IRequestHandler<StartSessionCommand, TelemedicineAppointmentDto>
+    : IRequestHandler<StartSessionCommand, AppointmentDto>
 {
-    public async Task<TelemedicineAppointmentDto> Handle(StartSessionCommand request, CancellationToken ct)
+    public async Task<AppointmentDto> Handle(StartSessionCommand request, CancellationToken ct)
     {
         var appointment = await appointments.GetForUpdateAsync(request.AppointmentId, ct)
             ?? throw new NotFoundException("Cita", request.AppointmentId);
@@ -93,7 +93,7 @@ public sealed class StartSessionCommandHandler(
 
         await appointments.UpdateAsync(appointment, ct);
 
-        var dto = await TelemedicineAppointmentMapper.BuildDtosAsync([appointment], referenceData, ct);
+        var dto = await AppointmentMapper.BuildDtosAsync([appointment], referenceData, ct);
         return dto[0];
     }
 }

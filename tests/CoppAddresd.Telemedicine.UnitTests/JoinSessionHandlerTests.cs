@@ -25,7 +25,7 @@ public class JoinSessionHandlerTests
             _appointments, _rooms, _videoProvider, _referenceData, _settings, TestOptions.Create());
     }
 
-    private TelemedicineAppointment AddConfirmed(DateTimeOffset? start = null)
+    private Appointment AddConfirmed(DateTimeOffset? start = null)
     {
         // Inicio dentro de la ventana de acceso.
         var appointment = TestData.Appointment(

@@ -21,9 +21,9 @@ public class EncounterRepositoryTests
         _ctx = new TelemedicineTestContext(database.ConnectionString);
     }
 
-    private async Task<TelemedicineAppointment> SeedAppointmentAsync(AppointmentStatus status = AppointmentStatus.InProgress)
+    private async Task<Appointment> SeedAppointmentAsync(AppointmentStatus status = AppointmentStatus.InProgress)
     {
-        var appointment = new TelemedicineAppointment
+        var appointment = new Appointment
         {
             // Profesional único por test (la BD de la colección es compartida).
             ProfessionalId = Guid.NewGuid(),

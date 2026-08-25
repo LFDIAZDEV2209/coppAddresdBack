@@ -21,6 +21,55 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         IReadOnlyList<ScopeEntry> scopeChain,
         CancellationToken ct = default)
     {
+        // Transición dual-check simétrico: una petición con un código del rename
+        // (nuevo Appointments.* o legado Telemedicine.*) se autoriza si existe un
+        // grant de CUALQUIERA de los dos códigos y NO existe un Deny scoped
+        // explícito sobre NINGUNO de los dos. Así el Deny no se elude cambiando
+        // de nomenclatura: deny(new) bloquea request(legacy) y viceversa. Los
+        // códigos sin equivalente (fuera del rename) mantienen el comportamiento
+        // de un solo código. Al terminar la transición, este fallback se elimina.
+        if (PermissionCodeMap.TryGetLegacyCode(permissionCode, out var legacyCode))
+        {
+            return await AuthorizeDualAsync(userId, permissionCode, legacyCode, scopeChain, ct);
+        }
+
+        if (PermissionCodeMap.TryGetNewCode(permissionCode, out var newCode))
+        {
+            return await AuthorizeDualAsync(userId, permissionCode, newCode, scopeChain, ct);
+        }
+
+        return await AuthorizeSingleAsync(userId, permissionCode, scopeChain, ct);
+    }
+
+    /// <summary>
+    /// Autorización con el gemelo del rename (nuevo ↔ legado): se concede si el
+    /// grant existe para CUALQUIERA de los dos códigos y un Deny scoped explícito
+    /// no bloquea NINGUNO de los dos. El Deny sobre cualquiera de los dos códigos
+    /// prevalece sobre el fallback del gemelo, en ambas direcciones.
+    /// </summary>
+    private async Task<bool> AuthorizeDualAsync(
+        Guid userId,
+        string primaryCode,
+        string twinCode,
+        IReadOnlyList<ScopeEntry> scopeChain,
+        CancellationToken ct)
+    {
+        if (await HasScopedDenyAsync(userId, primaryCode, scopeChain, ct)
+            || await HasScopedDenyAsync(userId, twinCode, scopeChain, ct))
+        {
+            return false;
+        }
+
+        return await AuthorizeSingleAsync(userId, primaryCode, scopeChain, ct)
+            || await AuthorizeSingleAsync(userId, twinCode, scopeChain, ct);
+    }
+
+    private async Task<bool> AuthorizeSingleAsync(
+        Guid userId,
+        string permissionCode,
+        IReadOnlyList<ScopeEntry> scopeChain,
+        CancellationToken ct)
+    {
         var permissionId = await dbContext.Permissions
             .Where(p => p.Code == permissionCode)
             .Select(p => (Guid?)p.Id)
@@ -75,6 +124,47 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
             if (hasViaRole)
             {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// ¿Existe un override scoped Deny explícito para el código en la cadena?
+    /// Durante el dual-check simétrico, un Deny sobre cualquiera de los dos
+    /// códigos del rename (nuevo o legado) bloquea la petición, incluso si el
+    /// grant existe para el otro.
+    /// </summary>
+    private async Task<bool> HasScopedDenyAsync(
+        Guid userId,
+        string permissionCode,
+        IReadOnlyList<ScopeEntry> scopeChain,
+        CancellationToken ct)
+    {
+        var permissionId = await dbContext.Permissions
+            .Where(p => p.Code == permissionCode)
+            .Select(p => (Guid?)p.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (permissionId is null)
+        {
+            return false;
+        }
+
+        foreach (var scope in scopeChain)
+        {
+            var effect = await dbContext.ScopedPermissionAssignments
+                .Where(a => a.UserId == userId
+                    && a.PermissionId == permissionId.Value
+                    && a.ScopeType == scope.ScopeType
+                    && a.ScopeId == scope.ScopeId)
+                .Select(a => a.Effect)
+                .FirstOrDefaultAsync(ct);
+
+            if (effect is not null)
+            {
+                return effect.Equals("Deny", StringComparison.OrdinalIgnoreCase);
             }
         }
 

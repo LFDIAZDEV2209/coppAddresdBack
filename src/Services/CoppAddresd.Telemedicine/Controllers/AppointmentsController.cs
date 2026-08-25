@@ -15,18 +15,18 @@ namespace CoppAddresd.Telemedicine.Controllers;
 /// JWT; el estado de la cita y el de la sesión/sala son independientes.
 /// </summary>
 [ApiController]
-[Route("api/v1/telemedicine/appointments")]
+[Route("api/v1/appointments")]
 [Authorize]
 public class AppointmentsController(IMediator mediator) : ControllerBase
 {
     [HttpPost]
-    [RequirePermission(TelemedicinePermissionCodes.AppointmentsSchedule)]
-    [ProducesResponseType(typeof(TelemedicineAppointmentDto), StatusCodes.Status201Created)]
-    public async Task<ActionResult<TelemedicineAppointmentDto>> Schedule(
-        [FromBody] ScheduleTelemedicineAppointmentDto request,
+    [RequirePermission(AppointmentPermissionCodes.AppointmentsSchedule)]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status201Created)]
+    public async Task<ActionResult<AppointmentDto>> Schedule(
+        [FromBody] ScheduleAppointmentDto request,
         CancellationToken ct)
     {
-        var command = new ScheduleTelemedicineAppointmentCommand(
+        var command = new ScheduleAppointmentCommand(
             request.PatientId,
             request.ProfessionalId,
             request.SpecialtyId,
@@ -42,16 +42,16 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [RequirePermission(TelemedicinePermissionCodes.AppointmentsView)]
-    [ProducesResponseType(typeof(TelemedicineAppointmentDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<TelemedicineAppointmentDto>> GetById(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new GetTelemedicineAppointmentQuery(id), ct));
+    [RequirePermission(AppointmentPermissionCodes.AppointmentsView)]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AppointmentDto>> GetById(Guid id, CancellationToken ct)
+        => Ok(await mediator.Send(new GetAppointmentQuery(id), ct));
 
     /// <summary>Agenda del profesional en un rango (dashboard "Mi agenda" / calendario).</summary>
     [HttpGet("agenda")]
-    [RequirePermission(TelemedicinePermissionCodes.AgendaView)]
-    [ProducesResponseType(typeof(IReadOnlyList<TelemedicineAppointmentDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<TelemedicineAppointmentDto>>> Agenda(
+    [RequirePermission(AppointmentPermissionCodes.AgendaView)]
+    [ProducesResponseType(typeof(IReadOnlyList<AppointmentDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<AppointmentDto>>> Agenda(
         [FromQuery] Guid professionalId,
         [FromQuery] DateTimeOffset from,
         [FromQuery] DateTimeOffset to,
@@ -59,14 +59,14 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
         => Ok(await mediator.Send(new GetProfessionalAgendaQuery(professionalId, from, to), ct));
 
     [HttpPost("{id:guid}/cancel")]
-    [RequirePermission(TelemedicinePermissionCodes.AppointmentsCancel)]
-    [ProducesResponseType(typeof(TelemedicineAppointmentDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<TelemedicineAppointmentDto>> Cancel(
+    [RequirePermission(AppointmentPermissionCodes.AppointmentsCancel)]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AppointmentDto>> Cancel(
         Guid id,
-        [FromBody] CancelTelemedicineAppointmentDto request,
+        [FromBody] CancelAppointmentDto request,
         CancellationToken ct)
     {
-        var command = new CancelTelemedicineAppointmentCommand(
+        var command = new CancelAppointmentCommand(
             id,
             request.Reason,
             request.CancelledBy,
@@ -75,14 +75,14 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id:guid}/reschedule")]
-    [RequirePermission(TelemedicinePermissionCodes.AppointmentsReschedule)]
-    [ProducesResponseType(typeof(TelemedicineAppointmentDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<TelemedicineAppointmentDto>> Reschedule(
+    [RequirePermission(AppointmentPermissionCodes.AppointmentsReschedule)]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AppointmentDto>> Reschedule(
         Guid id,
-        [FromBody] RescheduleTelemedicineAppointmentDto request,
+        [FromBody] RescheduleAppointmentDto request,
         CancellationToken ct)
     {
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var command = new RescheduleAppointmentCommand(
             id,
             request.NewStart,
             request.DurationMinutes,
@@ -99,7 +99,7 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     }
 }
 
-public sealed record ScheduleTelemedicineAppointmentDto(
+public sealed record ScheduleAppointmentDto(
     Guid PatientId,
     Guid ProfessionalId,
     Guid SpecialtyId,
@@ -109,11 +109,11 @@ public sealed record ScheduleTelemedicineAppointmentDto(
     DateTimeOffset ScheduledStart,
     int? DurationMinutes);
 
-public sealed record CancelTelemedicineAppointmentDto(
+public sealed record CancelAppointmentDto(
     string Reason,
     CancelledBy CancelledBy);
 
-public sealed record RescheduleTelemedicineAppointmentDto(
+public sealed record RescheduleAppointmentDto(
     DateTimeOffset NewStart,
     int? DurationMinutes,
     string? Reason,
