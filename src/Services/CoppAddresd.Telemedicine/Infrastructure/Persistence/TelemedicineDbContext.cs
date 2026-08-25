@@ -13,7 +13,7 @@ public sealed class TelemedicineDbContext(DbContextOptions<TelemedicineDbContext
     : DbContext(options)
 {
     public DbSet<TelemedicineRequest> Requests => Set<TelemedicineRequest>();
-    public DbSet<TelemedicineAppointment> Appointments => Set<TelemedicineAppointment>();
+    public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<AppointmentCancellation> Cancellations => Set<AppointmentCancellation>();
     public DbSet<AppointmentReschedule> Reschedules => Set<AppointmentReschedule>();
     public DbSet<VirtualRoom> Rooms => Set<VirtualRoom>();

@@ -17,7 +17,7 @@ public class GetDashboardAnalyticsQueryHandlerTests
         return new GetDashboardAnalyticsQueryHandler(_appointments, _referenceData);
     }
 
-    private static TelemedicineAppointment Appointment(
+    private static Appointment Appointment(
         AppointmentStatus status,
         DateTimeOffset start,
         Guid? professionalId = null,

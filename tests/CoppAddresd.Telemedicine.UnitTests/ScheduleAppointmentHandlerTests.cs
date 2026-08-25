@@ -5,7 +5,7 @@ using CoppAddresd.Telemedicine.Domain.Exceptions;
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
-/// Caso de uso de agendamiento directo (ScheduleTelemedicineAppointmentCommandHandler):
+/// Caso de uso de agendamiento directo (ScheduleAppointmentCommandHandler):
 /// cita nace Confirmed, sin solapamiento, con alerta NewAppointment al profesional.
 /// </summary>
 public class ScheduleAppointmentHandlerTests
@@ -14,11 +14,11 @@ public class ScheduleAppointmentHandlerTests
     private readonly FakeAppointmentRepository _appointments = new();
     private readonly FakeSettingsProvider _settings = new();
     private readonly FakeAlertRepository _alerts = new();
-    private readonly ScheduleTelemedicineAppointmentCommandHandler _handler;
+    private readonly ScheduleAppointmentCommandHandler _handler;
 
     public ScheduleAppointmentHandlerTests()
     {
-        _handler = new ScheduleTelemedicineAppointmentCommandHandler(
+        _handler = new ScheduleAppointmentCommandHandler(
             _appointments, _referenceData, _settings, _alerts);
         _referenceData.Patients[TestData.PatientId] = TestData.Patient();
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
@@ -26,7 +26,7 @@ public class ScheduleAppointmentHandlerTests
         _referenceData.Locations[TestData.LocationId] = TestData.Location();
     }
 
-    private static ScheduleTelemedicineAppointmentCommand Command(DateTimeOffset start, int? duration = null)
+    private static ScheduleAppointmentCommand Command(DateTimeOffset start, int? duration = null)
         => new(TestData.PatientId, TestData.ProfessionalId, TestData.SpecialtyId, TestData.Org, TestData.Clinic,
             TestData.LocationId, start, duration, TestData.UserId);
 
@@ -60,7 +60,7 @@ public class ScheduleAppointmentHandlerTests
     [Fact]
     public async Task Handle_PacienteInexistente_LanzaNotFound()
     {
-        var command = new ScheduleTelemedicineAppointmentCommand(
+        var command = new ScheduleAppointmentCommand(
             Guid.NewGuid(), TestData.ProfessionalId, TestData.SpecialtyId, TestData.Org, TestData.Clinic,
             TestData.LocationId, DateTimeOffset.UtcNow.AddDays(1), null, TestData.UserId);
 
@@ -70,7 +70,7 @@ public class ScheduleAppointmentHandlerTests
     [Fact]
     public async Task Handle_ProfesionalInexistente_LanzaNotFound()
     {
-        var command = new ScheduleTelemedicineAppointmentCommand(
+        var command = new ScheduleAppointmentCommand(
             TestData.PatientId, Guid.NewGuid(), TestData.SpecialtyId, TestData.Org, TestData.Clinic,
             TestData.LocationId, DateTimeOffset.UtcNow.AddDays(1), null, TestData.UserId);
 

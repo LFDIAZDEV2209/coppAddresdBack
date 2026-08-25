@@ -8,7 +8,7 @@ namespace CoppAddresd.Telemedicine.Domain.Entities;
 /// La integridad del calendario (no doble reserva) se protege con un índice
 /// único parcial y verificación transaccional.
 /// </summary>
-public sealed class TelemedicineAppointment
+public sealed class Appointment
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 

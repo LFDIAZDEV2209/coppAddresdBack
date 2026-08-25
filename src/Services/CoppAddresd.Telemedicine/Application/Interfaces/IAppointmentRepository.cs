@@ -13,7 +13,7 @@ namespace CoppAddresd.Telemedicine.Application.Interfaces;
 public interface IAppointmentRepository
 {
     /// <summary>Cita por id, lectura sin tracking (solo lectura).</summary>
-    Task<TelemedicineAppointment?> GetByIdAsync(
+    Task<Appointment?> GetByIdAsync(
         Guid id,
         CancellationToken ct = default);
 
@@ -22,18 +22,18 @@ public interface IAppointmentRepository
     /// sala virtual y sesiones, para mutaciones: añadir hijos al agregado y
     /// persistir con SaveChanges (flujos de agendamiento y de sala/sesión).
     /// </summary>
-    Task<TelemedicineAppointment?> GetForUpdateAsync(
+    Task<Appointment?> GetForUpdateAsync(
         Guid id,
         CancellationToken ct = default);
 
     /// <summary>Crea la cita. Traduce conflictos de concurrencia (exclusión de solapamiento / request_id único) a una violación de regla de negocio.</summary>
-    Task<TelemedicineAppointment> AddAsync(
-        TelemedicineAppointment appointment,
+    Task<Appointment> AddAsync(
+        Appointment appointment,
         CancellationToken ct = default);
 
     /// <summary>Persiste cambios de una cita cargada con <see cref="GetForUpdateAsync"/> (con control de concurrencia xmin).</summary>
     Task UpdateAsync(
-        TelemedicineAppointment appointment,
+        Appointment appointment,
         CancellationToken ct = default);
 
     /// <summary>
@@ -50,7 +50,7 @@ public interface IAppointmentRepository
         CancellationToken ct = default);
 
     /// <summary>Citas del profesional en el rango, ordenadas por inicio (agenda/calendario).</summary>
-    Task<IReadOnlyList<TelemedicineAppointment>> ListByProfessionalAsync(
+    Task<IReadOnlyList<Appointment>> ListByProfessionalAsync(
         Guid professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
@@ -59,7 +59,7 @@ public interface IAppointmentRepository
     /// <summary>
     /// Citas de un paciente, de más reciente a más antigua (historial del paciente).
     /// </summary>
-    Task<IReadOnlyList<TelemedicineAppointment>> ListByPatientAsync(
+    Task<IReadOnlyList<Appointment>> ListByPatientAsync(
         Guid patientId,
         CancellationToken ct = default);
 
@@ -68,7 +68,7 @@ public interface IAppointmentRepository
     /// (profesional, paciente, clínica, sede, estado, rango), paginado y con
     /// orden estable por inicio. Es la base de la vista "Citas" del admin.
     /// </summary>
-    Task<(IReadOnlyList<TelemedicineAppointment> Items, int Total)> ListAdminAsync(
+    Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminAsync(
         Guid? professionalId,
         Guid? patientId,
         Guid? clinicId,
@@ -157,7 +157,7 @@ public interface IAppointmentRepository
         CancellationToken ct = default);
 
     /// <summary>Próximas citas desde <paramref name="from"/> (futuras, ordenadas por inicio).</summary>
-    Task<IReadOnlyList<TelemedicineAppointment>> ListUpcomingAsync(
+    Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,
         DateTimeOffset from,
         int limit,

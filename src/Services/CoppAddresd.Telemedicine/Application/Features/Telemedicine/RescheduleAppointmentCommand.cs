@@ -13,18 +13,18 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// <c>appointment_reschedules</c> (historial append-only) e incrementa
 /// <c>RescheduleCount</c> (límite parametrizado en la configuración).
 /// </summary>
-public sealed record RescheduleTelemedicineAppointmentCommand(
+public sealed record RescheduleAppointmentCommand(
     Guid AppointmentId,
     DateTimeOffset NewStart,
     int? DurationMinutes,
     string? Reason,
     RescheduleRequestedBy RequestedBy,
-    Guid? RequestedByUserId) : IRequest<TelemedicineAppointmentDto>;
+    Guid? RequestedByUserId) : IRequest<AppointmentDto>;
 
-public sealed class RescheduleTelemedicineAppointmentCommandValidator
-    : AbstractValidator<RescheduleTelemedicineAppointmentCommand>
+public sealed class RescheduleAppointmentCommandValidator
+    : AbstractValidator<RescheduleAppointmentCommand>
 {
-    public RescheduleTelemedicineAppointmentCommandValidator()
+    public RescheduleAppointmentCommandValidator()
     {
         RuleFor(x => x.AppointmentId).NotEmpty();
         RuleFor(x => x.NewStart).NotEmpty();
@@ -32,15 +32,15 @@ public sealed class RescheduleTelemedicineAppointmentCommandValidator
     }
 }
 
-public sealed class RescheduleTelemedicineAppointmentCommandHandler(
+public sealed class RescheduleAppointmentCommandHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
     IAlertRepository alerts)
-    : IRequestHandler<RescheduleTelemedicineAppointmentCommand, TelemedicineAppointmentDto>
+    : IRequestHandler<RescheduleAppointmentCommand, AppointmentDto>
 {
-    public async Task<TelemedicineAppointmentDto> Handle(
-        RescheduleTelemedicineAppointmentCommand request,
+    public async Task<AppointmentDto> Handle(
+        RescheduleAppointmentCommand request,
         CancellationToken ct)
     {
         var entity = await appointments.GetForUpdateAsync(request.AppointmentId, ct)
@@ -112,7 +112,7 @@ public sealed class RescheduleTelemedicineAppointmentCommandHandler(
             ? await referenceData.GetLocationAsync(locationId, ct)
             : null;
 
-        return new TelemedicineAppointmentDto(
+        return new AppointmentDto(
             entity.Id,
             entity.RequestId,
             entity.PatientId,

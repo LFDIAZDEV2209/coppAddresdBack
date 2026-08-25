@@ -11,7 +11,7 @@ public sealed record GetTelemedicineRequestQuery(Guid RequestId)
 
 public sealed class GetTelemedicineRequestQueryHandler(
     IRequestRepository requests,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<GetTelemedicineRequestQuery, TelemedicineRequestDto>
 {
     public async Task<TelemedicineRequestDto> Handle(

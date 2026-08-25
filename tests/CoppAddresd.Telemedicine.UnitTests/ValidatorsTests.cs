@@ -36,8 +36,8 @@ public class ValidatorsTests
     [Fact]
     public void ScheduleAppointment_SinIdsObligatorios_Invalido()
     {
-        var validator = new ScheduleTelemedicineAppointmentCommandValidator();
-        var command = new ScheduleTelemedicineAppointmentCommand(
+        var validator = new ScheduleAppointmentCommandValidator();
+        var command = new ScheduleAppointmentCommand(
             Guid.Empty, Guid.Empty, Guid.Empty, Guid.Empty, null, null,
             DateTimeOffset.UtcNow.AddDays(1), null, Guid.Empty);
 
@@ -53,8 +53,8 @@ public class ValidatorsTests
     [Fact]
     public void CancelAppointment_SinRazon_Invalido()
     {
-        var validator = new CancelTelemedicineAppointmentCommandValidator();
-        var command = new CancelTelemedicineAppointmentCommand(Guid.NewGuid(), "", CancelledBy.Professional, TestData.UserId);
+        var validator = new CancelAppointmentCommandValidator();
+        var command = new CancelAppointmentCommand(Guid.NewGuid(), "", CancelledBy.Professional, TestData.UserId);
 
         Assert.False(validator.Validate(command).IsValid);
     }
@@ -62,8 +62,8 @@ public class ValidatorsTests
     [Fact]
     public void RescheduleAppointment_SinNuevoInicio_Invalido()
     {
-        var validator = new RescheduleTelemedicineAppointmentCommandValidator();
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var validator = new RescheduleAppointmentCommandValidator();
+        var command = new RescheduleAppointmentCommand(
             Guid.NewGuid(), default, null, null, RescheduleRequestedBy.Patient, TestData.UserId);
 
         Assert.False(validator.Validate(command).IsValid);
@@ -72,8 +72,8 @@ public class ValidatorsTests
     [Fact]
     public void RescheduleAppointment_RazonLarga_Invalido()
     {
-        var validator = new RescheduleTelemedicineAppointmentCommandValidator();
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var validator = new RescheduleAppointmentCommandValidator();
+        var command = new RescheduleAppointmentCommand(
             Guid.NewGuid(), DateTimeOffset.UtcNow.AddDays(1), null, new string('x', 2001),
             RescheduleRequestedBy.Patient, TestData.UserId);
 

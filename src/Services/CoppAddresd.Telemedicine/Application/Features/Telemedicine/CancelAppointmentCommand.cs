@@ -12,16 +12,16 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// <c>appointment_cancellations</c> y actualiza el estado vigente de la cita.
 /// No se puede cancelar una cita completada, cancelada o no-show.
 /// </summary>
-public sealed record CancelTelemedicineAppointmentCommand(
+public sealed record CancelAppointmentCommand(
     Guid AppointmentId,
     string Reason,
     CancelledBy CancelledBy,
-    Guid? CancelledByUserId) : IRequest<TelemedicineAppointmentDto>;
+    Guid? CancelledByUserId) : IRequest<AppointmentDto>;
 
-public sealed class CancelTelemedicineAppointmentCommandValidator
-    : AbstractValidator<CancelTelemedicineAppointmentCommand>
+public sealed class CancelAppointmentCommandValidator
+    : AbstractValidator<CancelAppointmentCommand>
 {
-    public CancelTelemedicineAppointmentCommandValidator()
+    public CancelAppointmentCommandValidator()
     {
         RuleFor(x => x.AppointmentId).NotEmpty();
         RuleFor(x => x.Reason)
@@ -30,14 +30,14 @@ public sealed class CancelTelemedicineAppointmentCommandValidator
     }
 }
 
-public sealed class CancelTelemedicineAppointmentCommandHandler(
+public sealed class CancelAppointmentCommandHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     IAlertRepository alerts)
-    : IRequestHandler<CancelTelemedicineAppointmentCommand, TelemedicineAppointmentDto>
+    : IRequestHandler<CancelAppointmentCommand, AppointmentDto>
 {
-    public async Task<TelemedicineAppointmentDto> Handle(
-        CancelTelemedicineAppointmentCommand request,
+    public async Task<AppointmentDto> Handle(
+        CancelAppointmentCommand request,
         CancellationToken ct)
     {
         var entity = await appointments.GetForUpdateAsync(request.AppointmentId, ct)
@@ -96,7 +96,7 @@ public sealed class CancelTelemedicineAppointmentCommandHandler(
             ? await referenceData.GetLocationAsync(locationId, ct)
             : null;
 
-        return new TelemedicineAppointmentDto(
+        return new AppointmentDto(
             entity.Id,
             entity.RequestId,
             entity.PatientId,

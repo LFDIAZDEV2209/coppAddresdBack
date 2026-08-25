@@ -25,5 +25,5 @@ public sealed class AppointmentReschedule
 
     public DateTimeOffset RescheduledAt { get; set; } = DateTimeOffset.UtcNow;
 
-    public TelemedicineAppointment? Appointment { get; set; }
+    public Appointment? Appointment { get; set; }
 }

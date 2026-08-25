@@ -43,7 +43,7 @@ public sealed class ClinicalEncounter
 
     public DateTime? UpdatedAt { get; set; }
 
-    public TelemedicineAppointment? Appointment { get; set; }
+    public Appointment? Appointment { get; set; }
 
     public TelemedicineSession? Session { get; set; }
 }

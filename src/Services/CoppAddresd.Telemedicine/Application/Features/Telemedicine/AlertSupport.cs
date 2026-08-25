@@ -21,7 +21,7 @@ internal static class AlertSupport
     /// profesional resoluble y no tiene permiso administrativo → 403.
     /// </summary>
     public static async Task<Guid?> ResolveRecipientUserIdAsync(
-        ITelemedicineReferenceDataService referenceData,
+        IAppointmentReferenceDataService referenceData,
         Guid userId,
         bool hasAlertsView,
         CancellationToken ct)

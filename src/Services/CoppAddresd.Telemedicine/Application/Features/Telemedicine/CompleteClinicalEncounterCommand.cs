@@ -46,7 +46,7 @@ public sealed class CompleteClinicalEncounterCommandValidator
 public sealed class CompleteClinicalEncounterCommandHandler(
     IAppointmentRepository appointments,
     IEncounterRepository encounters,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<CompleteClinicalEncounterCommand, ClinicalEncounterDto>
 {
     public async Task<ClinicalEncounterDto> Handle(
@@ -138,7 +138,7 @@ public sealed class CompleteClinicalEncounterCommandHandler(
         encounter.UpdatedAt = now.UtcDateTime;
     }
 
-    private static Guid? ActiveSessionId(TelemedicineAppointment appointment)
+    private static Guid? ActiveSessionId(Appointment appointment)
         => appointment.Sessions
             .Where(s => s.Status == TelemedicineSessionStatus.Active)
             .OrderByDescending(s => s.StartedAt)

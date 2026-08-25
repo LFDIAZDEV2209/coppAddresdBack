@@ -15,7 +15,7 @@ public sealed class GetAppointmentRoomQueryHandler(
     IAppointmentRepository appointments,
     IRoomRepository rooms,
     IVideoProvider videoProvider,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<GetAppointmentRoomQuery, VirtualRoomDto>
 {
     public async Task<VirtualRoomDto> Handle(GetAppointmentRoomQuery request, CancellationToken ct)

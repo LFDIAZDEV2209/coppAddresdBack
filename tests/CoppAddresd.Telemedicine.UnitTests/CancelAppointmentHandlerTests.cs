@@ -6,7 +6,7 @@ using CoppAddresd.Telemedicine.Domain.Exceptions;
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
-/// Caso de uso de cancelación (CancelTelemedicineAppointmentCommandHandler):
+/// Caso de uso de cancelación (CancelAppointmentCommandHandler):
 /// estados no cancelables, historial append-only, integridad del encuentro
 /// (borrador → Cancelled; Completed preservado) y alerta AppointmentCancelled.
 /// </summary>
@@ -15,11 +15,11 @@ public class CancelAppointmentHandlerTests
     private readonly FakeReferenceDataService _referenceData = new();
     private readonly FakeAppointmentRepository _appointments = new();
     private readonly FakeAlertRepository _alerts = new();
-    private readonly CancelTelemedicineAppointmentCommandHandler _handler;
+    private readonly CancelAppointmentCommandHandler _handler;
 
     public CancelAppointmentHandlerTests()
     {
-        _handler = new CancelTelemedicineAppointmentCommandHandler(
+        _handler = new CancelAppointmentCommandHandler(
             _appointments, _referenceData, _alerts);
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
         _referenceData.Patients[TestData.PatientId] = TestData.Patient();
@@ -31,7 +31,7 @@ public class CancelAppointmentHandlerTests
     {
         var appointment = TestData.Appointment(status: AppointmentStatus.Confirmed);
         _appointments.Items.Add(appointment);
-        var command = new CancelTelemedicineAppointmentCommand(
+        var command = new CancelAppointmentCommand(
             appointment.Id, "Emergencia", CancelledBy.Patient, TestData.UserId);
 
         var dto = await _handler.Handle(command, CancellationToken.None);
@@ -53,7 +53,7 @@ public class CancelAppointmentHandlerTests
     {
         var appointment = TestData.Appointment(status: status);
         _appointments.Items.Add(appointment);
-        var command = new CancelTelemedicineAppointmentCommand(
+        var command = new CancelAppointmentCommand(
             appointment.Id, "Razón", CancelledBy.Professional, TestData.UserId);
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
@@ -73,7 +73,7 @@ public class CancelAppointmentHandlerTests
             Notes = "Nota inicial",
         };
         _appointments.Items.Add(appointment);
-        var command = new CancelTelemedicineAppointmentCommand(
+        var command = new CancelAppointmentCommand(
             appointment.Id, "El paciente no puede asistir", CancelledBy.Patient, TestData.UserId);
 
         await _handler.Handle(command, CancellationToken.None);
@@ -93,7 +93,7 @@ public class CancelAppointmentHandlerTests
             Notes = "Registro final",
         };
         _appointments.Items.Add(appointment);
-        var command = new CancelTelemedicineAppointmentCommand(
+        var command = new CancelAppointmentCommand(
             appointment.Id, "Razón", CancelledBy.Admin, TestData.UserId);
 
         await _handler.Handle(command, CancellationToken.None);
@@ -105,7 +105,7 @@ public class CancelAppointmentHandlerTests
     [Fact]
     public async Task Handle_CitaInexistente_LanzaNotFound()
     {
-        var command = new CancelTelemedicineAppointmentCommand(
+        var command = new CancelAppointmentCommand(
             Guid.NewGuid(), "Razón", CancelledBy.Admin, TestData.UserId);
 
         await Assert.ThrowsAsync<NotFoundException>(() => _handler.Handle(command, CancellationToken.None));
