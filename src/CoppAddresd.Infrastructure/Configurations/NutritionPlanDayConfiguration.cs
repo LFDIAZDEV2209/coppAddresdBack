@@ -54,6 +54,10 @@ public sealed class NutritionPlanDayConfiguration : IEntityTypeConfiguration<Nut
         builder.Property(x => x.WaterMl)
             .HasColumnName("water_ml");
 
+        builder.Property(x => x.DailyWaterMl)
+            .HasColumnName("daily_water_ml")
+            .HasDefaultValue(2000);
+
         builder.Property(x => x.Notes)
             .HasColumnName("notes");
 
