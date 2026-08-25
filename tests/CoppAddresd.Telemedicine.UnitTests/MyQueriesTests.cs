@@ -51,6 +51,23 @@ public class MyQueriesTests
     private GetMySummaryQueryHandler BuildSummaryHandler() =>
         new(_appointments, _requests, _alerts, _rooms);
 
+    private static TelemedicineRequest Request(
+        AppointmentRequestStatus status,
+        Guid? professionalId = null
+    ) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            PatientId = TestData.PatientId,
+            ProfessionalId = professionalId ?? TestData.ProfessionalId,
+            SpecialtyId = TestData.SpecialtyId,
+            OrganizationId = TestData.Org,
+            ClinicId = TestData.Clinic,
+            LocationId = TestData.LocationId,
+            Status = status,
+            CreatedAt = DateTime.UtcNow,
+        };
+
     [Fact]
     public async Task HandleList_SoloDevuelveCitasDelProfesional()
     {
@@ -186,5 +203,55 @@ public class MyQueriesTests
         Assert.Equal(1, result.RequestsPending);
         Assert.Equal(1, result.ActiveSessions);
         Assert.Equal(1, result.AlertsUnread);
+    }
+
+    [Fact]
+    public async Task HandleListRequests_SoloDevuelveSolicitudesDelProfesional()
+    {
+        var otherProfessional = Guid.NewGuid();
+        _requests.Items.AddRange([
+            Request(AppointmentRequestStatus.Pending),
+            Request(AppointmentRequestStatus.Pending, professionalId: otherProfessional),
+            Request(AppointmentRequestStatus.Pending, professionalId: otherProfessional),
+        ]);
+
+        var handler = new ListMyRequestsQueryHandler(_requests, _referenceData);
+        var result = await handler.Handle(
+            new ListMyRequestsQuery(TestData.ProfessionalId, null, null, null, null, 1, 20),
+            CancellationToken.None
+        );
+
+        // Solo la solicitud del profesional autenticado (las del otro no cuentan).
+        Assert.Equal(1, result.Total);
+        Assert.Single(result.Items);
+        Assert.Equal(TestData.ProfessionalId, result.Items[0].ProfessionalId);
+        Assert.Equal(1, result.TotalPages);
+    }
+
+    [Fact]
+    public async Task HandleListRequests_AplicaFiltroDeEstado()
+    {
+        _requests.Items.AddRange([
+            Request(AppointmentRequestStatus.Pending),
+            Request(AppointmentRequestStatus.Converted),
+            Request(AppointmentRequestStatus.Rejected),
+        ]);
+
+        var handler = new ListMyRequestsQueryHandler(_requests, _referenceData);
+        var result = await handler.Handle(
+            new ListMyRequestsQuery(
+                TestData.ProfessionalId,
+                AppointmentRequestStatus.Converted,
+                null,
+                null,
+                null,
+                1,
+                20
+            ),
+            CancellationToken.None
+        );
+
+        Assert.Equal(1, result.Total);
+        Assert.Equal(AppointmentRequestStatus.Converted, result.Items[0].Status);
     }
 }

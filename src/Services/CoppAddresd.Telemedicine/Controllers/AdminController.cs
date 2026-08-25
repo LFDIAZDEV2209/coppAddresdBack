@@ -249,6 +249,53 @@ public class MeController(IMediator mediator) : ControllerBase
     }
 
     /// <summary>
+    /// Listado de solicitudes del profesional autenticado (las que los
+    /// pacientes enviaron a su agenda) con los mismos filtros que el listado
+    /// admin (estado, paciente, rango), paginado y con el mismo shape: la UI es
+    /// idéntica a la del admin, cambiando solo el origen de datos. Si el
+    /// usuario no tiene perfil clínico, 403.
+    /// </summary>
+    [HttpGet("requests")]
+    [ProducesResponseType(typeof(PaginatedAdminRequestsResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PaginatedAdminRequestsResult>> Requests(
+        [FromQuery] AppointmentRequestStatus? status = null,
+        [FromQuery] Guid? patientId = null,
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default
+    )
+    {
+        var (userId, professional) = await ResolveCurrentProfessionalAsync(ct);
+        if (userId == Guid.Empty)
+        {
+            return Unauthorized();
+        }
+
+        if (professional is null)
+        {
+            return Forbid();
+        }
+
+        return Ok(
+            await mediator.Send(
+                new ListMyRequestsQuery(
+                    professional.Id,
+                    status,
+                    patientId,
+                    from,
+                    to,
+                    page,
+                    pageSize
+                ),
+                ct
+            )
+        );
+    }
+
+    /// <summary>
     /// Resuelve el profesional del usuario del JWT (nunca de un id del cliente).
     /// <c>UserId == Guid.Empty</c> indica token sin identidad (→ 401 en el
     /// endpoint); <c>Professional == null</c>, usuario sin perfil clínico (→ 403).

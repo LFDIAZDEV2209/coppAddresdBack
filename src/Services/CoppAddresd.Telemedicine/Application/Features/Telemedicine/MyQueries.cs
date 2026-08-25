@@ -115,3 +115,54 @@ public sealed class GetMySummaryQueryHandler(
         );
     }
 }
+
+/// <summary>
+/// Listado de solicitudes del profesional autenticado, paginado y con filtros
+/// (estado, paciente, rango). Es la variante "mis solicitudes" del listado
+/// administrativo: el <c>ProfessionalId</c> sale de la identidad del JWT en el
+/// controlador, nunca de un id enviado por el cliente — un profesional solo ve
+/// las solicitudes que los pacientes enviaron a su agenda. Reutiliza el shape
+/// del listado admin para que la UI sea idéntica cambiando solo el origen.
+/// </summary>
+public sealed record ListMyRequestsQuery(
+    Guid ProfessionalId,
+    AppointmentRequestStatus? Status,
+    Guid? PatientId,
+    DateTimeOffset? From,
+    DateTimeOffset? To,
+    int Page = 1,
+    int PageSize = 20
+) : IRequest<PaginatedAdminRequestsResult>;
+
+public sealed class ListMyRequestsQueryHandler(
+    IRequestRepository requests,
+    ITelemedicineReferenceDataService referenceData
+) : IRequestHandler<ListMyRequestsQuery, PaginatedAdminRequestsResult>
+{
+    public async Task<PaginatedAdminRequestsResult> Handle(
+        ListMyRequestsQuery request,
+        CancellationToken ct
+    )
+    {
+        var page = Math.Max(1, request.Page);
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+
+        // Alcance forzado por identidad: el professionalId del query es el del
+        // JWT, no un filtro opcional del cliente.
+        var (items, total) = await requests.ListAdminAsync(
+            request.Status,
+            request.ProfessionalId,
+            request.PatientId,
+            request.From?.ToUniversalTime(),
+            request.To?.ToUniversalTime(),
+            page,
+            pageSize,
+            ct
+        );
+
+        var dtos = await RequestDtos.BuildAsync(items, referenceData, ct);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+
+        return new PaginatedAdminRequestsResult(dtos, total, page, pageSize, totalPages);
+    }
+}
