@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Services;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
@@ -42,6 +43,13 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IStoreRepository, StoreRepository>();
         services.AddScoped<ILegalDocumentRepository, LegalDocumentRepository>();
         services.AddScoped<IWellnessRepository, WellnessRepository>();
+
+        // Contexto clínico y reglas de seguridad para la generación de planes
+        // con IA (servicios de aplicación + repositorios de lectura).
+        services.AddScoped<IClinicalMeasurementRepository, ClinicalMeasurementRepository>();
+        services.AddScoped<ISafetyRuleRepository, SafetyRuleRepository>();
+        services.AddScoped<IClinicalContextService, ClinicalContextService>();
+        services.AddScoped<ISafetyRulesService, SafetyRulesService>();
 
         services.AddMemoryCache();
         services.Configure<PostalCodeLookupOptions>(

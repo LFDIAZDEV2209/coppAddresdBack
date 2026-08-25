@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CoppAddresd.Domain.Enums;
 
 namespace CoppAddresd.Application.Features.Wellness;
@@ -13,18 +14,23 @@ public record NutritionPlanDto(
     bool IsTemplate, Guid? PatientId, string? PatientName,
     Guid? SourcePlanId, NutritionPlanStatus Status,
     Guid? CreatedBy, DateTime CreatedAt, DateTime? UpdatedAt,
-    IReadOnlyList<NutritionPlanDayDto> Days)
+    IReadOnlyList<NutritionPlanDayDto> Days,
+    Guid? AssignmentId = null)
 {
-    public static NutritionPlanDto FromEntity(Domain.Entities.NutritionPlan p) => new(
+    public static NutritionPlanDto FromEntity(Domain.Entities.NutritionPlan p, Guid? assignmentId = null) => new(
         p.Id, p.Name, p.Description, p.TargetCondition,
         p.DurationDays, p.DailyCalorieTarget,
         p.DailyProteinTarget, p.DailyCarbsTarget,
         p.DailyFatTarget, p.DailyFiberTarget,
         p.Allergens, p.MealTiming,
-        p.IsTemplate, p.PatientId, null,
+        p.IsTemplate, p.PatientId,
+        p.Patient is null
+            ? null
+            : $"{p.Patient.FirstName} {p.Patient.LastName}".Trim(),
         p.SourcePlanId, p.Status,
         p.CreatedBy, p.CreatedAt, p.UpdatedAt,
-        p.Days.Select(NutritionPlanDayDto.FromEntity).ToList());
+        p.Days.Select(NutritionPlanDayDto.FromEntity).ToList(),
+        assignmentId);
 }
 
 public record NutritionPlanListItemDto(
@@ -42,7 +48,10 @@ public record NutritionPlanListItemDto(
         p.DailyProteinTarget, p.DailyCarbsTarget,
         p.DailyFatTarget, p.DailyFiberTarget,
         p.Allergens, p.MealTiming,
-        p.IsTemplate, p.PatientId, null,
+        p.IsTemplate, p.PatientId,
+        p.Patient is null
+            ? null
+            : $"{p.Patient.FirstName} {p.Patient.LastName}".Trim(),
         p.Status, p.CreatedAt);
 }
 
@@ -50,14 +59,14 @@ public record NutritionPlanDayDto(
     Guid Id, int DayNumber, MealType MealType,
     string? Description, string? Foods, int? Calories,
     decimal? ProteinG, decimal? CarbsG, decimal? FatG,
-    decimal? FiberG, int? WaterMl,
+    decimal? FiberG, int? WaterMl, int DailyWaterMl,
     string? Notes, int SortOrder, Guid? MediaId)
 {
     public static NutritionPlanDayDto FromEntity(Domain.Entities.NutritionPlanDay d) => new(
         d.Id, d.DayNumber, d.MealType,
         d.Description, d.Foods, d.Calories,
         d.ProteinG, d.CarbsG, d.FatG,
-        d.FiberG, d.WaterMl,
+        d.FiberG, d.WaterMl, d.DailyWaterMl,
         d.Notes, d.SortOrder, d.MediaId);
 }
 
@@ -76,7 +85,8 @@ public record CreateNutritionPlanDayRequest(
     string? Description, string? Foods, int? Calories,
     decimal? ProteinG, decimal? CarbsG, decimal? FatG,
     decimal? FiberG, int? WaterMl,
-    string? Notes, int SortOrder, Guid? MediaId);
+    string? Notes, int SortOrder, Guid? MediaId,
+    int DailyWaterMl = 2000);
 
 public record UpdateNutritionPlanRequest(
     string Name, string? Description, string? TargetCondition,
@@ -100,9 +110,10 @@ public record ExerciseRoutineDto(
     string? WarmupNotes, string? CooldownNotes,
     Guid? MediaId, Guid? CreatedBy,
     DateTime CreatedAt, DateTime? UpdatedAt,
-    IReadOnlyList<RoutineExerciseDto> Exercises)
+    IReadOnlyList<RoutineExerciseDto> Exercises,
+    Guid? AssignmentId = null)
 {
-    public static ExerciseRoutineDto FromEntity(Domain.Entities.ExerciseRoutine r) => new(
+    public static ExerciseRoutineDto FromEntity(Domain.Entities.ExerciseRoutine r, Guid? assignmentId = null) => new(
         r.Id, r.Name, r.Description,
         r.Difficulty, r.EstimatedMinutes,
         r.Category, r.Status,
@@ -110,7 +121,8 @@ public record ExerciseRoutineDto(
         r.WarmupNotes, r.CooldownNotes,
         r.MediaId, r.CreatedBy,
         r.CreatedAt, r.UpdatedAt,
-        r.Exercises.Select(RoutineExerciseDto.FromEntity).ToList());
+        r.Exercises.Select(RoutineExerciseDto.FromEntity).ToList(),
+        assignmentId);
 }
 
 public record ExerciseRoutineListItemDto(
@@ -152,7 +164,8 @@ public record CreateExerciseRoutineRequest(
     string? TargetMuscles, string? Equipment,
     string? WarmupNotes, string? CooldownNotes,
     Guid? MediaId,
-    IReadOnlyList<CreateRoutineExerciseRequest>? Exercises);
+    IReadOnlyList<CreateRoutineExerciseRequest>? Exercises,
+    Guid? PatientId = null);
 
 public record CreateRoutineExerciseRequest(
     string Name, string? Description,
@@ -235,3 +248,20 @@ public record UpdateNutritionPlanAssignmentRequest(
 
 public record PaginatedNutritionPlanAssignmentResult(
     IReadOnlyList<NutritionPlanAssignmentDto> Data, int Total, int Page, int PageSize, int TotalPages);
+
+// --- AI Plan Generation DTOs ---
+
+/// <summary>Solicitud de generación de un plan con IA: tipo de plan y paciente.</summary>
+public record GeneratePlanRequest(Guid PatientId, string Type);
+
+/// <summary>
+/// Respuesta de generación de plan: el <see cref="Payload"/> es el JSON listo
+/// para el formulario del frontend (mismo shape que
+/// <see cref="CreateNutritionPlanRequest"/> o <see cref="CreateExerciseRoutineRequest"/>),
+/// devuelto como <c>JsonElement</c> para no acoplar el contrato a los DTOs de
+/// creación del módulo.
+/// </summary>
+public record GeneratePlanResponse(string Type, DateTime GeneratedAt, JsonElement Payload);
+
+/// <summary>Respuesta del AI Service: tipo de plan y plan generado (JSON crudo).</summary>
+public record AiPlanResult(string Type, JsonElement Plan);

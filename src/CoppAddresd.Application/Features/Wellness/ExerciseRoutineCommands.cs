@@ -89,14 +89,42 @@ public sealed class CreateExerciseRoutineCommandHandler(
             }).ToList();
         }
 
-        await repository.AddRoutineAsync(routine, ct);
+        // Modo personalizado: la rutina se asigna al paciente en la misma
+        // transacción que su creación y queda activa de inmediato (una rutina
+        // personalizada nunca arranca en borrador).
+        RoutineAssignment? assignment = null;
+
+        if (r.PatientId is not null)
+        {
+            routine.Status = NutritionPlanStatus.Active;
+
+            assignment = new RoutineAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = r.PatientId.Value,
+                RoutineId = routine.Id,
+                StartDate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc),
+                EndDate = null,
+                Frequency = AssignmentFrequency.Diaria,
+                Status = AssignmentStatus.Active,
+                Notes = null,
+                CreatedBy = request.CreatedBy,
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            await repository.AddRoutineWithAssignmentAsync(routine, assignment, ct);
+        }
+        else
+        {
+            await repository.AddRoutineAsync(routine, ct);
+        }
 
         logger.LogInformation("ExerciseRoutine creado: {Id} ({Name})", routine.Id, routine.Name);
 
         var created = await repository.GetRoutineByIdAsync(routine.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer la rutina creada.");
 
-        return ExerciseRoutineDto.FromEntity(created);
+        return ExerciseRoutineDto.FromEntity(created, assignment?.Id);
     }
 }
 

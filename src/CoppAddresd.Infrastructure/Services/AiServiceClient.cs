@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.Ai;
 using CoppAddresd.Application.Features.Chat;
+using CoppAddresd.Application.Features.Wellness;
 using CoppAddresd.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -50,6 +51,21 @@ public class AiServiceClient : IAiServiceClient
     };
 
     /// <summary>
+    /// Payload de generación de plan: type + contexto clínico consolidado +
+    /// restricciones de seguridad. Se serializa con JsonOpts (snake_case), por
+    /// lo que los DTOs de contexto se envían acorde al contrato del AI Service.
+    /// </summary>
+    private static object BuildGeneratePlanPayload(
+        string type,
+        ClinicalContextDto context,
+        IReadOnlyList<RestrictionDto> restrictions) => new
+    {
+        type,
+        clinical_context = context,
+        restrictions,
+    };
+
+    /// <summary>
     /// Header de autenticación del canal interno backend → AI Service. El
     /// frontend jamás lo conoce; la clave vive solo en configuración
     /// (appsettings/variables de entorno, gitignoreado).
@@ -88,6 +104,38 @@ public class AiServiceClient : IAiServiceClient
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
         return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent);
+    }
+
+    public async Task<AiPlanResult> GeneratePlanAsync(
+        string type,
+        ClinicalContextDto context,
+        IReadOnlyList<RestrictionDto> restrictions,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation("Generating {Type} plan via AI service", type);
+        var payload = BuildGeneratePlanPayload(type, context, restrictions);
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.PlanGenerateEndpoint)
+        {
+            Content = JsonContent.Create(payload, options: JsonOpts),
+        };
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<GeneratePlanResponseJson>(JsonOpts, ct);
+        if (result is null
+            || result.Plan.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            throw new AiServiceException(
+                (int)response.StatusCode,
+                "El AI Service no devolvió un plan en la respuesta.");
+        }
+
+        _logger.LogInformation("AI service returned {Type} plan", result.Type);
+        return new AiPlanResult(result.Type, result.Plan);
     }
 
     public async IAsyncEnumerable<SseEvent> StreamChatAsync(
@@ -211,4 +259,11 @@ public class AiServiceClient : IAiServiceClient
     private record DoneJson(string ThreadId);
     private record NodeJson(string Node);
     private record MessageJson(string Type, string? Content);
+
+    // Contrato del ai-service para generación de planes: `type` + `plan`
+    // (snake_case). El plan es JSON crudo (JsonElement) para no acoplarse al
+    // shape de los DTOs de creación del módulo Wellness.
+    private sealed record GeneratePlanResponseJson(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("plan")] JsonElement Plan);
 }

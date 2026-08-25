@@ -15,6 +15,9 @@ public sealed class NutritionPlanDay
     /// <summary>Número del día dentro del plan (1, 2, 3...).</summary>
     public int DayNumber { get; set; }
 
+    /// <summary>Meta diaria de agua en ml para el día del plan (default 2000).</summary>
+    public int DailyWaterMl { get; set; } = 2000;
+
     public MealType MealType { get; set; }
 
     /// <summary>Descripción de la comida (ej. "Ensalada de pollo con aguacate").</summary>
