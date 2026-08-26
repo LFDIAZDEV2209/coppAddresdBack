@@ -10,7 +10,7 @@ public sealed record GetMyRequestsQuery(Guid PatientId)
 
 public sealed class GetMyRequestsQueryHandler(
     IRequestRepository requests,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<GetMyRequestsQuery, IReadOnlyList<TelemedicineRequestDto>>
 {
     public async Task<IReadOnlyList<TelemedicineRequestDto>> Handle(

@@ -10,11 +10,11 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// se consulta una sola vez aunque aparezca en varias citas): evita el patrón
 /// N+1 sobre los internal endpoints del backend.
 /// </summary>
-internal static class TelemedicineAppointmentMapper
+internal static class AppointmentMapper
 {
-    public static async Task<IReadOnlyList<TelemedicineAppointmentDto>> BuildDtosAsync(
-        IReadOnlyList<TelemedicineAppointment> appointments,
-        ITelemedicineReferenceDataService referenceData,
+    public static async Task<IReadOnlyList<AppointmentDto>> BuildDtosAsync(
+        IReadOnlyList<Appointment> appointments,
+        IAppointmentReferenceDataService referenceData,
         CancellationToken ct)
     {
         var patientIds = appointments.Select(a => a.PatientId).Distinct().ToList();
@@ -33,7 +33,7 @@ internal static class TelemedicineAppointmentMapper
         var locations = await FetchAllAsync(locationIds, id => referenceData.GetLocationAsync(id, ct));
 
         return appointments
-            .Select(a => new TelemedicineAppointmentDto(
+            .Select(a => new AppointmentDto(
                 a.Id,
                 a.RequestId,
                 a.PatientId,

@@ -13,7 +13,7 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// duración/anticipación parametrizadas y sin solapamiento con otras citas
 /// activas del profesional.
 /// </summary>
-public sealed record ScheduleTelemedicineAppointmentCommand(
+public sealed record ScheduleAppointmentCommand(
     Guid PatientId,
     Guid ProfessionalId,
     Guid SpecialtyId,
@@ -22,12 +22,12 @@ public sealed record ScheduleTelemedicineAppointmentCommand(
     Guid? LocationId,
     DateTimeOffset ScheduledStart,
     int? DurationMinutes,
-    Guid CreatedBy) : IRequest<TelemedicineAppointmentDto>;
+    Guid CreatedBy) : IRequest<AppointmentDto>;
 
-public sealed class ScheduleTelemedicineAppointmentCommandValidator
-    : AbstractValidator<ScheduleTelemedicineAppointmentCommand>
+public sealed class ScheduleAppointmentCommandValidator
+    : AbstractValidator<ScheduleAppointmentCommand>
 {
-    public ScheduleTelemedicineAppointmentCommandValidator()
+    public ScheduleAppointmentCommandValidator()
     {
         RuleFor(x => x.PatientId).NotEmpty();
         RuleFor(x => x.ProfessionalId).NotEmpty();
@@ -38,15 +38,15 @@ public sealed class ScheduleTelemedicineAppointmentCommandValidator
     }
 }
 
-public sealed class ScheduleTelemedicineAppointmentCommandHandler(
+public sealed class ScheduleAppointmentCommandHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
     IAlertRepository alerts)
-    : IRequestHandler<ScheduleTelemedicineAppointmentCommand, TelemedicineAppointmentDto>
+    : IRequestHandler<ScheduleAppointmentCommand, AppointmentDto>
 {
-    public async Task<TelemedicineAppointmentDto> Handle(
-        ScheduleTelemedicineAppointmentCommand request,
+    public async Task<AppointmentDto> Handle(
+        ScheduleAppointmentCommand request,
         CancellationToken ct)
     {
         var patient = await ReferenceDataGuard.RequirePatientAsync(referenceData, request.PatientId, ct);
@@ -64,7 +64,7 @@ public sealed class ScheduleTelemedicineAppointmentCommandHandler(
                 "El profesional ya tiene una cita en ese horario.");
         }
 
-        var appointment = new TelemedicineAppointment
+        var appointment = new Appointment
         {
             PatientId = request.PatientId,
             ProfessionalId = request.ProfessionalId,
@@ -93,7 +93,7 @@ public sealed class ScheduleTelemedicineAppointmentCommandHandler(
             await alerts.AddRangeAsync([alert], ct);
         }
 
-        return new TelemedicineAppointmentDto(
+        return new AppointmentDto(
             appointment.Id,
             null,
             appointment.PatientId,

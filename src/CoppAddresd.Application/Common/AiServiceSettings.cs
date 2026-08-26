@@ -16,4 +16,7 @@ public class AiServiceSettings
     public string ExecutionsEndpoint => $"{ApiPrefix}/admin/executions";
     public string SyncAgentConfigEndpoint => "/internal/agents/sync-config";
     public string IngestDocumentEndpoint => "/internal/agents/ingest";
+
+    /// <summary>Endpoint interno de generación de planes de alimentación/rutinas (AI Service).</summary>
+    public string PlanGenerateEndpoint { get; set; } = "/internal/wellness/generate-plan";
 }

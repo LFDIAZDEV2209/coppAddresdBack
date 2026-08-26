@@ -37,7 +37,7 @@ public sealed record TelemedicineSessionDto(
 
 public sealed class ListAdminSessionsQueryHandler(
     IRoomRepository rooms,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<ListAdminSessionsQuery, PaginatedAdminSessionsResult>
 {
     public async Task<PaginatedAdminSessionsResult> Handle(
@@ -67,7 +67,7 @@ internal static class SessionDtos
 {
     public static async Task<IReadOnlyList<TelemedicineSessionDto>> BuildAsync(
         IReadOnlyList<TelemedicineSession> items,
-        ITelemedicineReferenceDataService referenceData,
+        IAppointmentReferenceDataService referenceData,
         CancellationToken ct)
     {
         var patientIds = items
@@ -182,7 +182,7 @@ public sealed record CurrentUserContextDto(
     PatientRefDto? Patient);
 
 public sealed class GetCurrentUserContextQueryHandler(
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<GetCurrentUserContextQuery, CurrentUserContextDto>
 {
     public async Task<CurrentUserContextDto> Handle(
@@ -208,7 +208,7 @@ public sealed record ListAdminAppointmentsQuery(
     int PageSize = 20) : IRequest<PaginatedAdminAppointmentsResult>;
 
 public sealed record PaginatedAdminAppointmentsResult(
-    IReadOnlyList<TelemedicineAppointmentDto> Items,
+    IReadOnlyList<AppointmentDto> Items,
     int Total,
     int Page,
     int PageSize,
@@ -216,7 +216,7 @@ public sealed record PaginatedAdminAppointmentsResult(
 
 public sealed class ListAdminAppointmentsQueryHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<ListAdminAppointmentsQuery, PaginatedAdminAppointmentsResult>
 {
     public async Task<PaginatedAdminAppointmentsResult> Handle(
@@ -238,7 +238,7 @@ public sealed class ListAdminAppointmentsQueryHandler(
             pageSize,
             ct);
 
-        var dtos = await TelemedicineAppointmentMapper.BuildDtosAsync(items, referenceData, ct);
+        var dtos = await AppointmentMapper.BuildDtosAsync(items, referenceData, ct);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 
         return new PaginatedAdminAppointmentsResult(dtos, total, page, pageSize, totalPages);
@@ -267,7 +267,7 @@ public sealed record PaginatedAdminRequestsResult(
 
 public sealed class ListAdminRequestsQueryHandler(
     IRequestRepository requests,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<ListAdminRequestsQuery, PaginatedAdminRequestsResult>
 {
     public async Task<PaginatedAdminRequestsResult> Handle(
@@ -299,7 +299,7 @@ internal static class RequestDtos
 {
     public static async Task<IReadOnlyList<TelemedicineRequestDto>> BuildAsync(
         IReadOnlyList<TelemedicineRequest> items,
-        ITelemedicineReferenceDataService referenceData,
+        IAppointmentReferenceDataService referenceData,
         CancellationToken ct)
     {
         var patientIds = items.Select(r => r.PatientId).Distinct().ToList();

@@ -14,9 +14,9 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Services;
 /// existe en el ERP) y traduce errores transitorios del backend a una
 /// excepción de dominio comprensible.
 /// </summary>
-public sealed class BackendReferenceDataService(
+public sealed class AppointmentReferenceDataService(
     HttpClient httpClient,
-    ILogger<BackendReferenceDataService> logger) : ITelemedicineReferenceDataService
+    ILogger<AppointmentReferenceDataService> logger) : IAppointmentReferenceDataService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerOptions.Web);
 

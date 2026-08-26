@@ -37,7 +37,7 @@ public sealed class TelemedicineSession
 
     public DateTime? UpdatedAt { get; set; }
 
-    public TelemedicineAppointment? Appointment { get; set; }
+    public Appointment? Appointment { get; set; }
 
     public VirtualRoom? Room { get; set; }
 

@@ -69,7 +69,13 @@ public static class PermissionCodes
     public const string ClinicalRecordsCreate = "ClinicalRecords.Create";
     public const string ClinicalRecordsUpdate = "ClinicalRecords.Update";
 
-// Telemedicina (módulo consumido por el microservicio de Telemedicina).
+    // [DEPRECATED] mantener durante transición dual-emit: estos códigos
+    // Telemedicine.* permanecen funcionales (se siguen emitiendo en los JWTs y
+    // aceptando en la autorización) hasta que todos los módulos migren a
+    // Appointments.* (fases posteriores del rename). NO eliminar ni renombrar:
+    // hay grants persistidos (auth.RolePermissions / auth.UserPermissions /
+    // auth.ScopedPermissionAssignments) que aún los referencian.
+    // Telemedicina (módulo consumido por el microservicio de Telemedicina).
     public const string TelemedicineRequestsCreate = "Telemedicine.RequestsCreate";
     public const string TelemedicineRequestsView = "Telemedicine.RequestsView";
     public const string TelemedicineRequestsConfirm = "Telemedicine.RequestsConfirm";
@@ -82,6 +88,22 @@ public static class PermissionCodes
     public const string TelemedicineSessionsManage = "Telemedicine.SessionsManage";
     /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
     public const string TelemedicineAdminView = "Telemedicine.AdminView";
+
+    // Citas genéricas (Appointments.*): reemplazan a Telemedicine.* durante la
+    // transición dual-emit. Un grant del código legado equivale al nuevo (ver
+    // PermissionCodeMap) y los JWTs emiten ambos códigos.
+    public const string AppointmentsRequestsCreate = "Appointments.RequestsCreate";
+    public const string AppointmentsRequestsView = "Appointments.RequestsView";
+    public const string AppointmentsRequestsConfirm = "Appointments.RequestsConfirm";
+    public const string AppointmentsSchedule = "Appointments.Schedule";
+    public const string AppointmentsView = "Appointments.View";
+    public const string AppointmentsCancel = "Appointments.Cancel";
+    public const string AppointmentsReschedule = "Appointments.Reschedule";
+    public const string AppointmentsAgendaView = "Appointments.AgendaView";
+    public const string AppointmentsAlertsView = "Appointments.AlertsView";
+    public const string AppointmentsSessionsManage = "Appointments.SessionsManage";
+    /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
+    public const string AppointmentsAdminView = "Appointments.AdminView";
 
     // Módulos de la plataforma sin flujo clínico (visibilidad de navegación y
     // acceso futuro de sus endpoints): el profesional clínico no los tiene.
@@ -161,6 +183,17 @@ yield return TelemedicineRequestsCreate;
         yield return TelemedicineAlertsView;
         yield return TelemedicineSessionsManage;
         yield return TelemedicineAdminView;
+        yield return AppointmentsRequestsCreate;
+        yield return AppointmentsRequestsView;
+        yield return AppointmentsRequestsConfirm;
+        yield return AppointmentsSchedule;
+        yield return AppointmentsView;
+        yield return AppointmentsCancel;
+        yield return AppointmentsReschedule;
+        yield return AppointmentsAgendaView;
+        yield return AppointmentsAlertsView;
+        yield return AppointmentsSessionsManage;
+        yield return AppointmentsAdminView;
         yield return InventoryView;
         yield return StoreView;
         yield return MediaView;

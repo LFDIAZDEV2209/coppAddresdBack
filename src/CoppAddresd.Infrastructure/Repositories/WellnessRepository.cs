@@ -12,6 +12,7 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
     public async Task<NutritionPlan?> GetPlanByIdAsync(Guid id, CancellationToken ct = default)
         => await dbContext.NutritionPlans
             .AsNoTracking()
+            .Include(x => x.Patient)
             .Include(x => x.Days.OrderBy(d => d.DayNumber).ThenBy(d => d.SortOrder))
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
@@ -19,7 +20,10 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
         bool? isTemplate, string? search, string? status, Guid? patientId,
         int page, int pageSize, CancellationToken ct = default)
     {
-        var query = dbContext.NutritionPlans.AsNoTracking().AsQueryable();
+        var query = dbContext.NutritionPlans
+            .AsNoTracking()
+            .Include(x => x.Patient)
+            .AsQueryable();
 
         if (isTemplate.HasValue)
             query = query.Where(x => x.IsTemplate == isTemplate.Value);
@@ -49,6 +53,34 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
         dbContext.NutritionPlans.Add(plan);
         await dbContext.SaveChangesAsync(ct);
         return plan;
+    }
+
+    public async Task<NutritionPlanAssignment> AddPlanWithAssignmentAsync(
+        NutritionPlan plan,
+        NutritionPlanAssignment assignment,
+        CancellationToken ct = default)
+    {
+        // NpgsqlRetryingExecutionStrategy no admite transacciones iniciadas por
+        // el usuario fuera de su unidad retriable: se envuelve la operación.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                dbContext.NutritionPlans.Add(plan);
+                dbContext.NutritionPlanAssignments.Add(assignment);
+                await dbContext.SaveChangesAsync(ct);
+
+                await transaction.CommitAsync(ct);
+                return assignment;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
     }
 
     public async Task UpdatePlanAsync(NutritionPlan plan, CancellationToken ct = default)
@@ -133,6 +165,34 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
         dbContext.ExerciseRoutines.Add(routine);
         await dbContext.SaveChangesAsync(ct);
         return routine;
+    }
+
+    public async Task<RoutineAssignment> AddRoutineWithAssignmentAsync(
+        ExerciseRoutine routine,
+        RoutineAssignment assignment,
+        CancellationToken ct = default)
+    {
+        // NpgsqlRetryingExecutionStrategy no admite transacciones iniciadas por
+        // el usuario fuera de su unidad retriable: se envuelve la operación.
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                dbContext.ExerciseRoutines.Add(routine);
+                dbContext.RoutineAssignments.Add(assignment);
+                await dbContext.SaveChangesAsync(ct);
+
+                await transaction.CommitAsync(ct);
+                return assignment;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
     }
 
     public async Task UpdateRoutineAsync(ExerciseRoutine routine, CancellationToken ct = default)

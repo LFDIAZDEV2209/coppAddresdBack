@@ -167,7 +167,7 @@ def wipe_seed(conn: psycopg.Connection, professionals: list[dict]) -> None:
     appointment_ids = [
         r[0]
         for r in conn.execute(
-            "SELECT id FROM tele.telemedicine_appointments WHERE created_by = %s",
+            "SELECT id FROM tele.appointments WHERE created_by = %s",
             (SEED_USER_ID,),
         ).fetchall()
     ]
@@ -189,7 +189,7 @@ def wipe_seed(conn: psycopg.Connection, professionals: list[dict]) -> None:
             "DELETE FROM tele.virtual_rooms WHERE created_by = %s", (SEED_USER_ID,)
         )
         conn.execute(
-            "DELETE FROM tele.telemedicine_appointments WHERE created_by = %s",
+            "DELETE FROM tele.appointments WHERE created_by = %s",
             (SEED_USER_ID,),
         )
         conn.execute(
@@ -312,7 +312,7 @@ def create_appointments(
                 # profesional en la misma franja o con el mismo inicio exacto.
                 conflict = conn.execute(
                     """
-                    SELECT 1 FROM tele.telemedicine_appointments
+                    SELECT 1 FROM tele.appointments
                     WHERE professional_id = %s
                       AND status = ANY(%s)
                       AND scheduled_start < %s AND scheduled_end > %s
@@ -346,7 +346,7 @@ def create_appointments(
 
                 conn.execute(
                     """
-                    INSERT INTO tele.telemedicine_appointments
+                    INSERT INTO tele.appointments
                         (id, request_id, patient_id, professional_id, specialty_id,
                          organization_id, clinic_id, location_id,
                          scheduled_start, scheduled_end, duration_minutes, status,
@@ -369,7 +369,7 @@ def create_appointments(
                     cancelled_at = start - timedelta(hours=random.randint(2, 48))
                     conn.execute(
                         """
-                        UPDATE tele.telemedicine_appointments
+                        UPDATE tele.appointments
                         SET status = 'Cancelled',
                             cancellation_reason = %s,
                             cancelled_by = %s,
@@ -395,7 +395,7 @@ def create_appointments(
                     reschedule_count = 1
                     conn.execute(
                         """
-                        UPDATE tele.telemedicine_appointments
+                        UPDATE tele.appointments
                         SET reschedule_count = %s
                         WHERE id = %s
                         """,
