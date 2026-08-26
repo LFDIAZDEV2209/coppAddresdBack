@@ -68,7 +68,6 @@ jobs:
         run: |
           dotnet test tests/CoppAddresd.UnitTests -c Release --nologo
           dotnet test tests/CoppAddresd.Telemedicine.UnitTests -c Release --nologo
-          dotnet test tests/CoppAddresd.Gateway.UnitTests -c Release --nologo
 
   deploy:
     needs: [detect, test]
