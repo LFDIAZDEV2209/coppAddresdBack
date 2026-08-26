@@ -22,6 +22,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
         Set<ScopedPermissionAssignment>();
     public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
+    public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -248,6 +249,14 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
             b.Property(o => o.CodeHash).HasMaxLength(128).IsRequired();
             b.Property(o => o.Salt).HasMaxLength(128).IsRequired();
             b.HasIndex(o => o.DocumentNumber);
+        });
+
+        builder.Entity<UserPreference>(b =>
+        {
+            b.ToTable("UserPreferences", "auth");
+            b.HasKey(u => u.UserId);
+            b.Property(u => u.Lang).HasMaxLength(2);
+            b.HasOne(u => u.User).WithMany().HasForeignKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
