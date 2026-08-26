@@ -1,0 +1,151 @@
+name: Deploy Frontend
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-frontend-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REGISTRY: 933629770820.dkr.ecr.us-east-2.amazonaws.com
+  ECR_REPOSITORY: cooppadresd-frontend
+  ECS_CLUSTER: cooppadresd-cluster
+  ECS_SERVICE: cooppadresd-frontend
+  NEXT_PUBLIC_GATEWAY_URL: https://mzdxget3ui.execute-api.us-east-2.amazonaws.com
+  NEXT_PUBLIC_APPLICATION_CODE: erp
+  NEXT_PUBLIC_SESSION_IDLE_MINUTES: "30"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: yarn
+
+      - name: Instalar dependencias
+        run: yarn install --immutable
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build
+        run: yarn build
+        env:
+          NEXT_PUBLIC_GATEWAY_URL: ${{ env.NEXT_PUBLIC_GATEWAY_URL }}
+          NEXT_PUBLIC_APPLICATION_CODE: ${{ env.NEXT_PUBLIC_APPLICATION_CODE }}
+          NEXT_PUBLIC_SESSION_IDLE_MINUTES: ${{ env.NEXT_PUBLIC_SESSION_IDLE_MINUTES }}
+
+  deploy:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::933629770820:role/cooppadresd-gha-frontend
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build imagen (${{ github.sha }})
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_GATEWAY_URL=${{ env.NEXT_PUBLIC_GATEWAY_URL }} \
+            --build-arg NEXT_PUBLIC_APPLICATION_CODE=${{ env.NEXT_PUBLIC_APPLICATION_CODE }} \
+            --build-arg NEXT_PUBLIC_SESSION_IDLE_MINUTES=${{ env.NEXT_PUBLIC_SESSION_IDLE_MINUTES }} \
+            -t "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" \
+            -t "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest" \
+            .
+
+      - name: Push ECR
+        run: |
+          docker push "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          docker push "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest"
+
+      - name: Registrar nueva Task Definition (imagen SHA)
+        id: taskdef
+        shell: bash
+        run: |
+          TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "${{ env.ECS_SERVICE }}" --region "${{ env.AWS_REGION }}" --query "taskDefinition" --output json)
+          NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" '
+            .containerDefinitions[0].image = $img |
+            del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes)
+          ')
+          REGISTERED=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF_JSON" --region "${{ env.AWS_REGION }}")
+          echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
+
+      - name: Actualizar ECS Service
+        run: |
+          aws ecs update-service \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "${{ steps.taskdef.outputs.arn }}" \
+            --region "${{ env.AWS_REGION }}"
+
+      - name: Esperar deployment estable
+        timeout-minutes: 20
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}"
+
+      - name: Validar rollout COMPLETED
+        shell: bash
+        run: |
+          STATE=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "services[0].deployments[0].rolloutState" --output text)
+          RUNNING=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "services[0].runningCount" --output text)
+          DESIRED=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "${{ env.ECS_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "services[0].desiredCount" --output text)
+          echo "Service: ${{ env.ECS_SERVICE }}"
+          echo "Rollout: $STATE | Running: $RUNNING | Desired: $DESIRED"
+          if [ "$STATE" != "COMPLETED" ] || [ "$RUNNING" != "$DESIRED" ]; then
+            echo "::error::Deployment no estable: rollout=$STATE running=$RUNNING desired=$DESIRED"
+            exit 1
+          fi
+
+      - name: Diagnóstico en fallo
+        if: failure()
+        shell: bash
+        run: |
+          TASKS=$(aws ecs list-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service-name "${{ env.ECS_SERVICE }}" \
+            --region "${{ env.AWS_REGION }}" --query "taskArns" --output text)
+          for T in $TASKS; do
+            aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks "$T" --region "${{ env.AWS_REGION }}" \
+              --query "tasks[0].{Status:lastStatus,Stop:stoppedReason,Containers:containers[*].{Name:name,Exit:exitCode,Reason:reason}}" \
+              --output json
+          done# re-register
