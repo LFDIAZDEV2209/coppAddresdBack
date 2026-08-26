@@ -216,7 +216,11 @@ public class AuthController : ControllerBase
             // Secure solo en contextos seguros; LAN/dev usan http. En producción
             // el servicio se expone siempre por HTTPS.
             Secure = !_environment.IsDevelopment(),
-            SameSite = SameSiteMode.Lax,
+            // En producción el frontend y la API viven en orígenes distintos
+            // (frontend → API Gateway), por lo que la cookie de refresh se envía
+            // en requests cross-site: SameSite=None es obligatorio. Lax en dev
+            // (mismo sitio localhost) evita el aviso del navegador.
+            SameSite = _environment.IsDevelopment() ? SameSiteMode.Lax : SameSiteMode.None,
             Path = "/api/auth",
             IsEssential = true,
             Expires = expires

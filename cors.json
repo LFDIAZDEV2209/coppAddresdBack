@@ -1,0 +1,1 @@
+{"AllowOrigins":["*"],"AllowMethods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"AllowHeaders":["*"],"MaxAge":86400}
