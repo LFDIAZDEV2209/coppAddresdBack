@@ -145,8 +145,12 @@ jobs:
             --argjson secs '${{ steps.svc.outputs.extra_secrets }}' '
             .containerDefinitions[0].image = $img |
             del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes) |
-            .containerDefinitions[0].environment = ((.containerDefinitions[0].environment // []) + $envs) |
-            .containerDefinitions[0].secrets = ((.containerDefinitions[0].secrets // []) + $secs)
+            .containerDefinitions[0].environment =
+              ((.containerDefinitions[0].environment // []) as $cur |
+               [$cur[] | select(. as $e | ([$envs[].name] | index($e.name)) | not)] + $envs) |
+            .containerDefinitions[0].secrets =
+              ((.containerDefinitions[0].secrets // []) as $cur |
+               [$cur[] | select(. as $e | ([$secs[].name] | index($e.name)) | not)] + $secs)
           ')
           REGISTERED=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF_JSON" --region "${{ env.AWS_REGION }}")
           echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
