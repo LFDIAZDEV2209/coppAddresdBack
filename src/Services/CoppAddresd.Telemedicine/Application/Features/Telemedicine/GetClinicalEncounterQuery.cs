@@ -18,7 +18,7 @@ public sealed record GetClinicalEncounterQuery(
 public sealed class GetClinicalEncounterQueryHandler(
     IAppointmentRepository appointments,
     IEncounterRepository encounters,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<GetClinicalEncounterQuery, ClinicalEncounterDto>
 {
     public async Task<ClinicalEncounterDto> Handle(

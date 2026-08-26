@@ -15,49 +15,49 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/internal/telemedicine")]
 [RequireInternalKey]
-public class TelemedicineReferenceController(IMediator mediator) : ControllerBase
+public class AppointmentReferenceController(IMediator mediator) : ControllerBase
 {
     /// <summary>Profesional por id de su extensión clínica (<c>erp.professionals</c>).</summary>
     [HttpGet("professionals/{id:guid}")]
-    [ProducesResponseType(typeof(TelemedicineProfessionalRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AppointmentProfessionalRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TelemedicineProfessionalRefDto>> GetProfessional(
+    public async Task<ActionResult<AppointmentProfessionalRefDto>> GetProfessional(
         Guid id, CancellationToken ct)
     {
-        var result = await mediator.Send(new GetTelemedicineProfessionalRefQuery(id), ct);
+        var result = await mediator.Send(new GetAppointmentProfessionalRefQuery(id), ct);
         return result is null ? NotFound(new { message = "Profesional no encontrado." }) : Ok(result);
     }
 
     /// <summary>Paciente por id (<c>app.patient_profiles</c>).</summary>
     [HttpGet("patients/{id:guid}")]
-    [ProducesResponseType(typeof(TelemedicinePatientRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AppointmentPatientRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TelemedicinePatientRefDto>> GetPatient(
+    public async Task<ActionResult<AppointmentPatientRefDto>> GetPatient(
         Guid id, CancellationToken ct)
     {
-        var result = await mediator.Send(new GetTelemedicinePatientRefQuery(id), ct);
+        var result = await mediator.Send(new GetAppointmentPatientRefQuery(id), ct);
         return result is null ? NotFound(new { message = "Paciente no encontrado." }) : Ok(result);
     }
 
     /// <summary>Especialidad por id (<c>erp.specialties</c>).</summary>
     [HttpGet("specialties/{id:guid}")]
-    [ProducesResponseType(typeof(TelemedicineSpecialtyRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AppointmentSpecialtyRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TelemedicineSpecialtyRefDto>> GetSpecialty(
+    public async Task<ActionResult<AppointmentSpecialtyRefDto>> GetSpecialty(
         Guid id, CancellationToken ct)
     {
-        var result = await mediator.Send(new GetTelemedicineSpecialtyRefQuery(id), ct);
+        var result = await mediator.Send(new GetAppointmentSpecialtyRefQuery(id), ct);
         return result is null ? NotFound(new { message = "Especialidad no encontrada." }) : Ok(result);
     }
 
     /// <summary>Sede por id (<c>erp.locations</c>).</summary>
     [HttpGet("locations/{id:guid}")]
-    [ProducesResponseType(typeof(TelemedicineLocationRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AppointmentLocationRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TelemedicineLocationRefDto>> GetLocation(
+    public async Task<ActionResult<AppointmentLocationRefDto>> GetLocation(
         Guid id, CancellationToken ct)
     {
-        var result = await mediator.Send(new GetTelemedicineLocationRefQuery(id), ct);
+        var result = await mediator.Send(new GetAppointmentLocationRefQuery(id), ct);
         return result is null ? NotFound(new { message = "Sede no encontrada." }) : Ok(result);
     }
 
@@ -67,23 +67,23 @@ public class TelemedicineReferenceController(IMediator mediator) : ControllerBas
     /// desde el token, nunca desde un id enviado por el cliente.
     /// </summary>
     [HttpGet("professionals/by-user/{userId:guid}")]
-    [ProducesResponseType(typeof(TelemedicineProfessionalRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AppointmentProfessionalRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TelemedicineProfessionalRefDto>> GetProfessionalByUser(
+    public async Task<ActionResult<AppointmentProfessionalRefDto>> GetProfessionalByUser(
         Guid userId, CancellationToken ct)
     {
-        var result = await mediator.Send(new GetTelemedicineProfessionalByUserIdQuery(userId), ct);
+        var result = await mediator.Send(new GetAppointmentProfessionalByUserIdQuery(userId), ct);
         return result is null ? NotFound(new { message = "Profesional no encontrado para el usuario." }) : Ok(result);
     }
 
     /// <summary>Paciente por usuario de Auth (contexto del JWT), para autorizar el acceso a la sala del paciente.</summary>
     [HttpGet("patients/by-user/{userId:guid}")]
-    [ProducesResponseType(typeof(TelemedicinePatientRefDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AppointmentPatientRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TelemedicinePatientRefDto>> GetPatientByUser(
+    public async Task<ActionResult<AppointmentPatientRefDto>> GetPatientByUser(
         Guid userId, CancellationToken ct)
     {
-        var result = await mediator.Send(new GetTelemedicinePatientByUserIdQuery(userId), ct);
+        var result = await mediator.Send(new GetAppointmentPatientByUserIdQuery(userId), ct);
         return result is null ? NotFound(new { message = "Paciente no encontrado para el usuario." }) : Ok(result);
     }
 }

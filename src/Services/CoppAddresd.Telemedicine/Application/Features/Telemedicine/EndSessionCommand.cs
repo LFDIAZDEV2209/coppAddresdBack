@@ -18,7 +18,7 @@ public sealed record EndSessionCommand(
     Guid AppointmentId,
     string? EndReason,
     Guid UserId,
-    bool HasManagePermission) : IRequest<TelemedicineAppointmentDto>;
+    bool HasManagePermission) : IRequest<AppointmentDto>;
 
 public sealed class EndSessionCommandValidator : AbstractValidator<EndSessionCommand>
 {
@@ -33,11 +33,11 @@ public sealed class EndSessionCommandValidator : AbstractValidator<EndSessionCom
 public sealed class EndSessionCommandHandler(
     IAppointmentRepository appointments,
     IVideoProvider videoProvider,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ILogger<EndSessionCommandHandler> logger)
-    : IRequestHandler<EndSessionCommand, TelemedicineAppointmentDto>
+    : IRequestHandler<EndSessionCommand, AppointmentDto>
 {
-    public async Task<TelemedicineAppointmentDto> Handle(EndSessionCommand request, CancellationToken ct)
+    public async Task<AppointmentDto> Handle(EndSessionCommand request, CancellationToken ct)
     {
         var appointment = await appointments.GetForUpdateAsync(request.AppointmentId, ct)
             ?? throw new NotFoundException("Cita", request.AppointmentId);
@@ -90,7 +90,7 @@ public sealed class EndSessionCommandHandler(
             await appointments.UpdateAsync(appointment, ct);
         }
 
-        var dto = await TelemedicineAppointmentMapper.BuildDtosAsync([appointment], referenceData, ct);
+        var dto = await AppointmentMapper.BuildDtosAsync([appointment], referenceData, ct);
         return dto[0];
     }
 }

@@ -65,5 +65,5 @@ public class AlertsController(IMediator mediator) : ControllerBase
     }
 
     private bool HasAlertsView()
-        => User.HasClaim("permission", TelemedicinePermissionCodes.AlertsView);
+        => User.HasClaim("permission", AppointmentPermissionCodes.AlertsView);
 }

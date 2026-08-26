@@ -23,11 +23,11 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     /// </summary>
     private readonly HashSet<Guid> _loadedSessionIds = [];
 
-    public async Task<TelemedicineAppointment?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    public async Task<Appointment?> GetByIdAsync(Guid id, CancellationToken ct = default)
         => await dbContext.Appointments.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Id == id, ct);
 
-    public async Task<TelemedicineAppointment?> GetForUpdateAsync(Guid id, CancellationToken ct = default)
+    public async Task<Appointment?> GetForUpdateAsync(Guid id, CancellationToken ct = default)
     {
         var appointment = await dbContext.Appointments
             .Include(a => a.Cancellations)
@@ -48,8 +48,8 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         return appointment;
     }
 
-    public async Task<TelemedicineAppointment> AddAsync(
-        TelemedicineAppointment appointment,
+    public async Task<Appointment> AddAsync(
+        Appointment appointment,
         CancellationToken ct = default)
     {
         dbContext.Appointments.Add(appointment);
@@ -58,7 +58,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     }
 
     public async Task UpdateAsync(
-        TelemedicineAppointment appointment,
+        Appointment appointment,
         CancellationToken ct = default)
     {
         // Historial append-only (cancelaciones/reprogramaciones): los hijos ya
@@ -118,7 +118,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             && a.ScheduledEnd > start
             && (excludeAppointmentId == null || a.Id != excludeAppointmentId), ct);
 
-    public async Task<IReadOnlyList<TelemedicineAppointment>> ListByProfessionalAsync(
+    public async Task<IReadOnlyList<Appointment>> ListByProfessionalAsync(
         Guid professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
@@ -130,7 +130,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .OrderBy(a => a.ScheduledStart)
             .ToListAsync(ct);
 
-    public async Task<IReadOnlyList<TelemedicineAppointment>> ListByPatientAsync(
+    public async Task<IReadOnlyList<Appointment>> ListByPatientAsync(
         Guid patientId,
         CancellationToken ct = default)
         => await dbContext.Appointments.AsNoTracking()
@@ -138,7 +138,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .OrderByDescending(a => a.ScheduledStart)
             .ToListAsync(ct);
 
-    public async Task<(IReadOnlyList<TelemedicineAppointment> Items, int Total)> ListAdminAsync(
+    public async Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminAsync(
         Guid? professionalId,
         Guid? patientId,
         Guid? clinicId,
@@ -341,7 +341,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .Distinct()
             .CountAsync(ct);
 
-    public async Task<IReadOnlyList<TelemedicineAppointment>> ListUpcomingAsync(
+    public async Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,
         DateTimeOffset from,
         int limit,

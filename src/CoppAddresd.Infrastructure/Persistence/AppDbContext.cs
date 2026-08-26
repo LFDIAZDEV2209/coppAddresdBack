@@ -77,6 +77,7 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<MeasurementReferenceRange> MeasurementReferenceRanges => Set<MeasurementReferenceRange>();
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<ClinicalMeasurement> ClinicalMeasurements => Set<ClinicalMeasurement>();
+    public DbSet<PlanSafetyRule> PlanSafetyRules => Set<PlanSafetyRule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

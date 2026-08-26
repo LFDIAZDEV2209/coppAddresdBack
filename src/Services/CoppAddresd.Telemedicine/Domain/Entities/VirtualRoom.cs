@@ -39,7 +39,7 @@ public sealed class VirtualRoom
 
     public DateTime? UpdatedAt { get; set; }
 
-    public TelemedicineAppointment? Appointment { get; set; }
+    public Appointment? Appointment { get; set; }
 
     public ICollection<TelemedicineSession> Sessions { get; set; } = [];
 }

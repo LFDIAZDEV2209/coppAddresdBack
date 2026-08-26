@@ -197,7 +197,7 @@ namespace CoppAddresd.Auth.Migrations
                     b.ToTable("UserRoleAssignments", "auth");
                 });
 
-modelBuilder.Entity("CoppAddresd.Auth.Entities.Invitation", b =>
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.Invitation", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()

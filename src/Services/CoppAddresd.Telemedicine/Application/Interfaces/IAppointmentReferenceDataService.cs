@@ -7,10 +7,10 @@ namespace CoppAddresd.Telemedicine.Application.Interfaces;
 /// especialidades, sedes). El dominio de telemedicina referencia estos datos
 /// por Id; su validación de existencia y los datos de la UI vienen del backend
 /// vía internal endpoints (<c>X-Internal-Key</c>). Implementación en
-/// Infrastructure (<see cref="CoppAddresd.Telemedicine.Infrastructure.Services.BackendReferenceDataService"/>),
+/// Infrastructure (<see cref="CoppAddresd.Telemedicine.Infrastructure.Services.AppointmentReferenceDataService"/>),
 /// sustituible en pruebas por un fake.
 /// </summary>
-public interface ITelemedicineReferenceDataService
+public interface IAppointmentReferenceDataService
 {
     /// <summary>Profesional por su id de <c>erp.professionals</c>; <c>null</c> si no existe.</summary>
     Task<ProfessionalRefDto?> GetProfessionalAsync(Guid professionalId, CancellationToken ct = default);

@@ -10,7 +10,7 @@ public sealed record MarkAlertReadCommand(Guid AlertId, Guid UserId, bool HasAle
 
 public sealed class MarkAlertReadCommandHandler(
     IAlertRepository alerts,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<MarkAlertReadCommand, bool>
 {
     public async Task<bool> Handle(MarkAlertReadCommand request, CancellationToken ct)

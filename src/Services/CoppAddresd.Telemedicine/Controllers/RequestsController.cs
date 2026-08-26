@@ -19,7 +19,7 @@ namespace CoppAddresd.Telemedicine.Controllers;
 public class RequestsController(IMediator mediator) : ControllerBase
 {
     [HttpPost]
-    [RequirePermission(TelemedicinePermissionCodes.RequestsCreate)]
+    [RequirePermission(AppointmentPermissionCodes.RequestsCreate)]
     [ProducesResponseType(typeof(TelemedicineRequestDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<TelemedicineRequestDto>> Create(
         [FromBody] CreateTelemedicineRequestDto request,
@@ -41,14 +41,14 @@ public class RequestsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    [RequirePermission(TelemedicinePermissionCodes.RequestsView)]
+    [RequirePermission(AppointmentPermissionCodes.RequestsView)]
     [ProducesResponseType(typeof(TelemedicineRequestDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<TelemedicineRequestDto>> GetById(Guid id, CancellationToken ct)
         => Ok(await mediator.Send(new GetTelemedicineRequestQuery(id), ct));
 
     /// <summary>Solicitudes del paciente (usuario autenticado o paciente indicado).</summary>
     [HttpGet("mine")]
-    [RequirePermission(TelemedicinePermissionCodes.RequestsView)]
+    [RequirePermission(AppointmentPermissionCodes.RequestsView)]
     [ProducesResponseType(typeof(IReadOnlyList<TelemedicineRequestDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<TelemedicineRequestDto>>> Mine(
         [FromQuery] Guid? patientId,
@@ -57,9 +57,9 @@ public class RequestsController(IMediator mediator) : ControllerBase
 
     /// <summary>Confirma una solicitud pendiente → crea la cita Confirmed.</summary>
     [HttpPost("{id:guid}/confirm")]
-    [RequirePermission(TelemedicinePermissionCodes.RequestsConfirm)]
-    [ProducesResponseType(typeof(TelemedicineAppointmentDto), StatusCodes.Status201Created)]
-    public async Task<ActionResult<TelemedicineAppointmentDto>> Confirm(
+    [RequirePermission(AppointmentPermissionCodes.RequestsConfirm)]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status201Created)]
+    public async Task<ActionResult<AppointmentDto>> Confirm(
         Guid id,
         [FromBody] ConfirmTelemedicineRequestDto request,
         CancellationToken ct)
