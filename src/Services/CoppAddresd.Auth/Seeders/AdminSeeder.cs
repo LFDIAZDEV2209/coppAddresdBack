@@ -54,15 +54,50 @@ public static class AdminSeeder
                 EmailConfirmed = true
             };
 
-            var userResult = await userManager.CreateAsync(adminUser, authSettings.AdminPassword);
+            var userResult = await userManager.CreateAsync(
+                adminUser,
+                authSettings.AdminPassword
+            );
+
             if (!userResult.Succeeded)
             {
-                logger.LogError("Failed to create admin user: {Errors}",
-                    string.Join(", ", userResult.Errors.Select(e => e.Description)));
+                logger.LogError(
+                    "Failed to create admin user: {Errors}",
+                    string.Join(", ", userResult.Errors.Select(e => e.Description))
+                );
+
                 return;
             }
 
-            logger.LogInformation("Admin user created: {Email}", authSettings.AdminEmail);
+            logger.LogInformation(
+                "Admin user created: {Email}",
+                authSettings.AdminEmail
+            );
+        }
+        else
+        {
+            var token = await userManager.GeneratePasswordResetTokenAsync(adminUser);
+
+            var passwordResult = await userManager.ResetPasswordAsync(
+                adminUser,
+                token,
+                authSettings.AdminPassword
+            );
+
+            if (!passwordResult.Succeeded)
+            {
+                logger.LogError(
+                    "Failed to reset admin password: {Errors}",
+                    string.Join(", ", passwordResult.Errors.Select(e => e.Description))
+                );
+
+                return;
+            }
+
+            logger.LogInformation(
+                "Admin password reset successfully for {Email}",
+                authSettings.AdminEmail
+            );
         }
 
         var isInRole = await userManager.IsInRoleAsync(adminUser, adminRoleName);

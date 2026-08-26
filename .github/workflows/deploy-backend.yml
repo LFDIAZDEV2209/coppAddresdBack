@@ -1,0 +1,200 @@
+name: Deploy Backend Services
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-backend-dev
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detectar servicios afectados
+        id: detect
+        shell: bash
+        run: |
+          SERVICES=""
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+
+          if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Auth"; then
+            SERVICES="$SERVICES auth"
+          fi
+          if echo "$CHANGED" | grep -q "src/CoppAddresd.Api"; then
+            SERVICES="$SERVICES api"
+          fi
+          if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Telemedicine"; then
+            SERVICES="$SERVICES telemedicine"
+          fi
+
+          # Cambios en infraestructura compartida (Infrastructure, Application, Domain,
+          # slnx, Dockerfiles, workflows) afectan a todos los servicios backend.
+          SHARED=$(echo "$CHANGED" | grep -E "(src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows)" || true)
+          if [ -n "$SHARED" ]; then
+            SERVICES="auth api telemedicine"
+          fi
+
+          if [ -z "$SERVICES" ]; then
+            echo "Sin cambios backend relevantes — no se despliega nada"
+            echo "services=[]" >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(echo "$SERVICES" | xargs | tr ' ' '\n' | jq -R . | jq -s -c .)
+            echo "services=$JSON" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: detect
+    if: needs.detect.outputs.services != '' && needs.detect.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test unitarios (CI-safe, sin RDS)
+        run: |
+          dotnet test tests/CoppAddresd.UnitTests -c Release --nologo
+          dotnet test tests/CoppAddresd.Telemedicine.UnitTests -c Release --nologo
+
+  deploy:
+    needs: [detect, test]
+    if: needs.detect.outputs.services != '' && needs.detect.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-2
+      ECR_REGISTRY: 933629770820.dkr.ecr.us-east-2.amazonaws.com
+      ECS_CLUSTER: cooppadresd-cluster
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::933629770820:role/cooppadresd-gha-backend
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Determinar Dockerfile y ECR por servicio
+        id: svc
+        shell: bash
+        run: |
+          case "${{ matrix.service }}" in
+            auth)
+              echo "dockerfile=src/Services/CoppAddresd.Auth/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-auth" >> "$GITHUB_OUTPUT"
+              ;;
+            api)
+              echo "dockerfile=src/CoppAddresd.Api/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-api" >> "$GITHUB_OUTPUT"
+              ;;
+            telemedicine)
+              echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-telemedicine" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Build imagen (${{ github.sha }})
+        run: |
+          docker build \
+            -f "${{ steps.svc.outputs.dockerfile }}" \
+            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}" \
+            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest" \
+            .
+
+      - name: Push ECR
+        run: |
+          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
+          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest"
+
+      - name: Registrar nueva Task Definition (imagen SHA)
+        id: taskdef
+        shell: bash
+        run: |
+          TD_NAME="cooppadresd-${{ matrix.service }}"
+          TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TD_NAME" --region "${{ env.AWS_REGION }}" --query "taskDefinition" --output json)
+          NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
+          NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" '
+            .containerDefinitions[0].image = $img |
+            del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes)
+          ')
+          REGISTERED=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF_JSON" --region "${{ env.AWS_REGION }}")
+          echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
+          echo "rev=$(echo "$REGISTERED" | jq -r '.taskDefinition.revision')" >> "$GITHUB_OUTPUT"
+
+      - name: Actualizar ECS Service
+        run: |
+          aws ecs update-service \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service "cooppadresd-${{ matrix.service }}" \
+            --task-definition "${{ steps.taskdef.outputs.arn }}" \
+            --region "${{ env.AWS_REGION }}"
+
+      - name: Esperar deployment estable
+        timeout-minutes: 20
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "cooppadresd-${{ matrix.service }}" \
+            --region "${{ env.AWS_REGION }}"
+
+      - name: Validar rollout COMPLETED
+        shell: bash
+        run: |
+          STATE=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "cooppadresd-${{ matrix.service }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "services[0].deployments[0].rolloutState" --output text)
+          RUNNING=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "cooppadresd-${{ matrix.service }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "services[0].runningCount" --output text)
+          DESIRED=$(aws ecs describe-services \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --services "cooppadresd-${{ matrix.service }}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query "services[0].desiredCount" --output text)
+          echo "Service: cooppadresd-${{ matrix.service }}"
+          echo "Rollout: $STATE | Running: $RUNNING | Desired: $DESIRED"
+          if [ "$STATE" != "COMPLETED" ] || [ "$RUNNING" != "$DESIRED" ]; then
+            echo "::error::Deployment no estable: rollout=$STATE running=$RUNNING desired=$DESIRED"
+            exit 1
+          fi
+
+      - name: Diagnóstico en fallo
+        if: failure()
+        shell: bash
+        run: |
+          TASKS=$(aws ecs list-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service-name "cooppadresd-${{ matrix.service }}" \
+            --region "${{ env.AWS_REGION }}" --query "taskArns" --output text)
+          for T in $TASKS; do
+            aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks "$T" --region "${{ env.AWS_REGION }}" \
+              --query "tasks[0].{Status:lastStatus,Stop:stoppedReason,Containers:containers[*].{Name:name,Exit:exitCode,Reason:reason}}" \
+              --output json
+          done# re-register
