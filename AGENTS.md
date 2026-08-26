@@ -47,9 +47,10 @@ Schema audit:   1 tabla (activity_logs)
 Schema tele:   10 tablas (telemedicine_requests, appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
 
 # Historial de migraciones por microservicio (NO compartir public):
-#   - Backend (AppDbContext): public.__EFMigrationsHistory (21 migraciones)
-#   - Auth (AuthDbContext):   auth.__ef_migrations_history (5 migraciones, aislada)
-#   - Telemedicina:           tele.__ef_migrations_history (6 migraciones, aislada)
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (24 migraciones)
+#   - Auth (AuthDbContext):   auth.__ef_migrations_history (9 migraciones, aislada)
+#   - Telemedicina:           tele.__ef_migrations_history (7 migraciones, aislada)
+#   - Community:              community.__ef_migrations_history (5 migraciones, aislada)
 # EF no namespacia las IDs por contexto: compartir la tabla public mezclaba las
 # migraciones de Auth y del backend (errores de 'migrations remove' del contexto
 # equivocado, auditoría ambigua). Cada DbContext configura su historial con
@@ -114,7 +115,7 @@ POST   /api/auth/invitations/{id}/resend           # Reenviar (revoca la pendien
 POST   /api/auth/invitations/{id}/revoke           # Revocar [RequirePermission("Users.Update")]
 ```
 
-**Permisos seedeados** (59 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`, `Telemedicine.*` (incluye `Telemedicine.AdminView` para listados admin globales). Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Physician`, `Nutritionist`, `Psychologist`, `Nurse`, `Receptionist`, `CareCoordinator` (asignables con scope de clínica/org).
+**Permisos seedeados** (84 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`, `Telemedicine.*` (incluye `Telemedicine.AdminView` para listados admin globales), `Appointments.*`, `Finance.*` (`Finance.View`/`Finance.Manage`), `Reports.View`, `Inventory.*`, `Store.*`, `Media.*`, `Audit.*`, `System.AdminSettings`, `Community.*`. Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Professional` (rol clínico consolidado; **los roles Physician/Nutritionist/Psychologist son aliases legado** — no se asignan a usuarios nuevos), `Nurse`, `Receptionist`, `CareCoordinator`, `Coordinator` (alias de CareCoordinator), `Finance` (sin acceso clínico), `Auditor` (solo lectura) — asignables con scope de clínica/org. **Convención de escalabilidad**: roles FUNCIONALES por capacidad, no por profesión; la especialidad nunca determina permisos. Los roles de sistema llevan `IsSystem = true` (no renombrables/eliminables sin `System.AdminSettings`); las mutaciones de roles/permisos/usuarios exigen `System.AdminSettings` (Admin la tiene vía AdminSeeder).
 
 **Credenciales admin**: `admin@coppaddresd.com` / `Test@1234` (configurable en `appsettings.json` → `Auth` section).
 
