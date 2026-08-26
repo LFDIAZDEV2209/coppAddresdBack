@@ -24,7 +24,7 @@ public class MyQueriesTests
         _referenceData.UserToProfessional[TestData.UserId] = TestData.ProfessionalId;
     }
 
-    private static TelemedicineAppointment Appointment(
+    private static Appointment Appointment(
         AppointmentStatus status,
         DateTimeOffset start,
         Guid? professionalId = null,
@@ -173,7 +173,7 @@ public class MyQueriesTests
                 AppointmentId = Guid.NewGuid(),
                 Status = TelemedicineSessionStatus.Active,
                 CreatedBy = TestData.UserId,
-                Appointment = new TelemedicineAppointment
+                Appointment = new Appointment
                 {
                     Id = Guid.NewGuid(),
                     ProfessionalId = TestData.ProfessionalId,

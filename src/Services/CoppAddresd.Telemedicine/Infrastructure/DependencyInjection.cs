@@ -105,7 +105,7 @@ public static class DependencyInjection
         services.Configure<BackendServiceSettings>(
             configuration.GetSection(BackendServiceSettings.SectionName));
 
-        services.AddHttpClient<ITelemedicineReferenceDataService, BackendReferenceDataService>(
+        services.AddHttpClient<IAppointmentReferenceDataService, AppointmentReferenceDataService>(
                 (sp, client) =>
                 {
                     var settings = sp.GetRequiredService<IOptions<BackendServiceSettings>>().Value;

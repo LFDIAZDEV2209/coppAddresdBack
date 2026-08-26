@@ -11,14 +11,14 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Configurations;
 /// defensa contra la doble reserva: solo impide coincidencias entre citas en
 /// estados activos (Confirmed/InProgress/Requested).
 /// </summary>
-public sealed class AppointmentConfiguration : IEntityTypeConfiguration<TelemedicineAppointment>
+public sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appointment>
 {
     public static readonly string ActiveStatuses =
-        "telemedicine_appointments.status IN ('Requested','Confirmed','InProgress')";
+        "appointments.status IN ('Requested','Confirmed','InProgress')";
 
-    public void Configure(EntityTypeBuilder<TelemedicineAppointment> builder)
+    public void Configure(EntityTypeBuilder<Appointment> builder)
     {
-        builder.ToTable("telemedicine_appointments");
+        builder.ToTable("appointments");
 
         builder.HasKey(x => x.Id);
 
@@ -35,7 +35,11 @@ public sealed class AppointmentConfiguration : IEntityTypeConfiguration<Telemedi
         builder.HasIndex(x => x.SpecialtyId);
         builder.HasIndex(x => new { x.OrganizationId, x.Status });
         builder.HasIndex(x => x.ScheduledStart);
-        builder.HasIndex(x => x.RequestId);
+        // Nombre explícito distinto del convencional ix_appointments_request_id:
+        // ese nombre ya lo ocupa el índice único parcial creado por SQL crudo en
+        // AddAppointmentOverlapExclusion (anti doble confirmación). Un RenameIndex
+        // automático hacia el nombre convencional chocaría con él.
+        builder.HasIndex(x => x.RequestId).HasDatabaseName("ix_appointments_request_id_lookup");
 
         // Anti doble reserva: un profesional no puede tener dos citas activas
         // que empiecen en el mismo instante. La verificación transaccional

@@ -24,7 +24,7 @@ public class AppointmentConcurrencyTests
         _ctx = new TelemedicineTestContext(database.ConnectionString);
     }
 
-    private static TelemedicineAppointment ActiveAppointment(
+    private static Appointment ActiveAppointment(
         Guid professionalId, DateTimeOffset start, int duration = 30)
         => new()
         {
@@ -42,7 +42,7 @@ public class AppointmentConcurrencyTests
         };
 
     private static async Task<(bool Ok, Exception? Error)> TryAddAsync(
-        IAppointmentRepository repo, TelemedicineAppointment appointment)
+        IAppointmentRepository repo, Appointment appointment)
     {
         try
         {

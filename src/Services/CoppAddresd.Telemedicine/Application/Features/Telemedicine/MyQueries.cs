@@ -26,7 +26,7 @@ public sealed record ListMyAppointmentsQuery(
 
 public sealed class ListMyAppointmentsQueryHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData
+    IAppointmentReferenceDataService referenceData
 ) : IRequestHandler<ListMyAppointmentsQuery, PaginatedAdminAppointmentsResult>
 {
     public async Task<PaginatedAdminAppointmentsResult> Handle(
@@ -52,7 +52,7 @@ public sealed class ListMyAppointmentsQueryHandler(
             ct
         );
 
-        var dtos = await TelemedicineAppointmentMapper.BuildDtosAsync(items, referenceData, ct);
+        var dtos = await AppointmentMapper.BuildDtosAsync(items, referenceData, ct);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 
         return new PaginatedAdminAppointmentsResult(dtos, total, page, pageSize, totalPages);
@@ -136,7 +136,7 @@ public sealed record ListMyRequestsQuery(
 
 public sealed class ListMyRequestsQueryHandler(
     IRequestRepository requests,
-    ITelemedicineReferenceDataService referenceData
+    IAppointmentReferenceDataService referenceData
 ) : IRequestHandler<ListMyRequestsQuery, PaginatedAdminRequestsResult>
 {
     public async Task<PaginatedAdminRequestsResult> Handle(

@@ -32,8 +32,8 @@ internal static class SessionSupport
     /// 403.
     /// </summary>
     public static async Task<SessionParticipant> RequireParticipantAsync(
-        ITelemedicineReferenceDataService referenceData,
-        TelemedicineAppointment appointment,
+        IAppointmentReferenceDataService referenceData,
+        Appointment appointment,
         Guid userId,
         bool hasManagePermission,
         CancellationToken ct)
@@ -64,8 +64,8 @@ internal static class SessionSupport
     /// supervisor. El paciente no puede iniciar ni finalizar la consulta.
     /// </summary>
     public static async Task RequireSessionOwnerAsync(
-        ITelemedicineReferenceDataService referenceData,
-        TelemedicineAppointment appointment,
+        IAppointmentReferenceDataService referenceData,
+        Appointment appointment,
         Guid userId,
         bool hasManagePermission,
         CancellationToken ct)
@@ -91,7 +91,7 @@ internal static class SessionSupport
     /// cierra <c>RoomCloseAfterMinutes</c> después.
     /// </summary>
     public static (DateTimeOffset Open, DateTimeOffset Close) Window(
-        TelemedicineAppointment appointment,
+        Appointment appointment,
         TelemedicineSettings settings)
         => (appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
             appointment.ScheduledStart.AddMinutes(settings.RoomCloseAfterMinutes));
@@ -108,7 +108,7 @@ internal static class SessionSupport
 
     /// <summary>Valida que <paramref name="now"/> esté dentro de la ventana de acceso.</summary>
     public static void EnsureWithinWindow(
-        TelemedicineAppointment appointment,
+        Appointment appointment,
         TelemedicineSettings settings,
         DateTimeOffset now)
     {
@@ -133,7 +133,7 @@ internal static class SessionSupport
 
     /// <summary>Instancia la sala de dominio para una cita (sin persistir).</summary>
     public static VirtualRoom NewRoom(
-        TelemedicineAppointment appointment,
+        Appointment appointment,
         TelemedicineSettings settings,
         string providerRoomName,
         string providerRoomSid,

@@ -236,24 +236,57 @@ dotnet restore
 dotnet build
 ```
 
-### 2. Ejecutar la API principal
+### 2. Levantar la base de datos (Postgres)
 
 ```bash
-dotnet run --project src/CoppAddresd.Api
+docker compose up -d postgres
 ```
 
-### 3. Ejecutar el servicio de autenticación
+### 3. Ejecutar los servicios
 
 ```bash
-dotnet run --project src/Services/CoppAddresd.Auth
+dotnet run --project src/Services/CoppAddresd.Auth      # auth (http://localhost:5123)
+dotnet run --project src/Services/CoppAddresd.Community # comunidad (http://localhost:5200)
+dotnet run --project src/CoppAddresd.Api                # API principal (http://localhost:5122)
 ```
+
+> Orden recomendado: primero Postgres (los tres servicios aplican sus migraciones al arrancar) y luego los servicios, que pueden correr en paralelo.
+
+### Scripts de desarrollo (recomendado)
+
+Los scripts `scripts/dev-up` y `scripts/dev-down` orquestan todo el entorno backend con un solo comando, en **Windows (PowerShell) y Linux/macOS (bash)**:
+
+```bash
+# Windows (PowerShell)
+.\scripts\dev-up.ps1 [-Watch]
+
+# Linux/macOS
+./scripts/dev-up.sh [-watch]
+```
+
+- Levanta Postgres con `docker compose` y espera a que esté *healthy*.
+- Arranca **auth**, **community** y **api** en segundo plano con `dotnet run` (o `dotnet watch run` con `-Watch` para hot reload).
+- **Omite** los servicios cuyo puerto ya esté escuchando (no pisa procesos que ya corren).
+- Guarda logs (`*.log`/`*.err`) y PIDs (`*.pid`) en `scripts/logs/` y muestra un resumen del estado de cada servicio.
+
+Para detener solo los servicios iniciados por `dev-up` (Postgres queda arriba):
+
+```bash
+.\scripts\dev-down.ps1    # Windows
+./scripts/dev-down.sh     # Linux/macOS
+```
+
+Para detener también Postgres: `docker compose down`.
+
+> En Windows, la primera vez puede requerir: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
 ### Puertos y perfiles
 
 | Servicio | Perfil HTTP | Perfil HTTPS |
 |---|---|---|
 | **CoppAddresd.Api** | `http://localhost:5122` | `https://localhost:7258` |
-| **CoppAddresd.Auth** | `http://localhost:5058` | `https://localhost:7230` |
+| **CoppAddresd.Auth** | `http://localhost:5123` | `https://localhost:7230` |
+| **CoppAddresd.Community** | `http://localhost:5200` | `https://localhost:7078` |
 
 Los perfiles se definen en `Properties/launchSettings.json` (perfiles `http` y `https`), con la variable `ASPNETCORE_ENVIRONMENT=Development` por defecto.
 

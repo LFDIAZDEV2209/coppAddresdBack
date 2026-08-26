@@ -37,17 +37,17 @@ Controllers → MediatR (Application) → Domain
 
 ## Schema `tele.`
 
-| Tabla                       | Notas                                                                                                                                                                                                                       |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `telemedicine_requests`     | Solicitud del paciente (referencias débiles, estado `Pending/Approved/Rejected/Cancelled/Converted`)                                                                                                                        |
-| `telemedicine_appointments` | Cita (agregado raíz). `xmin` como token de concurrencia; **índice único parcial** `ix_appointments_professional_start_active` sobre `(professional_id, scheduled_start)` WHERE status IN activos → anti doble reserva en BD |
-| `appointment_cancellations` | Historial append-only de cancelaciones                                                                                                                                                                                      |
-| `appointment_reschedules`   | Historial append-only de reprogramaciones                                                                                                                                                                                   |
-| `virtual_rooms`             | Sala en el proveedor (`provider`, `provider_room_sid`, `provider_room_name` único por proveedor → base de la idempotencia)                                                                                                  |
-| `telemedicine_sessions`     | Sesión de video (estado independiente de la cita y de la sala)                                                                                                                                                              |
-| `clinical_encounters`       | Encuentro clínico, `clinical_data` jsonb extensible                                                                                                                                                                         |
-| `telemedicine_alerts`       | Bandeja (eventos de dominio materializados; canal de entrega desacoplado)                                                                                                                                                   |
-| `telemedicine_settings`     | Reglas parametrizadas por organización/clínica                                                                                                                                                                              |
+| Tabla                       | Notas                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `telemedicine_requests`     | Solicitud del paciente (referencias débiles, estado `Pending/Approved/Rejected/Cancelled/Converted`)                                                                                                                                                                                                                                  |
+| `appointments`              | Cita (agregado raíz, ex `telemedicine_appointments` renombrada en la migración `RenameTelemedicineAppointmentsToAppointments`). `xmin` como token de concurrencia; **índice único parcial** `ix_appointments_professional_start_active` sobre `(professional_id, scheduled_start)` WHERE status IN activos → anti doble reserva en BD |
+| `appointment_cancellations` | Historial append-only de cancelaciones                                                                                                                                                                                                                                                                                                |
+| `appointment_reschedules`   | Historial append-only de reprogramaciones                                                                                                                                                                                                                                                                                             |
+| `virtual_rooms`             | Sala en el proveedor (`provider`, `provider_room_sid`, `provider_room_name` único por proveedor → base de la idempotencia)                                                                                                                                                                                                            |
+| `telemedicine_sessions`     | Sesión de video (estado independiente de la cita y de la sala)                                                                                                                                                                                                                                                                        |
+| `clinical_encounters`       | Encuentro clínico, `clinical_data` jsonb extensible                                                                                                                                                                                                                                                                                   |
+| `telemedicine_alerts`       | Bandeja (eventos de dominio materializados; canal de entrega desacoplado)                                                                                                                                                                                                                                                             |
+| `telemedicine_settings`     | Reglas parametrizadas por organización/clínica                                                                                                                                                                                                                                                                                        |
 
 **Estados separados a propósito**: cita ≠ sesión ≠ sala (máquinas de estado independientes).
 
@@ -66,7 +66,9 @@ Añadir otro proveedor = nueva clase que implemente `IVideoProvider` + un `else 
 
 ## Fase 3 — Agendamiento (API)
 
-Controladores bajo `/api/v1/telemedicine/*` (JWT del Auth Service, autorización por claim `permission`):
+Controladores bajo `/api/v1/*` (JWT del Auth Service, autorización por claim `permission`).
+
+> **Transición de rutas (zero-downtime)**: los endpoints de CITA usan el path nuevo `/api/v1/appointments/*`. El path viejo `/api/v1/telemedicine/appointments/*` sigue funcionando como **alias** en el gateway (transform `PathPattern` → `/api/v1/appointments/*`) y se retirará cuando el frontend migre. Los demás (`requests`, `alerts`, `admin`, `me`, `webhooks`) siguen bajo `/api/v1/telemedicine/*`.
 
 ```
 POST   /api/v1/telemedicine/requests                    # Paciente solicita (Pending)      [Telemedicine.RequestsCreate]
@@ -74,11 +76,11 @@ GET    /api/v1/telemedicine/requests/{id}               # Detalle de solicitud  
 GET    /api/v1/telemedicine/requests/mine?patientId=    # Solicitudes del paciente         [Telemedicine.RequestsView]
 POST   /api/v1/telemedicine/requests/{id}/confirm       # Confirma → crea cita Confirmed   [Telemedicine.RequestsConfirm]
 
-POST   /api/v1/telemedicine/appointments                # Agendamiento directo del doctor   [Telemedicine.AppointmentsSchedule]
-GET    /api/v1/telemedicine/appointments/{id}           # Detalle de cita (nombres resueltos) [Telemedicine.AppointmentsView]
-GET    /api/v1/telemedicine/appointments/agenda?professionalId&from&to  # Agenda/calendario [Telemedicine.AgendaView]
-POST   /api/v1/telemedicine/appointments/{id}/cancel    # Cancelar (historial append-only)  [Telemedicine.AppointmentsCancel]
-POST   /api/v1/telemedicine/appointments/{id}/reschedule# Reprogramación inmediata          [Telemedicine.AppointmentsReschedule]
+POST   /api/v1/appointments                # Agendamiento directo del doctor   [Telemedicine.AppointmentsSchedule]
+GET    /api/v1/appointments/{id}           # Detalle de cita (nombres resueltos) [Telemedicine.AppointmentsView]
+GET    /api/v1/appointments/agenda?professionalId&from&to  # Agenda/calendario [Telemedicine.AgendaView]
+POST   /api/v1/appointments/{id}/cancel    # Cancelar (historial append-only)  [Telemedicine.AppointmentsCancel]
+POST   /api/v1/appointments/{id}/reschedule# Reprogramación inmediata          [Telemedicine.AppointmentsReschedule]
 ```
 
 **Reglas de negocio** (todas parametrizadas en `tele.telemedicine_settings`): duración (default 30 min, máx 240), anticipación mínima, ventana máxima, límite de reprogramaciones (default 2). La reprogramación es inmediata y registra `appointment_reschedules` (historial append-only); la cita vuelve a `Confirmed` con la nueva hora.
@@ -113,10 +115,10 @@ sesión Active → session/end | webhook room-ended → sesión Ended + sala End
 ### API
 
 ```text
-POST /api/v1/telemedicine/appointments/{id}/join-token     # token de acceso (crea la sala si no existe) — participante o supervisor
-GET  /api/v1/telemedicine/appointments/{id}/room           # sala + participantes en vivo — participante o supervisor
-POST /api/v1/telemedicine/appointments/{id}/session/start  # inicia sesión → cita InProgress — profesional o supervisor
-POST /api/v1/telemedicine/appointments/{id}/session/end    # finaliza → cita Completed (idempotente) — profesional o supervisor
+POST /api/v1/appointments/{id}/join-token     # token de acceso (crea la sala si no existe) — participante o supervisor
+GET  /api/v1/appointments/{id}/room           # sala + participantes en vivo — participante o supervisor
+POST /api/v1/appointments/{id}/session/start  # inicia sesión → cita InProgress — profesional o supervisor
+POST /api/v1/appointments/{id}/session/end    # finaliza → cita Completed (idempotente) — profesional o supervisor
 POST /api/v1/telemedicine/webhooks/twilio                  # eventos de Twilio (firma validada, idempotente) — anónimo
 ```
 
@@ -228,9 +230,9 @@ un encuentro (índice único en `appointment_id`).
 ### API
 
 ```text
-GET  /api/v1/telemedicine/appointments/{id}/encounter        # registro clínico (404 si no existe aún)
-PUT  /api/v1/telemedicine/appointments/{id}/encounter        # guarda borrador (crea si no existe; crea/actualiza)
-POST /api/v1/telemedicine/appointments/{id}/encounter/complete  # finaliza Draft→Completed (acepta datos finales)
+GET  /api/v1/appointments/{id}/encounter        # registro clínico (404 si no existe aún)
+PUT  /api/v1/appointments/{id}/encounter        # guarda borrador (crea si no existe; crea/actualiza)
+POST /api/v1/appointments/{id}/encounter/complete  # finaliza Draft→Completed (acepta datos finales)
 ```
 
 La autorización se resuelve en el handler a partir del JWT (igual que las sesiones):

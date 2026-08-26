@@ -17,6 +17,14 @@ public interface IWellnessRepository
     Task UpdatePlanAsync(NutritionPlan plan, CancellationToken ct = default);
     Task DeletePlanAsync(NutritionPlan plan, CancellationToken ct = default);
 
+    /// <summary>
+    /// Inserta el plan (con sus días) y su asignación al paciente en la misma
+    /// transacción (evita estados intermedios: plan sin asignación si el
+    /// segundo insert falla, o asignación huérfana).
+    /// </summary>
+    Task<NutritionPlanAssignment> AddPlanWithAssignmentAsync(
+        NutritionPlan plan, NutritionPlanAssignment assignment, CancellationToken ct = default);
+
     // --- Nutrition Plan Days ---
     Task<IReadOnlyList<NutritionPlanDay>> ListPlanDaysAsync(Guid planId, CancellationToken ct = default);
     Task<NutritionPlanDay?> GetPlanDayByIdAsync(Guid id, CancellationToken ct = default);
@@ -31,6 +39,14 @@ public interface IWellnessRepository
     Task<ExerciseRoutine> AddRoutineAsync(ExerciseRoutine routine, CancellationToken ct = default);
     Task UpdateRoutineAsync(ExerciseRoutine routine, CancellationToken ct = default);
     Task DeleteRoutineAsync(ExerciseRoutine routine, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserta la rutina (con sus ejercicios) y su asignación al paciente en la
+    /// misma transacción (evita estados intermedios: rutina sin asignación si
+    /// el segundo insert falla, o asignación huérfana).
+    /// </summary>
+    Task<RoutineAssignment> AddRoutineWithAssignmentAsync(
+        ExerciseRoutine routine, RoutineAssignment assignment, CancellationToken ct = default);
 
     // --- Routine Exercises ---
     Task<IReadOnlyList<RoutineExercise>> ListRoutineExercisesAsync(Guid routineId, CancellationToken ct = default);

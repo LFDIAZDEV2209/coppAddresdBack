@@ -42,7 +42,7 @@ public sealed class CreateTelemedicineRequestCommandValidator
 
 public sealed class CreateTelemedicineRequestCommandHandler(
     IRequestRepository requests,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
     IAlertRepository alerts)
     : IRequestHandler<CreateTelemedicineRequestCommand, TelemedicineRequestDto>

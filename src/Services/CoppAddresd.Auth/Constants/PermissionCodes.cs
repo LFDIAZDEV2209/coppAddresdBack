@@ -69,6 +69,12 @@ public static class PermissionCodes
     public const string ClinicalRecordsCreate = "ClinicalRecords.Create";
     public const string ClinicalRecordsUpdate = "ClinicalRecords.Update";
 
+    // [DEPRECATED] mantener durante transición dual-emit: estos códigos
+    // Telemedicine.* permanecen funcionales (se siguen emitiendo en los JWTs y
+    // aceptando en la autorización) hasta que todos los módulos migren a
+    // Appointments.* (fases posteriores del rename). NO eliminar ni renombrar:
+    // hay grants persistidos (auth.RolePermissions / auth.UserPermissions /
+    // auth.ScopedPermissionAssignments) que aún los referencian.
     // Telemedicina (módulo consumido por el microservicio de Telemedicina).
     public const string TelemedicineRequestsCreate = "Telemedicine.RequestsCreate";
     public const string TelemedicineRequestsView = "Telemedicine.RequestsView";
@@ -83,6 +89,22 @@ public static class PermissionCodes
     /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
     public const string TelemedicineAdminView = "Telemedicine.AdminView";
 
+    // Citas genéricas (Appointments.*): reemplazan a Telemedicine.* durante la
+    // transición dual-emit. Un grant del código legado equivale al nuevo (ver
+    // PermissionCodeMap) y los JWTs emiten ambos códigos.
+    public const string AppointmentsRequestsCreate = "Appointments.RequestsCreate";
+    public const string AppointmentsRequestsView = "Appointments.RequestsView";
+    public const string AppointmentsRequestsConfirm = "Appointments.RequestsConfirm";
+    public const string AppointmentsSchedule = "Appointments.Schedule";
+    public const string AppointmentsView = "Appointments.View";
+    public const string AppointmentsCancel = "Appointments.Cancel";
+    public const string AppointmentsReschedule = "Appointments.Reschedule";
+    public const string AppointmentsAgendaView = "Appointments.AgendaView";
+    public const string AppointmentsAlertsView = "Appointments.AlertsView";
+    public const string AppointmentsSessionsManage = "Appointments.SessionsManage";
+    /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
+    public const string AppointmentsAdminView = "Appointments.AdminView";
+
     // Módulos de la plataforma sin flujo clínico (visibilidad de navegación y
     // acceso futuro de sus endpoints): el profesional clínico no los tiene.
     public const string InventoryView = "Inventory.View";
@@ -91,6 +113,11 @@ public static class PermissionCodes
     public const string AuditView = "Audit.View";
     /// <summary>Configuraciones administrativas del módulo Sistema (IA, integraciones, etc.).</summary>
     public const string SystemAdminSettings = "System.AdminSettings";
+
+    // Community
+    public const string CommunityView = "Community.View";
+    public const string CommunityModerate = "Community.Moderate";
+    public const string CommunityProfiles = "Community.Profiles";
 
     public static IEnumerable<string> GetAll()
     {
@@ -145,7 +172,7 @@ public static class PermissionCodes
         yield return ClinicalRecordsView;
         yield return ClinicalRecordsCreate;
         yield return ClinicalRecordsUpdate;
-        yield return TelemedicineRequestsCreate;
+yield return TelemedicineRequestsCreate;
         yield return TelemedicineRequestsView;
         yield return TelemedicineRequestsConfirm;
         yield return TelemedicineAppointmentsSchedule;
@@ -156,11 +183,25 @@ public static class PermissionCodes
         yield return TelemedicineAlertsView;
         yield return TelemedicineSessionsManage;
         yield return TelemedicineAdminView;
+        yield return AppointmentsRequestsCreate;
+        yield return AppointmentsRequestsView;
+        yield return AppointmentsRequestsConfirm;
+        yield return AppointmentsSchedule;
+        yield return AppointmentsView;
+        yield return AppointmentsCancel;
+        yield return AppointmentsReschedule;
+        yield return AppointmentsAgendaView;
+        yield return AppointmentsAlertsView;
+        yield return AppointmentsSessionsManage;
+        yield return AppointmentsAdminView;
         yield return InventoryView;
         yield return StoreView;
         yield return MediaView;
         yield return AuditView;
         yield return SystemAdminSettings;
+        yield return CommunityView;
+        yield return CommunityModerate;
+        yield return CommunityProfiles;
     }
 
     public static string GetModule(string permissionCode)

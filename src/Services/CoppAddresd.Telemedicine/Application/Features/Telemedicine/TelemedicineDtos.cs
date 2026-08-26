@@ -19,7 +19,7 @@ public sealed record TelemedicineRequestDto(
     DateTime CreatedAt);
 
 /// <summary>DTO de una cita de telemedicina (fila de agenda/calendario y detalle).</summary>
-public sealed record TelemedicineAppointmentDto(
+public sealed record AppointmentDto(
     Guid Id,
     Guid? RequestId,
     Guid PatientId,

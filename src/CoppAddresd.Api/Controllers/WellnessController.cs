@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Context;
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Features.Wellness;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +10,10 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/wellness")]
 [Authorize]
-public class WellnessController(IMediator mediator) : ControllerBase
+public class WellnessController(
+    IMediator mediator,
+    ILogger<WellnessController> logger,
+    ICurrentContext context) : ControllerBase
 {
     // ===================== NUTRITION PLANS =====================
 
@@ -34,7 +39,7 @@ public class WellnessController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<NutritionPlanDto>> CreateNutritionPlan(
         [FromBody] CreateNutritionPlanRequest request, CancellationToken ct)
     {
-        var result = await mediator.Send(new CreateNutritionPlanCommand(request), ct);
+        var result = await mediator.Send(new CreateNutritionPlanCommand(request, context.UserId), ct);
         return CreatedAtAction(nameof(GetNutritionPlan), new { id = result.Id }, result);
     }
 
@@ -55,7 +60,7 @@ public class WellnessController(IMediator mediator) : ControllerBase
 
     [HttpPost("nutrition-plans/{sourcePlanId:guid}/clone")]
     public async Task<ActionResult<NutritionPlanDto>> CloneNutritionPlan(
-        Guid sourcePlanId, [FromQuery] Guid patientId, CancellationToken ct)
+        Guid sourcePlanId, [FromQuery] Guid? patientId, CancellationToken ct)
     {
         var result = await mediator.Send(new CloneNutritionPlanCommand(sourcePlanId, patientId), ct);
         return result is null
@@ -86,7 +91,7 @@ public class WellnessController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<ExerciseRoutineDto>> CreateExerciseRoutine(
         [FromBody] CreateExerciseRoutineRequest request, CancellationToken ct)
     {
-        var result = await mediator.Send(new CreateExerciseRoutineCommand(request), ct);
+        var result = await mediator.Send(new CreateExerciseRoutineCommand(request, context.UserId), ct);
         return CreatedAtAction(nameof(GetExerciseRoutine), new { id = result.Id }, result);
     }
 
@@ -133,7 +138,7 @@ public class WellnessController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<RoutineAssignmentDto>> CreateRoutineAssignment(
         [FromBody] CreateRoutineAssignmentRequest request, CancellationToken ct)
     {
-        var result = await mediator.Send(new CreateRoutineAssignmentCommand(request), ct);
+        var result = await mediator.Send(new CreateRoutineAssignmentCommand(request, context.UserId), ct);
         return CreatedAtAction(nameof(GetRoutineAssignment), new { id = result.Id }, result);
     }
 
@@ -180,7 +185,7 @@ public class WellnessController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<NutritionPlanAssignmentDto>> CreateNutritionPlanAssignment(
         [FromBody] CreateNutritionPlanAssignmentRequest request, CancellationToken ct)
     {
-        var result = await mediator.Send(new CreateNutritionPlanAssignmentCommand(request), ct);
+        var result = await mediator.Send(new CreateNutritionPlanAssignmentCommand(request, context.UserId), ct);
         return CreatedAtAction(nameof(GetNutritionPlanAssignment), new { id = result.Id }, result);
     }
 
@@ -197,5 +202,35 @@ public class WellnessController(IMediator mediator) : ControllerBase
     {
         var deleted = await mediator.Send(new DeleteNutritionPlanAssignmentCommand(id), ct);
         return deleted ? NoContent() : NotFound(new { message = "Asignación no encontrada" });
+    }
+
+    // ===================== AI PLAN GENERATION =====================
+
+    /// <summary>
+    /// Genera un plan de alimentación o ejercicio con IA, condicionado por el
+    /// contexto clínico consolidado del paciente y las reglas de seguridad
+    /// activas. El plan devuelto llega listo para el formulario del frontend.
+    /// </summary>
+    [HttpPost("plans/generate")]
+    public async Task<ActionResult<GeneratePlanResponse>> GeneratePlan(
+        [FromBody] GeneratePlanRequest request,
+        CancellationToken ct)
+    {
+        if (request.Type is not ("nutrition" or "exercise"))
+            return BadRequest(new { error = "Tipo de plan inválido. Valores permitidos: nutrition, exercise." });
+
+        try
+        {
+            var result = await mediator.Send(
+                new GeneratePlanCommand(request.PatientId, request.Type), ct);
+            return Ok(result);
+        }
+        catch (AiServiceException ex)
+        {
+            logger.LogError(ex,
+                "AI Service rechazó la generación del plan (status {Status}): {Detail}",
+                ex.StatusCode, ex.Detail);
+            return StatusCode(502, new { error = "No fue posible generar el plan." });
+        }
     }
 }

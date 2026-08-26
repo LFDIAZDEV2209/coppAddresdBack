@@ -42,6 +42,9 @@ builder.Services.AddHostedService<AgentCatalogSeeder>();
 // Seed del catálogo de mediciones clínicas (unidades, métricas y rangos).
 builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
 
+// Seed de reglas de seguridad clínica para la generación de planes con IA.
+builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
+
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
 // (no incluido en el shared framework de .NET 10), así que se usa un check
