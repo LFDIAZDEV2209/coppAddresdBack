@@ -184,6 +184,10 @@ for entry in "${SERVICES[@]}"; do
     color 31 " FAILED"
     results+=("$name|$url|$port|FAILED|31")
     failed=1
+    if [[ -f "$LOGS/$name.err" ]] && grep -qi "Application Control policy has blocked" "$LOGS/$name.err"; then
+      color 33 "  Windows Application Control (Smart App Control / WDAC) blocked the executable."
+      color 33 "  Allow the repo path in Windows Security > App & browser control, or disable Smart App Control."
+    fi
     [[ -f "$LOGS/$name.log" ]] && {
       color 90 "  --- Last 15 lines of $name.log ---"
       tail -n 15 "$LOGS/$name.log" 2>/dev/null | while IFS= read -r line; do color 90 "  $line"; done

@@ -142,12 +142,22 @@ if (-not $AiRoot -or -not (Test-Path $AiRoot)) {
   $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Running'; Color = $AiColor }
 } else {
   Write-Host ("  Starting {0}..." -f $AiName.PadRight(16)) -NoNewline -ForegroundColor $AiColor
-  $proc = Start-Process -FilePath 'uv' -ArgumentList @('run', 'python', 'run_dev.py') -WorkingDirectory $AiRoot `
-    -RedirectStandardOutput (Join-Path $logs ($AiName + '.log')) `
-    -RedirectStandardError (Join-Path $logs ($AiName + '.err')) -WindowStyle Hidden -PassThru
-  $proc.Id | Out-File (Join-Path $logs ($AiName + '.pid'))
-  $AiStarted = $true
-  Write-Host " PID $($proc.Id)" -ForegroundColor $AiColor
+  $uvPath = (Get-Command uv -CommandType Application -ErrorAction SilentlyContinue).Source
+  if (-not $uvPath) {
+    $candidate = Join-Path $env:USERPROFILE '.local\bin\uv.exe'
+    if (Test-Path $candidate) { $uvPath = $candidate }
+  }
+  if (-not $uvPath) {
+    Write-Host " 'uv' not found on PATH. Install it (https://astral.sh/uv) or add it to PATH." -ForegroundColor Red
+    $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Skipped'; Color = 'Yellow' }
+  } else {
+    $proc = Start-Process -FilePath $uvPath -ArgumentList @('run', 'python', 'run_dev.py') -WorkingDirectory $AiRoot `
+      -RedirectStandardOutput (Join-Path $logs ($AiName + '.log')) `
+      -RedirectStandardError (Join-Path $logs ($AiName + '.err')) -WindowStyle Hidden -PassThru
+    $proc.Id | Out-File (Join-Path $logs ($AiName + '.pid'))
+    $AiStarted = $true
+    Write-Host " PID $($proc.Id)" -ForegroundColor $AiColor
+  }
 }
 
 Write-Host ''
@@ -191,6 +201,14 @@ foreach ($s in $services) {
     $results += [pscustomobject]@{ Name = $s.Name; Url = $s.Url; Port = $s.Port; Status = 'FAILED'; Color = 'Red' }
     $failed = $true
     $log = Join-Path $logs ($s.Name + '.log')
+    $err = Join-Path $logs ($s.Name + '.err')
+    $errText = if (Test-Path $err) { Get-Content $err -Raw } else { '' }
+    if ($errText -match 'Application Control policy has blocked') {
+      Write-Host "  Windows Application Control (Smart App Control / WDAC) blocked the executable." -ForegroundColor Yellow
+      Write-Host "  Allow the repo path in Windows Security > App & browser control, or disable Smart App Control." -ForegroundColor Yellow
+    } elseif ($errText -match 'not recognize|not a valid|cannot find') {
+      Write-Host "  The process failed to start. Check $err" -ForegroundColor Yellow
+    }
     if (Test-Path $log) {
       Write-Host "  --- Last 15 lines of $($s.Name).log ---" -ForegroundColor Gray
       Get-Content $log -Tail 15 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
