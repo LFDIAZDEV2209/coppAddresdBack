@@ -42,7 +42,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
     IVideoProvider videoProvider,
     IRoomRepository rooms,
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     IAlertRepository alerts,
     ITelemedicineUnitOfWork unitOfWork,
     ILogger<ProcessTwilioWebhookCommandHandler> logger)

@@ -35,7 +35,7 @@ public sealed class JoinSessionCommandHandler(
     IAppointmentRepository appointments,
     IRoomRepository rooms,
     IVideoProvider videoProvider,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
     IOptions<TelemedicineOptions> options)
     : IRequestHandler<JoinSessionCommand, JoinSessionResultDto>

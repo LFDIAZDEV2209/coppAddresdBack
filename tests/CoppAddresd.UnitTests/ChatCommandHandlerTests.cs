@@ -2,6 +2,7 @@ using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.Ai;
 using CoppAddresd.Application.Features.Agents;
 using CoppAddresd.Application.Features.Chat;
+using CoppAddresd.Application.Features.Wellness;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
@@ -28,6 +29,13 @@ public class ChatCommandHandlerTests
 
         public IAsyncEnumerable<StreamChatChunk> StreamRawAsync(
             ChatRequest request, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<AiPlanResult> GeneratePlanAsync(
+            string type,
+            ClinicalContextDto context,
+            IReadOnlyList<RestrictionDto> restrictions,
+            CancellationToken ct = default)
             => throw new NotImplementedException();
     }
 

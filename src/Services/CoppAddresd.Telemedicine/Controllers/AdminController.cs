@@ -19,7 +19,7 @@ namespace CoppAddresd.Telemedicine.Controllers;
 [ApiController]
 [Route("api/v1/telemedicine/admin")]
 [Authorize]
-[RequirePermission(TelemedicinePermissionCodes.AdminView)]
+[RequirePermission(AppointmentPermissionCodes.AdminView)]
 public class AdminController(IMediator mediator) : ControllerBase
 {
     /// <summary>KPIs del dashboard administrativo (resumen operativo).</summary>

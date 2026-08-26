@@ -49,9 +49,21 @@ public class TokenService : ITokenService
 
         // Cada código de permiso viaja como claim propio: el PermissionHandler
         // autoriza leyendo estos claims sin consultar la BD por request.
-        foreach (var permissionCode in permissions)
+        var permissionList = permissions as IReadOnlyCollection<string> ?? permissions.ToList();
+        foreach (var permissionCode in permissionList)
         {
             claims.Add(new Claim(PermissionClaimTypes.Permission, permissionCode));
+
+            // Transición dual-emit: un grant de un código legado Telemedicine.*
+            // también emite su equivalente nuevo Appointments.*. Así los tokens
+            // emitidos durante la transición llevan AMBOS códigos y el consumidor
+            // puede migrar a Appointments.* sin esperar a que se reasignen los
+            // grants. No se duplica si el usuario ya tiene el código nuevo.
+            if (PermissionCodeMap.TryGetNewCode(permissionCode, out var newCode)
+                && !permissionList.Contains(newCode))
+            {
+                claims.Add(new Claim(PermissionClaimTypes.Permission, newCode));
+            }
         }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret));

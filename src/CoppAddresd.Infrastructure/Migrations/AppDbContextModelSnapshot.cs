@@ -2472,6 +2472,12 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<int>("DailyWaterMl")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(2000)
+                        .HasColumnName("daily_water_ml");
+
                     b.Property<int>("DayNumber")
                         .HasColumnType("integer")
                         .HasColumnName("day_number");
@@ -2977,6 +2983,84 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_patient_profiles_user_id");
 
                     b.ToTable("patient_profiles", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.PlanSafetyRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("MetricCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("metric_code");
+
+                    b.Property<string>("Operator")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("operator");
+
+                    b.Property<string>("Restriction")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("restriction");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("severity");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<decimal?>("ThresholdMax")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("threshold_max");
+
+                    b.Property<decimal?>("ThresholdMin")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("threshold_min");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("unit_code");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MetricCode")
+                        .HasDatabaseName("ix_plan_safety_rules_metric_code");
+
+                    b.HasIndex("IsActive", "MetricCode")
+                        .HasDatabaseName("ix_plan_safety_rules_active_metric");
+
+                    b.ToTable("plan_safety_rules", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PostalCode", b =>

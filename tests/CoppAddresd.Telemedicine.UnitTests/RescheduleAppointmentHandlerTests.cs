@@ -6,7 +6,7 @@ using CoppAddresd.Telemedicine.Domain.Exceptions;
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
-/// Caso de uso de reprogramación (RescheduleTelemedicineAppointmentCommandHandler):
+/// Caso de uso de reprogramación (RescheduleAppointmentCommandHandler):
 /// solo citas Confirmed, límite de reprogramaciones, sin solapamiento, historial
 /// append-only y alerta AppointmentRescheduled.
 /// </summary>
@@ -16,11 +16,11 @@ public class RescheduleAppointmentHandlerTests
     private readonly FakeAppointmentRepository _appointments = new();
     private readonly FakeSettingsProvider _settings = new();
     private readonly FakeAlertRepository _alerts = new();
-    private readonly RescheduleTelemedicineAppointmentCommandHandler _handler;
+    private readonly RescheduleAppointmentCommandHandler _handler;
 
     public RescheduleAppointmentHandlerTests()
     {
-        _handler = new RescheduleTelemedicineAppointmentCommandHandler(
+        _handler = new RescheduleAppointmentCommandHandler(
             _appointments, _referenceData, _settings, _alerts);
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
         _referenceData.Patients[TestData.PatientId] = TestData.Patient();
@@ -34,7 +34,7 @@ public class RescheduleAppointmentHandlerTests
         var appointment = TestData.Appointment(start: fromStart);
         _appointments.Items.Add(appointment);
         var newStart = DateTimeOffset.UtcNow.AddDays(2);
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var command = new RescheduleAppointmentCommand(
             appointment.Id, newStart, null, "Cambio de horario", RescheduleRequestedBy.Patient, TestData.UserId);
 
         var dto = await _handler.Handle(command, CancellationToken.None);
@@ -53,7 +53,7 @@ public class RescheduleAppointmentHandlerTests
     {
         var appointment = TestData.Appointment(status: AppointmentStatus.Requested);
         _appointments.Items.Add(appointment);
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var command = new RescheduleAppointmentCommand(
             appointment.Id, DateTimeOffset.UtcNow.AddDays(2), null, null, RescheduleRequestedBy.Patient, TestData.UserId);
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
@@ -66,7 +66,7 @@ public class RescheduleAppointmentHandlerTests
     {
         var appointment = TestData.Appointment(rescheduleCount: _settings.Settings.MaxReschedules);
         _appointments.Items.Add(appointment);
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var command = new RescheduleAppointmentCommand(
             appointment.Id, DateTimeOffset.UtcNow.AddDays(2), null, null, RescheduleRequestedBy.Patient, TestData.UserId);
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
@@ -81,7 +81,7 @@ public class RescheduleAppointmentHandlerTests
         _appointments.Items.Add(appointment);
         var conflicting = TestData.Appointment(start: DateTimeOffset.UtcNow.AddDays(2));
         _appointments.Items.Add(conflicting);
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var command = new RescheduleAppointmentCommand(
             appointment.Id, conflicting.ScheduledStart, null, null, RescheduleRequestedBy.Patient, TestData.UserId);
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
@@ -94,7 +94,7 @@ public class RescheduleAppointmentHandlerTests
     [Fact]
     public async Task Handle_CitaInexistente_LanzaNotFound()
     {
-        var command = new RescheduleTelemedicineAppointmentCommand(
+        var command = new RescheduleAppointmentCommand(
             Guid.NewGuid(), DateTimeOffset.UtcNow.AddDays(2), null, null, RescheduleRequestedBy.Patient, TestData.UserId);
 
         await Assert.ThrowsAsync<NotFoundException>(() => _handler.Handle(command, CancellationToken.None));

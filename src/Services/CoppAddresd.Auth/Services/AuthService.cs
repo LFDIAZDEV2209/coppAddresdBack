@@ -296,4 +296,14 @@ public class AuthService : IAuthService
 
         return (true, null);
     }
+
+    /// <summary>
+    /// Fila de proyección para la consulta raw que resuelve el <c>user_id</c>
+    /// vinculado a un número de documento en <c>app.patient_profiles</c>. El
+    /// mapeo de columna se hace por nombre mediante el alias <c>AS "UserId"</c>.
+    /// </summary>
+    private sealed record PatientUserIdRow
+    {
+        public Guid UserId { get; set; }
+    }
 }

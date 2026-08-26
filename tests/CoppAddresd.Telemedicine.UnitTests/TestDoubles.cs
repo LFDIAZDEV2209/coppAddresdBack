@@ -72,7 +72,7 @@ public static class TestData
             MaxParticipants = 2,
         };
 
-    public static TelemedicineAppointment Appointment(
+    public static Appointment Appointment(
         AppointmentStatus status = AppointmentStatus.Confirmed,
         Guid? professionalId = null,
         Guid? patientId = null,
@@ -99,8 +99,8 @@ public static class TestData
         };
 }
 
-/// <summary>Datos de referencia del ERP en memoria (sustituye al BackendReferenceDataService).</summary>
-public sealed class FakeReferenceDataService : ITelemedicineReferenceDataService
+/// <summary>Datos de referencia del ERP en memoria (sustituye al AppointmentReferenceDataService).</summary>
+public sealed class FakeReferenceDataService : IAppointmentReferenceDataService
 {
     public Dictionary<Guid, ProfessionalRefDto> Professionals { get; } = [];
     public Dictionary<Guid, PatientRefDto> Patients { get; } = [];
@@ -233,26 +233,21 @@ public sealed class FakeUnitOfWork : ITelemedicineUnitOfWork
 /// <summary>Repositorio de citas en memoria.</summary>
 public sealed class FakeAppointmentRepository : IAppointmentRepository
 {
-    public List<TelemedicineAppointment> Items { get; } = [];
+    public List<Appointment> Items { get; } = [];
 
-    public Task<TelemedicineAppointment?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+    public Task<Appointment?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         Task.FromResult(Items.FirstOrDefault(a => a.Id == id));
 
-    public Task<TelemedicineAppointment?> GetForUpdateAsync(
-        Guid id,
-        CancellationToken ct = default
-    ) => Task.FromResult(Items.FirstOrDefault(a => a.Id == id));
+    public Task<Appointment?> GetForUpdateAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult(Items.FirstOrDefault(a => a.Id == id));
 
-    public Task<TelemedicineAppointment> AddAsync(
-        TelemedicineAppointment appointment,
-        CancellationToken ct = default
-    )
+    public Task<Appointment> AddAsync(Appointment appointment, CancellationToken ct = default)
     {
         Items.Add(appointment);
         return Task.FromResult(appointment);
     }
 
-    public Task UpdateAsync(TelemedicineAppointment appointment, CancellationToken ct = default) =>
+    public Task UpdateAsync(Appointment appointment, CancellationToken ct = default) =>
         Task.CompletedTask;
 
     public Task<bool> HasActiveOverlapAsync(
@@ -275,13 +270,13 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
             )
         );
 
-    public Task<IReadOnlyList<TelemedicineAppointment>> ListByProfessionalAsync(
+    public Task<IReadOnlyList<Appointment>> ListByProfessionalAsync(
         Guid professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
         CancellationToken ct = default
     ) =>
-        Task.FromResult<IReadOnlyList<TelemedicineAppointment>>(
+        Task.FromResult<IReadOnlyList<Appointment>>(
             Items
                 .Where(a =>
                     a.ProfessionalId == professionalId
@@ -292,18 +287,18 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .ToList()
         );
 
-    public Task<IReadOnlyList<TelemedicineAppointment>> ListByPatientAsync(
+    public Task<IReadOnlyList<Appointment>> ListByPatientAsync(
         Guid patientId,
         CancellationToken ct = default
     ) =>
-        Task.FromResult<IReadOnlyList<TelemedicineAppointment>>(
+        Task.FromResult<IReadOnlyList<Appointment>>(
             Items
                 .Where(a => a.PatientId == patientId)
                 .OrderByDescending(a => a.ScheduledStart)
                 .ToList()
         );
 
-    public Task<(IReadOnlyList<TelemedicineAppointment> Items, int Total)> ListAdminAsync(
+    public Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminAsync(
         Guid? professionalId,
         Guid? patientId,
         Guid? clinicId,
@@ -336,7 +331,7 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
         return Task.FromResult(
             (
                 list.Skip((page - 1) * pageSize).Take(pageSize).ToList()
-                    as IReadOnlyList<TelemedicineAppointment>,
+                    as IReadOnlyList<Appointment>,
                 list.Count
             )
         );
@@ -480,13 +475,13 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .Count()
         );
 
-    public Task<IReadOnlyList<TelemedicineAppointment>> ListUpcomingAsync(
+    public Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,
         DateTimeOffset from,
         int limit,
         CancellationToken ct = default
     ) =>
-        Task.FromResult<IReadOnlyList<TelemedicineAppointment>>(
+        Task.FromResult<IReadOnlyList<Appointment>>(
             Items
                 .Where(a =>
                     (professionalId == null || a.ProfessionalId == professionalId)
