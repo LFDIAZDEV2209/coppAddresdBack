@@ -80,8 +80,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseWebSockets();
 
-app.MapGraphQL().WithOptions(o => o.Tool.Enable = false);
+app.MapGraphQL("/api/v1/community/graphql").WithOptions(o => o.Tool.Enable = false);
 app.MapHealthChecks("/health");
-app.MapGraphQLWebSocket();
+app.MapGraphQLWebSocket("/api/v1/community/subscriptions");
 
 app.Run();
