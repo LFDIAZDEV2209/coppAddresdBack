@@ -1,9 +1,11 @@
 using CoppAddresd.Auth.Authorization;
 using CoppAddresd.Auth.Constants;
+using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Auth.Controllers;
 
@@ -17,7 +19,10 @@ namespace CoppAddresd.Auth.Controllers;
 [Route("api/auth/internal")]
 [AllowAnonymous]
 [RequireInternalKey]
-public class InternalAuthorizationController(IScopedPermissionService scopedPermissions) : ControllerBase
+public class InternalAuthorizationController(
+    IScopedPermissionService scopedPermissions,
+    AuthDbContext dbContext
+) : ControllerBase
 {
     /// <summary>¿Tiene el usuario el permiso en la cadena de scopes indicada?</summary>
     [HttpGet("authorize")]
@@ -25,14 +30,20 @@ public class InternalAuthorizationController(IScopedPermissionService scopedPerm
         [FromQuery] Guid userId,
         [FromQuery] string permissionCode,
         [FromQuery] string? scopes,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (string.IsNullOrWhiteSpace(permissionCode))
             return BadRequest(new { message = "permissionCode es requerido." });
 
         var chain = ScopeChainParser.Parse(scopes);
         if (chain is null)
-            return BadRequest(new { message = "scopes debe contener una cadena válida (ej. Clinic:id|Organization:id|Global)." });
+            return BadRequest(
+                new
+                {
+                    message = "scopes debe contener una cadena válida (ej. Clinic:id|Organization:id|Global).",
+                }
+            );
 
         var allowed = await scopedPermissions.AuthorizeAsync(userId, permissionCode, chain, ct);
 
@@ -44,15 +55,48 @@ public class InternalAuthorizationController(IScopedPermissionService scopedPerm
     public async Task<ActionResult<object>> ScopedPermissions(
         [FromQuery] Guid userId,
         [FromQuery] string? scopes,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var chain = ScopeChainParser.Parse(scopes);
         if (chain is null)
-            return BadRequest(new { message = "scopes debe contener una cadena válida (ej. Clinic:id|Organization:id|Global)." });
+            return BadRequest(
+                new
+                {
+                    message = "scopes debe contener una cadena válida (ej. Clinic:id|Organization:id|Global).",
+                }
+            );
 
         var permissions = await scopedPermissions.GetEffectivePermissionsAsync(userId, chain, ct);
 
         return Ok(new { permissions });
+    }
+
+    /// <summary>
+    /// UserIds con el rol asignado (global o scoped). Lo usa el ERP para
+    /// filtrar el directorio de profesionales por rol sin leer el schema
+    /// auth. (Los roles viven en el Auth Service; el ERP nunca consulta
+    /// auth.* directamente.)
+    /// </summary>
+    [HttpGet("users-by-role")]
+    public async Task<ActionResult<object>> UsersByRole(
+        [FromQuery] Guid roleId,
+        CancellationToken ct
+    )
+    {
+        var globalIds = await dbContext
+            .UserRoles.Where(ur => ur.RoleId == roleId)
+            .Select(ur => ur.UserId)
+            .ToListAsync(ct);
+
+        var scopedIds = await dbContext
+            .ScopedRoleAssignments.Where(a => a.RoleId == roleId)
+            .Select(a => a.UserId)
+            .ToListAsync(ct);
+
+        var userIds = globalIds.Concat(scopedIds).Distinct().OrderBy(id => id).ToList();
+
+        return Ok(new { userIds });
     }
 }
 
@@ -67,7 +111,12 @@ internal static class ScopeChainParser
         }
 
         var entries = new List<ScopeEntry>();
-        foreach (var part in scopes.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (
+            var part in scopes.Split(
+                '|',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            )
+        )
         {
             var pieces = part.Split(':', 2);
             var scopeType = pieces[0].Trim();
