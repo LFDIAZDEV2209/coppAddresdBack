@@ -70,6 +70,9 @@ connectionstrings.config
 
 # --- Logs y archivos temporales ---
 *.log
+*.err
+*.build.log
+*.build.err
 logs/
 *.tmp
 *.temp

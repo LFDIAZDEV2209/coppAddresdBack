@@ -121,6 +121,36 @@ if (-not $Watch) {
 }
 
 Write-Host ''
+Draw-Banner "AI SERVICE (PYTHON/FastAPI)" 'DarkCyan'
+$AiRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\ai-service') -ErrorAction SilentlyContinue).Path
+$AiName = 'ai'
+$AiColor = 'DarkCyan'
+$AiUrl = 'http://localhost:8000'
+$AiStarted = $false
+$AiResult = $null
+if (-not $AiRoot -or -not (Test-Path $AiRoot)) {
+  Write-Host "  ai-service repo not found (expected at ../ai-service). Skipped." -ForegroundColor Yellow
+  $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Missing'; Color = 'Yellow' }
+} elseif (-not (Test-Path (Join-Path $AiRoot '.env'))) {
+  Write-Host "  ai-service: .env missing (cp .env.example .env). Skipped." -ForegroundColor Yellow
+  $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Skipped'; Color = 'Yellow' }
+} elseif (-not (Test-Path (Join-Path $AiRoot '.venv'))) {
+  Write-Host "  ai-service: .venv missing (run 'uv sync' in ai-service). Skipped." -ForegroundColor Yellow
+  $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Skipped'; Color = 'Yellow' }
+} elseif (Test-Port 8000) {
+  Write-Host ("  {0} already running on :8000 (skipped)" -f $AiName.PadRight(16)) -ForegroundColor Yellow
+  $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Running'; Color = $AiColor }
+} else {
+  Write-Host ("  Starting {0}..." -f $AiName.PadRight(16)) -NoNewline -ForegroundColor $AiColor
+  $proc = Start-Process -FilePath 'uv' -ArgumentList @('run', 'python', 'run_dev.py') -WorkingDirectory $AiRoot `
+    -RedirectStandardOutput (Join-Path $logs ($AiName + '.log')) `
+    -RedirectStandardError (Join-Path $logs ($AiName + '.err')) -WindowStyle Hidden -PassThru
+  $proc.Id | Out-File (Join-Path $logs ($AiName + '.pid'))
+  $AiStarted = $true
+  Write-Host " PID $($proc.Id)" -ForegroundColor $AiColor
+}
+
+Write-Host ''
 Draw-Banner "STARTING SERVICES" 'Cyan'
 
 $results = @()
@@ -168,10 +198,28 @@ foreach ($s in $services) {
   }
 }
 
+# AI service wait (non-fatal: backend has circuit breaker if it is down).
+if ($AiStarted -and $AiResult) {
+  Write-Host ("  Waiting for {0} on port {1}..." -f 'ai'.PadRight(16), 8000) -NoNewline -ForegroundColor $AiColor
+  if (Wait-Port 8000 $waitTimeout) {
+    $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Running'; Color = $AiColor }
+    Write-Host " READY" -ForegroundColor Green
+  } else {
+    $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'FAILED'; Color = 'Red' }
+    Write-Host " FAILED (non-fatal)" -ForegroundColor Red
+    $log = Join-Path $logs 'ai.log'
+    if (Test-Path $log) {
+      Write-Host "  --- Last 15 lines of ai.log ---" -ForegroundColor Gray
+      Get-Content $log -Tail 15 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+    }
+  }
+}
+
 Write-Host ''
 Draw-Banner "SERVICE STATUS" 'Cyan'
 Write-Host "  Name             URL                                 Status" -ForegroundColor DarkGray
 Write-Host "  ----             ---                                 ------" -ForegroundColor DarkGray
+if ($AiResult) { $results += $AiResult }
 foreach ($r in $results) {
   Draw-ServiceRow -Name $r.Name -Url $r.Url -Status $r.Status -StatusColor $r.Color -NameColor $r.Color
 }
@@ -186,3 +234,5 @@ if ($failed) {
 Draw-Banner "ALL SERVICES RUNNING" 'Green'
 Write-Host "  Stop with: .\scripts\dev-down.ps1" -ForegroundColor Gray
 Write-Host "  Logs in: $logs" -ForegroundColor Gray
+Write-Host "  View logs: .\scripts\dev-logs.ps1 <service> [-Follow] [-Err]" -ForegroundColor Gray
+Write-Host "  Services: auth, community, gateway, telemedicine, api, ai, postgres" -ForegroundColor Gray
