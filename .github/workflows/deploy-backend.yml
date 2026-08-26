@@ -13,11 +13,6 @@ concurrency:
   group: deploy-backend-dev
   cancel-in-progress: false
 
-env:
-  AWS_REGION: us-east-2
-  ECR_REGISTRY: 933629770820.dkr.ecr.us-east-2.amazonaws.com
-  ECS_CLUSTER: cooppadresd-cluster
-
 jobs:
   detect:
     runs-on: ubuntu-latest
@@ -79,6 +74,10 @@ jobs:
     needs: [detect, test]
     if: needs.detect.outputs.services != ''
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-2
+      ECR_REGISTRY: 933629770820.dkr.ecr.us-east-2.amazonaws.com
+      ECS_CLUSTER: cooppadresd-cluster
     strategy:
       fail-fast: false
       matrix:
