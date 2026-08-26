@@ -44,12 +44,12 @@ Schema erp:     12 tablas (organizations → clinics → locations; employees co
                 professional_types/specialties + puentes N:N + professional_licenses).
                 Plan de evolución del módulo: docs/modules/patients/PLAN.md
 Schema audit:   1 tabla (activity_logs)
-Schema tele:    10 tablas (telemedicine_requests, telemedicine_appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
+Schema tele:   10 tablas (telemedicine_requests, appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
 
 # Historial de migraciones por microservicio (NO compartir public):
-#   - Backend (AppDbContext): public.__EFMigrationsHistory (16 migraciones)
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (21 migraciones)
 #   - Auth (AuthDbContext):   auth.__ef_migrations_history (5 migraciones, aislada)
-#   - Telemedicina:           tele.__ef_migrations_history (4 migraciones, aislada)
+#   - Telemedicina:           tele.__ef_migrations_history (6 migraciones, aislada)
 # EF no namespacia las IDs por contexto: compartir la tabla public mezclaba las
 # migraciones de Auth y del backend (errores de 'migrations remove' del contexto
 # equivocado, auditoría ambigua). Cada DbContext configura su historial con
