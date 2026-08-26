@@ -525,6 +525,17 @@ public sealed class FakeRequestRepository : IRequestRepository
         return Task.CompletedTask;
     }
 
+    public Task SetRejectedAsync(Guid requestId, string reason, CancellationToken ct = default)
+    {
+        var item = Items.FirstOrDefault(r => r.Id == requestId);
+        if (item is not null)
+        {
+            item.Status = AppointmentRequestStatus.Rejected;
+            item.RejectionReason = reason;
+        }
+        return Task.CompletedTask;
+    }
+
     public Task<IReadOnlyList<TelemedicineRequest>> ListByPatientAsync(
         Guid patientId,
         CancellationToken ct = default

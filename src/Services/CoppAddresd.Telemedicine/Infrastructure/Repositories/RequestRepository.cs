@@ -43,6 +43,22 @@ public sealed class RequestRepository(TelemedicineDbContext dbContext) : IReques
                 ct
             );
 
+    public async Task SetRejectedAsync(
+        Guid requestId,
+        string reason,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Requests.Where(r => r.Id == requestId)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(r => r.Status, AppointmentRequestStatus.Rejected)
+                        .SetProperty(r => r.RejectionReason, reason)
+                        .SetProperty(r => r.UpdatedAt, DateTime.UtcNow),
+                ct
+            );
+
     public async Task<IReadOnlyList<TelemedicineRequest>> ListByPatientAsync(
         Guid patientId,
         CancellationToken ct = default

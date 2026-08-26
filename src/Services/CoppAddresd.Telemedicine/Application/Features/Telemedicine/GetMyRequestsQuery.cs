@@ -10,12 +10,13 @@ public sealed record GetMyRequestsQuery(Guid PatientId)
 
 public sealed class GetMyRequestsQueryHandler(
     IRequestRepository requests,
-    IAppointmentReferenceDataService referenceData)
-    : IRequestHandler<GetMyRequestsQuery, IReadOnlyList<TelemedicineRequestDto>>
+    IAppointmentReferenceDataService referenceData
+) : IRequestHandler<GetMyRequestsQuery, IReadOnlyList<TelemedicineRequestDto>>
 {
     public async Task<IReadOnlyList<TelemedicineRequestDto>> Handle(
         GetMyRequestsQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var items = await requests.ListByPatientAsync(request.PatientId, ct);
 
@@ -44,7 +45,9 @@ public sealed class GetMyRequestsQueryHandler(
                 r.PreferredStart,
                 r.Reason,
                 r.Status,
-                r.CreatedAt))
+                r.CreatedAt,
+                r.RejectionReason
+            ))
             .ToList();
     }
 }

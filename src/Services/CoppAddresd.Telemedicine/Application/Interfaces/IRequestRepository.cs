@@ -23,6 +23,12 @@ public interface IRequestRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// Rechazo dirigido: marca la solicitud <c>Rejected</c> y persiste el motivo
+    /// en un solo UPDATE (sin reescribir la entidad completa).
+    /// </summary>
+    Task SetRejectedAsync(Guid requestId, string reason, CancellationToken ct = default);
+
     /// <summary>Solicitudes de un paciente, de más reciente a más antigua.</summary>
     Task<IReadOnlyList<TelemedicineRequest>> ListByPatientAsync(
         Guid patientId,

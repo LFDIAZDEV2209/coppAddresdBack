@@ -75,12 +75,18 @@ POST   /api/v1/telemedicine/requests                    # Paciente solicita (Pen
 GET    /api/v1/telemedicine/requests/{id}               # Detalle de solicitud             [Telemedicine.RequestsView]
 GET    /api/v1/telemedicine/requests/mine?patientId=    # Solicitudes del paciente         [Telemedicine.RequestsView]
 POST   /api/v1/telemedicine/requests/{id}/confirm       # Confirma → crea cita Confirmed   [Telemedicine.RequestsConfirm]
+POST   /api/v1/telemedicine/requests/{id}/approve       # Aprueba (Pending → Approved)     alcance dual: AdminView o profesional asignado
+POST   /api/v1/telemedicine/requests/{id}/reject        # Rechaza con motivo (máx 500)     alcance dual: AdminView o profesional asignado
+```
 
-POST   /api/v1/appointments                # Agendamiento directo del doctor   [Telemedicine.AppointmentsSchedule]
-GET    /api/v1/appointments/{id}           # Detalle de cita (nombres resueltos) [Telemedicine.AppointmentsView]
-GET    /api/v1/appointments/agenda?professionalId&from&to  # Agenda/calendario [Telemedicine.AgendaView]
-POST   /api/v1/appointments/{id}/cancel    # Cancelar (historial append-only)  [Telemedicine.AppointmentsCancel]
-POST   /api/v1/appointments/{id}/reschedule# Reprogramación inmediata          [Telemedicine.AppointmentsReschedule]
+**Ciclo de revisión de solicitudes (2 pasos)**: aprobar (`Pending → Approved`, sin crear cita; alerta `RequestApproved` al profesional cuando la aprobación la hace un admin) → confirmar con fecha (crea la cita y la solicitud pasa a `Converted`). Rechazo (`Pending|Approved → Rejected`): motivo obligatorio persistido en `telemedicine_requests.rejection_reason` (migración `AddRequestRejectionReason`), alerta `RequestRejected` al profesional asignado si es resoluble. Los endpoints `approve`/`reject` **no llevan `[RequirePermission]`**: el handler resuelve el alcance dual (claim `Appointments.AdminView` o profesional asignado por identidad del JWT, patrón de la bandeja de alertas) y devuelve 403 sin alcance.
+
+POST /api/v1/appointments # Agendamiento directo del doctor [Telemedicine.AppointmentsSchedule]
+GET /api/v1/appointments/{id} # Detalle de cita (nombres resueltos) [Telemedicine.AppointmentsView]
+GET /api/v1/appointments/agenda?professionalId&from&to # Agenda/calendario [Telemedicine.AgendaView]
+POST /api/v1/appointments/{id}/cancel # Cancelar (historial append-only) [Telemedicine.AppointmentsCancel]
+POST /api/v1/appointments/{id}/reschedule# Reprogramación inmediata [Telemedicine.AppointmentsReschedule]
+
 ```
 
 **Reglas de negocio** (todas parametrizadas en `tele.telemedicine_settings`): duración (default 30 min, máx 240), anticipación mínima, ventana máxima, límite de reprogramaciones (default 2). La reprogramación es inmediata y registra `appointment_reschedules` (historial append-only); la cita vuelve a `Confirmed` con la nueva hora.
@@ -94,11 +100,13 @@ POST   /api/v1/appointments/{id}/reschedule# Reprogramación inmediata          
 **Datos de referencia**: el microservicio NO posee los datos maestros. Valida existencia y resuelve nombres contra internal endpoints del backend (`X-Internal-Key`):
 
 ```
-GET /api/v1/internal/telemedicine/professionals/{id}    # id = erp.professionals (no employee)
+
+GET /api/v1/internal/telemedicine/professionals/{id} # id = erp.professionals (no employee)
 GET /api/v1/internal/telemedicine/patients/{id}
 GET /api/v1/internal/telemedicine/specialties/{id}
 GET /api/v1/internal/telemedicine/locations/{id}
-```
+
+````
 
 La lectura en listados deduplica por entidad única (sin N+1). Si el backend no responde → 503 (`UpstreamUnavailableException`).
 
@@ -110,7 +118,7 @@ Ciclo de video por cita (estados separados a propósito: cita ≠ sesión ≠ sa
 Cita Confirmed → (join-token dentro de la ventana) → sala creada en Twilio (lazy)
 Cita Confirmed/InProgress → session/start → sesión Active + cita InProgress
 sesión Active → session/end | webhook room-ended → sesión Ended + sala Ended + cita Completed
-```
+````
 
 ### API
 
@@ -169,6 +177,8 @@ entrega (email/push/SMS) es responsabilidad futura y **desacoplada** de este agr
 | Evento de dominio                                                         | Alerta                   | Destinatario                        |
 | ------------------------------------------------------------------------- | ------------------------ | ----------------------------------- |
 | Nueva solicitud (`CreateTelemedicineRequest`)                             | `NewRequest`             | Profesional elegido por el paciente |
+| Solicitud aprobada por un admin (`ReviewTelemedicineRequest`)             | `RequestApproved`        | Profesional asignado                |
+| Solicitud rechazada (`ReviewTelemedicineRequest`)                         | `RequestRejected`        | Profesional asignado (si resoluble) |
 | Cita creada/confirmada (`Schedule`/`Confirm`)                             | `NewAppointment`         | Profesional asignado                |
 | Reprogramación (`Reschedule`)                                             | `AppointmentRescheduled` | Profesional asignado                |
 | Cancelación (`Cancel`)                                                    | `AppointmentCancelled`   | Profesional asignado                |
