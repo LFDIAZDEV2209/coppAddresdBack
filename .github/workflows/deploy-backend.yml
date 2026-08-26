@@ -103,14 +103,20 @@ jobs:
             auth)
               echo "dockerfile=src/Services/CoppAddresd.Auth/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-auth" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
               ;;
             api)
               echo "dockerfile=src/CoppAddresd.Api/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-api" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
               ;;
             telemedicine)
               echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-telemedicine" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -134,9 +140,13 @@ jobs:
           TD_NAME="cooppadresd-${{ matrix.service }}"
           TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TD_NAME" --region "${{ env.AWS_REGION }}" --query "taskDefinition" --output json)
           NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
-          NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" '
+          NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" \
+            --argjson envs '${{ steps.svc.outputs.extra_env }}' \
+            --argjson secs '${{ steps.svc.outputs.extra_secrets }}' '
             .containerDefinitions[0].image = $img |
-            del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes)
+            del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes) |
+            .containerDefinitions[0].environment = ((.containerDefinitions[0].environment // []) + $envs) |
+            .containerDefinitions[0].secrets = ((.containerDefinitions[0].secrets // []) + $secs)
           ')
           REGISTERED=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF_JSON" --region "${{ env.AWS_REGION }}")
           echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
