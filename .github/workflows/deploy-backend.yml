@@ -39,12 +39,15 @@ jobs:
           if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Telemedicine"; then
             SERVICES="$SERVICES telemedicine"
           fi
+          if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Community"; then
+            SERVICES="$SERVICES community"
+          fi
 
           # Cambios en infraestructura compartida (Infrastructure, Application, Domain,
           # slnx, Dockerfiles, workflows) afectan a todos los servicios backend.
           SHARED=$(echo "$CHANGED" | grep -E "(src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows)" || true)
           if [ -n "$SHARED" ]; then
-            SERVICES="auth api telemedicine"
+            SERVICES="auth api telemedicine community"
           fi
 
           if [ -z "$SERVICES" ]; then
@@ -116,6 +119,12 @@ jobs:
               echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-telemedicine" >> "$GITHUB_OUTPUT"
               echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              ;;
+            community)
+              echo "dockerfile=src/Services/CoppAddresd.Community/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-community" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
               ;;
           esac
