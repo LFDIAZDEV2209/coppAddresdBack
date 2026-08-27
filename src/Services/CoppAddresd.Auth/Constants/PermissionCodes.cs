@@ -123,6 +123,7 @@ public static class PermissionCodes
     public const string CommunityView = "Community.View";
     public const string CommunityModerate = "Community.Moderate";
     public const string CommunityProfiles = "Community.Profiles";
+    public const string CommunityManage = "Community.Manage";
 
     // Financiero: acceso a información financiera sin acceso clínico.
     public const string FinanceView = "Finance.View";
@@ -214,6 +215,7 @@ public static class PermissionCodes
         yield return CommunityView;
         yield return CommunityModerate;
         yield return CommunityProfiles;
+        yield return CommunityManage;
         yield return FinanceView;
         yield return FinanceManage;
         yield return ReportsView;
