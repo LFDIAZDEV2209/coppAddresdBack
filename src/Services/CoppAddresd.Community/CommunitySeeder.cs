@@ -241,6 +241,80 @@ public static class CommunitySeeder
             });
         }
 
+        // ─── RECONOCIMIENTOS (si vacío) ────────────────────────────────
+        if (!await db.Recognitions.AnyAsync(ct))
+        {
+            var recognitionData = new (string Name, string TypeLabel, int Xp, int OffsetDays)[]
+            {
+                ("Carolina Mendoza", "Miembro del mes", 200, 1),
+                ("Andrés Cárdenas", "Racha destacada", 150, 2),
+                ("Valentina Ríos", "Adherencia NB", 100, 3),
+                ("Jorge Herrera", "Publicación top", 75, 4),
+            };
+
+            for (var i = 0; i < recognitionData.Length; i++)
+            {
+                var (name, typeLabel, xp, offsetDays) = recognitionData[i];
+                var profile = profiles.FirstOrDefault(p => p.DisplayName == name);
+                if (profile is null) continue;
+
+                db.Recognitions.Add(new Recognition
+                {
+                    Id = Guid.NewGuid(),
+                    ProfileId = profile.Id,
+                    TypeLabel = typeLabel,
+                    Xp = xp,
+                    Status = RecognitionStatus.Sent,
+                    CreatedAt = now.AddDays(-offsetDays),
+                });
+            }
+        }
+
+        // ─── CANALES DE RED SOCIAL (si vacío) ──────────────────────────
+        if (!await db.NetworkChannels.AnyAsync(ct))
+        {
+            var channels = new (string Name, string Handle, string Color, int Followers,
+                (string Month, int Value)[] Growth)[]
+            {
+                ("TikTok", "@antares.fya", "#000000", 48200,
+                    [("2026-04", 31000), ("2026-05", 35400), ("2026-06", 39800), ("2026-07", 44000), ("2026-08", 48200)]),
+                ("Instagram", "@antares.fya", "#E1306C", 23700,
+                    [("2026-04", 18000), ("2026-05", 19200), ("2026-06", 20800), ("2026-07", 22100), ("2026-08", 23700)]),
+                ("Facebook", "@antaresfya", "#1877F2", 15400,
+                    [("2026-04", 11000), ("2026-05", 12100), ("2026-06", 13200), ("2026-07", 14300), ("2026-08", 15400)]),
+                ("YouTube", "@antaresfya", "#FF0000", 8100,
+                    [("2026-04", 5000), ("2026-05", 5800), ("2026-06", 6500), ("2026-07", 7300), ("2026-08", 8100)]),
+                ("WhatsApp", "Comunidad ADRED", "#25D366", 284,
+                    [("2026-04", 180), ("2026-05", 204), ("2026-06", 228), ("2026-07", 256), ("2026-08", 284)]),
+            };
+
+            for (var i = 0; i < channels.Length; i++)
+            {
+                var (name, handle, color, followers, growth) = channels[i];
+                var channel = new NetworkChannel
+                {
+                    Id = Guid.NewGuid(),
+                    Name = name,
+                    Handle = handle,
+                    Color = color,
+                    Followers = followers,
+                    SortOrder = i,
+                };
+                db.NetworkChannels.Add(channel);
+
+                foreach (var (month, value) in growth)
+                {
+                    db.NetworkGrowthPoints.Add(new NetworkGrowthPoint
+                    {
+                        Id = Guid.NewGuid(),
+                        ChannelId = channel.Id,
+                        Month = month,
+                        Value = value,
+                    });
+                }
+            }
+        }
+
         await db.SaveChangesAsync(ct);
     }
 
