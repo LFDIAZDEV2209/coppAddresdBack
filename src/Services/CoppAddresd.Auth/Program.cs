@@ -155,6 +155,11 @@ using (var scope = app.Services.CreateScope())
 
     await PermissionSeeder.SeedAsync(dbContext, logger);
 
+    // Permisos del módulo Program Progress (Program.*). Debe correr ANTES de
+    // AdminSeeder para que el rol Admin reciba los 5 códigos por convención
+    // (AdminSeeder asigna todos los permisos existentes al rol Admin).
+    await ProgramProgressPermissionsSeeder.SeedAsync(dbContext, logger);
+
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
     var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;

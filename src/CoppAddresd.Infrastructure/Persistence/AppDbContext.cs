@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Entities.ProgramProgress;
 using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Infrastructure.Persistence;
@@ -79,6 +80,33 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<ClinicalMeasurement> ClinicalMeasurements => Set<ClinicalMeasurement>();
     public DbSet<PlanSafetyRule> PlanSafetyRules => Set<PlanSafetyRule>();
+
+    // Program Progress — Módulo de progreso
+    public DbSet<ProgramTemplate> ProgramTemplates => Set<ProgramTemplate>();
+    public DbSet<WeeklyDayTemplate> WeeklyDayTemplates => Set<WeeklyDayTemplate>();
+    public DbSet<ProgramEnrollment> ProgramEnrollments => Set<ProgramEnrollment>();
+    public DbSet<ProgramWeek> ProgramWeeks => Set<ProgramWeek>();
+    public DbSet<DailyCheckIn> DailyCheckIns => Set<DailyCheckIn>();
+    public DbSet<TaskCompletion> TaskCompletions => Set<TaskCompletion>();
+    public DbSet<XpLedgerEntry> XpLedgerEntries => Set<XpLedgerEntry>();
+    public DbSet<StreakState> StreakStates => Set<StreakState>();
+    public DbSet<StreakFreeze> StreakFreezes => Set<StreakFreeze>();
+    public DbSet<AdaptationRecommendation> AdaptationRecommendations => Set<AdaptationRecommendation>();
+    public DbSet<EmotionalRecord> EmotionalRecords => Set<EmotionalRecord>();
+    public DbSet<XpRule> XpRules => Set<XpRule>();
+
+    // Program Progress — Scores
+    public DbSet<HealthScoreWeight> HealthScoreWeights => Set<HealthScoreWeight>();
+    public DbSet<ClinicalBaseline> ClinicalBaselines => Set<ClinicalBaseline>();
+    public DbSet<HealthScore> HealthScores => Set<HealthScore>();
+    public DbSet<TransformationScore> TransformationScores => Set<TransformationScore>();
+
+    // Program Progress — Revisiones clínicas de XP (SPEC §15)
+    public DbSet<ClinicalXpReview> ClinicalXpReviews => Set<ClinicalXpReview>();
+
+    // Program Progress — Hábitos de alimentación/hidratación (SPEC §18)
+    public DbSet<HabitTemplate> HabitTemplates => Set<HabitTemplate>();
+    public DbSet<HabitCheck> HabitChecks => Set<HabitCheck>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
