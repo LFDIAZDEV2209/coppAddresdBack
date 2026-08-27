@@ -22,7 +22,17 @@ public sealed class ProfileConfiguration : IEntityTypeConfiguration<Profile>
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz").HasDefaultValueSql("now()").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamptz");
 
+        builder.Property(x => x.Region).HasColumnName("region").HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.Diagnosis).HasColumnName("diagnosis").HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.Week).HasColumnName("week");
+        builder.Property(x => x.LastPostAt).HasColumnName("last_post_at").HasColumnType("timestamptz");
+        builder.Property(x => x.LastActiveAt).HasColumnName("last_active_at").HasColumnType("timestamptz");
+        builder.Property(x => x.CurrentStreak).HasColumnName("current_streak").IsRequired();
+        builder.Property(x => x.BestStreak).HasColumnName("best_streak").IsRequired();
+        builder.Property(x => x.XpTotal).HasColumnName("xp_total").IsRequired();
+
         builder.HasIndex(x => x.UserId).IsUnique().HasDatabaseName("ix_profiles_user_id");
         builder.HasIndex(x => x.Status).HasDatabaseName("ix_profiles_status");
+        builder.HasIndex(x => x.Region).HasDatabaseName("ix_profiles_region");
     }
 }
