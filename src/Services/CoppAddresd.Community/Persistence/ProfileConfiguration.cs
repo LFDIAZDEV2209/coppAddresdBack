@@ -11,7 +11,8 @@ public sealed class ProfileConfiguration : IEntityTypeConfiguration<Profile>
         builder.ToTable("profiles", "community");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
-        builder.Property(x => x.UserId).HasColumnName("user_id").IsRequired();
+        builder.Property(x => x.UserId).HasColumnName("user_id");
+        builder.Property(x => x.IsSystem).HasColumnName("is_system").HasDefaultValue(false).IsRequired();
         builder.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(120).IsRequired();
         builder.Property(x => x.Bio).HasColumnName("bio").HasMaxLength(500);
         builder.Property(x => x.AvatarKey).HasColumnName("avatar_key").HasMaxLength(500);
