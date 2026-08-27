@@ -549,6 +549,38 @@ var profile = await db.Profiles
         return group;
     }
 
+    /// <summary>
+    /// Eventos del feed en vivo ordenados por fecha de creación descendente.
+    /// </summary>
+    [Authorize]
+    public async Task<IReadOnlyList<FeedEvent>> FeedEvents(
+        [Service] CommunityDbContext db,
+        int take = 20,
+        int skip = 0,
+        CancellationToken ct = default)
+        => await db.FeedEvents
+            .Include(f => f.Profile)
+            .OrderByDescending(f => f.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Ranking de perfiles por racha actual (descendente) y XP total (descendente).
+    /// Usado por el tablero de rachas del frontend.
+    /// </summary>
+    [Authorize]
+    public async Task<List<Profile>> TopStreaks(
+        [Service] CommunityDbContext db,
+        int take = 20,
+        CancellationToken ct = default)
+        => await db.Profiles
+            .Where(p => p.Status == ProfileStatus.Active)
+            .OrderByDescending(p => p.CurrentStreak)
+            .ThenByDescending(p => p.XpTotal)
+            .Take(take)
+            .ToListAsync(ct);
+
     private static async Task<Profile> RequireMyProfileAsync(
         CommunityDbContext db, IHttpContextAccessor http, CancellationToken ct)
         => await db.Profiles.FirstOrDefaultAsync(p => p.UserId == CurrentUserId(http), ct)
