@@ -19,7 +19,7 @@ public sealed class PostReportConfiguration : IEntityTypeConfiguration<PostRepor
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz").HasDefaultValueSql("now()").IsRequired();
 
         builder.HasOne(x => x.Post)
-            .WithMany()
+            .WithMany(p => p.Reports)
             .HasForeignKey(x => x.PostId)
             .OnDelete(DeleteBehavior.Cascade);
 
