@@ -20,6 +20,9 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
     public DbSet<XpEntry> XpEntries => Set<XpEntry>();
     public DbSet<FeedEvent> FeedEvents => Set<FeedEvent>();
+    public DbSet<Recognition> Recognitions => Set<Recognition>();
+    public DbSet<NetworkChannel> NetworkChannels => Set<NetworkChannel>();
+    public DbSet<NetworkGrowthPoint> NetworkGrowthPoints => Set<NetworkGrowthPoint>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
