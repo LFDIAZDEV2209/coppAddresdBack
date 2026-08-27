@@ -108,11 +108,15 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
             body.AnalysisId,
             body.Status ?? "completed",
             body.ModelVersion ?? "unknown",
+            body.SegModelVersion ?? "none",
             body.InferenceTimeMs ?? 0,
             (body.Foods ?? []).Select(f => new DetectedFoodDto(
                 f.Name,
                 f.Confidence,
-                new BoundingBoxDto(f.BoundingBox?.X ?? 0, f.BoundingBox?.Y ?? 0, f.BoundingBox?.Width ?? 0, f.BoundingBox?.Height ?? 0)))
+                new BoundingBoxDto(f.BoundingBox?.X ?? 0, f.BoundingBox?.Y ?? 0, f.BoundingBox?.Width ?? 0, f.BoundingBox?.Height ?? 0),
+                f.Segmentation is null
+                    ? null
+                    : new SegmentationDto(f.Segmentation.Mask, f.Segmentation.AreaPixels)))
             .ToList());
         }
         catch (JsonException ex)
@@ -127,6 +131,7 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
         public string? AnalysisId { get; set; }
         public string? Status { get; set; }
         public string? ModelVersion { get; set; }
+        public string? SegModelVersion { get; set; }
         public int? InferenceTimeMs { get; set; }
         public List<DetectedFoodJson>? Foods { get; set; }
     }
@@ -136,6 +141,13 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
         public string? Name { get; set; }
         public double Confidence { get; set; }
         public BoundingBoxJson? BoundingBox { get; set; }
+        public SegmentationJson? Segmentation { get; set; }
+    }
+
+    private sealed class SegmentationJson
+    {
+        public string? Mask { get; set; }
+        public int AreaPixels { get; set; }
     }
 
     private sealed class BoundingBoxJson

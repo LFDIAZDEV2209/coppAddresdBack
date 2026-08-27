@@ -51,6 +51,7 @@ public class AnalyzeFoodImageCommandHandler
             analysisId, request.ImageStream, request.FileName, request.ContentType, ct);
 
         return new AnalyzeFoodImageResult(
-            analysisId.ToString(), result.Status, result.ModelVersion, result.InferenceTimeMs, result.Foods);
+            analysisId.ToString(), result.Status, result.ModelVersion, result.SegModelVersion,
+            result.InferenceTimeMs, result.Foods);
     }
 }
