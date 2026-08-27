@@ -160,6 +160,78 @@ var profile = await db.Profiles
             .ToListAsync(ct);
     }
 
+    /// <summary>
+    /// Publicaciones reportadas con sus reportes asociados. Solo moderadores.
+    /// Consultas secuenciales (EF Core no permite operaciones concurrentes sobre un mismo DbContext).
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<List<ReportedPost>> ReportedPosts(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 20,
+        int skip = 0)
+    {
+        // 1. Obtener los PostIds únicos con reportes, ordenados por el reporte más reciente.
+        var reportedPostIds = await db.PostReports
+            .GroupBy(r => r.PostId)
+            .Select(g => new { PostId = g.Key, LatestReportAt = g.Max(r => r.CreatedAt) })
+            .OrderByDescending(x => x.LatestReportAt)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => x.PostId)
+            .ToListAsync(ct);
+
+        if (reportedPostIds.Count == 0) return [];
+
+        // 2. Cargar las publicaciones activas (no eliminadas) correspondientes.
+        var posts = await db.Posts
+            .Where(p => reportedPostIds.Contains(p.Id) && p.DeletedAt == null)
+            .Include(p => p.Profile)
+            .Include(p => p.Likes)
+            .ToListAsync(ct);
+        var postById = posts.ToDictionary(p => p.Id);
+
+        // 3. Cargar los reportes de esas publicaciones.
+        var reports = await db.PostReports
+            .Where(r => reportedPostIds.Contains(r.PostId))
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+        // 4. Cargar perfiles de reportadores.
+        var reporterIds = reports.Select(r => r.ReportedByProfileId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        var reporters = await db.Profiles.Where(p => reporterIds.Contains(p.Id)).ToListAsync(ct);
+        var reporterById = reporters.ToDictionary(p => p.Id);
+
+        // 5. Agrupar y construir DTOs en el orden original.
+        var reportsByPostId = reports.GroupBy(r => r.PostId).ToDictionary(g => g.Key, g => g.ToList());
+
+        return reportedPostIds
+            .Where(id => postById.ContainsKey(id))
+            .Select(id =>
+            {
+                var post = postById[id];
+                var postReports = reportsByPostId.GetValueOrDefault(id, []);
+                return new ReportedPost
+                {
+                    PostId = id,
+                    Post = post,
+                    ReportCount = postReports.Count,
+                    Reports = postReports.Select(r => new ReportDto
+                    {
+                        Id = r.Id,
+                        PostId = r.PostId,
+                        Reason = r.Reason,
+                        Details = r.Details,
+                        CreatedAt = r.CreatedAt,
+                        ReportedBy = r.ReportedByProfileId.HasValue && reporterById.TryGetValue(r.ReportedByProfileId.Value, out var reporter)
+                            ? new ReportedByProfile { Id = reporter.Id, DisplayName = reporter.DisplayName }
+                            : null,
+                    }).ToList(),
+                };
+            })
+            .ToList();
+    }
+
     /// <summary>Feed de publicaciones de los perfiles que sigo (sin incluir las propias).</summary>
     [Authorize]
     public async Task<IReadOnlyList<Post>> FollowingFeed(
