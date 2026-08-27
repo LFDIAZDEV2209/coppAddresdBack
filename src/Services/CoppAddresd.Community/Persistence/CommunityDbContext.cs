@@ -18,6 +18,8 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
     public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
+    public DbSet<XpEntry> XpEntries => Set<XpEntry>();
+    public DbSet<FeedEvent> FeedEvents => Set<FeedEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
