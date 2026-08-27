@@ -57,7 +57,9 @@ Recursos ya definidos para el storage de archivos de la plataforma (implementado
   migraciones de cada microservicio tras su rollout — idempotente. Cada uno tiene su propio
   historial: api → `public.__EFMigrationsHistory`, telemedicine → `tele.__ef_migrations_history`.
   Auth y Community además auto-migran al arrancar (`MigrateAsync` en su `Program.cs`), por lo que
-  no requieren paso en el pipeline.
+  no requieren paso en el pipeline. **Permisos del role GHA `cooppadresd-gha-backend`**: el job
+  `migrate` exige `ecs:RunTask` + `ecs:DescribeTasks` + `iam:PassRole` (task/execution roles del
+  task def) + `logs:GetLogEvents` (opcional); sin ellos, `run-task` falla con `AccessDeniedException`.
 
 ## CloudWatch
 
