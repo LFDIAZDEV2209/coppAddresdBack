@@ -124,6 +124,13 @@ public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
 /// <c>MultiplierEndsAt</c> es null cuando no hay multiplicador;
 /// <c>MultiplierRemainingHours</c> son las horas restantes redondeadas hacia
 /// abajo (0 sin multiplicador).
+///
+/// Campos aditivos de la racha propia del nutribiótico (SPEC §19, D — Paso 7a):
+/// <c>NbStreak</c>/<c>NbLongestStreak</c> son la racha consecutiva de la tarea
+/// <c>nutribiotico</c> y su máximo histórico; <c>NbNextMilestone</c> es el
+/// próximo hito <c>{ days, xp, daysRemaining }</c> por encima de la racha
+/// actual (null si ya llegó a 90). Con default para no romper los call sites
+/// existentes — los campos previos no cambian.
 /// </summary>
 public sealed record StreakInfoDto(
     int Current,
@@ -131,7 +138,17 @@ public sealed record StreakInfoDto(
     int FreezesRemaining,
     decimal MultiplierActive,
     DateTime? MultiplierEndsAt,
-    int MultiplierRemainingHours);
+    int MultiplierRemainingHours,
+    int NbStreak = 0,
+    int NbLongestStreak = 0,
+    NbNextMilestoneDto? NbNextMilestone = null);
+
+/// <summary>
+/// Próximo hito de la racha propia del nutribiótico (SPEC §19, D): días del
+/// hito, XP base del catálogo (<c>app.xp_rules</c>) y días restantes para
+/// alcanzarlo. Null en el snapshot cuando la racha actual ya es ≥ 90.
+/// </summary>
+public sealed record NbNextMilestoneDto(int Days, int Xp, int DaysRemaining);
 
 /// <summary>Día del mini calendario del snapshot (7 días).</summary>
 public sealed record CalendarDayDto(
