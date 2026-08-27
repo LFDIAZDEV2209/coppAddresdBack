@@ -350,6 +350,23 @@ public sealed class CommunityMutation
     }
 
     /// <summary>
+    /// Soft-delete moderado de un comentario. Solo moderadores.
+    /// Establece DeletedAt con la fecha actual.
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<Comment?> ModerateDeleteComment(
+        Guid commentId,
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var comment = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId, ct)
+            ?? throw new GraphQLException("No se encontró el comentario.");
+        comment.DeletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return comment;
+    }
+
+    /// <summary>
     /// Resuelve (elimina) un reporte. Solo moderadores.
     /// </summary>
     [Authorize(Policy = "CommunityModerator")]

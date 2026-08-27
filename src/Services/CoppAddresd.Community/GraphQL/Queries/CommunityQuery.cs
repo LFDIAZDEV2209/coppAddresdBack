@@ -93,9 +93,9 @@ var profile = await db.Profiles
         var query = db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
-            .Include(p => p.Comments)
-            .Include(p => p.Comments).ThenInclude(c => c.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
             .Where(p => p.DeletedAt == null);
 
         // Filtro por autor: coincidencia parcial e insensible a acentos (ILike + Unaccent),
@@ -133,10 +133,10 @@ var profile = await db.Profiles
 => db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
-            .Include(p => p.Comments)
-            .ThenInclude(c => c.Replies)
-            .Include(p => p.Comments).ThenInclude(c => c.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null, ct);
 
     /// <summary>Lista de perfiles con filtros opcionales por estado y búsqueda (moderador).</summary>
@@ -254,9 +254,9 @@ var profile = await db.Profiles
         return await db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
-            .Include(p => p.Comments)
-            .Include(p => p.Comments).ThenInclude(c => c.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
             .Where(p => p.DeletedAt == null && followingIds.Contains(p.ProfileId))
             .OrderByDescending(p => p.Pinned)
             .ThenByDescending(p => p.CreatedAt)
