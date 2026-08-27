@@ -167,6 +167,18 @@ GET    /api/v1/agents/executions    # Ejecuciones de agentes (monitoreo, proxy d
 GET    /api/v1/agents/executions/{id}  # Detalle de una ejecución (12 preguntas del monitoreo)
 ```
 
+## Food AI (análisis de alimentos) — Endpoints
+
+```
+GET    /api/v1/foodai/health        # Probe backend → food-ai-service (8010) [AllowAnonymous]
+POST   /api/v1/foodai/analyze       # Ingesta multipart (image) → {analysisId, status:"received"}
+                                    #   [AllowAnonymous por ahora; auth cuando haya endpoints de negocio]
+```
+
+**Flujo**: `AnalyzeFoodImageCommand` (MediatR) → `ImageFileValidator` (extensión/MIME/10 MB/firma mágica) → `IImageStorage`/`LocalImageStorage` (delega en `IObjectStorageService` existente, clave `foodai/<analysisId>.<ext>` → `.local-storage/foodai/` en dev) → `IFoodAiClient`/`FoodAiClient.SendImageAsync` (multipart `image`+`analysis_id` a `/analyze`, snake_case, errores → `FoodAiException` 502).
+
+**Configuración**: `appsettings.json` → `FoodAi` section (BaseUrl `http://localhost:8010`, TimeoutSeconds 10, MaxImageSizeBytes 10 MB, AllowedContentTypes/Extensions). El food-ai-service NO comparte puerto ni código con el `ai-service` (LangGraph, 8000).
+
 **Chat multi-agente**: `ChatRequestDto` acepta `agentTypeId` y `userId` (aislamiento de
 memoria por usuario en el AI Service); `ChatResult` incluye `executionId` (feedback).
 El `AiServiceClient` mapea el contrato del AI Service (`answer`/`thread_id`/`execution_id`)
