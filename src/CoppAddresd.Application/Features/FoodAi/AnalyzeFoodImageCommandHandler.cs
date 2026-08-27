@@ -50,6 +50,7 @@ public class AnalyzeFoodImageCommandHandler
         var result = await _foodAiClient.SendImageAsync(
             analysisId, request.ImageStream, request.FileName, request.ContentType, ct);
 
-        return new AnalyzeFoodImageResult(analysisId.ToString(), result.Status);
+        return new AnalyzeFoodImageResult(
+            analysisId.ToString(), result.Status, result.ModelVersion, result.InferenceTimeMs, result.Foods);
     }
 }

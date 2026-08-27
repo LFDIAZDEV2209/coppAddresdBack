@@ -46,12 +46,12 @@ public class FoodAiClientSendImageTests
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
 
     [Fact]
-    public async Task SendImageAsync_envia_multipart_a_analyze_y_parsea_respuesta()
+    public async Task SendImageAsync_envia_multipart_a_analyze_y_parsea_detecciones()
     {
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                """{"analysis_id":"3f3f0f0f-1111-2222-3333-444444444444","status":"received"}"""),
+                """{"analysis_id":"3f3f0f0f-1111-2222-3333-444444444444","status":"completed","model_version":"food-detector-v1","inference_time_ms":182,"foods":[{"name":"pizza","confidence":0.94,"bounding_box":{"x":120,"y":80,"width":300,"height":180}},{"name":"banana","confidence":0.61,"bounding_box":{"x":30,"y":400,"width":90,"height":140}}]}"""),
         });
         var client = BuildClient(handler);
 
@@ -70,7 +70,16 @@ public class FoodAiClientSendImageTests
         Assert.Contains("Content-Type: image/png", request.Body, StringComparison.Ordinal);
 
         Assert.Equal("3f3f0f0f-1111-2222-3333-444444444444", result.AnalysisId);
-        Assert.Equal("received", result.Status);
+        Assert.Equal("completed", result.Status);
+        Assert.Equal("food-detector-v1", result.ModelVersion);
+        Assert.Equal(182, result.InferenceTimeMs);
+        Assert.Equal(2, result.Foods.Count);
+        Assert.Equal("pizza", result.Foods[0].Name);
+        Assert.Equal(0.94, result.Foods[0].Confidence);
+        Assert.Equal(120, result.Foods[0].BoundingBox.X);
+        Assert.Equal(80, result.Foods[0].BoundingBox.Y);
+        Assert.Equal(300, result.Foods[0].BoundingBox.Width);
+        Assert.Equal(180, result.Foods[0].BoundingBox.Height);
     }
 
     [Fact]

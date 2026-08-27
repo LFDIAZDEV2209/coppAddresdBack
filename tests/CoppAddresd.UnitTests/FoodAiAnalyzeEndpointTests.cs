@@ -33,7 +33,9 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
         {
             LastAnalysisId = analysisId;
             LastFileName = fileName;
-            LastSend = new FoodAiAnalyzeResult(analysisId.ToString(), "received");
+            LastSend = new FoodAiAnalyzeResult(
+                analysisId.ToString(), "completed", "food-detector-v1", 182,
+                [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]);
             return Task.FromResult(LastSend);
         }
     }
@@ -76,7 +78,13 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
         var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeEndpointTestsResponse>();
         Assert.NotNull(body);
         Assert.True(Guid.TryParse(body.AnalysisId, out _));
-        Assert.Equal("received", body.Status);
+        Assert.Equal("completed", body.Status);
+        Assert.Equal("food-detector-v1", body.ModelVersion);
+        Assert.Single(body.Foods);
+        Assert.Equal("pizza", body.Foods[0].Name);
+        Assert.Equal(0.94, body.Foods[0].Confidence);
+        Assert.Equal(120, body.Foods[0].BoundingBox.X);
+        Assert.Equal(300, body.Foods[0].BoundingBox.Width);
     }
 
     [Fact]
@@ -115,5 +123,22 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
     {
         public string? AnalysisId { get; set; }
         public string? Status { get; set; }
+        public string? ModelVersion { get; set; }
+        public List<FoodJson> Foods { get; set; } = [];
+
+        public sealed class FoodJson
+        {
+            public string? Name { get; set; }
+            public double Confidence { get; set; }
+            public BoxJson? BoundingBox { get; set; }
+        }
+
+        public sealed class BoxJson
+        {
+            public int X { get; set; }
+            public int Y { get; set; }
+            public int Width { get; set; }
+            public int Height { get; set; }
+        }
     }
 }

@@ -1,11 +1,12 @@
+using CoppAddresd.Application.DTOs.FoodAi;
 using MediatR;
 
 namespace CoppAddresd.Application.Features.FoodAi;
 
 /// <summary>
-/// Ingesta de una imagen de comida: validación → almacenamiento → envío al
-/// Food AI Service. Respuesta síncrona con status "received" (sin análisis
-/// todavía).
+/// Ingesta de una imagen de comida: validación → almacenamiento → detección
+/// en el Food AI Service. Respuesta con alimentos detectados (clase +
+/// confidence + bounding box en píxeles).
 /// </summary>
 public record AnalyzeFoodImageCommand(
     Stream ImageStream,
@@ -14,4 +15,9 @@ public record AnalyzeFoodImageCommand(
     long Length)
     : IRequest<AnalyzeFoodImageResult>;
 
-public record AnalyzeFoodImageResult(string AnalysisId, string Status);
+public record AnalyzeFoodImageResult(
+    string AnalysisId,
+    string Status,
+    string ModelVersion,
+    int InferenceTimeMs,
+    IReadOnlyList<DetectedFoodDto> Foods);
