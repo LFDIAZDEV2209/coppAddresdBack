@@ -365,6 +365,28 @@ var profile = await db.Profiles
         return ids.Select(id => byId[id]).ToList();
     }
 
+    /// <summary>
+    /// Estadísticas agregadas del dashboard de la comunidad: KPIs, series temporales,
+    /// distribuciones y tendencias. Consultas encadenadas secuenciales (EF Core no permite
+    /// operaciones concurrentes sobre un mismo DbContext).
+    /// </summary>
+    [Authorize]
+    public async Task<DashboardStats> DashboardStats(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+
+        // Carga secuencial de datos (sin operaciones concurrentes en el mismo DbContext).
+        var profiles = await db.Profiles.ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        var comments = await db.Comments.ToListAsync(ct);
+        var likes = await db.Likes.ToListAsync(ct);
+        var feedEvents = await db.FeedEvents.ToListAsync(ct);
+
+        return DashboardAggregator.Compute(profiles, posts, comments, likes, feedEvents, now);
+    }
+
     /// <summary>Resumen de conversaciones del usuario (último mensaje por interlocutor).</summary>
     [Authorize]
     public async Task<List<Conversation>> Conversations(
