@@ -1,5 +1,6 @@
 using CoppAddresd.Community.Entities;
 using CoppAddresd.Community.GraphQL.Queries;
+using CoppAddresd.Community.GraphQL.Types;
 using CoppAddresd.Community.Persistence;
 using HotChocolate;
 using HotChocolate.Authorization;
@@ -670,6 +671,151 @@ var reply = new Comment
         await sender.SendAsync($"message_{key}", message);
         return message;
     }
+
+    // --- Mensajería desde sistema (admin) ---
+
+    /// <summary>
+    /// Envía un mensaje masivo desde el perfil del sistema a miembros del alcance
+    /// especificado. Requiere el permiso Community.Manage.
+    /// </summary>
+    [Authorize(Policy = "Community.Manage")]
+    public async Task<int> SendBulkMessage(
+        MessageScope scope,
+        string body,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        body = body.Trim();
+        if (body.Length == 0) throw new GraphQLException("Escribe un mensaje.");
+        if (body.Length > 1000) throw new GraphQLException("El mensaje no puede superar los 1000 caracteres.");
+
+        var systemProfile = await GetSystemProfileAsync(db, ct);
+        var adminProfile = await RequireProfileAsync(db, http, ct);
+        var now = DateTime.UtcNow;
+        var threshold7d = DateTimeOffset.UtcNow.AddDays(-7);
+
+        // Resolver destinatarios según el alcance.
+        List<Profile> targets;
+        switch (scope)
+        {
+            case MessageScope.Inactive:
+                // Mismo criterio que DashboardAggregator: max(LastPostAt, LastActiveAt) es null o < now-7d.
+                targets = await db.Profiles
+                    .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem)
+                    .ToListAsync(ct);
+                targets = targets.Where(p =>
+                {
+                    var last = p.LastPostAt.HasValue && p.LastActiveAt.HasValue
+                        ? (p.LastPostAt.Value > p.LastActiveAt.Value ? p.LastPostAt.Value : p.LastActiveAt.Value)
+                        : p.LastPostAt ?? p.LastActiveAt;
+                    return last is null || last.Value.UtcDateTime < threshold7d.UtcDateTime;
+                }).ToList();
+                break;
+
+            case MessageScope.AllActive:
+                targets = await db.Profiles
+                    .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem)
+                    .ToListAsync(ct);
+                break;
+
+            default:
+                throw new GraphQLException("Alcance no válido.");
+        }
+
+        if (targets.Count == 0) return 0;
+
+        // Insertar un mensaje por destinatario.
+        foreach (var target in targets)
+        {
+            db.Messages.Add(new Message
+            {
+                Id = Guid.NewGuid(),
+                SenderProfileId = systemProfile.Id,
+                RecipientProfileId = target.Id,
+                Body = body,
+                CreatedAt = now,
+                TriggeredByProfileId = adminProfile.Id,
+            });
+        }
+        await db.SaveChangesAsync(ct);
+
+        // Emitir un evento de feed resumen (uno solo).
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = systemProfile.Id,
+            Kind = FeedEventKind.Mensaje,
+            Body = $"Mensaje enviado a {targets.Count} miembros",
+            CreatedAt = now,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync("feed_event_added", feedEvent);
+
+        return targets.Count;
+    }
+
+    /// <summary>
+    /// Envía un mensaje directo desde el perfil del sistema a un miembro concreto.
+    /// No requiere relación de amistad. Requiere el permiso Community.Manage.
+    /// </summary>
+    [Authorize(Policy = "Community.Manage")]
+    public async Task<Message> SendDirectMessage(
+        Guid profileId,
+        string body,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        body = body.Trim();
+        if (body.Length == 0) throw new GraphQLException("Escribe un mensaje.");
+        if (body.Length > 1000) throw new GraphQLException("El mensaje no puede superar los 1000 caracteres.");
+
+        var systemProfile = await GetSystemProfileAsync(db, ct);
+        var adminProfile = await RequireProfileAsync(db, http, ct);
+
+        var recipient = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId, ct)
+            ?? throw new GraphQLException("No se encontró el destinatario.");
+        if (recipient.Status != ProfileStatus.Active)
+            throw new GraphQLException("Este perfil no está disponible.");
+
+        var now = DateTime.UtcNow;
+        var message = new Message
+        {
+            Id = Guid.NewGuid(),
+            SenderProfileId = systemProfile.Id,
+            RecipientProfileId = profileId,
+            Body = body,
+            CreatedAt = now,
+            TriggeredByProfileId = adminProfile.Id,
+        };
+        db.Messages.Add(message);
+
+        // Emitir evento de feed.
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = systemProfile.Id,
+            Kind = FeedEventKind.Mensaje,
+            Body = body.Length > 500 ? body[..500] : body,
+            CreatedAt = now,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+
+        await sender.SendAsync("feed_event_added", feedEvent);
+        return message;
+    }
+
+    /// <summary>
+    /// Resuelve el perfil del sistema (IsSystem == true). Lanza error si no existe.
+    /// </summary>
+    private static async Task<Profile> GetSystemProfileAsync(CommunityDbContext db, CancellationToken ct)
+        => await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem, ct)
+           ?? throw new GraphQLException("El perfil del sistema no está configurado.");
 
     private static async Task<Profile> RequireProfileAsync(
         CommunityDbContext db, IHttpContextAccessor http, CancellationToken ct)

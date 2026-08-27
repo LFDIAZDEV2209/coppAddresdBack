@@ -12,4 +12,5 @@ public enum FeedEventKind
     Hito,
     Nutriobiotico,
     Logro,
+    Mensaje,
 }
