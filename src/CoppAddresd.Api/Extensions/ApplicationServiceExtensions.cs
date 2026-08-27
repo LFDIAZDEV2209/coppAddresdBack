@@ -31,6 +31,9 @@ public static class ApplicationServiceExtensions
         services.Configure<AiServiceSettings>(
             configuration.GetSection(AiServiceSettings.SectionName));
 
+        services.Configure<FoodAiSettings>(
+            configuration.GetSection(FoodAiSettings.SectionName));
+
         // Clave interna compartida con el microservicio de Telemedicina
         // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).
         services.Configure<TelemedicineServiceSettings>(
@@ -46,6 +49,9 @@ public static class ApplicationServiceExtensions
 
         services.AddHttpClient<IAiServiceClient, AiServiceClient>()
             .AddResiliencePolicy()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
+        services.AddHttpClient<IFoodAiClient, FoodAiClient>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
