@@ -1,8 +1,10 @@
 using System.Text.Json;
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
@@ -47,7 +49,8 @@ public sealed class ProgramRepository(
     AppDbContext dbContext,
     IConfiguration configuration,
     IHealthScoreCalculator? healthScoreCalculator = null,
-    ITransformationScoreCalculator? transformationScoreCalculator = null) : IProgramRepository
+    ITransformationScoreCalculator? transformationScoreCalculator = null,
+    IGamifiedNotificationService? gamifiedNotificationService = null) : IProgramRepository
 {
     private const int MaxFreezes = 3;
 
@@ -56,6 +59,14 @@ public sealed class ProgramRepository(
 
     private readonly ITransformationScoreCalculator _transformationScoreCalculator =
         transformationScoreCalculator ?? new TransformationScoreCalculator(NullLogger<TransformationScoreCalculator>.Instance);
+
+    /// <summary>
+    /// Notificaciones gamificadas (SPEC §20, "Paso 7b"): opcional para no romper
+    /// los call sites de tests que construyen el repositorio sin DI (mismo
+    /// patrón que los calculadores). Null → las notificaciones se omiten sin
+    /// error; el servicio es best-effort y nunca lanza (AC-42).
+    /// </summary>
+    private readonly IGamifiedNotificationService? _gamifiedNotificationService = gamifiedNotificationService;
 
     /// <summary>Cada N días perfectos consecutivos se otorga un congelamiento (OQ-3, default 7).</summary>
     private readonly int _freezeGrantEveryPerfectDays =
@@ -635,6 +646,19 @@ public sealed class ProgramRepository(
                 BalanceAfter = newBalance,
                 AwardedAt = now,
             });
+
+            // Notificación gamificada de día perfecto (SPEC §20, C.5): best-
+            // effort — el servicio nunca lanza ni rompe la transacción (AC-42).
+            if (_gamifiedNotificationService is not null)
+            {
+                await _gamifiedNotificationService.NotifyAsync(
+                    enrollment.PatientId,
+                    "day_complete",
+                    "✅ Día perfecto",
+                    $"✅ Día perfecto · +{bonusPoints} XP",
+                    "normal",
+                    ct);
+            }
         }
 
         // Racha por umbral (SPEC §17, B): el día aporta a la racha si cumple el
@@ -660,13 +684,48 @@ public sealed class ProgramRepository(
         if (streakGrewToday && newStreak > 0)
         {
             await AwardStreakMilestoneIfReachedAsync(
-                enrollment.Id, enrollment.Timezone, newStreak, input.LocalDate, ct);
+                enrollment.Id, enrollment.PatientId, enrollment.Timezone, newStreak, input.LocalDate, ct);
+        }
+
+        // Racha propia del nutribiótico (SPEC §19, B — "Paso 7a"): la tarea
+        // nutribiotico mantiene su PROPIA racha consecutiva, independiente de
+        // la racha general (un día perdido la rompe; los congelamientos NO la
+        // protegen — AC-38). Corre SOLO en la primera escritura de la tarea
+        // (el replay idempotente ya retornó arriba), dentro de la transacción
+        // con la inscripción bloqueada FOR UPDATE, y después del flush para
+        // que el balance del libro mayor incluya la tarea y el bonus de día.
+        if (input.TaskCode == TaskCode.nutribiotico)
+        {
+            await UpdateNbStreakAsync(
+                enrollment.Id, enrollment.PatientId, enrollment.Timezone, input.LocalDate, completion.Id, ct);
         }
 
         // 10. Semana perfecta → avance (SPEC §6.7).
         await MaybeCompleteWeekAsync(enrollment, template, week, ct);
 
         await dbContext.SaveChangesAsync(ct);
+
+        // Notificación gamificada de subida de nivel (SPEC §20, C.4): se
+        // compara el nivel ANTES y DESPUÉS de todos los otorgamientos del día
+        // (tarea + bonus de día perfecto + hitos de racha/nutribiótico). Corre
+        // DESPUÉS del flush para que <see cref="CurrentBalanceAsync"/> vea el
+        // libro mayor completo (las filas recién añadidas no están en BD hasta
+        // el SaveChanges). Best-effort — nunca lanza (AC-42).
+        if (_gamifiedNotificationService is not null)
+        {
+            var levelBefore = XpLevels.ForBalance(balance).Level;
+            var levelAfter = XpLevels.ForBalance(await CurrentBalanceAsync(enrollment.Id, ct)).Level;
+            if (levelBefore != levelAfter)
+            {
+                await _gamifiedNotificationService.NotifyAsync(
+                    enrollment.PatientId,
+                    "level_up",
+                    $"⭐ ¡Nivel {levelAfter}!",
+                    $"⭐ ¡Subiste a Nivel {levelAfter}!",
+                    "high",
+                    ct);
+            }
+        }
 
         var streak = await dbContext.StreakStates.AsNoTracking()
             .FirstOrDefaultAsync(s => s.EnrollmentId == enrollment.Id, ct);
@@ -980,6 +1039,10 @@ public sealed class ProgramRepository(
                 FreezesRemaining = (int?)e.StreakState.FreezesRemaining,
                 MultiplierActive = (decimal?)e.StreakState.MultiplierActive,
                 MultiplierEndsAt = e.StreakState.MultiplierEndsAt,
+                // Racha propia del nutribiótico (SPEC §19, D): campos aditivos
+                // del snapshot para la UI del móvil (Paso 7a).
+                NbStreak = (int?)e.StreakState.NbCurrentStreak,
+                NbLongestStreak = (int?)e.StreakState.NbLongestStreak,
                 XpBalance = e.XpLedgerEntries
                     // Excluye las XP pendientes de validación (SPEC §15, E): una
                     // fila cuya regla requiere_validation = true y aún no tiene
@@ -1115,6 +1178,16 @@ public sealed class ProgramRepository(
             ? 0
             : (int)Math.Floor((multiplierEndsAt.Value - now).TotalHours);
 
+        // Próximo hito de la racha del nutribiótico (SPEC §19, D): el primer
+        // hito de la tabla (7/14/30/60/90) por encima de la racha actual; null
+        // cuando ya se llegó a 90 (no hay hito siguiente). La lectura nunca
+        // escribe.
+        var nbStreak = row.NbStreak ?? 0;
+        var nbLongestStreak = row.NbLongestStreak ?? 0;
+        var nextNbMilestone = FindNextNbMilestone(nbStreak) is { } next
+            ? new NbNextMilestoneDto(next.Days, next.BaseXp, next.Days - nbStreak)
+            : null;
+
         return new ProgramSnapshotDto(
             enrollmentId,
             new ProgramSnapshotTemplateDto(
@@ -1141,7 +1214,10 @@ public sealed class ProgramRepository(
                 row.FreezesRemaining ?? 0,
                 multiplierActive,
                 multiplierEndsAt,
-                multiplierRemainingHours),
+                multiplierRemainingHours,
+                nbStreak,
+                nbLongestStreak,
+                nextNbMilestone),
             nextMilestone,
             calendar);
     }
@@ -1852,7 +1928,7 @@ public sealed class ProgramRepository(
     /// del libro mayor son atómicos con el resto del día perfecto.
     /// </summary>
     private async Task AwardStreakMilestoneIfReachedAsync(
-        Guid enrollmentId, string timezone, int currentStreak, DateOnly localDate, CancellationToken ct)
+        Guid enrollmentId, Guid patientId, string timezone, int currentStreak, DateOnly localDate, CancellationToken ct)
     {
         var milestone = FindStreakMilestone(currentStreak);
         if (milestone is null)
@@ -1902,12 +1978,194 @@ public sealed class ProgramRepository(
             BalanceAfter = balance + points,
             AwardedAt = now,
         });
+
+        // Notificación gamificada del hito de racha (SPEC §20, C.1): best-
+        // effort (nunca lanza, AC-42). En los hitos con multiplicador (11/22/50)
+        // la activación x2 se pliega en el mensaje (SPEC §20, C.2 —
+        // "multiplier_expiring" es FUTURO y necesita scheduler, no se implementa).
+        if (_gamifiedNotificationService is not null)
+        {
+            var message = milestone.MultiplierHours > 0
+                ? $"🏆 ¡{milestone.Day} días! +{points} XP · ¡x2 por {milestone.MultiplierHours}h!"
+                : $"🏆 ¡{milestone.Day} días! +{points} XP";
+
+            await _gamifiedNotificationService.NotifyAsync(
+                patientId,
+                "milestone_reached",
+                $"🏆 ¡{milestone.Day} días!",
+                message,
+                "high",
+                ct);
+        }
     }
 
     private const string StreakMilestoneSourceRefType = "streak_milestone";
 
     private sealed record StreakMilestone(
         int Day, XpReason Reason, string RuleCode, int BaseXp, int MultiplierHours);
+
+    // ------------------------------------------------- Racha propia del nutribiótico (SPEC §19, "Paso 7a")
+
+    /// <summary>
+    /// Tabla de hitos de la racha propia del nutribiótico (SPEC §19, B): día
+    /// hito → razón del libro mayor (= código de regla) y XP base de la semilla
+    /// §19.2 (<c>NB_STREAK_7/14/30/60/90</c>, categoría <c>nutriobiotic</c>,
+    /// topes 1/día y 1/semana). A diferencia de los hitos de la racha general
+    /// (SPEC §16, una vez por inscripción), cada corrida de 7/14/... días
+    /// RE-OTORGA su hito al alcanzarlo (AC-39): el dedupe parcial usa la
+    /// completación que dispara el hito (única por corrida), no la inscripción.
+    /// </summary>
+    private static readonly IReadOnlyList<NbMilestone> NbMilestones =
+    [
+        new(7, XpReason.NB_STREAK_7, XpRuleCodes.NbStreak7, 50),
+        new(14, XpReason.NB_STREAK_14, XpRuleCodes.NbStreak14, 100),
+        new(30, XpReason.NB_STREAK_30, XpRuleCodes.NbStreak30, 250),
+        new(60, XpReason.NB_STREAK_60, XpRuleCodes.NbStreak60, 500),
+        new(90, XpReason.NB_STREAK_90, XpRuleCodes.NbStreak90, 1000),
+    ];
+
+    /// <summary>Hito de la racha del nutribiótico cuyo día coincide exactamente con la racha actual (null si no es hito).</summary>
+    private static NbMilestone? FindNbMilestone(short streakDay)
+        => NbMilestones.FirstOrDefault(m => m.Days == streakDay);
+
+    /// <summary>Próximo hito de la racha del nutribiótico por encima de la racha actual (null si ya llegó a 90).</summary>
+    private static NbMilestone? FindNextNbMilestone(int currentStreak)
+        => NbMilestones.FirstOrDefault(m => m.Days > currentStreak);
+
+    /// <summary>
+    /// Motor de la racha propia del nutribiótico (SPEC §19, B): actualiza la
+    /// racha CONSECUTIVA de la tarea nutribiotico en <c>streak_states</c> y,
+    /// si el nuevo conteo cae exactamente en un hito (7/14/30/60/90), otorga la
+    /// XP del hito por el camino de resolución del catálogo.
+    ///
+    /// Reglas (SPEC §19):
+    /// 1. Consecutivo al último día con nutribiotico → <c>nb_current_streak + 1</c>;
+    ///    cualquier hueco (día perdido) → se reinicia a 1. Los congelamientos
+    ///    NO protegen esta racha (AC-38): es independiente de la racha general
+    ///    y de su rescate (SPEC §17, C).
+    /// 2. Se actualiza SIEMPRE en la primera escritura de la tarea
+    ///    (<c>ExecuteUpdate</c>, convención del repositorio); el replay
+    ///    idempotente nunca llega acá.
+    /// 3. Hito alcanzado → <c>rule_code = NB_STREAK_{days}</c>,
+    ///    <c>source_ref_type = 'nb_milestone'</c>, <c>source_ref_id =
+    ///    task_completions.id</c> (la completación que disparó el hito) y
+    ///    <c>reason = 'NB_STREAK_{days}'</c>. El dedupe parcial del libro mayor
+    ///    es idempotente POR CORRIDA: cada nueva corrida re-otorga su hito al
+    ///    alcanzarlo (AC-39), porque la completación es única por corrida.
+    ///    El multiplicador del paciente (SPEC §16, C) aplica como en todo
+    ///    otorgamiento.
+    /// 4. Los topes <c>max_per_day = 1</c>/<c>max_per_week = 1</c> de las
+    ///    reglas pueden rechazar un re-otorgamiento (nueva corrida dentro de la
+    ///    misma semana): el hito se omite sin romper la completación (la racha
+    ///    y la tarea quedan intactas).
+    /// </summary>
+    private async Task UpdateNbStreakAsync(
+        Guid enrollmentId,
+        Guid patientId,
+        string timezone,
+        DateOnly today,
+        Guid completionId,
+        CancellationToken ct)
+    {
+        var state = await dbContext.StreakStates.AsNoTracking()
+            .Where(s => s.EnrollmentId == enrollmentId)
+            .Select(s => new { s.NbCurrentStreak, s.NbLongestStreak, s.NbLastCompletedDate })
+            .FirstOrDefaultAsync(ct);
+
+        if (state is null)
+        {
+            // Sin fila de racha (no debería ocurrir: se crea al inscribir).
+            return;
+        }
+
+        // Consecutivo vs reinicio: la racha del nutribiótico NO distingue
+        // días perfectos ni usa congelamientos — solo pregunta si ayer se
+        // completó la tarea. Un día perdido rompe la corrida (AC-38).
+        var newCount = state.NbLastCompletedDate == today.AddDays(-1)
+            ? (short)(state.NbCurrentStreak + 1)
+            : (short)1;
+
+        var newLongest = Math.Max(state.NbLongestStreak, newCount);
+
+        await dbContext.StreakStates
+            .Where(s => s.EnrollmentId == enrollmentId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.NbCurrentStreak, newCount)
+                .SetProperty(x => x.NbLongestStreak, newLongest)
+                .SetProperty(x => x.NbLastCompletedDate, today)
+                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+
+        var milestone = FindNbMilestone(newCount);
+        if (milestone is null)
+        {
+            return;
+        }
+
+        // Otorgamiento del hito (SPEC §19, B.3): el camino del catálogo
+        // (ResolveXpAwardAsync) aplica la regla NB_STREAK_{days}, el
+        // multiplicador del paciente y los topes 1/día y 1/semana. Un tope
+        // alcanzado omite el hito (nunca rompe la completación).
+        int points;
+        string? ruleCode;
+        decimal multiplierUsed;
+        try
+        {
+            (points, ruleCode, multiplierUsed) = await ResolveXpAwardAsync(
+                enrollmentId, timezone, milestone.RuleCode, milestone.BaseXp, today, ct);
+        }
+        catch (BusinessRuleViolationException ex) when (IsXpLimitViolation(ex))
+        {
+            return;
+        }
+
+        if (points <= 0)
+        {
+            return;
+        }
+
+        var balance = await CurrentBalanceAsync(enrollmentId, ct);
+        dbContext.XpLedgerEntries.Add(new XpLedgerEntry
+        {
+            Id = Guid.NewGuid(),
+            EnrollmentId = enrollmentId,
+            Amount = points,
+            Reason = milestone.Reason,
+            SourceRefType = NbMilestoneSourceRefType,
+            SourceRefId = completionId,
+            RuleCode = ruleCode,
+            MultiplierUsed = multiplierUsed,
+            BalanceAfter = balance + points,
+            AwardedAt = DateTime.UtcNow,
+        });
+
+        // Notificación gamificada del hito de la racha del nutribiótico
+        // (SPEC §20, C.3): best-effort (nunca lanza, AC-42).
+        if (_gamifiedNotificationService is not null)
+        {
+            await _gamifiedNotificationService.NotifyAsync(
+                patientId,
+                "nb_milestone",
+                "💊 ¡Nutriobiótico!",
+                $"💊 ¡{milestone.Days} días tomando tu Nutriobiótico!",
+                "high",
+                ct);
+        }
+    }
+
+    private const string NbMilestoneSourceRefType = "nb_milestone";
+
+    /// <summary>
+    /// Los topes anti-fraude del catálogo (SPEC §14.3) rechazan con 409 un
+    /// otorgamiento que excede <c>max_per_day</c>/<c>max_per_week</c>. Para los
+    /// hitos del nutribiótico ese rechazo es un "no-otorgar" esperado (nueva
+    /// corrida dentro de la misma semana, SPEC §19, B.4), no un error de la
+    /// completación.
+    /// </summary>
+    private static bool IsXpLimitViolation(BusinessRuleViolationException ex)
+        => ex.Message.StartsWith("XP_DAILY_LIMIT_REACHED")
+            || ex.Message.StartsWith("XP_WEEKLY_LIMIT_REACHED");
+
+    private sealed record NbMilestone(int Days, XpReason Reason, string RuleCode, int BaseXp);
 
     private async Task<JsonElement> BuildSnapshotFromTemplateAsync(Guid templateId, CancellationToken ct)
     {
@@ -2963,6 +3221,891 @@ public sealed class ProgramRepository(
                 throw;
             }
         });
+    }
+
+    // ------------------------------------------------------- Detección de debilidades (SPEC §21, "Paso 7c")
+
+    /// <summary>
+    /// Código canónico de la métrica de glucosa en <c>app.measurement_metrics</c>
+    /// (SPEC §21, B.3 — WK_CLIN_GLUCOSE_HIGH). REQUIRES_CLINICAL_VALIDATION:
+    /// umbral propuesto, pendiente de confirmación del comité clínico.
+    /// </summary>
+    private const string GlucoseMetricCode = "glucose";
+
+    /// <summary>
+    /// Código canónico de la métrica de % grasa corporal (SPEC §21, B.4 —
+    /// WK_CLIN_BODYFAT_UP).
+    /// </summary>
+    private const string BodyFatMetricCode = "body_fat";
+
+    /// <summary>
+    /// Códigos de regla que el motor de detección considera "activas" para el
+    /// dedupe AC-43: se omite la detección si ya existe una fila en cualquiera
+    /// de estos estados con el mismo código del paciente.
+    /// </summary>
+    private static readonly WeaknessStatus[] ActiveWeaknessStatuses =
+    [
+        WeaknessStatus.open, WeaknessStatus.acknowledged, WeaknessStatus.in_intervention,
+    ];
+
+    /// <summary>
+    /// Reúne el paquete semanal del paciente para el motor de detección
+    /// (SPEC §21, B): MISMA ventana que el Índice de Salud (SPEC §13.2) con
+    /// queries set-based (sin N+1). Los indicadores sin fuente física quedan
+    /// null → sus reglas no disparan (nunca penaliza por ausencia de datos).
+    /// Devuelve null si el paciente no tiene inscripción activa.
+    /// </summary>
+    public async Task<PatientWeeklyData?> BuildPatientWeeklyDataAsync(
+        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
+    {
+        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => new EnrollmentWindow(e.Id, e.PatientId, e.Timezone))
+            .FirstOrDefaultAsync(ct);
+        if (enrollment is null)
+        {
+            return null;
+        }
+
+        var todayLocal = PatientLocalToday(enrollment.Timezone);
+        if (periodEndLocalDate is { } overrideEnd && overrideEnd > todayLocal)
+        {
+            throw new UnprocessableEntityException(
+                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura " +
+                $"(hoy local del paciente: {todayLocal:yyyy-MM-dd}).");
+        }
+
+        var periodEnd = periodEndLocalDate ?? todayLocal;
+        var rollingStart = periodEnd.AddDays(-6);
+        var week = await ResolveLatestWeekAsync(enrollment.EnrollmentId, ct);
+        var periodStart = week is not null && week.WeekStartDateLocal < rollingStart
+            ? week.WeekStartDateLocal
+            : rollingStart;
+
+        // Adherencia nutricional (SPEC §21, B.1/B.2): MISMA fuente que la
+        // dimensión nutrition del Health Score y que los premios semanales de
+        // SPEC §18 — reutiliza GetNutritionLogAsync, no duplica la query.
+        var nutrition = await GetNutritionLogAsync(enrollment.PatientId, periodStart, periodEnd, ct);
+        decimal? nutritionAdherence = null;
+        if (nutrition is { Total: > 0 })
+        {
+            nutritionAdherence = Math.Round(
+                nutrition.Achieved * 100m / nutrition.Total, 0, MidpointRounding.AwayFromZero);
+        }
+
+        // Indicadores clínicos (glucosa + % grasa) desde líneas base y la
+        // última medición del período (misma data que los calculadores).
+        var baselines = await dbContext.ClinicalBaselines.AsNoTracking()
+            .Where(b => b.PatientId == patientId)
+            .Select(b => new { b.MetricId, Code = b.Metric!.Code, b.Value })
+            .ToListAsync(ct);
+        var latestByMetric = await LoadLatestMeasurementPerMetricAsync(
+            enrollment.PatientId, enrollment.Timezone, periodStart, periodEnd, ct);
+
+        decimal? glucoseCurrent = null;
+        string? glucoseTrend = null;
+        Guid? glucoseMetricId = null;
+        var glucoseBaseline = baselines.FirstOrDefault(b => b.Code == GlucoseMetricCode);
+        if (glucoseBaseline is not null
+            && latestByMetric.TryGetValue(glucoseBaseline.MetricId, out var glucose))
+        {
+            glucoseCurrent = glucose;
+            glucoseMetricId = glucoseBaseline.MetricId;
+            glucoseTrend = glucose > glucoseBaseline.Value ? "up"
+                : glucose < glucoseBaseline.Value ? "down" : "stable";
+        }
+
+        decimal? bodyFatDelta = null;
+        Guid? bodyFatMetricId = null;
+        var bodyFatBaseline = baselines.FirstOrDefault(b => b.Code == BodyFatMetricCode);
+        if (bodyFatBaseline is not null
+            && latestByMetric.TryGetValue(bodyFatBaseline.MetricId, out var bodyFat))
+        {
+            bodyFatDelta = bodyFat - bodyFatBaseline.Value;
+            bodyFatMetricId = bodyFatBaseline.MetricId;
+        }
+
+        // Motivación (SPEC §21, B.5): proxy del último registro emocional del
+        // período — el módulo solo persiste mood 1..5, se escala ×2 a la escala
+        // 1..10 del motor (documentado en SPEC §21, B.5).
+        decimal? motivationScore = null;
+        var latestMood = await dbContext.EmotionalRecords.AsNoTracking()
+            .Where(r => r.PatientId == patientId
+                && r.RecordedLocalDate >= periodStart && r.RecordedLocalDate <= periodEnd)
+            .OrderByDescending(r => r.RecordedLocalDate)
+            .Select(r => (short?)r.MoodScore)
+            .FirstOrDefaultAsync(ct);
+        if (latestMood is { } mood)
+        {
+            motivationScore = mood * 2m;
+        }
+
+        // Estrés y sueño (SPEC §21, B.6/B.7): sin fuente física en el esquema
+        // actual → null → reglas latentes (no disparan). Se dejan en el paquete
+        // para cuando una fuente futura alimente el dato (contrato forward).
+        decimal? stressScore = null;
+        decimal? avgSleepHours = null;
+
+        // Adherencia semanal (SPEC §21, B.8): dimensión adherence de la fila de
+        // health_scores del período (persistida por POST /scores/calculate
+        // justo antes de la detección, SPEC §13.4.1).
+        decimal? weeklyAdherence = null;
+        var healthScoreAdherence = await dbContext.HealthScores.AsNoTracking()
+            .Where(h => h.PatientId == patientId
+                && h.PeriodStart == periodStart && h.PeriodEnd == periodEnd)
+            .Select(h => (int?)h.ScoreAdherence)
+            .FirstOrDefaultAsync(ct);
+        if (healthScoreAdherence is { } adherence)
+        {
+            weeklyAdherence = adherence;
+        }
+
+        // Constancia del nutribiótico a 7 días (SPEC §21, B.9): días con la
+        // tarea completada en la ventana / 7.
+        var nbDays = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(t => t.EnrollmentId == enrollment.EnrollmentId
+                && t.TaskCode == TaskCode.nutribiotico
+                && t.LocalDate >= periodStart && t.LocalDate <= periodEnd)
+            .Select(t => t.LocalDate)
+            .Distinct()
+            .CountAsync(ct);
+        decimal? nbAdherence7d = Math.Round(nbDays * 100m / 7m, 0, MidpointRounding.AwayFromZero);
+
+        // Cumplimiento de ejercicio (SPEC §21, B.10): días con la tarea en la
+        // ventana / días del período.
+        var exerciseDays = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(t => t.EnrollmentId == enrollment.EnrollmentId
+                && t.TaskCode == TaskCode.ejercicio
+                && t.LocalDate >= periodStart && t.LocalDate <= periodEnd)
+            .Select(t => t.LocalDate)
+            .Distinct()
+            .CountAsync(ct);
+        var dayCount = periodEnd.DayNumber - periodStart.DayNumber + 1;
+        decimal? exerciseCompletionPct = Math.Round(
+            exerciseDays * 100m / dayCount, 0, MidpointRounding.AwayFromZero);
+
+        return new PatientWeeklyData(
+            enrollment.PatientId,
+            nutritionAdherence,
+            glucoseCurrent,
+            glucoseTrend,
+            glucoseMetricId,
+            bodyFatDelta,
+            bodyFatMetricId,
+            motivationScore,
+            stressScore,
+            avgSleepHours,
+            weeklyAdherence,
+            nbAdherence7d,
+            exerciseCompletionPct);
+    }
+
+    /// <summary>
+    /// Persiste las debilidades NUEVAS detectadas (SPEC §21, C — AC-43): omite
+    /// los descriptores cuyo código ya tiene una fila
+    /// <c>open</c>/<c>acknowledged</c>/<c>in_intervention</c> del mismo
+    /// paciente (sin duplicados mientras estén abiertas). Las filas se crean
+    /// con <c>source = 'ai'</c> y <c>status = 'open'</c>; si un clínico valida
+    /// después, el origen permanece <c>ai</c> (SPEC §21, A). Devuelve cuántas
+    /// filas nuevas se persistieron.
+    /// </summary>
+    public async Task<IReadOnlyList<Weakness>> PersistDetectedWeaknessesAsync(
+        Guid patientId, IReadOnlyList<WeaknessDescriptor> descriptors, CancellationToken ct = default)
+    {
+        if (descriptors.Count == 0)
+        {
+            return [];
+        }
+
+        var activeCodes = await dbContext.Weaknesses.AsNoTracking()
+            .Where(w => w.PatientId == patientId
+                && ActiveWeaknessStatuses.Contains(w.Status))
+            .Select(w => w.Code)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var fresh = descriptors
+            .Where(d => !activeCodes.Contains(d.Code))
+            .ToList();
+        if (fresh.Count == 0)
+        {
+            return [];
+        }
+
+        var now = DateTime.UtcNow;
+        var newWeaknesses = fresh.Select(d => new Weakness
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            Code = d.Code,
+            Category = d.Category,
+            Severity = d.Severity,
+            Title = d.Title,
+            Description = d.Description,
+            DetectedAt = now,
+            MetricId = d.MetricId,
+            IndicatorValue = d.IndicatorValue,
+            Source = WeaknessSource.ai,
+            Status = WeaknessStatus.open,
+            CreatedAt = now,
+        }).ToList();
+
+        dbContext.Weaknesses.AddRange(newWeaknesses);
+        await dbContext.SaveChangesAsync(ct);
+
+        // Devolver las debilidades con sus IDs generados para que el servicio
+        // de detección pueda crear intervenciones derivadas (SPEC §22, "Paso 7d").
+        return newWeaknesses;
+    }
+
+    /// <summary>
+    /// Debilidades del paciente (SPEC §21, D): listado paginado ordenado por
+    /// <c>detected_at</c> descendente (la más reciente primero), con el total
+    /// de la consulta.
+    /// </summary>
+    public async Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListWeaknessesAsync(
+        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+    {
+        var query = dbContext.Weaknesses.AsNoTracking()
+            .Where(w => w.PatientId == patientId);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(w => w.DetectedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .Select(w => ToWeaknessDto(w))
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    /// <summary>
+    /// Cola clínica de debilidades abiertas (SPEC §21, D): listado paginado de
+    /// las filas <c>status = 'open'</c> ordenadas por <c>detected_at</c>
+    /// ascendente (FIFO de la cola clínica, la más antigua primero — misma
+    /// semántica que las revisiones de XP pendientes).
+    /// </summary>
+    public async Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListOpenWeaknessesAsync(
+        int page, int pageSize, CancellationToken ct = default)
+    {
+        var query = dbContext.Weaknesses.AsNoTracking()
+            .Where(w => w.Status == WeaknessStatus.open);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderBy(w => w.DetectedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .Select(w => ToWeaknessDto(w))
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    /// <summary>
+    /// Transición de estado de una debilidad (SPEC §21, D — AC-44). Guardia
+    /// clínica AC-22 (misma que la línea base clínica y la revisión de XP): el
+    /// actor debe existir y tener un rol clínico; un paciente cambiando el
+    /// estado de su propia debilidad → 403 FORBIDDEN. Estados válidos:
+    /// <c>acknowledged</c>, <c>in_intervention</c>, <c>resolved</c> (fija
+    /// <c>resolved_at</c>) y <c>dismissed</c>. Transición idempotente: aplicar
+    /// el mismo estado devuelve la fila sin error. Desconocida → 404.
+    /// </summary>
+    public async Task<WeaknessDto> UpdateWeaknessStatusAsync(
+        Guid weaknessId, WeaknessStatus status, Guid? actorId,
+        IReadOnlyList<string> callerRoles, CancellationToken ct = default)
+    {
+        // Guardia AC-22: rol clínico obligatorio (nunca un paciente).
+        if (actorId is null || !callerRoles.Any(role => ClinicianRoles.Contains(role)))
+        {
+            throw new ForbiddenException(
+                "WEAKNESS_STATUS_REQUIRES_CLINICIAN: solo un clínico puede cambiar el " +
+                "estado de una debilidad (Physician, Nutritionist, Psychologist, " +
+                "ClinicalDirector o Admin).");
+        }
+
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var weakness = await dbContext.Weaknesses
+                    .FirstOrDefaultAsync(w => w.Id == weaknessId, ct)
+                    ?? throw new NotFoundException($"Debilidad {weaknessId} no encontrada.");
+
+                var now = DateTime.UtcNow;
+                weakness.Status = status;
+                weakness.UpdatedAt = now;
+                weakness.ResolvedAt = status == WeaknessStatus.resolved ? now : null;
+
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return await dbContext.Weaknesses.AsNoTracking()
+                    .Where(w => w.Id == weakness.Id)
+                    .Select(w => ToWeaknessDto(w))
+                    .FirstAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    private static WeaknessDto ToWeaknessDto(Weakness w) => new(
+        w.Id, w.PatientId, w.Code, w.Category.ToString(), w.Severity.ToString(),
+        w.Title, w.Description, w.DetectedAt, w.MetricId, w.IndicatorValue,
+        w.Source.ToString(), w.Status.ToString(), w.AssignedTo, w.ResolvedAt,
+        w.CreatedAt, w.UpdatedAt);
+
+    private static InterventionDto ToInterventionDto(Intervention i) => new(
+        i.Id, i.PatientId, i.WeaknessId, i.Type.ToString(), i.Title,
+        i.Description, i.Status.ToString(), i.Severity, i.AssignedTo,
+        i.RecommendedAt, i.AcceptedAt, i.CompletedAt, i.PatientAction,
+        i.Result, i.XpAwardedTotal, i.CreatedAt, i.UpdatedAt);
+
+    // --- Intervenciones (SPEC §22, "Paso 7d") ---
+
+    /// <summary>
+    /// Crea una intervención desde una debilidad (SPEC §22, C — AC-46): verifica
+    /// que no exista ya una intervención vinculada a esa debilidad (una por
+    /// debilidad). La debilidad se transiciona a <c>in_intervention</c> si estaba
+    /// en <c>open</c>/<c>acknowledged</c>. Otorga <c>WEAKNESS_ASSESS</c> (+20)
+    /// una vez (dedupe parcial <c>'intervention'</c>). Devuelve la intervención
+    /// creada o la existente si ya había una.
+    /// </summary>
+    public async Task<Intervention> EnsureInterventionFromWeaknessAsync(
+        Guid patientId, Guid weaknessId, InterventionType type,
+        string title, string? description, Guid? actorId, CancellationToken ct = default)
+    {
+        // Verificar si ya existe una intervención para esta debilidad (AC-46).
+        var existing = await dbContext.Interventions.AsNoTracking()
+            .FirstOrDefaultAsync(i => i.WeaknessId == weaknessId, ct);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var now = DateTime.UtcNow;
+
+                // Transicionar la debilidad a in_intervention si estaba abierta.
+                var weakness = await dbContext.Weaknesses
+                    .FirstOrDefaultAsync(w => w.Id == weaknessId, ct);
+                if (weakness is not null
+                    && weakness.Status is WeaknessStatus.open or WeaknessStatus.acknowledged)
+                {
+                    weakness.Status = WeaknessStatus.in_intervention;
+                    weakness.UpdatedAt = now;
+                }
+
+                // Determinar la severidad de la intervención desde la debilidad.
+                var severity = weakness?.Severity.ToString() ?? "medium";
+
+                var intervention = new Intervention
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    WeaknessId = weaknessId,
+                    Type = type,
+                    Title = title,
+                    Description = description,
+                    Status = InterventionStatus.detected,
+                    Severity = severity,
+                    CreatedAt = now,
+                };
+
+                dbContext.Interventions.Add(intervention);
+
+                // Otorgar WEAKNESS_ASSESS (+20) una vez por intervención.
+                // Necesitamos la inscripción activa del paciente para el
+                // otorgamiento de XP.
+                var enrollmentId = await dbContext.ProgramEnrollments
+                    .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
+                    .OrderByDescending(e => e.CreatedAt)
+                    .Select(e => (Guid?)e.Id)
+                    .FirstOrDefaultAsync(ct);
+
+                if (enrollmentId is not null)
+                {
+                    var awardResult = await AwardInterventionXpAsync(
+                        enrollmentId.Value, intervention.Id,
+                        XpRuleCodes.WeaknessAssess, XpReason.WEAKNESS_ASSESS,
+                        20, validatedBy: null, sourceRefType: "intervention", ct);
+                    intervention.XpAwardedTotal += awardResult;
+                }
+
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return intervention;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Intervenciones del paciente (SPEC §22, D): listado paginado ordenado por
+    /// <c>created_at</c> descendente.
+    /// </summary>
+    public async Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListInterventionsAsync(
+        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+    {
+        var query = dbContext.Interventions.AsNoTracking()
+            .Where(i => i.PatientId == patientId);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(i => i.CreatedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .Select(i => ToInterventionDto(i))
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    /// <summary>
+    /// Cola clínica de intervenciones abiertas (SPEC §22, D): listado paginado
+    /// de filas con <c>status != 'completed'</c> ordenadas por <c>created_at</c>
+    /// ascendente (FIFO).
+    /// </summary>
+    public async Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListOpenInterventionsAsync(
+        int page, int pageSize, CancellationToken ct = default)
+    {
+        var query = dbContext.Interventions.AsNoTracking()
+            .Where(i => i.Status != InterventionStatus.completed);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .OrderBy(i => i.CreatedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .Select(i => ToInterventionDto(i))
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    /// <summary>
+    /// Paciente acepta una intervención (SPEC §22, D — AC-47): transición
+    /// <c>detected→accepted</c>, fija <c>accepted_at</c>, otorga
+    /// <c>INTERV_ACCEPT</c> (+15). Si es <c>recovery_mission</c> también
+    /// <c>RECOVERY_MISSION</c> (+50). Requiere que la intervención pertenezca
+    /// al paciente. Estado inválido → 409.
+    /// </summary>
+    public async Task<InterventionDto> AcceptInterventionAsync(
+        Guid interventionId, Guid patientId, CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var intervention = await dbContext.Interventions
+                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                    ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
+
+                if (intervention.PatientId != patientId)
+                {
+                    throw new NotFoundException($"Intervención {interventionId} no encontrada.");
+                }
+
+                if (intervention.Status != InterventionStatus.detected)
+                {
+                    throw new BusinessRuleViolationException(
+                        $"INTERVENTION_WRONG_STATE: la intervención está en estado " +
+                        $"'{intervention.Status}' y solo puede aceptarse desde 'detected'.");
+                }
+
+                var now = DateTime.UtcNow;
+                intervention.Status = InterventionStatus.accepted;
+                intervention.AcceptedAt = now;
+                intervention.UpdatedAt = now;
+
+                // Otorgar INTERV_ACCEPT (+15).
+                var awardResult = await AwardInterventionXpAsync(
+                    await GetEnrollmentIdForPatientAsync(patientId, ct),
+                    intervention.Id,
+                    XpRuleCodes.IntervAccept, XpReason.INTERV_ACCEPT,
+                    15, validatedBy: null, sourceRefType: "intervention", ct);
+                intervention.XpAwardedTotal += awardResult;
+
+                // Si es recovery_mission, también otorgar RECOVERY_MISSION (+50).
+                if (intervention.Type == InterventionType.recovery_mission)
+                {
+                    var recoveryResult = await AwardInterventionXpAsync(
+                        await GetEnrollmentIdForPatientAsync(patientId, ct),
+                        intervention.Id,
+                        XpRuleCodes.RecoveryMission, XpReason.RECOVERY_MISSION,
+                        50, validatedBy: null, sourceRefType: "intervention", ct);
+                    intervention.XpAwardedTotal += recoveryResult;
+                }
+
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return await dbContext.Interventions.AsNoTracking()
+                    .Where(i => i.Id == intervention.Id)
+                    .Select(i => ToInterventionDto(i))
+                    .FirstAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Clínico actualiza el estado de una intervención (SPEC §22, D — AC-48):
+    /// transiciones con auditoría; <c>completed</c> REQUIRES resultado y otorga
+    /// <c>INTERV_COMPLETE</c> (+200, validated_by = clínico) + debilidad
+    /// vinculada → <c>resolved</c>. <c>in_progress</c> es el estado por defecto
+    /// tras tele-asistencia confirmada. Estado inválido → 409.
+    /// </summary>
+    public async Task<InterventionDto> UpdateInterventionStatusAsync(
+        Guid interventionId, InterventionStatus status, Guid? actorId,
+        IReadOnlyList<string> callerRoles, string? result = null,
+        Guid? assignedTo = null, CancellationToken ct = default)
+    {
+        // Guardia AC-22: rol clínico obligatorio.
+        if (actorId is null || !callerRoles.Any(role => ClinicianRoles.Contains(role)))
+        {
+            throw new ForbiddenException(
+                "INTERVENTION_STATUS_REQUIRES_CLINICIAN: solo un clínico puede cambiar el " +
+                "estado de una intervención.");
+        }
+
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var intervention = await dbContext.Interventions
+                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                    ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
+
+                var now = DateTime.UtcNow;
+
+                // Validar transición.
+                if (!IsValidInterventionTransition(intervention.Status, status))
+                {
+                    throw new BusinessRuleViolationException(
+                        $"INTERVENTION_WRONG_STATE: transición de '{intervention.Status}' " +
+                        $"a '{status}' no es válida.");
+                }
+
+                // completed REQUIRES resultado.
+                if (status == InterventionStatus.completed && string.IsNullOrWhiteSpace(result))
+                {
+                    throw new BusinessRuleViolationException(
+                        "INTERVENTION_COMPLETED_REQUIRES_RESULT: se requiere un resultado " +
+                        "al completar una intervención.");
+                }
+
+                intervention.Status = status;
+                intervention.UpdatedAt = now;
+
+                if (status == InterventionStatus.recommended)
+                    intervention.RecommendedAt = now;
+                if (status == InterventionStatus.completed)
+                    intervention.CompletedAt = now;
+
+                if (assignedTo.HasValue)
+                    intervention.AssignedTo = assignedTo;
+                if (result is not null)
+                    intervention.Result = result;
+
+                // Si se completó, otorgar INTERV_COMPLETE (+200, validated_by)
+                // y marcar la debilidad vinculada como resolved.
+                if (status == InterventionStatus.completed)
+                {
+                    var enrollmentId = await GetEnrollmentIdForPatientAsync(
+                        intervention.PatientId, ct);
+
+                    var awardResult = await AwardInterventionXpAsync(
+                        enrollmentId, intervention.Id,
+                        XpRuleCodes.IntervComplete, XpReason.INTERV_COMPLETE,
+                        200, validatedBy: actorId, sourceRefType: "intervention", ct);
+                    intervention.XpAwardedTotal += awardResult;
+
+                    // Marcar la debilidad vinculada como resolved (AC-48).
+                    if (intervention.WeaknessId.HasValue)
+                    {
+                        var weakness = await dbContext.Weaknesses
+                            .FirstOrDefaultAsync(w => w.Id == intervention.WeaknessId.Value, ct);
+                        if (weakness is not null
+                            && weakness.Status != WeaknessStatus.resolved)
+                        {
+                            weakness.Status = WeaknessStatus.resolved;
+                            weakness.ResolvedAt = now;
+                            weakness.UpdatedAt = now;
+                        }
+                    }
+                }
+
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return await dbContext.Interventions.AsNoTracking()
+                    .Where(i => i.Id == intervention.Id)
+                    .Select(i => ToInterventionDto(i))
+                    .FirstAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Hook de telemedicina: teleconsulta agendada (SPEC §22, D — AC-49):
+    /// otorga <c>TELE_SCHEDULE</c> (+50) y fija una nota. No cambia el estado.
+    /// </summary>
+    public async Task<InterventionDto> MarkTeleScheduledAsync(
+        Guid interventionId, CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var intervention = await dbContext.Interventions
+                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                    ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
+
+                var now = DateTime.UtcNow;
+                intervention.UpdatedAt = now;
+
+                // Otorgar TELE_SCHEDULE (+50).
+                var enrollmentId = await GetEnrollmentIdForPatientAsync(
+                    intervention.PatientId, ct);
+                var awardResult = await AwardInterventionXpAsync(
+                    enrollmentId, intervention.Id,
+                    XpRuleCodes.TeleSchedule, XpReason.TELE_SCHEDULE,
+                    50, validatedBy: null, sourceRefType: "intervention", ct);
+                intervention.XpAwardedTotal += awardResult;
+
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return await dbContext.Interventions.AsNoTracking()
+                    .Where(i => i.Id == intervention.Id)
+                    .Select(i => ToInterventionDto(i))
+                    .FirstAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Hook de telemedicina: asistencia confirmada por el clínico
+    /// (SPEC §22, D — AC-49): otorga <c>TELE_ATTEND</c> (+100, validated_by =
+    /// clínico) y mueve la intervención a <c>in_progress</c>.
+    /// </summary>
+    public async Task<InterventionDto> MarkTeleAttendedAsync(
+        Guid interventionId, Guid clinicianId, CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var intervention = await dbContext.Interventions
+                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                    ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
+
+                var now = DateTime.UtcNow;
+                intervention.Status = InterventionStatus.in_progress;
+                intervention.UpdatedAt = now;
+
+                // Otorgar TELE_ATTEND (+100, validated_by = clinicianId).
+                var enrollmentId = await GetEnrollmentIdForPatientAsync(
+                    intervention.PatientId, ct);
+                var awardResult = await AwardInterventionXpAsync(
+                    enrollmentId, intervention.Id,
+                    XpRuleCodes.TeleAttend, XpReason.TELE_ATTEND,
+                    100, validatedBy: clinicianId, sourceRefType: "intervention", ct);
+                intervention.XpAwardedTotal += awardResult;
+
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return await dbContext.Interventions.AsNoTracking()
+                    .Where(i => i.Id == intervention.Id)
+                    .Select(i => ToInterventionDto(i))
+                    .FirstAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Hook de telemedicina: cumplimiento evaluado (SPEC §22, D — AC-49):
+    /// otorga <c>TELE_COMPLY</c> (+50) y puede avanzar hacia
+    /// <c>completed</c>.
+    /// </summary>
+    public async Task<InterventionDto> MarkTeleComplyAsync(
+        Guid interventionId, CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var intervention = await dbContext.Interventions
+                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                    ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
+
+                var now = DateTime.UtcNow;
+                intervention.UpdatedAt = now;
+
+                // Otorgar TELE_COMPLY (+50).
+                var enrollmentId = await GetEnrollmentIdForPatientAsync(
+                    intervention.PatientId, ct);
+                var awardResult = await AwardInterventionXpAsync(
+                    enrollmentId, intervention.Id,
+                    XpRuleCodes.TeleComply, XpReason.TELE_COMPLY,
+                    50, validatedBy: null, sourceRefType: "intervention", ct);
+                intervention.XpAwardedTotal += awardResult;
+
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                return await dbContext.Interventions.AsNoTracking()
+                    .Where(i => i.Id == intervention.Id)
+                    .Select(i => ToInterventionDto(i))
+                    .FirstAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    /// <summary>
+    /// Otorga XP de intervención en el libro mayor con el camino del catálogo.
+    /// Devuelve los puntos otorgados (0 si la regla no está vigente o ya se
+    /// otorgó — dedupe parcial).
+    /// </summary>
+    private async Task<int> AwardInterventionXpAsync(
+        Guid enrollmentId, Guid interventionId,
+        string ruleCode, XpReason reason,
+        int fallbackBaseXp, Guid? validatedBy,
+        string sourceRefType, CancellationToken ct)
+    {
+        var rule = await ResolveActiveRuleAsync(ruleCode, ct);
+        if (rule is null)
+        {
+            return 0;
+        }
+
+        // Dedupe: ya otorgado para esta intervención y razón.
+        var alreadyAwarded = await dbContext.XpLedgerEntries.AsNoTracking()
+            .AnyAsync(x => x.EnrollmentId == enrollmentId
+                && x.SourceRefType == sourceRefType
+                && x.SourceRefId == interventionId
+                && x.Reason == reason, ct);
+        if (alreadyAwarded)
+        {
+            return 0;
+        }
+
+        var patientMultiplier = await ResolvePatientMultiplierAsync(enrollmentId, ct);
+        var effectiveMultiplier = rule.Multiplier * patientMultiplier;
+        var total = (int)Math.Floor((rule.BaseXp ?? fallbackBaseXp) * effectiveMultiplier);
+        var balance = await CurrentBalanceAsync(enrollmentId, ct);
+        var now = DateTime.UtcNow;
+
+        dbContext.XpLedgerEntries.Add(new XpLedgerEntry
+        {
+            Id = Guid.NewGuid(),
+            EnrollmentId = enrollmentId,
+            Amount = total,
+            Reason = reason,
+            SourceRefType = sourceRefType,
+            SourceRefId = interventionId,
+            RuleCode = rule.Code,
+            MultiplierUsed = effectiveMultiplier,
+            BalanceAfter = balance + total,
+            AwardedAt = now,
+            ValidatedBy = validatedBy,
+            ValidatedAt = validatedBy is null ? null : now,
+        });
+
+        return total;
+    }
+
+    /// <summary>
+    /// Resuelve la inscripción activa del paciente (una por paciente, misma
+    /// resolución que <see cref="GetEnrollmentIdForPatientAsync"/>).
+    /// </summary>
+    private async Task<Guid> GetEnrollmentIdForPatientAsync(
+        Guid patientId, CancellationToken ct)
+    {
+        return await dbContext.ProgramEnrollments
+            .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => e.Id)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    /// <summary>
+    /// Valida la transición de estado de una intervención (SPEC §22, D).
+    /// </summary>
+    private static bool IsValidInterventionTransition(
+        InterventionStatus from, InterventionStatus to)
+    {
+        return from switch
+        {
+            InterventionStatus.detected => to is InterventionStatus.evaluated
+                or InterventionStatus.recommended or InterventionStatus.accepted,
+            InterventionStatus.evaluated => to is InterventionStatus.recommended
+                or InterventionStatus.in_progress or InterventionStatus.reevaluation,
+            InterventionStatus.recommended => to is InterventionStatus.accepted
+                or InterventionStatus.in_progress,
+            InterventionStatus.accepted => to is InterventionStatus.in_progress
+                or InterventionStatus.reevaluation,
+            InterventionStatus.in_progress => to is InterventionStatus.completed
+                or InterventionStatus.reevaluation,
+            InterventionStatus.reevaluation => to is InterventionStatus.evaluated
+                or InterventionStatus.recommended or InterventionStatus.completed,
+            InterventionStatus.completed => false, // terminal
+            _ => false,
+        };
     }
 
     /// <summary>
