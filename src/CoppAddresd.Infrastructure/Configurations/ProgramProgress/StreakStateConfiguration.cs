@@ -61,6 +61,23 @@ public sealed class StreakStateConfiguration : IEntityTypeConfiguration<StreakSt
             .HasColumnName("multiplier_ends_at")
             .HasColumnType("timestamptz");
 
+        // Racha propia del nutribiótico (SPEC §19, A): SMALLINT NOT NULL
+        // default 0 + fecha local del último día que aportó. Se mantiene e
+        // incrementa SOLO al completar la tarea nutribiotico (independiente de
+        // la racha general; un día perdido la rompe, los congelamientos NO la
+        // protegen — AC-38).
+        builder.Property(x => x.NbCurrentStreak)
+            .HasColumnName("nb_current_streak")
+            .HasDefaultValue((short)0);
+
+        builder.Property(x => x.NbLongestStreak)
+            .HasColumnName("nb_longest_streak")
+            .HasDefaultValue((short)0);
+
+        builder.Property(x => x.NbLastCompletedDate)
+            .HasColumnName("nb_last_completed_date")
+            .HasColumnType("date");
+
         builder.Property(x => x.UpdatedAt)
             .HasColumnName("updated_at")
             .HasColumnType("timestamptz");

@@ -29,11 +29,14 @@
 | 17 | Score engine | Scores are **computed on read** with a stored history: `GET /api/v1/program/scores` recomputes and persists an `app.health_scores` / `app.transformation_scores` row for the current period if missing or stale (the stored `period_end` is before today in patient-local time). No cron / queue infrastructure exists in MVP — see §13.3. |
 | 18 | Baselines & authorship | `app.clinical_baselines` rows require a clinician `set_by` (`auth.users.id`); a patient can never self-set a baseline. `target_value` requires clinical validation (clinician-set, never inferred). |
 | 19 | Scores are indicators, not diagnosis | Health and Transformation Scores are adherence / evolution indicators only. UI labels them as program indicators. Scores never reduce XP, never break streaks, and never feed punishment mechanics. PHI (mood, barriers, notes) is excluded from audit payloads (existing rule, §8.5). |
-| 20 | XP rules catalog | XP awarding is data-driven from `app.xp_rules` (SPEC §14, P1.5): a rule `Active` within `valid_from..valid_until` wins over the default behavior (points = `base_xp ?? <existing source>`, multiplier, topes `max_per_day`/`max_per_week`); no rule or inactive/expired rule falls back to the current behavior (template points, no limits). Edits are **prospective only** — they never rewrite `xp_ledger` history. Seeder ships 19 default rules (11 adherencia/racha + 4 clínicas + 4 nutrición, SPEC §14.2/§15.2/§18.1); admin API `GET/PUT /api/v1/program/xp-rules` (permission `Program.Edit`). |
+| 20 | XP rules catalog | XP awarding is data-driven from `app.xp_rules` (SPEC §14, P1.5): a rule `Active` within `valid_from..valid_until` wins over the default behavior (points = `base_xp ?? <existing source>`, multiplier, topes `max_per_day`/`max_per_week`); no rule or inactive/expired rule falls back to the current behavior (template points, no limits). Edits are **prospective only** — they never rewrite `xp_ledger` history. Seeder ships 24 default rules (11 adherencia/racha + 4 clínicas + 4 nutrición + 5 racha nutribiótico, SPEC §14.2/§15.2/§18.1/§19.2); admin API `GET/PUT /api/v1/program/xp-rules` (permission `Program.Edit`). |
 | 21 | Clinical XP (P1.5, SPEC §15) | XP clínica se dispara SOLO en `POST /api/v1/program/scores/calculate` (el `GET /scores` nunca otorga XP): mejoría favorable ≥ umbral (default 5%) → revisión `pending` que decide un clínico (`CLINICAL_SIGNIFICANT`, no cuenta en totales hasta aprobarse); mejoría 1%..umbral → auto `CLINICAL_IMPROVE`; estable → auto `CLINICAL_STABLE`; desfavorable → **0 XP, nunca penaliza**; todas favorables → `CLINICAL_WEEKLY_ALL_UP`. Idempotencia por el dedupe parcial `(source_ref_type, source_ref_id, reason)` con `clinical_period` + `health_scores.id`. Los totales de XP excluyen las filas `requires_validation` sin `validated_by`. Decisiones clínicas bajo `Program.Adapt` + rol clínico (AC-22). |
 | 22 | Streak multiplier x2 (P1.5, SPEC §16, "Paso 4") | Los hitos de racha (7/11/22/50 días) otorgan su XP del catálogo **una única vez por inscripción** (dedupe parcial del libro mayor, `source_ref_type='streak_milestone'`); los hitos 11/22/50 además **activan un multiplicador x2 del paciente** (24h/48h/72h) que se SOBRESCRIBE al alcanzar un hito nuevo (se extiende desde ahora) y aplica a **TODA** la XP mientras está vigente (tareas, bonus de día, hitos y clínica — sin excepciones). Vencido → se trata como 1.0 con reset lazy en el próximo otorgamiento; `xp_ledger.multiplier_used` registra el multiplicador efectivo (regla × paciente); el snapshot expone `multiplierActive`/`multiplierEndsAt`/`multiplierRemainingHours`. |
 | 23 | Configurable streak threshold & essential tasks (P1.5, SPEC §17, "Paso 5") | `app.program_templates` gana `streak_min_tasks` (SMALLINT NOT NULL default 1) y `essential_task_codes` (jsonb, default `[]`); el seed `default-83w` fija 1 y `["nut","ejercicio","nutribiotico"]` **solo en create** (idempotente: re-runs no pisan config existente). Un día "cumple el umbral" si `tasks_done >= streak_min_tasks` (default 1 → comportamiento previo); el día perfecto sigue siendo "todas las tareas" (bonus + concesión de congelamientos, sin cambios). El rescate con congelamiento exige ≥1 tarea esencial el día perdido (regla ADRED, AC-31/AC-32): sin tarea esencial el congelamiento NO se consume (queda en inventario) y la racha se rompe. El snapshot expone `streakMinTasks`/`essentialTaskCodes` (aditivos). La cadencia de concesión (1 por 7 días perfectos, tope 3) no cambia. | Umbral ajustable sin migración (el seeder es la vía de config hasta que exista la edición ERP B7); el rescate exige esfuerzo esencial real (referencia ADRED) adaptado a la economía de congelamientos del módulo. |
 | 24 | Granular nutrition XP (P1.5, SPEC §18, "Paso 6") | La nutrición gana XP granular **aditiva** a la tarea `nut` existente: `POST /api/v1/program/nutrition/log` registra la comida/hidratación (`des`/`alm`/`mer`/`cen`/`agua`) en `app.habit_checks` (único por paciente+plantilla+fecha; duplicado → `409 HABIT_ALREADY_LOGGED`) y otorga `NUTRITION_MEAL_COMPLETE` (10, tope 4/día) / `NUTRITION_HYDRATION` (5, tope 1/día) por el camino del catálogo. Los premios semanales (`NUTRITION_WEEK_85` +75 por adherencia ≥85%, `NUTRITION_RECOVERY` +50 por +20pp vs el período anterior) se disparan SOLO en `POST /scores/calculate`, con la MISMA fuente de adherencia que la dimensión `nutrition` del Health Score (reuso, no duplicación) y el dedupe `('nutrition_period', health_scores.id, reason)`. `NUTRITION_PHOTO` queda **diferido** (el backend de este paso registra el log directo, sin análisis de foto). La tarea `nut` NO se auto-completa desde el log; su flujo queda intacto. | La XP granular recompensa el detalle diario (acción + registro) sin romper el contrato de puntos del programa; el doble premio (tarea 150 + comidas hasta 40/día) es visible y se tunea vía `xp_rules`. El semanal recompensa el hábito (85%) y la recuperación (+20pp) con la misma fuente que ya alimenta el Health Score. |
+| 25 | Nutriobiótico streak (P1.5, SPEC §19, "Paso 7a") | La tarea `nutribiotico` mantiene su **PROPIA racha consecutiva** (`app.streak_states.nb_current_streak`/`nb_longest_streak`/`nb_last_completed_date`), independiente de la racha general y de los congelamientos (decisión de producto): un **día perdido la rompe** (se reinicia a 1 en la próxima completación) y **NO la protegen los congelamientos** (AC-38). Los hitos de la corrida (7/14/30/60/90 días → `NB_STREAK_7/14/30/60/90`, 50/100/250/500/1000 XP, categoría `nutriobiotic`, topes 1/día y 1/semana) se otorgan en el camino de completación de la tarea (solo primera escritura, dentro de la transacción FOR UPDATE) con el multiplicador del paciente (SPEC §16) y el dedupe parcial `('nb_milestone', task_completions.id, reason)` — **cada corrida nueva re-otorga su hito al alcanzarlo** (AC-39); el mismo hito dentro de la misma semana se omite (tope 1/semana). La XP base de la tarea `TASK_NUTRIBIOTICO` y la racha general NO cambian. El snapshot expone `nbStreak`/`nbLongestStreak`/`nbNextMilestone` (aditivos). | La racha propia premia el hábito diario del nutribiótico (el pilar de producto de CoppAddresd) sin acoplarse a la racha general del programa: un paciente puede perder la racha general por un día sin tareas y aun así mantener su compromiso con el nutribiótico. El re-otorgamiento por corrida (AC-39) recompensa cada ciclo de constancia (referencia ADRED adaptada); los topes 1/día y 1/semana del catálogo limitan el farm. |
+| 26 | Gamified notifications (P1.5, SPEC §20, "Paso 7b") | Nuevo log `app.notifications` + push FCM reutilizando el camino EXISTENTE del módulo de notificaciones (`app.device_tokens` + `IFcmClient`). Servicio **best-effort** dentro de los flujos de otorgamiento (tras la escritura de la XP, SOLO en la primera concesión, nunca en replay): un fallo de envío/persistencia NUNCA rompe la transacción de XP (AC-42). Anti-spam configurable (`Program:Notifications`): máx. 2 por tipo por día local + máx. 6 totales por día local; límite alcanzado → se omite en silencio (AC-41). Horario de silencio 22:00–07:00 local (la prioridad `critical` lo ignora). Disparadores: hito de racha (`milestone_reached`, high), hito nutribiótico (`nb_milestone`, high), subida de nivel (`level_up`, high, comparando el nivel antes/después del día) y día perfecto (`day_complete`, normal). `multiplier_expiring`, "racha en riesgo a fin de día" y evaluación semanal → **FUTURO** (necesitan scheduler; no hay cron en MVP). Endpoints del centro de notificaciones: `GET /api/v1/program/notifications` (paginado, `readAt` + `unreadCount`) y `POST /api/v1/program/notifications/{id}/read` (paciente-propio, anti-IDOR 404). | La gamificación debe reconocer los logros en el momento en que ocurren, pero el backend no tiene colas/cron (patrón documentado): la notificación se dispara transaccionalmente dentro del flujo de otorgamiento con semántica best-effort (el log persiste aunque FCM falle, AC-42) y los límites anti-spam protegen al paciente del ruido. Lo que necesita timing (vencimiento del x2, racha en riesgo, semanal) queda documentado como trabajo futuro con scheduler. |
+| 27 | Weakness detection (P1.5, SPEC §21, "Paso 7c") | Nuevo log `app.weaknesses` + motor determinista de reglas (ADRED-inspired, sin ML) que detecta debilidades del paciente (adherencia nutricional, glucosa/% grasa, motivación, adherencia semanal, nutribiótico, ejercicio) y las persiste con dedupe por estado abierto (AC-43: no duplica mientras exista una `open`/`acknowledged`/`in_intervention` con el mismo código). La detección corre SOLO en `POST /scores/calculate`, una vez por recálculo (AC-45), después de puntajes + XP clínica + premios semanales. Cola clínica `GET /api/v1/program/weaknesses/open` (`Program.Adapt`) y transiciones `POST .../{id}/status` (`acknowledged`/`in_intervention`/`resolved`/`dismissed`) con guardia clínica AC-22 (un paciente → 403, AC-44); el paciente ve las suyas en `GET /api/v1/program/weaknesses` (`Program.View`). Umbrales clínicos marcados `REQUIRES_CLINICAL_VALIDATION`. La narrativa semanal LLM ("AI weekly assessment") queda DOCUMENTADA como contrato FUTURO (P3): requiere un endpoint nuevo en el ai-service + scheduler o disparo manual (SPEC §21.5); el backend de este paso NO llama IA (no existe el endpoint). | El motor convierte la misma data que ya alimenta los puntajes (SPEC §13/§18) en hallazgos accionables para el clínico, sin ML ni cron: reglas deterministas con dedupe idempotente dentro del recálculo manual existente. El LLM narrativo se difiere porque requiere un endpoint dedicado en el ai-service (no inventar llamadas que no existen). |
 
 **Implementation contract**: any change that violates decisions 1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 18, 19 is a breaking change to the spec and must be discussed in a SPEC.md PR.
 
@@ -51,13 +54,16 @@
 - Mobile snapshot endpoint + task completion endpoint + calendar/path endpoints.
 - ERP template CRUD + enrollment list + adaptation review.
 - **Health & Transformation Score engine** (P1.5, see §13): `app.health_score_weights` + `app.clinical_baselines` + `app.health_scores` + `app.transformation_scores`; on-read computation with stored history; `GET /api/v1/program/scores` and `POST /api/v1/program/scores/calculate`.
+- **Gamified notifications** (P1.5, see §20): `app.notifications` log + push FCM transaccional best-effort en los flujos de otorgamiento (hitos de racha / nutribiótico, subida de nivel, día perfecto) + centro de notificaciones del móvil (`GET /api/v1/program/notifications`).
+- **Weakness detection** (P1.5, see §21): `app.weaknesses` log + motor determinista de reglas (ADRED-inspired) disparado en `POST /scores/calculate` + cola clínica (`GET /api/v1/program/weaknesses/open`) y transiciones de estado (`POST .../{id}/status`) con guardia clínica AC-22; el paciente ve sus debilidades (`GET /api/v1/program/weaknesses`). La narrativa semanal LLM es FUTURO (contract in §21.5, no implementada).
 
 ### Out of scope (deferred)
 
 - Podcast chapters / takeaways tables.
 - Rewards marketplace, chests, cosmetic economy.
 - Social leagues / cross-patient comparisons.
-- Push notification triggers (existing `app.device_tokens`).
+- **Timed/push-scheduled notifications** (multiplier expiring, streak at risk before midnight, weekly assessment) — require a scheduler; the backend has no cron/queue in MVP (§13.3). The transactional gamified notifications live in §20.
+- **AI weekly assessment (LLM narrative)** — FUTURO (P3, §21.5): el contrato queda documentado pero NO implementado; requiere un endpoint nuevo en el ai-service (no existe) + scheduler o disparo manual. El motor determinista de debilidades (§21) SÍ está en scope.
 - Multi-language UI strings on the mobile side (ES preserved; EN in P3).
 - Bulk enrollment jobs, CSV export (P3).
 
@@ -787,14 +793,14 @@ Conventions mirror Wellness: `ProgramController` at `/api/v1/program`, MediatR c
   - The `podcast` rows seed `weekly_day_templates.media_id` with a published `app.media_items` fallback per weekday (template-level default for P1 resolution, §4.4).
   - Permissions: `Program.{View,Edit,Enroll,Adapt,ForceComplete}`.
   - 5 default `app.health_score_weights` rows (`adherence=0.30, clinical=0.30, nutrition=0.20, psychology=0.10, exercise=0.10`) for the Score engine (§13). Idempotent UPSERT by `dimension`.
-  - 19 default `app.xp_rules` rows (SPEC §14.2 + §15.2 + §18.1): `TASK_PODCAST`..`TASK_EMOCIONAL`, `DAY_BONUS`, `STREAK_7`, `STREAK_11`, `STREAK_22`, `STREAK_50`, las 4 clínicas `CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP` y las 4 de nutrición `NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY`. Idempotent by `code` (`ON CONFLICT (code) DO NOTHING`): an existing rule is never overwritten, so admin edits (§14.4) survive re-runs.
+  - 24 default `app.xp_rules` rows (SPEC §14.2 + §15.2 + §18.1 + §19.2): `TASK_PODCAST`..`TASK_EMOCIONAL`, `DAY_BONUS`, `STREAK_7`, `STREAK_11`, `STREAK_22`, `STREAK_50`, las 4 clínicas `CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP`, las 4 de nutrición `NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY` y las 5 de la racha del nutribiótico `NB_STREAK_7`, `NB_STREAK_14`, `NB_STREAK_30`, `NB_STREAK_60`, `NB_STREAK_90` (SPEC §19.2). Idempotent by `code` (`ON CONFLICT (code) DO NOTHING`): an existing rule is never overwritten, so admin edits (§14.4) survive re-runs.
   - 5 `app.habit_templates` rows (SPEC §18.2, nutrición granular): las 4 comidas del móvil (`des`/`alm`/`mer`/`cen`, categoría `alimentacion`) + hidratación (`agua`, categoría `agua`). Idempotent by `code`; son la fuente de la dimensión `nutrition` del Health Score (§13.4.3) y del log de `POST /nutrition/log`.
 - Seeder is **never** destructive (no DELETEs on production data).
 
 ### 8.5 Audit & permissions
 
 - Actor: `ICurrentContext.UserId` resolves to `auth.users.id`. `AuditTriggerInterceptor` already writes `activity_logs` rows with the actor for every DML.
-- Auditoría del módulo: los triggers de `audit.audit_trigger_function` (adjuntados vía `audit.attach_table_audit`) cubren **todas** las tablas del módulo — `program_templates`, `weekly_day_templates`, `program_enrollments`, `program_weeks`, `daily_checkins`, `task_completions`, `xp_ledger`, `streak_states`, `streak_freezes`, `adaptation_recommendations`, `xp_rules`, `clinical_xp_reviews` (SPEC §15; tabla sin PHI: ids, |Δ%| y estado), `habit_templates` y `habit_checks` (SPEC §18; tabla sin PHI: ids, código de comida y fecha local) — **excepto** `emotional_records`, excluida por diseño: `mood_score`/`barriers`/`notes` son PHI y nunca deben aterrizar en `activity_logs.old_data/new_data`. De `daily_checkins` los payloads jsonb excluyen `mood_score` y `barriers`. Los eventos semánticos que el trigger no puede generar (p. ej. `action = 'AdaptationApplied'` al aplicar una adaptación, AC-17) se insertan por SQL parametrizado en la misma transacción que el cambio de estado.
+- Auditoría del módulo: los triggers de `audit.audit_trigger_function` (adjuntados vía `audit.attach_table_audit`) cubren **todas** las tablas del módulo — `program_templates`, `weekly_day_templates`, `program_enrollments`, `program_weeks`, `daily_checkins`, `task_completions`, `xp_ledger`, `streak_states`, `streak_freezes`, `adaptation_recommendations`, `xp_rules`, `clinical_xp_reviews` (SPEC §15; tabla sin PHI: ids, |Δ%| y estado), `habit_templates` y `habit_checks` (SPEC §18; tabla sin PHI: ids, código de comida y fecha local) y `notifications` (SPEC §20; tabla sin PHI: copy de gamificación y timestamps) — **excepto** `emotional_records`, excluida por diseño: `mood_score`/`barriers`/`notes` son PHI y nunca deben aterrizar en `activity_logs.old_data/new_data`, y **excepto** `weaknesses` (SPEC §21): su `description` puede contener contexto clínico del hallazgo, por lo que su DML tampoco se audita (misma exclusión por diseño). De `daily_checkins` los payloads jsonb excluyen `mood_score` y `barriers`. Los eventos semánticos que el trigger no puede generar (p. ej. `action = 'AdaptationApplied'` al aplicar una adaptación, AC-17) se insertan por SQL parametrizado en la misma transacción que el cambio de estado.
 - Authorization: `RequirePermission("Program.View")` etc., using existing pattern from `WellnessController`.
 - IDOR: any cross-patient `GET` returns `404`; `POST` endpoints always scope to `enrollmentId` whose `patient_id` matches the caller's `patient_profile_id`.
 
@@ -880,6 +886,15 @@ The mobile app keeps the existing UI shapes (XP gauge, level badge, 6 task cards
 | AC-34 | Patient logs hydration via `POST /program/nutrition/log { mealCode: 'agua' }`. | 1 `xp_ledger` row `NUTRITION_HYDRATION` +5, tope 1/día (regla `NUTRITION_HYDRATION`); duplicado → `409 HABIT_ALREADY_LOGGED`. |
 | AC-35 | Clinician runs `POST /scores/calculate` for a period where the patient's nutrition adherence (habit_checks categoría `alimentacion`, misma fuente que la dimensión `nutrition` del Health Score) is ≥ 85%. | 1 `xp_ledger` row `NUTRITION_WEEK_85` +75 (`source_ref_type='nutrition_period'`, `source_ref_id=health_scores.id`, `reason='NUTRITION_WEEK_85'`); re-corrrer `/calculate` para el mismo período NO duplica (dedupe parcial). Sin logs en el período → 0 XP (nunca penaliza). |
 | AC-36 | Clinician runs `POST /scores/calculate` and the current period's adherence is ≥ 20 points above the previous period's (the prior `health_scores` row's nutrition dimension). | 1 `xp_ledger` row `NUTRITION_RECOVERY` +50 (mismo dedupe `nutrition_period`); los premios semanales respetan el multiplicador del paciente vigente (SPEC §16, C.4). |
+| AC-37 | Patient completes the `nutribiotico` task 7 consecutive patient-local days (each completion is the first write of that day). | `app.streak_states` shows `nb_current_streak = 7`, `nb_longest_streak = 7`, `nb_last_completed_date = día 7`; exactly 1 `xp_ledger` row `NB_STREAK_7` +50 (`source_ref_type='nb_milestone'`, `source_ref_id=task_completions.id` de la completación del día 7, `reason='NB_STREAK_7'`, multiplicador del paciente aplicado). Re-completar el día 7 (replay) NO duplica la XP. La racha general y `TASK_NUTRIBIOTICO` (80 base) quedan intactas. |
+| AC-38 | Patient completes `nutribiotico` on day D, skips D+1 (no completions), and completes again on D+2 — with a freeze available. | The NB streak is **not** protected by freezes: on D+2 the new count is `1` (`nb_current_streak` reset; `nb_last_completed_date = D+2`), no freeze is consumed, and no NB milestone is awarded. The general streak may still be rescued by a freeze (SPEC §17, C) — both streaks are independent. |
+| AC-39 | Patient completes a 7-day NB run (awards `NB_STREAK_7`), then resets (misses a day), then completes a NEW 7-day run. | The new run re-awards `NB_STREAK_7` once when it reaches day 7 again (new `source_ref_id = task_completions.id`, no dedupe collision): each 7/14/30/60/90 run awards its milestone when reached. Within the SAME calendar week the re-award is capped by `NB_STREAK_7.max_per_week = 1` (the award is skipped, never an error). |
+| AC-40 | Patient reaches a streak milestone (7/11/22/50), an NB milestone (7/14/30/60/90), crosses a level threshold, or completes a perfect day — each on its FIRST award (never on replay). | Exactly one `app.notifications` row is inserted with the matching type (`milestone_reached` / `nb_milestone` / `level_up` / `day_complete`) and the FCM push is attempted through the existing device-token path (`app.device_tokens` + `IFcmClient`). The XP award transaction is never affected by the notification outcome (best-effort, SPEC §20, B). |
+| AC-41 | Patient already received 2 notifications of the same type (or 6 notifications total) on the same patient-local day; another event of that type fires. | The notification is skipped silently: no `app.notifications` row, no FCM push, only a debug log. The XP award proceeds normally (anti-spam, SPEC §20, B). |
+| AC-42 | The FCM send fails (network error, invalid token, FCM disabled) while a milestone/level/perfect-day event fires. | The notification log row IS persisted and the XP award transaction commits normally; the send failure is caught and logged, never propagated (best-effort, SPEC §20, B). |
+| AC-43 | Clinician runs `POST /scores/calculate` for a patient with nutrition adherence 58% and weekly adherence 45%. | The rules engine fires `WK_NUT_LOW_ADHERENCE` (medium) and `WK_ADH_LOW_STREAK` (medium) and persists **2 new** `app.weaknesses` rows (`source='ai'`, `status='open'`, `detected_at` set). Re-running `/calculate` for the same period does **NOT** duplicate: the open-status dedupe skips both codes (SPEC §21, C). |
+| AC-44 | Clinician transitions a weakness via `POST /api/v1/program/weaknesses/{id}/status { status: 'resolved' }`. | The row moves to `resolved` with `resolved_at` set; the clinician's `auth.users.id` and roles are validated (AC-22 — a patient calling the endpoint receives `403 FORBIDDEN`). Applying the same status again is idempotent (no error). `acknowledged`/`in_intervention`/`dismissed` are also valid transitions; `open` is rejected (a row already starts open). |
+| AC-45 | Weakness detection runs once per `POST /scores/calculate` invocation (after scores + clinical XP + weekly nutrition awards) and never on `GET /scores`. | The `CalculateScoresCommandHandler` calls `IWeaknessDetectionService.DetectAndPersistAsync` exactly once per recalculation; `GET /api/v1/program/scores` never detects or persists weaknesses. A patient without an active enrollment gets an empty detection result (no error, no rows). |
 
 ### 10.3 DB / concurrency / idempotency / auth tests
 
@@ -904,7 +919,7 @@ These are explicitly **out of MVP** and not designed here. Re-evaluate after P3.
 | Podcast chapters / takeaways | Backend can deliver `media_items` only; mobile can keep the mock `chapters` array locally. No backend table until product needs persistence. |
 | Rewards marketplace / chest economy | Mock `NEXT_CHEST_DAYS = 50` becomes a derived `nextMilestoneDays` field. No `chest` table until there's a real marketplace. |
 | Social leagues | Cross-patient comparisons raise privacy questions; needs legal review. |
-| Push notification triggers | Existing `app.device_tokens` is enough for MVP; new triggers added in P3. |
+| Timed push notifications (multiplier expiring, streak at risk, weekly assessment) | Need a scheduler; the backend has no cron/queue in MVP (§13.3). The transactional gamified notifications (first-award events) live in SPEC §20. |
 | i18n on mobile | ES preserved; EN added in P3. |
 | Bulk enrollment jobs, CSV export | Admin scale features; planned in P3. |
 | `program_weeks.tasks_snapshot` rolling archive | If storage grows, archive snapshots older than 52 weeks; not in MVP. |
@@ -1243,9 +1258,9 @@ All conventions match §3 (`gen_random_uuid()` id, `timestamptz` timestamps, aud
 
 Indexes: `uq_xp_rules_code` UNIQUE (`code`), `ix_xp_rules_category`, `ix_xp_rules_active`.
 
-### 14.2 Seeded rules (11 + 4 clínicas + 4 nutrición, UPSERT by `code`)
+### 14.2 Seeded rules (11 + 4 clínicas + 4 nutrición + 5 racha nutribiótico, UPSERT by `code`)
 
-`ProgramProgressSeeder` seeds idempotently (`ON CONFLICT (code) DO NOTHING` — an existing rule is never overwritten, so admin edits survive re-runs). The 4 clinical rules (`CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP`) live in **SPEC §15.2** — they power the clinical XP engine, which fires only on `POST /scores/calculate`. The 4 nutrition rules (`NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY`) live in **SPEC §18.1** — granular nutrition XP ("Paso 6"), also additive to the existing `nut` task.
+`ProgramProgressSeeder` seeds idempotently (`ON CONFLICT (code) DO NOTHING` — an existing rule is never overwritten, so admin edits survive re-runs). The 4 clinical rules (`CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP`) live in **SPEC §15.2** — they power the clinical XP engine, which fires only on `POST /scores/calculate`. The 4 nutrition rules (`NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY`) live in **SPEC §18.1** — granular nutrition XP ("Paso 6"), also additive to the existing `nut` task. The 5 nutribiotic-streak rules (`NB_STREAK_7`, `NB_STREAK_14`, `NB_STREAK_30`, `NB_STREAK_60`, `NB_STREAK_90`) live in **SPEC §19.2** — "Paso 7a", additive to `TASK_NUTRIBIOTICO`.
 
 | Code | Category | BaseXp | MaxPerDay | MaxPerWeek |
 |------|----------|--------|-----------|------------|
@@ -1260,8 +1275,13 @@ Indexes: `uq_xp_rules_code` UNIQUE (`code`), `ix_xp_rules_category`, `ix_xp_rule
 | `STREAK_11` | streak | 200 | 1 | 1 |
 | `STREAK_22` | streak | 500 | 1 | 1 |
 | `STREAK_50` | streak | 1500 | 1 | 1 |
+| `NB_STREAK_7` | nutriobiotic | 50 | 1 | 1 |
+| `NB_STREAK_14` | nutriobiotic | 100 | 1 | 1 |
+| `NB_STREAK_30` | nutriobiotic | 250 | 1 | 1 |
+| `NB_STREAK_60` | nutriobiotic | 500 | 1 | 1 |
+| `NB_STREAK_90` | nutriobiotic | 1000 | 1 | 1 |
 
-**Consistency note**: the `STREAK_*` rows are seeded as data-driven configuration with their limits; since "Paso 4" (SPEC §16) they have a **live call site**: the milestone engine resolves them generically by code via the same awarding path (§14.3) when `current_streak` reaches the milestone day, and each is awarded **once per enrollment** (idempotent via the `streak_milestone` dedupe). Before §16 they were forward-looking only (no milestone XP was awarded; only `nextMilestoneDays` was derived, §7.1). The 4 nutrition rules are **aditivas**: los logs de `POST /nutrition/log` y los premios semanales de `POST /scores/calculate` SUMA a la XP de la tarea `nut` (SPEC §18, decisión 24; el doble premio se tunea vía el catálogo).
+**Consistency note**: the `STREAK_*` rows are seeded as data-driven configuration with their limits; since "Paso 4" (SPEC §16) they have a **live call site**: the milestone engine resolves them generically by code via the same awarding path (§14.3) when `current_streak` reaches the milestone day, and each is awarded **once per enrollment** (idempotent via the `streak_milestone` dedupe). Before §16 they were forward-looking only (no milestone XP was awarded; only `nextMilestoneDays` was derived, §7.1). The 4 nutrition rules are **aditivas**: los logs de `POST /nutrition/log` y los premios semanales de `POST /scores/calculate` SUMA a la XP de la tarea `nut` (SPEC §18, decisión 24; el doble premio se tunea vía el catálogo). The 5 `NB_STREAK_*` rules (SPEC §19, "Paso 7a") are **also aditivas** a la tarea `nutribiotico`: premian los hitos de la racha propia de la tarea (7/14/30/60/90 días) y se otorgan en el camino de completación con el dedupe `('nb_milestone', task_completions.id, reason)` — **cada corrida re-otorga su hito** (AC-39), con topes 1/día y 1/semana.
 
 ### 14.3 Award-path resolution (precedence + anti-fraud)
 
@@ -1685,3 +1705,441 @@ El móvil mock registra comidas con foto ("Registrar lo que comí", IA analiza g
 ### 18.8 Acceptance criteria
 
 AC-33..AC-36 (SPEC §10.2). Tests **opcionales** en esta fase, corridos manualmente por el usuario per el workflow actual (gate = build verde + migración generada sin aplicar).
+
+---
+
+## 19. Nutriobiótico streak (P1.5 — "Paso 7a")
+
+La tarea `nutribiotico` (el pilar de producto de CoppAddresd) mantiene su **propia racha consecutiva**, independiente de la racha general del programa (SPEC §6.6/§17): solo se alimenta al completar la tarea nutribiotico, un día perdido la rompe y los congelamientos **NO la protegen**. Premia la constancia con hitos de corrida (7/14/30/60/90 días) otorgados en el camino de completación de la tarea. **Tests OPTIONALES / manuales per el workflow actual** (gate = build verde + migración generada sin aplicar).
+
+### 19.1 Columnas nuevas en `app.streak_states` (migración `AddProgramProgressNbStreak`, aditiva y reversible)
+
+| Columna | Tipo | Constraints | Notas |
+|---------|------|-------------|-------|
+| `nb_current_streak` | `smallint` | NOT NULL DEFAULT `0` | Racha consecutiva de la tarea nutribiotico (0 = sin corrida activa) |
+| `nb_longest_streak` | `smallint` | NOT NULL DEFAULT `0` | Máximo histórico de `nb_current_streak` |
+| `nb_last_completed_date` | `date` | NULL | Fecha local del último día que aportó a la racha; NULL hasta la primera completación |
+
+Convenciones de `streak_states` (PK = `enrollment_id`, snake_case, defaults en migración). No se agregan tablas nuevas ni índices (una fila por inscripción, lecturas por PK).
+
+### 19.2 Reglas sembradas (5 nuevas en `app.xp_rules`, categoría `nutriobiotic`)
+
+`ProgramProgressSeeder` las siembra idempotentemente por `code` (mismo `ON CONFLICT (code) DO NOTHING` que el resto del catálogo):
+
+| Code | Categoría | BaseXp | MaxPerDay | MaxPerWeek | RequiresValidation |
+|------|-----------|--------|-----------|------------|--------------------|
+| `NB_STREAK_7` | nutriobiotic | 50 | 1 | 1 | false |
+| `NB_STREAK_14` | nutriobiotic | 100 | 1 | 1 | false |
+| `NB_STREAK_30` | nutriobiotic | 250 | 1 | 1 | false |
+| `NB_STREAK_60` | nutriobiotic | 500 | 1 | 1 | false |
+| `NB_STREAK_90` | nutriobiotic | 1000 | 1 | 1 | false |
+
+Los miembros `NB_STREAK_7/14/30/60/90` de `XpReason` (16..20) y las constantes homónimas de `XpRuleCodes` persisten el `reason` del libro mayor con el nombre del miembro (precedente `CLINICAL_*`/`NUTRITION_*`).
+
+### 19.3 Mantenimiento de la racha propia (B)
+
+En el camino de completación (`ProgramRepository.CompleteTaskCoreAsync`, dentro de la transacción con la inscripción bloqueada `FOR UPDATE`), **solo en la primera escritura** de `task_code = 'nutribiotico'` (el replay idempotente nunca llega acá):
+
+1. **Nuevo conteo**: si `nb_last_completed_date == ayer` (fecha local del paciente) → `nb_current_streak + 1`; en cualquier otro caso (sin historial o día perdido) → `1`. La racha NO distingue días perfectos ni umbrales (SPEC §17): solo pregunta si ayer se completó la tarea.
+2. **Actualización** vía `ExecuteUpdate` (convención del repositorio): `nb_current_streak = nuevo`, `nb_longest_streak = MAX(nb_longest_streak, nuevo)`, `nb_last_completed_date = hoy`, `updated_at = now`.
+3. **Hito alcanzado** (el nuevo conteo cae exactamente en 7/14/30/60/90): otorga la XP del hito por el camino de resolución del catálogo — `rule_code = NB_STREAK_{days}`, `source_ref_type = 'nb_milestone'`, `source_ref_id = task_completions.id` (la completación que disparó el hito), `reason = 'NB_STREAK_{days}'`. El multiplicador del paciente (SPEC §16, C) aplica como en todo otorgamiento. Los topes 1/día y 1/semana se verifican en `ResolveXpAwardAsync`: un tope alcanzado **omite** el hito (nunca rompe la completación ni la racha).
+
+> **Nota de idempotencia (dedupe por corrida, AC-39)**: el dedupe parcial `(source_ref_type, source_ref_id, reason)` del libro mayor usa `source_ref_id = task_completions.id`, NO `streak_states.enrollment_id` como los hitos de la racha general (SPEC §16, una vez por inscripción). Cada corrida nueva genera una completación distinta al alcanzar el hito, por lo que el re-otorgamiento de una corrida posterior **no colisiona** con el de la anterior: **cada 7/14/30/60/90 días de corrida re-otorga su hito** (AC-39). Dentro de la misma semana el tope `max_per_week = 1` de la regla limita el farm (el otorgamiento se omite, sin error).
+
+### 19.4 Reglas que NO cambian
+
+- La racha general (`current_streak`/`longest_streak`/`last_active_date`), los congelamientos y el rescate (SPEC §17) quedan **intactos**: la racha del nutribiótico es un contador aparte.
+- La tarea `nutribiotico` sigue otorgando sus puntos de plantilla (`TASK_NUTRIBIOTICO`, 80 base) al completarse; los hitos `NB_STREAK_*` son XP **aditiva** (decisión 25).
+- El bonus de día perfecto (`DAY_BONUS`) y los hitos de la racha general (`STREAK_*`, SPEC §16) no se tocan.
+
+### 19.5 Exposición en el snapshot (D)
+
+`GET /api/v1/program/me/snapshot` (bloque `streak`, aditivo — los campos existentes no cambian):
+
+| Campo | Tipo | Semántica |
+|-------|------|-----------|
+| `nbStreak` | `int` | Racha consecutiva actual de la tarea nutribiotico |
+| `nbLongestStreak` | `int` | Máximo histórico de la racha del nutribiótico |
+| `nbNextMilestone` | `{ days, xp, daysRemaining } \| null` | Próximo hito por encima de `nbStreak` (de la tabla 7/14/30/60/90 con su XP base del catálogo); `null` si la racha ya es ≥ 90 |
+
+La lectura nunca escribe (mismo patrón que el multiplicador, SPEC §16, D).
+
+### 19.6 Acceptance criteria
+
+AC-37, AC-38, AC-39 (SPEC §10.2). Tests **opcionales** en esta fase, corridos manualmente por el usuario per el workflow actual (gate = build verde + migración generada sin aplicar).
+
+### 19.7 Implementation placement (espejo de §18.6)
+
+| Concern | Project | Folder |
+|---------|---------|--------|
+| Entidad + enums | `src/CoppAddresd.Domain` | `Entities/ProgramProgress/StreakState.cs` (3 propiedades `Nb*`); `Enums/ProgramProgress/XpReason.cs` (5 miembros `NB_STREAK_*`), `XpRuleCodes.cs` (5 constantes) |
+| EF configuration | `src/CoppAddresd.Infrastructure` | `Configurations/ProgramProgress/StreakStateConfiguration.cs` (3 columnas, `smallint` default 0 + `date` nullable) |
+| Migración | `src/CoppAddresd.Infrastructure` | `Migrations/<timestamp>_AddProgramProgressNbStreak.cs` (aditiva y reversible: 3 columnas en `streak_states`) |
+| Motor de la racha + hitos | `src/CoppAddresd.Infrastructure` | `Repositories/ProgramRepository.cs` (`UpdateNbStreakAsync` + tabla `NbMilestones`; hook en `CompleteTaskCoreAsync` solo para `nutribiotico`; `GetSnapshotAsync` con `nbStreak`/`nbLongestStreak`/`nbNextMilestone`) |
+| Snapshot DTO | `src/CoppAddresd.Application` | `DTOs/ProgramProgress/ProgramProgressDtos.cs` (`StreakInfoDto` + 3 campos aditivos con default; `NbNextMilestoneDto` nuevo) |
+| Seeder | `src/CoppAddresd.Api` | `Seeders/ProgramProgressSeeder.cs` (5 reglas `NB_STREAK_*`, categoría `nutriobiotic`) |
+
+---
+
+## 20. Gamified notifications (P1.5 — "Paso 7b")
+
+La gamificación reconoce los logros **en el momento en que ocurren** con una
+notificación push (FCM) más un log persistente (`app.notifications`). El
+backend no tiene colas/cron (patrón documentado, §13.3), por lo que la
+notificación se dispara **transaccionalmente dentro del flujo de otorgamiento**
+(tras la escritura de la XP, solo en la primera concesión — nunca en replay)
+con semántica **best-effort**: un fallo de envío o de persistencia jamás rompe
+la transacción de XP (AC-42). Reutiliza la infraestructura FCM **existente**
+(`app.device_tokens` + `IFcmClient`, módulo de notificaciones) — no la duplica.
+
+### 20.1 New table `app.notifications`
+
+Convenciones del módulo (§3): schema `app.`, PK `uuid` con `gen_random_uuid()`,
+timestamps `timestamptz`, auditoría trigger-based (tabla sin PHI, §8.5).
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
+| `patient_id` | `uuid` | NOT NULL, FK `app.patient_profiles(id)` ON DELETE RESTRICT | Dueño de la notificación |
+| `type` | `varchar(60)` | NOT NULL | `milestone_reached` / `nb_milestone` / `level_up` / `day_complete` (SPEC §20, C) |
+| `title` | `varchar(120)` | NOT NULL | Título corto del push |
+| `message` | `text` | NOT NULL | Copy de gamificación (sin PHI) |
+| `priority` | `varchar(20)` | NOT NULL DEFAULT `'normal'` | `normal` / `high` / `critical` (la crítica ignora el horario de silencio) |
+| `channel` | `varchar(20)` | NOT NULL DEFAULT `'push'` | Canal de entrega (solo `push` en MVP) |
+| `sent_at` | `timestamptz` | NOT NULL DEFAULT `now()` | Instante de generación (reloj del servidor) |
+| `read_at` | `timestamptz` | NULL | Marca de lectura del centro de notificaciones |
+
+Index: `ix_notifications_patient_sent_at` (`patient_id`, `sent_at` DESC) — soporta
+el listado del centro de notificaciones y los conteos anti-spam por día.
+
+### 20.2 Service semantics (B)
+
+`IGamifiedNotificationService` (Application, `Services/ProgramProgress/`):
+
+1. **Anti-spam** (config `Program:Notifications`, defaults): máx. **2 por tipo
+   por día local** (`MaxPerTypePerDay` = 2), máx. **6 totales por día local**
+   (`MaxPerDay` = 6). Se cuenta contra `app.notifications` en la ventana del
+   día local del paciente (fecha local → rango UTC, DST-aware). Límite
+   alcanzado → **se omite en silencio** (log debug; AC-41).
+2. **Horario de silencio** (`QuietHoursStart` = 22 / `QuietHoursEnd` = 7,
+   hora local del paciente): fuera de la ventana de entrega salvo que la
+   prioridad sea `critical`.
+3. **Orden**: contexto del paciente (timezone + userId) → anti-spam → persistir
+   el log → push FCM best-effort (fan-out de `app.device_tokens` vía
+   `IDeviceTokenRepository` + `IFcmClient`; un token obsoleto `UNREGISTERED` se
+   elimina). Todo el cuerpo captura excepciones: el servicio **nunca lanza**
+   (AC-42: el flujo de otorgamiento de XP continúa intacto).
+
+### 20.3 Trigger map (C) — transaccional, solo primera concesión
+
+En `ProgramRepository` (dentro de `CompleteTaskCoreAsync` / los motores de
+hitos, transacción con la inscripción `FOR UPDATE`), tras el otorgamiento de la
+XP correspondiente:
+
+| Evento | `type` | Mensaje (message) | Prioridad |
+|--------|--------|-------------------|-----------|
+| Hito de racha alcanzado (7/11/22/50) | `milestone_reached` | `🏆 ¡X días! +N XP` (hitos 11/22/50 con x2 activado: `· ¡x2 por N horas!` plegado en el mismo mensaje) | high |
+| Hito de la racha del nutribiótico (7/14/30/60/90) | `nb_milestone` | `💊 ¡X días tomando tu Nutriobiótico!` | high |
+| Subida de nivel (cruce de umbral de la escalera `XpLevels`) | `level_up` | `⭐ ¡Subiste a Nivel X!` (X = nombre del nivel alcanzado) | high |
+| Día perfecto (bonus `DAY_BONUS` otorgado) | `day_complete` | `✅ Día perfecto · +N XP` (N = bonus efectivo) | normal |
+
+Reglas:
+- **Solo primera concesión**: el replay idempotente (`CompleteTaskAsync`) nunca
+  genera notificaciones; el guardia "XP ya otorgada" del hito de racha
+  (§16, B.3) y los topes del nutribiótico (§19, B.4) protegen también la
+  notificación.
+- **Subida de nivel**: se compara el nivel ANTES y DESPUÉS de todos los
+  otorgamientos del día (tarea + bonus + hitos), evaluado tras el flush del
+  libro mayor para que el balance incluya las filas nuevas.
+- La notificación corre **después** de la escritura de la XP y **nunca la
+  revierte** (best-effort).
+
+### 20.4 FUTURE items (deferred — require a scheduler)
+
+No hay cron/queue en este backend (patrón documentado, §13.3). Lo siguiente
+queda documentado para cuando exista un scheduler (P3):
+
+- `multiplier_expiring` ("tu x2 vence en N horas") — timing de expiración del
+  multiplicador (§16).
+- Racha en riesgo antes del fin del día local ("te faltan X tareas") — timing
+  de fin de día.
+- Evaluación semanal / reporte de la semana — timing semanal.
+
+### 20.5 Patient endpoints (D)
+
+Base `/api/v1/program`, `[Authorize]` + `Program.View` (código existente), el
+`patientId` se resuelve SIEMPRE del JWT vía `IProgramActorContext` (nunca del
+body) — sin perfil de paciente → 404 (anti-IDOR AC-11):
+
+- `GET /api/v1/program/notifications?page=1&pageSize=20` — centro de
+  notificaciones paginado (máx. pageSize 100), orden descendente por
+  `sent_at`, con `readAt` por fila y `unreadCount` total para el badge del
+  móvil.
+
+  **Response 200**
+
+  ```json
+  {
+    "data": [
+      { "id": "…", "type": "milestone_reached", "title": "🏆 ¡7 días!",
+        "message": "🏆 ¡7 días! +100 XP", "priority": "high", "channel": "push",
+        "sentAt": "2026-09-27T11:14:08Z", "readAt": null }
+    ],
+    "total": 1, "page": 1, "pageSize": 20, "totalPages": 1, "unreadCount": 1
+  }
+  ```
+
+- `POST /api/v1/program/notifications/{id:guid}/read` — marca la notificación
+  como leída (`read_at = now`). Si no pertenece al paciente → 404 (sin
+  distinguir si existe). Respuesta `204 No Content`.
+
+### 20.6 Acceptance criteria
+
+Ver §10.2 (AC-40, AC-41, AC-42). Tests **OPCIONALES** en esta fase, corridos
+manualmente por el usuario per el workflow actual (gate = build verde +
+migración generada sin aplicar).
+
+### 20.7 Implementation placement (espejo de §18.6/§19.7)
+
+| Concern | Project | Folder |
+|---------|---------|--------|
+| Entidad | `src/CoppAddresd.Domain` | `Entities/ProgramProgress/AppNotification.cs` (nuevo) |
+| EF configuration | `src/CoppAddresd.Infrastructure` | `Configurations/ProgramProgress/AppNotificationConfiguration.cs` (nuevo); `DbSet` en `Persistence/AppDbContext.cs` |
+| Migración | `src/CoppAddresd.Infrastructure` | `Migrations/<timestamp>_AddProgramProgressNotifications.cs` (aditiva y reversible: 1 tabla + índice + auditoría + GRANTs) |
+| Servicio (Application) | `src/CoppAddresd.Application` | `Services/ProgramProgress/{IGamifiedNotificationService,GamifiedNotificationService}.cs` (nuevos) |
+| Repositorio del log | `src/CoppAddresd.Application` | `Interfaces/INotificationLogRepository.cs` (nuevo) |
+| Implementación EF | `src/CoppAddresd.Infrastructure` | `Repositories/NotificationLogRepository.cs` (nuevo) |
+| Disparadores | `src/CoppAddresd.Infrastructure` | `Repositories/ProgramRepository.cs` (hooks en `CompleteTaskCoreAsync`, `AwardStreakMilestoneIfReachedAsync`, `UpdateNbStreakAsync`) |
+| Query / command + DTOs | `src/CoppAddresd.Application` | `Features/ProgramProgress/Queries/ListNotifications/`, `Features/ProgramProgress/Commands/MarkNotificationRead/`, `Features/ProgramProgress/DTOs/Notifications/` |
+| Controller | `src/CoppAddresd.Api` | `Controllers/ProgramController.cs` (`GET/POST /api/v1/program/notifications...`) |
+| DI | `src/CoppAddresd.Infrastructure` | `DependencyInjection.cs` (registro del servicio + repositorio) |
+
+---
+
+## 21. Weakness detection & weekly assessment (P1.5 — "Paso 7c")
+
+La misma data que ya alimenta los puntajes (SPEC §13) y la nutrición (SPEC §18) se convierte en **debilidades accionables** para el clínico: el motor determinista de reglas (ADRED-inspired, sin ML) detecta hallazgos en `POST /scores/calculate` y los persiste en un log nuevo (`app.weaknesses`) con dedupe idempotente. La **narrativa semanal LLM** ("AI weekly assessment") queda **documentada como contrato FUTURO** (§21.5): este backend NO llama IA en este paso (el endpoint del ai-service no existe; no se inventan llamadas).
+
+### 21.1 New table `app.weaknesses`
+
+Convenciones del módulo (§3): schema `app.`, PK `uuid` con `gen_random_uuid()`, timestamps `timestamptz`. **La tabla NO se adjunta al trigger de auditoría** (`description` puede contener contexto clínico — misma exclusión por diseño que `emotional_records`, §8.5).
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
+| `patient_id` | `uuid` | NOT NULL, FK `app.patient_profiles(id)` ON DELETE RESTRICT | Dueño del hallazgo |
+| `code` | `varchar(60)` | NOT NULL | Código canónico de la regla (`WK_*`, §21.2); llave del dedupe AC-43 |
+| `category` | `varchar(40)` | NOT NULL, CHECK IN (`nutritional`,`clinical`,`psychological`,`exercise`,`adherence`,`supplement`,`sleep`,`motivation`) | Eje funcional (enum `WeaknessCategory`) |
+| `severity` | `varchar(20)` | NOT NULL DEFAULT `'low'`, CHECK IN (`low`,`medium`,`high`,`critical`) | Enum `WeaknessSeverity` |
+| `title` | `varchar(120)` | NOT NULL | Título corto legible |
+| `description` | `text` | NULL | Hallazgo con indicador + acción sugerida (puede contener contexto clínico → sin auditoría) |
+| `detected_at` | `timestamptz` | NOT NULL DEFAULT `now()` | Reloj del servidor |
+| `metric_id` | `uuid` | NULL, FK `app.measurement_metrics(id)` ON DELETE RESTRICT | Métrica del indicador (glucosa, % grasa) cuando la regla la tiene |
+| `indicator_value` | `numeric(10,4)` | NULL | Valor que disparó la regla (p. ej. 58 = adherencia 58%, 128 = glucosa mg/dL) |
+| `source` | `varchar(20)` | NOT NULL DEFAULT `'ai'`, CHECK IN (`ai`,`professional`,`system`) | Enum `WeaknessSource`; una fila `ai` validada después permanece `ai` |
+| `status` | `varchar(20)` | NOT NULL DEFAULT `'open'`, CHECK IN (`open`,`acknowledged`,`in_intervention`,`resolved`,`dismissed`) | Enum `WeaknessStatus`; ciclo de vida §21.4 |
+| `assigned_to` | `uuid` | NULL, FK `auth.users(id)` (raw SQL, ON DELETE SET NULL) | Clínico asignado al caso |
+| `resolved_at` | `timestamptz` | NULL | Se fija solo al transicionar a `resolved` |
+| `created_at` / `updated_at` | `timestamptz` | NOT NULL DEFAULT `now()` / NULL | |
+
+Indexes: `ix_weaknesses_patient_status` (`patient_id`, `status`) — cola del paciente y dedupe AC-43; `ix_weaknesses_status` — cola clínica global; `IX_weaknesses_metric_id` (FK).
+
+### 21.2 Rules engine (deterministic, ADRED-inspired)
+
+`WeaknessRulesEngine` (Application, función pura sin I/O) evalúa un `PatientWeeklyData` — paquete semanal reunido por el repositorio sobre la MISMA ventana que el Índice de Salud (SPEC §13.2) — y devuelve descriptores de debilidad. Un indicador `null` (sin dato físico) NO dispara su regla ("sin datos → sin hallazgo", nunca penaliza por ausencia).
+
+| Código | Categoría | Severidad | Condición | Fuente | Acción sugerida |
+|--------|-----------|-----------|-----------|--------|-----------------|
+| `WK_NUT_LOW_ADHERENCE` | nutritional | medium | adherencia nutricional < 70% | `app.habit_checks` categoría `alimentacion` (MISMA fuente que la dimensión `nutrition`, §13.4.3/§18) | `create_intervention` |
+| `WK_NUT_CRITICAL` | nutritional | high | adherencia nutricional < 50% | ídem | `telehealth_referral` (nutricionista) |
+| `WK_CLIN_GLUCOSE_HIGH` | clinical | high | tendencia `up` de glucosa (vs línea base) && actual > 125 mg/dL — **REQUIRES_CLINICAL_VALIDATION** | `app.clinical_baselines` + `app.clinical_measurements` (código `glucose`) | `referral_doctor` |
+| `WK_CLIN_BODYFAT_UP` | clinical | medium | delta de % grasa > 0.3 puntos en la semana | ídem (código `body_fat`) | `referral_nutritionist` |
+| `WK_PSY_LOW_MOTIVATION` | psychological | medium | motivación < 5/10 | último `app.emotional_records`; **proxy documentado**: el módulo solo persiste `mood_score` 1..5 → `motivation = mood × 2` (escala 1..10; dispara con ánimo ≤ 2) | `referral_psychologist` |
+| `WK_PSY_HIGH_STRESS` | psychological | medium | estrés > 7/10 — **LATENTE**: no existe columna física de estrés; dispara cuando una fuente futura alimente `StressScore` | — | `referral_psychologist` |
+| `WK_PSY_SLEEP_POOR` | sleep | low | sueño promedio < 6 h — **LATENTE**: no existe fuente de sueño; dispara cuando una fuente futura alimente `AvgSleepHours` | — | `ai_recommendation` |
+| `WK_ADH_LOW_STREAK` | adherence | medium | adherencia semanal < 50% | dimensión `adherence` de `app.health_scores` del período (§13.4.1) | `recovery_mode` |
+| `WK_ADH_NB_MISSED` | supplement | low | adherencia del nutribiótico a 7 días < 70% | `app.task_completions` (`nutribiotico`, días distintos / 7) | `ai_recommendation` |
+| `WK_ADH_EXERCISE_LOW` | exercise | low | cumplimiento de ejercicio < 60% | `app.task_completions` (`ejercicio`, días distintos / días del período) | `reto_adjustment` |
+
+> **REQUIRES_CLINICAL_VALIDATION**: los umbrales clínicos (glucosa 125 mg/dL, delta de % grasa 0.3) son propuestos por el equipo (referencia ADRED adaptada) y deben confirmarse con el comité clínico antes de operar como referencia. Las reglas LATENTES (estrés/sueño) están implementadas en el motor pero no pueden disparar hasta que exista la fuente de datos.
+
+### 21.3 Trigger (AC-45)
+
+- La detección corre SOLO en `POST /api/v1/program/scores/calculate`, **una vez por recálculo**, después de puntajes + XP clínica + premios semanales de nutrición (el paquete semanal lee la fila fresca de `health_scores`). `GET /api/v1/program/scores` nunca detecta ni persiste debilidades.
+- `WeaknessDetectionService` (Application): reúne el paquete vía repositorio → evalúa con `WeaknessRulesEngine` → persiste SOLO las NUEVAS (`PersistDetectedWeaknessesAsync`, dedupe AC-43). Idempotente por el estado abierto: re-correr `/calculate` no duplica.
+- Las filas se crean con `source = 'ai'`, `status = 'open'`, `detected_at = now()` y el `indicator_value`/`metric_id` de la regla.
+
+### 21.4 API contract
+
+Base `/api/v1/program`, `[Authorize]`. El paciente NUNCA transiciona estados (AC-44 → 403 vía guardia clínica AC-22).
+
+- `GET /api/v1/program/weaknesses?page=1&pageSize=20` — `Program.View`; debilidades del paciente autenticado (el `patientId` se resuelve del JWT, nunca del body — anti-IDOR AC-11: sin perfil → 404). Orden descendente por `detectedAt`, paginado (default 20, máx. pageSize 100).
+
+  **Response 200**
+  ```json
+  {
+    "data": [
+      { "id": "…", "patientId": "…", "code": "WK_NUT_LOW_ADHERENCE", "category": "nutritional",
+        "severity": "medium", "title": "Adherencia nutricional baja",
+        "description": "Adherencia nutricional del período 58% (< 70%). Acción sugerida: crear intervención de seguimiento nutricional.",
+        "detectedAt": "2026-09-27T11:14:08Z", "metricId": null, "indicatorValue": 58,
+        "source": "ai", "status": "open", "assignedTo": null, "resolvedAt": null,
+        "createdAt": "2026-09-27T11:14:08Z", "updatedAt": null }
+    ],
+    "total": 1, "page": 1, "pageSize": 20, "totalPages": 1
+  }
+  ```
+
+- `GET /api/v1/program/weaknesses/open?page=1&pageSize=20` — `Program.Adapt`; cola clínica de filas `status = 'open'` (todas los pacientes), orden ascendente FIFO por `detectedAt` (la más antigua primero). Mismo shape paginado.
+
+- `POST /api/v1/program/weaknesses/{id:guid}/status` — `Program.Adapt` + rol clínico (guardia AC-22: `Physician`/`Nutritionist`/`Psychologist`/`ClinicalDirector`/`Admin`; paciente → `403 FORBIDDEN`). Body `{ "status": "acknowledged"|"in_intervention"|"resolved"|"dismissed" }`. `resolved` fija `resolved_at`; `open` se rechaza (la fila ya nace abierta); transición idempotente (mismo estado → 200 sin error). 404 si no existe.
+
+  **Errors**: `400` (estado inválido), `403 FORBIDDEN` (sin permiso o no clínico), `404 NOT_FOUND`.
+
+### 21.5 FUTURE — AI weekly assessment contract (documented, NOT implemented)
+
+La evaluación semanal narrativa (LLM) queda **contratada pero diferida a P3** — necesita trabajo en el `ai-service` + un scheduler o disparo manual (no hay cron en este backend, §13.3):
+
+- **Backend** (a construir): ensambla un `WeeklyAssessmentContext` y llama a un **endpoint NUEVO del ai-service** (a crear en ese repo; no existe hoy):
+  ```json
+  {
+    "patientId": "…",
+    "periodStartLocalDate": "2026-09-21",
+    "periodEndLocalDate": "2026-09-27",
+    "healthScore": 81,
+    "transformationScore": 88,
+    "dimensions": { "adherence": 66, "clinical": 75, "nutrition": 80, "psychology": 90, "exercise": 100 },
+    "weaknesses": [ { "code": "WK_NUT_LOW_ADHERENCE", "category": "nutritional", "severity": "medium", "indicatorValue": 58 } ],
+    "adherenceSummary": { "nutritionPct": 58, "weeklyPct": 45, "nb7dPct": 86, "exercisePct": 33 }
+  }
+  ```
+- **ai-service** (a crear): devuelve la narrativa en el shape JSON de ADRED: `{ summary, strengths, weaknesses_text, recommendations, next_actions }`.
+- **Disparo**: desde el scheduler futuro (pre-warm semanal de `app.health_scores`, §13.3) o un disparo manual del clínico; la detección determinista de §21.2/§21.3 ya alimenta el contexto.
+
+### 21.6 Acceptance criteria
+
+Ver §10.2 (AC-43, AC-44, AC-45). Tests **OPCIONALES** en esta fase, corridos manualmente por el usuario per el workflow actual (gate = build verde + migración generada sin aplicar).
+
+### 21.7 Implementation placement (espejo de §20.7)
+
+| Concern | Project | Folder |
+|---------|---------|--------|
+| Entidad + enums | `src/CoppAddresd.Domain` | `Entities/ProgramProgress/Weakness.cs`; `Enums/ProgramProgress/WeaknessCategory.cs`, `WeaknessSeverity.cs`, `WeaknessStatus.cs`, `WeaknessSource.cs`, `WeaknessCodes.cs` |
+| EF configuration + DbSet | `src/CoppAddresd.Infrastructure` | `Configurations/ProgramProgress/WeaknessConfiguration.cs`; `Persistence/AppDbContext.cs` |
+| Migración | `src/CoppAddresd.Infrastructure` | `Migrations/<timestamp>_AddProgramProgressWeaknesses.cs` (aditiva y reversible: 1 tabla + índices + CHECKs + FK SQL a `auth.users` + GRANTs; **sin trigger de auditoría**, §21.1) |
+| Motor de reglas + servicio | `src/CoppAddresd.Application` | `Services/ProgramProgress/{PatientWeeklyData,WeaknessDescriptor,WeaknessRulesEngine,IWeaknessDetectionService,WeaknessDetectionService}.cs` |
+| Repositorio | `src/CoppAddresd.Infrastructure` | `Repositories/ProgramRepository.cs` (`BuildPatientWeeklyDataAsync`, `PersistDetectedWeaknessesAsync`, `ListWeaknessesAsync`, `ListOpenWeaknessesAsync`, `UpdateWeaknessStatusAsync`); `Interfaces/IProgramRepository.cs` |
+| Trigger | `src/CoppAddresd.Application` | `Features/ProgramProgress/Commands/CalculateScores/CalculateScoresCommand.cs` (hook tras XP clínica + nutrición) |
+| Query / command + DTOs | `src/CoppAddresd.Application` | `Features/ProgramProgress/Queries/ListWeaknesses/`, `Queries/ListOpenWeaknesses/`, `Commands/UpdateWeaknessStatus/`, `DTOs/Weaknesses/` |
+| Controller | `src/CoppAddresd.Api` | `Controllers/ProgramController.cs` (3 acciones + request) |
+| DI | `src/CoppAddresd.Infrastructure` | `DependencyInjection.cs` (registro del servicio) |
+
+---
+
+## 22. Interventions & telemedicine XP (P1.5 — "Paso 7d")
+
+Las debilidades detectadas por el motor determinista (SPEC §21) se convierten en **intervenciones accionables** que el clínico gestiona y el paciente acepta. Cada intervención sigue una **máquina de estados** y otorga XP en eventos clave del ciclo de vida, incluyendo hooks para la integración con el servicio de telemedicina (servicio separado, schema `tele.`).
+
+### 22.1 New table `app.interventions`
+
+Convenciones del módulo (§3): schema `app.`, PK `uuid` con `gen_random_uuid()`, timestamps `timestamptz`. La tabla SÍ se adjunta al trigger de auditoría (sin PHI: ids, estados, timestamps, `xp_awarded_total` — precedente `notifications`).
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | `uuid` | PK, `DEFAULT gen_random_uuid()` | |
+| `patient_id` | `uuid` | NOT NULL, FK `app.patient_profiles(id)` ON DELETE RESTRICT | Dueño de la intervención |
+| `weakness_id` | `uuid` | NULL, FK `app.weaknesses(id)` ON DELETE SET NULL | Debilidad origen (una intervención por debilidad, AC-46) |
+| `type` | `varchar(60)` | NOT NULL, CHECK IN (`nutrition_adjustment`, `exercise_adjustment`, `psychological_support`, `telehealth_nutrition`, `telehealth_medical`, `telehealth_psychology`, `recovery_mission`, `plan_adaptation`) | Enum `InterventionType` |
+| `title` | `varchar(120)` | NOT NULL | Título corto legible |
+| `description` | `text` | NULL | Descripción detallada |
+| `status` | `varchar(30)` | NOT NULL DEFAULT `'detected'`, CHECK IN (`detected`, `evaluated`, `recommended`, `accepted`, `in_progress`, `completed`, `reevaluation`) | Enum `InterventionStatus` |
+| `severity` | `varchar(20)` | NOT NULL DEFAULT `'medium'` | Severidad heredada de la debilidad |
+| `assigned_to` | `uuid` | NULL, FK `auth.users(id)` (raw SQL, ON DELETE SET NULL) | Clínico asignado |
+| `recommended_at` | `timestamptz` | NULL | Instante en que se recomendó al paciente |
+| `accepted_at` | `timestamptz` | NULL | Instante en que el paciente aceptó |
+| `completed_at` | `timestamptz` | NULL | Instante en que se completó |
+| `patient_action` | `varchar(120)` | NULL | Acción que el paciente debe realizar |
+| `result` | `text` | NULL | Resultado de la intervención |
+| `xp_awarded_total` | `int` | NOT NULL DEFAULT `0` | XP acumulada por esta intervención |
+| `created_at` / `updated_at` | `timestamptz` | NOT NULL DEFAULT `now()` / NULL | |
+
+Indexes: `ix_interventions_patient_status` (`patient_id`, `status`), `ix_interventions_status`.
+
+### 22.2 State machine
+
+- `detected → accepted`: paciente acepta (AC-47)
+- `detected → evaluated | recommended`: clínico evalúa/recomienda
+- `evaluated → recommended | in_progress | reevaluation`
+- `recommended → accepted | in_progress`
+- `accepted → in_progress | reevaluation`
+- `in_progress → completed | reevaluation`
+- `reevaluation → evaluated | recommended | completed`
+- `completed`: terminal
+
+### 22.3 XP rules (seeded, category `intervention`)
+
+| Code | BaseXp | RequiresValidation | MaxPerDay | MaxPerWeek | Trigger |
+|------|--------|--------------------|-----------|------------|---------|
+| `WEAKNESS_ASSESS` | 20 | false | 1 | 1 | Creación de intervención desde debilidad (AC-46) |
+| `INTERV_ACCEPT` | 15 | false | 1 | 7 | Paciente acepta (AC-47) |
+| `TELE_SCHEDULE` | 50 | false | 1 | 7 | Teleconsulta agendada (AC-49) |
+| `TELE_ATTEND` | 100 | **true** | — | — | Clínico confirma asistencia (AC-49) |
+| `TELE_COMPLY` | 50 | false | 1 | 7 | Cumplimiento evaluado (AC-49) |
+| `INTERV_COMPLETE` | 200 | **true** | — | — | Intervención completada con resultado (AC-48) |
+| `RECOVERY_MISSION` | 50 | false | 1 | 7 | Paciente acepta recovery_mission (AC-47) |
+
+### 22.4 Creation from weaknesses (AC-46)
+
+| Acción de la regla | Tipo de intervención |
+|--------------------|--------------------|
+| `create_intervention` | Según categoría: nutritional → `nutrition_adjustment`, exercise → `exercise_adjustment`, psychological → `psychological_support`, otro → `plan_adaptation` |
+| `telehealth_referral` | Según categoría: nutritional → `telehealth_nutrition`, psychological → `telehealth_psychology`, otro → `telehealth_medical` |
+| `referral_doctor` | `telehealth_medical` |
+| `referral_nutritionist` | `telehealth_nutrition` |
+| `referral_psychologist` | `telehealth_psychology` |
+| `recovery_mode` | `recovery_mission` |
+| `ai_recommendation` / `rto_adjustment` | `plan_adaptation` |
+
+Una debilidad solo genera **una** intervención (el repositorio verifica antes de crear). La intervención nace con `status = 'detected'` y otorga `WEAKNESS_ASSESS` (+20) una vez. La debilidad se transiciona a `in_intervention`.
+
+### 22.5 API contract
+
+Base `/api/v1/program`, `[Authorize]`.
+
+- `GET /api/v1/program/interventions` — Paciente: intervenciones propias, paginadas. `Program.View`.
+- `POST /api/v1/program/interventions/{id:guid}/accept` — Paciente acepta (AC-47). `Program.View`.
+- `GET /api/v1/program/interventions/open` — Clínico: cola de intervenciones abiertas. `Program.Adapt`.
+- `POST /api/v1/program/interventions/{id:guid}/status` — Clínico: `{ status, result?, assignedTo? }`. `Program.Adapt` + rol clínico (AC-22).
+- `POST /api/v1/program/interventions/{id:guid}/tele-scheduled` — Hook de telemedicina (AC-49). `Program.Adapt`.
+- `POST /api/v1/program/interventions/{id:guid}/tele-attended` — Hook de telemedicina (AC-49). `Program.Adapt`.
+- `POST /api/v1/program/interventions/{id:guid}/tele-comply` — Hook de telemedicina (AC-49). `Program.Adapt`.
+
+### 22.6 Cross-service integration contract (DOCUMENT ONLY)
+
+El servicio de **Telemedicina** (servicio separado, schema `tele.`, repo separado) debe llamar a los hooks de telemedicina cuando schedule/attend una cita vinculada a una intervención:
+
+1. **Al agendar**: `POST /api/v1/program/interventions/{id}/tele-scheduled` (el servicio de tele almacena un `program_intervention_id` en su cita).
+2. **Al confirmar asistencia**: `POST /api/v1/program/interventions/{id}/tele-attended`.
+3. **Al evaluar cumplimiento**: `POST /api/v1/program/interventions/{id}/tele-comply`.
+
+**Contrato a acordar**: la tabla `tele.telemedicine_appointments` ganará una columna `program_intervention_id UUID NULL` en un paso futuro del servicio de telemedicina. La API principal no escribe en la tabla de telemedicina; la integración es unidireccional (tele → program via HTTP hooks).
+
+### 22.7 Acceptance criteria
+
+- **AC-46**: Debilidad con acción `create_intervention` → se crea una intervención `detected` + `WEAKNESS_ASSESS` +20 (una vez por debilidad).
+- **AC-47**: Paciente acepta (`detected→accepted`) → `INTERV_ACCEPT` +15; si es `recovery_mission` también `RECOVERY_MISSION` +50. 404 si no pertenece; 409 si estado inválido.
+- **AC-48**: Clínico completa con resultado → `INTERV_COMPLETE` +200 (validated_by = clínico) + debilidad → `resolved`. Requiere resultado; estado inválido → 409.
+- **AC-49**: Hooks de telemedicina: `tele-scheduled` → `TELE_SCHEDULE` +50; `tele-attended` → `TELE_ATTEND` +100 (validated_by); `tele-comply` → `TELE_COMPLY` +50. Cada uno una vez por intervención (dedupe parcial).
+
+### 22.8 Implementation placement
+
+| Concern | Project | Folder |
+|---------|---------|--------|
+| Entidad + enums | `src/CoppAddresd.Domain` | `Entities/ProgramProgress/Intervention.cs`; `Enums/ProgramProgress/InterventionType.cs`, `InterventionStatus.cs` |
+| EF configuration + DbSet | `src/CoppAddresd.Infrastructure` | `Configurations/ProgramProgress/InterventionConfiguration.cs`; `Persistence/AppDbContext.cs` |
+| Migración | `src/CoppAddresd.Infrastructure` | `Migrations/<timestamp>_AddProgramProgressInterventions.cs` |
+| Servicio de detección | `src/CoppAddresd.Application` | `Services/ProgramProgress/WeaknessDetectionService.cs` |
+| Repositorio | `src/CoppAddresd.Infrastructure` | `Repositories/ProgramRepository.cs` + `Interfaces/IProgramRepository.cs` |
+| Query / command + DTOs | `src/CoppAddresd.Application` | `Features/ProgramProgress/Queries/ListInterventions/`, `Queries/ListOpenInterventions/`, `Commands/AcceptIntervention/`, `Commands/UpdateInterventionStatus/`, `Commands/MarkTeleScheduled/`, `Commands/MarkTeleAttended/`, `Commands/MarkTeleComply/`, `DTOs/Interventions/` |
+| Controller | `src/CoppAddresd.Api` | `Controllers/ProgramController.cs` (7 acciones + request) |
+| Seeder | `src/CoppAddresd.Api` | `Seeders/ProgramProgressSeeder.cs` (7 reglas `intervention`) |

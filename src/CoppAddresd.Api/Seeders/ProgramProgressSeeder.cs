@@ -11,9 +11,11 @@ namespace CoppAddresd.Api.Seeders;
 /// (7 días × 6 tareas) en <c>app.weekly_day_templates</c> con los puntos base
 /// del mock móvil (SPEC §8.4 y decisión 5), más los 5 pesos por defecto de
 /// <c>app.health_score_weights</c> para el motor de puntajes (SPEC §13.1.1,
-/// decisión 16; UPSERT idempotente por <c>dimension</c>) y las 15 reglas por
+/// decisión 16; UPSERT idempotente por <c>dimension</c>) y las 24 reglas por
 /// defecto de <c>app.xp_rules</c> (11 de adherencia/racha — SPEC §14.2,
-/// decisión 20 — + 4 clínicas — SPEC §15; UPSERT idempotente por <c>code</c>).
+/// decisión 20 — + 4 clínicas — SPEC §15 — + 4 de nutrición granular —
+/// SPEC §18 — + 5 de la racha propia del nutribiótico — SPEC §19; UPSERT
+/// idempotente por <c>code</c>).
 ///
 /// Idempotente por <c>program_templates.code</c> (configurable vía
 /// <c>appsettings → Program:DefaultTemplate:Code</c>, fallback
@@ -199,18 +201,25 @@ public sealed class ProgramProgressSeeder(
     }
 
 /// <summary>
-/// UPSERT idempotente de las 15 reglas por defecto de <c>app.xp_rules</c>
-/// (SPEC §14.2 + §15): una fila por código, única por <c>code</c>. Si la regla
-/// ya existe NO se toca (equivalente a <c>ON CONFLICT (code) DO NOTHING</c>):
-/// el catálogo es editable por el administrador (SPEC §14.4, prospective only)
-/// y el seeder nunca pisa una configuración ajustada en producción. Los puntos
-/// base de <c>STREAK_*</c> (100/200/500/1500) quedan así consistentes con el
-/// resto del módulo, que hoy NO otorga XP por hitos de racha: las reglas son
-/// configuración data-driven lista para el frontend y para futuros
-/// otorgamientos, con sus topes por día/semana. Las 4 reglas clínicas
-/// (categoría <c>clinical</c>, SPEC §15) alimentan el motor de XP clínica que
-/// se dispara en <c>POST /scores/calculate</c>; <c>CLINICAL_SIGNIFICANT</c> es
-/// la única con <c>requires_validation = true</c> (la decide un clínico).
+/// UPSERT idempotente de las 31 reglas por defecto de <c>app.xp_rules</c>
+/// (SPEC §14.2 + §15 + §18 + §19 + §22): una fila por código, única por <c>code</c>.
+/// Si la regla ya existe NO se toca (equivalente a <c>ON CONFLICT (code) DO
+/// NOTHING</c>): el catálogo es editable por el administrador (SPEC §14.4,
+/// prospective only) y el seeder nunca pisa una configuración ajustada en
+/// producción. Los puntos base de <c>STREAK_*</c> (100/200/500/1500) quedan
+/// así consistentes con el motor de hitos que los otorga una vez por
+/// inscripción (SPEC §16). Las 4 reglas clínicas (categoría <c>clinical</c>,
+/// SPEC §15) alimentan el motor de XP clínica que se dispara en
+/// <c>POST /scores/calculate</c>; <c>CLINICAL_SIGNIFICANT</c> es la única con
+/// <c>requires_validation = true</c> (la decide un clínico). Las 4 reglas de
+/// nutrición granular (categoría <c>nutrition</c>, SPEC §18) alimentan
+/// <c>POST /nutrition/log</c> y los premios semanales de <c>/calculate</c>.
+/// Las 5 reglas <c>NB_STREAK_*</c> (categoría <c>nutriobiotic</c>, SPEC §19)
+/// premian los hitos de la racha propia de la tarea nutribiotico.
+/// Las 7 reglas de intervenciones (categoría <c>intervention</c>, SPEC §22,
+/// "Paso 7d") premian los eventos del ciclo de vida de las intervenciones
+/// derivadas de debilidades: evaluación, aceptación, teleconsulta
+/// (agendada/asistida/cumplida), completación y misión de recuperación.
 /// </summary>
 private async Task SeedXpRulesAsync(CancellationToken ct)
 {
@@ -248,6 +257,32 @@ private async Task SeedXpRulesAsync(CancellationToken ct)
         new XpRuleSeed(XpRuleCodes.NutritionHydration, "Hidratación registrada (XP granular)", "nutrition", 5, 1, 7),
         new XpRuleSeed(XpRuleCodes.NutritionWeek85, "Adherencia nutricional semanal ≥ 85%", "nutrition", 75, 1, 1),
         new XpRuleSeed(XpRuleCodes.NutritionRecovery, "Recuperación nutricional (+20pp vs período anterior)", "nutrition", 50, 1, 1),
+        // --- Racha propia del nutribiótico (SPEC §19, B): hitos de la racha
+        // CONSECUTIVA de la tarea nutribiotico, independiente de la racha
+        // general (un día perdido la rompe; los congelamientos NO la protegen).
+        // Se otorgan en el camino de completación de la tarea (solo primera
+        // escritura), con el multiplicador del paciente y topes 1/día y 1/semana.
+        new XpRuleSeed(XpRuleCodes.NbStreak7, "Hito racha nutribiótico 7 días", "nutriobiotic", 50, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak14, "Hito racha nutribiótico 14 días", "nutriobiotic", 100, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak30, "Hito racha nutribiótico 30 días", "nutriobiotic", 250, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak60, "Hito racha nutribiótico 60 días", "nutriobiotic", 500, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak90, "Hito racha nutribiótico 90 días", "nutriobiotic", 1000, 1, 1),
+        // --- Intervenciones (SPEC §22, "Paso 7d"): XP por eventos del ciclo
+        // de vida de las intervenciones derivadas de debilidades. Se otorgan
+        // por el camino del catálogo (§14.3) con dedupe parcial del libro
+        // mayor. WEAKNESS_ASSESS (20, crea intervención); INTERV_ACCEPT (15,
+        // paciente acepta); TELE_SCHEDULE (50, teleconsulta agendada);
+        // TELE_ATTEND (100, requires_validation, clínico confirma asistencia);
+        // TELE_COMPLY (50, evaluación de cumplimiento); INTERV_COMPLETE (200,
+        // requires_validation, intervención completada con resultado);
+        // RECOVERY_MISSION (50, paciente acepta recovery_mission).
+        new XpRuleSeed(XpRuleCodes.WeaknessAssess, "Evaluación de debilidad (intervención creada)", "intervention", 20, 1, 1),
+        new XpRuleSeed(XpRuleCodes.IntervAccept, "Aceptación de intervención", "intervention", 15, 1, 7),
+        new XpRuleSeed(XpRuleCodes.TeleSchedule, "Teleconsulta agendada", "intervention", 50, 1, 7),
+        new XpRuleSeed(XpRuleCodes.TeleAttend, "Teleconsulta asistida (validación clínica)", "intervention", 100, null, null, RequiresValidation: true),
+        new XpRuleSeed(XpRuleCodes.TeleComply, "Cumplimiento de teleconsulta", "intervention", 50, 1, 7),
+        new XpRuleSeed(XpRuleCodes.IntervComplete, "Intervención completada (validación clínica)", "intervention", 200, null, null, RequiresValidation: true),
+        new XpRuleSeed(XpRuleCodes.RecoveryMission, "Misión de recuperación aceptada", "intervention", 50, 1, 7),
     };
 
     foreach (var seed in defaultRules)

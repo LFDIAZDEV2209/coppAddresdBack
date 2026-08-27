@@ -1,7 +1,9 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums.ProgramProgress;
@@ -399,5 +401,169 @@ public interface IProgramRepository
     Task<NutritionWeeklyAwardsResult> EvaluateNutritionAwardsAsync(
         Guid patientId,
         DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default);
+
+    // --- Detección de debilidades (SPEC §21, "Paso 7c") ---
+
+    /// <summary>
+    /// Paquete de datos semanales del paciente para el motor de detección
+    /// (SPEC §21, B): el repositorio reúne la ventana del período (misma que el
+    /// Índice de Salud, SPEC §13.2) con queries set-based. Indicadores sin dato
+    /// físico quedan null (nunca penaliza por ausencia de datos). Devuelve null
+    /// si el paciente no tiene inscripción activa. El
+    /// <c>periodEndLocalDate</c> opcional se valida contra el hoy local
+    /// (futura → 422 <c>INVALID_PERIOD</c>).
+    /// </summary>
+    Task<PatientWeeklyData?> BuildPatientWeeklyDataAsync(
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Persiste las debilidades NUEVAS detectadas (SPEC §21, C — AC-43): omite
+    /// los descriptores cuyo <c>code</c> ya tiene una fila
+    /// <c>open</c>/<c>acknowledged</c>/<c>in_intervention</c> del mismo
+    /// paciente (sin duplicados mientras estén abiertas). Las filas se crean
+    /// con <c>source = 'ai'</c> y <c>status = 'open'</c>. Devuelve las
+    /// debilidades nuevas persistidas (con sus IDs) para que el servicio de
+    /// detección pueda crear intervenciones derivadas.
+    /// </summary>
+    Task<IReadOnlyList<Weakness>> PersistDetectedWeaknessesAsync(
+        Guid patientId,
+        IReadOnlyList<WeaknessDescriptor> descriptors,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Debilidades del paciente (SPEC §21, D): listado paginado ordenado por
+    /// <c>detected_at</c> descendente (vista del móvil/ERP del paciente).
+    /// </summary>
+    Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListWeaknessesAsync(
+        Guid patientId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Cola clínica de debilidades abiertas (SPEC §21, D): listado paginado de
+    /// las filas <c>status = 'open'</c> ordenadas por <c>detected_at</c>
+    /// ascendente (FIFO de la cola clínica, misma semántica que las revisiones
+    /// de XP pendientes).
+    /// </summary>
+    Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListOpenWeaknessesAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Transición de estado de una debilidad (SPEC §21, D — AC-44): requiere
+    /// que el llamador tenga un rol clínico (<c>Physician</c>,
+    /// <c>Nutritionist</c>, <c>Psychologist</c>, <c>ClinicalDirector</c> o
+    /// <c>Admin</c>) — misma guardia AC-22 que la línea base clínica y la
+    /// revisión de XP (un paciente cambiando el estado de su propia debilidad →
+    /// 403 FORBIDDEN). Estados válidos: <c>acknowledged</c>,
+    /// <c>in_intervention</c>, <c>resolved</c> (fija <c>resolved_at</c>) y
+    /// <c>dismissed</c>. Transición idempotente: aplicar el mismo estado
+    /// devuelve la fila sin error. Desconocida → 404.
+    /// </summary>
+    Task<WeaknessDto> UpdateWeaknessStatusAsync(
+        Guid weaknessId,
+        WeaknessStatus status,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default);
+
+    // --- Intervenciones (SPEC §22, "Paso 7d") ---
+
+    /// <summary>
+    /// Crea una intervención desde una debilidad (SPEC §22, C — AC-46): verifica
+    /// que no exista ya una intervención vinculada a esa debilidad (una por
+    /// debilidad). La debilidad se transiciona a <c>in_intervention</c> si estaba
+    /// en <c>open</c>/<c>acknowledged</c>. Otorga <c>WEAKNESS_ASSESS</c> (+20)
+    /// una vez (dedupe parcial <c>'intervention'</c>). Devuelve la intervención
+    /// creada o la existente si ya había una.
+    /// </summary>
+    Task<Intervention> EnsureInterventionFromWeaknessAsync(
+        Guid patientId,
+        Guid weaknessId,
+        InterventionType type,
+        string title,
+        string? description,
+        Guid? actorId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Intervenciones del paciente (SPEC §22, D): listado paginado ordenado por
+    /// <c>created_at</c> descendente (vista del móvil del paciente).
+    /// </summary>
+    Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListInterventionsAsync(
+        Guid patientId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Cola clínica de intervenciones abiertas (SPEC §22, D): listado paginado
+    /// de filas con <c>status != 'completed'</c> ordenadas por <c>created_at</c>
+    /// ascendente (FIFO).
+    /// </summary>
+    Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListOpenInterventionsAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Paciente acepta una intervención (SPEC §22, D — AC-47):
+    /// <c>detected→accepted</c>, fija <c>accepted_at</c>, otorga
+    /// <c>INTERV_ACCEPT</c> (+15); si es <c>recovery_mission</c> también
+    /// <c>RECOVERY_MISSION</c> (+50). Requiere que la intervención pertenezca
+    /// al paciente. Estado inválido → 409.
+    /// </summary>
+    Task<InterventionDto> AcceptInterventionAsync(
+        Guid interventionId,
+        Guid patientId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Clínico actualiza el estado de una intervención (SPEC §22, D — AC-48):
+    /// transiciones con auditoría; <c>completed</c> REQUIRES resultado y otorga
+    /// <c>INTERV_COMPLETE</c> (+200, validated_by = clínico) + debilidad
+    /// vinculada → <c>resolved</c>. <c>in_progress</c> es el estado por defecto
+    /// tras tele-asistencia confirmada. Estado inválido → 409.
+    /// </summary>
+    Task<InterventionDto> UpdateInterventionStatusAsync(
+        Guid interventionId,
+        InterventionStatus status,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        string? result = null,
+        Guid? assignedTo = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Hook de telemedicina: teleconsulta agendada (SPEC §22, D — AC-49):
+    /// otorga <c>TELE_SCHEDULE</c> (+50) y fija una nota en la intervención.
+    /// No cambia el estado.
+    /// </summary>
+    Task<InterventionDto> MarkTeleScheduledAsync(
+        Guid interventionId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Hook de telemedicina: asistencia confirmada por el clínico
+    /// (SPEC §22, D — AC-49): otorga <c>TELE_ATTEND</c> (+100, validated_by =
+    /// clínico) y mueve la intervención a <c>in_progress</c>.
+    /// </summary>
+    Task<InterventionDto> MarkTeleAttendedAsync(
+        Guid interventionId,
+        Guid clinicianId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Hook de telemedicina: cumplimiento evaluado (SPEC §22, D — AC-49):
+    /// otorga <c>TELE_COMPLY</c> (+50) y puede avanzar hacia
+    /// <c>completed</c>.
+    /// </summary>
+    Task<InterventionDto> MarkTeleComplyAsync(
+        Guid interventionId,
         CancellationToken ct = default);
 }

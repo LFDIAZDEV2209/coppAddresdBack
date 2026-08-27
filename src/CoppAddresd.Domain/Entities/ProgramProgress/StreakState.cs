@@ -38,6 +38,23 @@ public sealed class StreakState
     /// </summary>
     public DateTime? MultiplierEndsAt { get; set; }
 
+    /// <summary>
+    /// Racha consecutiva de la tarea <c>nutribiotico</c> (SPEC §19, B): cuenta
+    /// propia e independiente de la racha general — solo la completa la tarea
+    /// nutribiotico y un día perdido la rompe (los congelamientos NO la
+    /// protegen). 0 = sin corrida activa.
+    /// </summary>
+    public short NbCurrentStreak { get; set; }
+
+    /// <summary>Máximo histórico de <see cref="NbCurrentStreak"/> alcanzado (SPEC §19, B).</summary>
+    public short NbLongestStreak { get; set; }
+
+    /// <summary>
+    /// Fecha local del último día que aportó a la racha del nutribiótico.
+    /// Null mientras nunca se completó la tarea.
+    /// </summary>
+    public DateOnly? NbLastCompletedDate { get; set; }
+
     public DateTime? UpdatedAt { get; set; }
 
     public ProgramEnrollment? Enrollment { get; set; }
