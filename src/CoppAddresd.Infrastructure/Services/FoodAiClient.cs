@@ -97,14 +97,23 @@ public sealed class FoodAiClient : IFoodAiClient
                 throw new FoodAiException((int)response.StatusCode, detail);
             }
 
-            var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
-                JsonOpts, cancellationToken: ct);
-            if (body is null || string.IsNullOrWhiteSpace(body.AnalysisId))
-            {
-                throw new FoodAiException(502, "Respuesta inválida del Food AI Service.");
-            }
+var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
+            JsonOpts, cancellationToken: ct);
+        if (body is null || string.IsNullOrWhiteSpace(body.AnalysisId))
+        {
+            throw new FoodAiException(502, "Respuesta inválida del Food AI Service.");
+        }
 
-            return new FoodAiAnalyzeResult(body.AnalysisId, body.Status ?? "received");
+        return new FoodAiAnalyzeResult(
+            body.AnalysisId,
+            body.Status ?? "completed",
+            body.ModelVersion ?? "unknown",
+            body.InferenceTimeMs ?? 0,
+            (body.Foods ?? []).Select(f => new DetectedFoodDto(
+                f.Name,
+                f.Confidence,
+                new BoundingBoxDto(f.BoundingBox?.X ?? 0, f.BoundingBox?.Y ?? 0, f.BoundingBox?.Width ?? 0, f.BoundingBox?.Height ?? 0)))
+            .ToList());
         }
         catch (JsonException ex)
         {
@@ -117,6 +126,24 @@ public sealed class FoodAiClient : IFoodAiClient
     {
         public string? AnalysisId { get; set; }
         public string? Status { get; set; }
+        public string? ModelVersion { get; set; }
+        public int? InferenceTimeMs { get; set; }
+        public List<DetectedFoodJson>? Foods { get; set; }
+    }
+
+    private sealed class DetectedFoodJson
+    {
+        public string? Name { get; set; }
+        public double Confidence { get; set; }
+        public BoundingBoxJson? BoundingBox { get; set; }
+    }
+
+    private sealed class BoundingBoxJson
+    {
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
     }
 
     private sealed class FoodAiHealthResponseJson

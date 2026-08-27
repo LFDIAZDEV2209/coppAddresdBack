@@ -40,7 +40,9 @@ public class AnalyzeFoodImageCommandHandlerTests
             CancellationToken ct = default)
         {
             SentAnalysisId = analysisId;
-            SentResult = new FoodAiAnalyzeResult(analysisId.ToString(), "received");
+            SentResult = new FoodAiAnalyzeResult(
+                analysisId.ToString(), "completed", "food-detector-v1", 182,
+                [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]);
             return Task.FromResult(SentResult);
         }
     }
@@ -68,7 +70,11 @@ public class AnalyzeFoodImageCommandHandlerTests
             new AnalyzeFoodImageCommand(stream, "bandeja.png", "image/png", Png1x1.Length),
             CancellationToken.None);
 
-        Assert.Equal("received", result.Status);
+        Assert.Equal("completed", result.Status);
+        Assert.Equal("food-detector-v1", result.ModelVersion);
+        Assert.Single(result.Foods);
+        Assert.Equal("pizza", result.Foods[0].Name);
+        Assert.Equal(300, result.Foods[0].BoundingBox.Width);
         Assert.True(Guid.TryParse(result.AnalysisId, out _));
         Assert.Equal(storage.SavedAnalysisId, client.SentAnalysisId);
         Assert.Equal("bandeja.png", storage.SavedFileName);
