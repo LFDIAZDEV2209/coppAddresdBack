@@ -79,7 +79,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<CommunityDbContext>();
     await db.Database.MigrateAsync();
     if (app.Environment.IsDevelopment())
-        await CommunitySeeder.SeedAsync(db);
+        await CommunitySeeder.SeedAsync(db, builder.Configuration);
 }
 
 app.UseCors("CommunityCors");

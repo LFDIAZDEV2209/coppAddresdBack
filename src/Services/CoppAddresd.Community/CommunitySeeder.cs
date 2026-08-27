@@ -1,6 +1,7 @@
 using CoppAddresd.Community.Entities;
 using CoppAddresd.Community.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace CoppAddresd.Community;
 
@@ -58,9 +59,33 @@ public static class CommunitySeeder
         "¡Gran reto! Yo también estoy participando.",
     ];
 
-    public static async Task SeedAsync(CommunityDbContext db, CancellationToken ct = default)
+    public static async Task SeedAsync(CommunityDbContext db, IConfiguration? configuration = null, CancellationToken ct = default)
     {
-        if (await db.Profiles.AnyAsync(ct))
+        // ─── PERFIL DEL SISTEMA (siempre, independiente de los datos demo) ───
+        var systemProfile = await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem, ct);
+        if (systemProfile is null)
+        {
+            var senderName = configuration?["Community:AnnouncementSenderName"] ?? "Equipo ANTARES";
+            db.Profiles.Add(new Profile
+            {
+                Id = Guid.NewGuid(),
+                UserId = null,
+                IsSystem = true,
+                DisplayName = senderName,
+                Status = ProfileStatus.Active,
+                Bio = null,
+                Region = null,
+                Diagnosis = null,
+                Week = null,
+                CurrentStreak = 0,
+                BestStreak = 0,
+                XpTotal = 0,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (await db.Profiles.AnyAsync(p => !p.IsSystem, ct))
             return;
 
         var now = DateTime.UtcNow;

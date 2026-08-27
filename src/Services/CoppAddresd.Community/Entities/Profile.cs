@@ -12,8 +12,11 @@ public sealed class Profile
 {
     public Guid Id { get; set; }
 
-    /// <summary>Id del usuario en el servicio de Auth (auth.users).</summary>
-    public Guid UserId { get; set; }
+    /// <summary>Id del usuario en el servicio de Auth (auth.users). Nulo para perfiles del sistema.</summary>
+    public Guid? UserId { get; set; }
+
+    /// <summary>Indica si el perfil es un perfil de sistema (ej. "Equipo ANTARES") y no está asociado a un usuario de Auth.</summary>
+    public bool IsSystem { get; set; }
 
     public string DisplayName { get; set; } = default!;
 
