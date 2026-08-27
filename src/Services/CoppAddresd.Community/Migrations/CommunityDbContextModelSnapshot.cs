@@ -598,6 +598,50 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("recognitions", "community");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.PostReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("details");
+
+                    b.Property<Guid>("PostId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("post_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid?>("ReportedByProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reported_by_profile_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PostId")
+                        .HasDatabaseName("ix_post_reports_post_id");
+
+                    b.HasIndex("ReportedByProfileId")
+                        .HasDatabaseName("ix_post_reports_reported_by_profile_id");
+
+                    b.ToTable("post_reports", "community");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.XpEntry", b =>
                 {
                     b.Property<Guid>("Id")
@@ -784,6 +828,24 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Profile");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.PostReport", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Post", "Post")
+                        .WithMany("Reports")
+                        .HasForeignKey("PostId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "ReportedBy")
+                        .WithMany()
+                        .HasForeignKey("ReportedByProfileId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Post");
+
+                    b.Navigation("ReportedBy");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.Recognition", b =>
                 {
                     b.HasOne("CoppAddresd.Community.Entities.Profile", null)
@@ -833,6 +895,8 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Comments");
 
                     b.Navigation("Likes");
+
+                    b.Navigation("Reports");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.Profile", b =>

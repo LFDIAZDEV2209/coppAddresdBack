@@ -140,6 +140,56 @@ public sealed class CommunityMutation
         return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
     }
 
+    // --- Reportes ---
+
+    /// <summary>
+    /// Reporta una publicación. Cualquier usuario autenticado puede reportar.
+    /// Valida que la publicación exista y no esté eliminada.
+    /// </summary>
+    public async Task<PostReport> ReportPost(
+        Guid postId,
+        string reason,
+        string? details,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        // Validar motivo: no vacío, 1..100 caracteres.
+        reason = reason?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(reason) || reason.Length > 100)
+            throw new GraphQLException("El motivo del reporte debe tener entre 1 y 100 caracteres.");
+
+        // Validar detalles: 0..500 caracteres.
+        details = details?.Trim();
+        if (!string.IsNullOrEmpty(details) && details.Length > 500)
+            throw new GraphQLException("Los detalles del reporte no pueden superar los 500 caracteres.");
+
+        // La publicación debe existir y no estar eliminada.
+        var post = await db.Posts.FirstOrDefaultAsync(p => p.Id == postId && p.DeletedAt == null, ct)
+            ?? throw new GraphQLException("No se encontró la publicación.");
+
+        var report = new PostReport
+        {
+            Id = Guid.NewGuid(),
+            PostId = postId,
+            ReportedByProfileId = profile.Id,
+            Reason = reason,
+            Details = details,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        db.PostReports.Add(report);
+        await db.SaveChangesAsync(ct);
+
+        // Cargar navegaciones para la respuesta.
+        await db.Entry(report).Reference(r => r.Post).LoadAsync(ct);
+        await db.Entry(report).Reference(r => r.ReportedBy).LoadAsync(ct);
+
+        return report;
+    }
+
     // --- Comentarios ---
 
     public async Task<Comment> AddComment(
@@ -297,6 +347,22 @@ public sealed class CommunityMutation
         post.DeletedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return post;
+    }
+
+    /// <summary>
+    /// Resuelve (elimina) un reporte. Solo moderadores.
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<bool> ResolveReport(
+        Guid reportId,
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var report = await db.PostReports.FirstOrDefaultAsync(r => r.Id == reportId, ct)
+            ?? throw new GraphQLException("No se encontró el reporte.");
+        db.PostReports.Remove(report);
+        await db.SaveChangesAsync(ct);
+        return true;
     }
 
     // --- Gamificación (gestión) ---
