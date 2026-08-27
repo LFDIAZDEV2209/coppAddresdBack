@@ -267,8 +267,9 @@ var reply = new Comment
     // --- Gamificación (gestión) ---
 
     /// <summary>
-    /// Otorga XP a un perfil concreto: crea una XpEntry, incrementa el XP total y
-    /// emite un evento de feed (racha/hito). Requiere el permiso Community.Manage.
+    /// Otorga XP a un perfil concreto: crea una XpEntry, incrementa el XP total,
+    /// registra una Recognición y emite un evento de feed (racha/hito).
+    /// Requiere el permiso Community.Manage.
     /// </summary>
     [Authorize(Policy = "Community.Manage")]
     public async Task<List<Profile>> AwardXp(
@@ -277,11 +278,17 @@ var reply = new Comment
         string? reason,
         [Service] CommunityDbContext db,
         [Service] ITopicEventSender sender,
+        [Service] IHttpContextAccessor http,
         CancellationToken ct)
     {
         if (amount <= 0) throw new GraphQLException("La cantidad de XP debe ser mayor que cero.");
         var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId, ct)
             ?? throw new GraphQLException("No se encontró el perfil.");
+
+        var adminProfileId = CommunityQuery.CurrentUserId(http);
+        var adminProfile = adminProfileId.HasValue
+            ? await db.Profiles.FirstOrDefaultAsync(p => p.UserId == adminProfileId, ct)
+            : null;
 
         db.XpEntries.Add(new XpEntry
         {
@@ -293,6 +300,19 @@ var reply = new Comment
         });
         profile.XpTotal += amount;
         profile.LastActiveAt = DateTimeOffset.UtcNow;
+
+        // Registrar reconocimiento por el otorgamiento de XP.
+        db.Recognitions.Add(new Recognition
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            TypeLabel = reason ?? "Puntos XP",
+            Xp = amount,
+            Status = RecognitionStatus.Sent,
+            CreatedAt = DateTimeOffset.UtcNow,
+            TriggeredByProfileId = adminProfile?.Id,
+        });
+
         await db.SaveChangesAsync(ct);
 
         var feedEvent = new FeedEvent
@@ -311,7 +331,8 @@ var reply = new Comment
     }
 
     /// <summary>
-    /// Otorga XP a todos los perfiles activos (broadcast). Requiere Community.Manage.
+    /// Otorga XP a todos los perfiles activos (broadcast). Registra un Recognition
+    /// por perfil afectado. Requiere Community.Manage.
     /// </summary>
     [Authorize(Policy = "Community.Manage")]
     public async Task<List<Profile>> AwardXpToAll(
@@ -319,12 +340,18 @@ var reply = new Comment
         string? reason,
         [Service] CommunityDbContext db,
         [Service] ITopicEventSender sender,
+        [Service] IHttpContextAccessor http,
         CancellationToken ct)
     {
         if (amount <= 0) throw new GraphQLException("La cantidad de XP debe ser mayor que cero.");
         var profiles = await db.Profiles
             .Where(p => p.Status == ProfileStatus.Active)
             .ToListAsync(ct);
+
+        var adminProfileId = CommunityQuery.CurrentUserId(http);
+        var adminProfile = adminProfileId.HasValue
+            ? await db.Profiles.FirstOrDefaultAsync(p => p.UserId == adminProfileId, ct)
+            : null;
 
         foreach (var profile in profiles)
         {
@@ -338,6 +365,18 @@ var reply = new Comment
             });
             profile.XpTotal += amount;
             profile.LastActiveAt = DateTimeOffset.UtcNow;
+
+            // Registrar reconocimiento por el otorgamiento de XP.
+            db.Recognitions.Add(new Recognition
+            {
+                Id = Guid.NewGuid(),
+                ProfileId = profile.Id,
+                TypeLabel = reason ?? "Puntos XP",
+                Xp = amount,
+                Status = RecognitionStatus.Sent,
+                CreatedAt = DateTimeOffset.UtcNow,
+                TriggeredByProfileId = adminProfile?.Id,
+            });
         }
         await db.SaveChangesAsync(ct);
 
