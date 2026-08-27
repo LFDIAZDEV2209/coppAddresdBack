@@ -9,4 +9,16 @@ namespace CoppAddresd.Application.Interfaces;
 public interface IFoodAiClient
 {
     Task<FoodAiHealthStatus> GetHealthAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Envía una imagen para análisis (ingesta). El servicio todavía no
+    /// analiza comida: responde status "received". Errores del servicio se
+    /// propagan como <see cref="Common.FoodAiException"/>.
+    /// </summary>
+    Task<FoodAiAnalyzeResult> SendImageAsync(
+        Guid analysisId,
+        Stream image,
+        string fileName,
+        string contentType,
+        CancellationToken ct = default);
 }

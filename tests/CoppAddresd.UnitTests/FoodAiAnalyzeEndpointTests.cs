@@ -1,0 +1,119 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text;
+using CoppAddresd.Application.DTOs.FoodAi;
+using CoppAddresd.Application.Features.FoodAi;
+using CoppAddresd.Application.Interfaces;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace CoppAddresd.UnitTests;
+
+/// <summary>
+/// Tests de integración del endpoint POST /api/v1/foodai/analyze contra el
+/// pipeline HTTP real (multipart binding, validación, mapeo de errores),
+/// con IFoodAiClient e IImageStorage sustituidos por stubs.
+/// </summary>
+public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint>>
+{
+    private sealed class StubFoodAiClient : IFoodAiClient
+    {
+        public FoodAiAnalyzeResult? LastSend { get; private set; }
+        public Guid? LastAnalysisId { get; private set; }
+        public string? LastFileName { get; private set; }
+
+        public Task<FoodAiHealthStatus> GetHealthAsync(CancellationToken ct = default)
+            => Task.FromResult(new FoodAiHealthStatus(true, "food-ai-service"));
+
+        public Task<FoodAiAnalyzeResult> SendImageAsync(
+            Guid analysisId, Stream image, string fileName, string contentType,
+            CancellationToken ct = default)
+        {
+            LastAnalysisId = analysisId;
+            LastFileName = fileName;
+            LastSend = new FoodAiAnalyzeResult(analysisId.ToString(), "received");
+            return Task.FromResult(LastSend);
+        }
+    }
+
+    private sealed class StubImageStorage : IImageStorage
+    {
+        public Task<string> SaveImageAsync(
+            Guid analysisId, string fileName, Stream content, CancellationToken ct = default)
+            => Task.FromResult($"foodai/{analysisId:N}.png");
+    }
+
+    private static readonly byte[] Png1x1 = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+
+    private readonly WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> _factory;
+
+    public FoodAiAnalyzeEndpointTests(WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> factory)
+    {
+        _factory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped<IFoodAiClient, StubFoodAiClient>();
+                services.AddScoped<IImageStorage, StubImageStorage>();
+            }));
+    }
+
+    [Fact]
+    public async Task Analyze_imagen_valida_responde_200_con_analysis_id_y_status_received()
+    {
+        var client = _factory.CreateClient();
+
+        using var form = new MultipartFormDataContent();
+        var imageContent = new ByteArrayContent(Png1x1);
+        imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(imageContent, "image", "bandeja.png");
+
+        var response = await client.PostAsync("/api/v1/foodai/analyze", form);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeEndpointTestsResponse>();
+        Assert.NotNull(body);
+        Assert.True(Guid.TryParse(body.AnalysisId, out _));
+        Assert.Equal("received", body.Status);
+    }
+
+    [Fact]
+    public async Task Analyze_archivo_vacio_responde_400_EMPTY_FILE()
+    {
+        var client = _factory.CreateClient();
+
+        using var form = new MultipartFormDataContent();
+        var imageContent = new ByteArrayContent([]);
+        imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(imageContent, "image", "vacio.png");
+
+        var response = await client.PostAsync("/api/v1/foodai/analyze", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("EMPTY_FILE", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Analyze_archivo_corrupto_responde_400_CORRUPT_FILE()
+    {
+        var client = _factory.CreateClient();
+
+        using var form = new MultipartFormDataContent();
+        var imageContent = new ByteArrayContent(Encoding.UTF8.GetBytes("no soy una imagen"));
+        imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        form.Add(imageContent, "image", "falso.png");
+
+        var response = await client.PostAsync("/api/v1/foodai/analyze", form);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("CORRUPT_FILE", await response.Content.ReadAsStringAsync());
+    }
+
+    private sealed class FoodAiAnalyzeEndpointTestsResponse
+    {
+        public string? AnalysisId { get; set; }
+        public string? Status { get; set; }
+    }
+}

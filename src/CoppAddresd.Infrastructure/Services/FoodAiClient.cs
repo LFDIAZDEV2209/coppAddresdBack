@@ -1,4 +1,6 @@
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.FoodAi;
 using CoppAddresd.Application.Interfaces;
@@ -13,6 +15,12 @@ namespace CoppAddresd.Infrastructure.Services;
 /// </summary>
 public sealed class FoodAiClient : IFoodAiClient
 {
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        PropertyNameCaseInsensitive = true,
+    };
+
     private readonly HttpClient _httpClient;
     private readonly FoodAiSettings _settings;
     private readonly ILogger<FoodAiClient> _logger;
@@ -57,6 +65,58 @@ public sealed class FoodAiClient : IFoodAiClient
             _logger.LogWarning(ex, "Food AI Service no responde");
             return new FoodAiHealthStatus(false, $"{ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    public async Task<FoodAiAnalyzeResult> SendImageAsync(
+        Guid analysisId,
+        Stream image,
+        string fileName,
+        string contentType,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            var imageContent = new StreamContent(image);
+            imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+            form.Add(imageContent, "image", fileName);
+            form.Add(new StringContent(analysisId.ToString()), "analysis_id");
+
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.AnalyzeEndpoint)
+            {
+                Content = form,
+            };
+
+            var response = await _httpClient.SendAsync(httpRequest, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = await response.Content.ReadAsStringAsync(ct);
+                _logger.LogWarning(
+                    "Food AI Service rechazó el análisis (status {Status}): {Detail}",
+                    (int)response.StatusCode, detail);
+                throw new FoodAiException((int)response.StatusCode, detail);
+            }
+
+            var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
+                JsonOpts, cancellationToken: ct);
+            if (body is null || string.IsNullOrWhiteSpace(body.AnalysisId))
+            {
+                throw new FoodAiException(502, "Respuesta inválida del Food AI Service.");
+            }
+
+            return new FoodAiAnalyzeResult(body.AnalysisId, body.Status ?? "received");
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Respuesta JSON inválida del Food AI Service");
+            throw new FoodAiException(502, "Respuesta inválida del Food AI Service.");
+        }
+    }
+
+    private sealed class FoodAiAnalyzeResponseJson
+    {
+        public string? AnalysisId { get; set; }
+        public string? Status { get; set; }
     }
 
     private sealed class FoodAiHealthResponseJson

@@ -54,6 +54,9 @@ public static class ApplicationServiceExtensions
         services.AddHttpClient<IFoodAiClient, FoodAiClient>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
+        services.AddScoped<IImageStorage, LocalImageStorage>();
+        services.AddScoped<CoppAddresd.Application.Features.FoodAi.ImageFileValidator>();
+
         services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
         {
             var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;

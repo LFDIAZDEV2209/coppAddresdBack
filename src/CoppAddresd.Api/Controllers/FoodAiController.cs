@@ -1,4 +1,7 @@
+using CoppAddresd.Application.Common;
+using CoppAddresd.Application.Features.FoodAi;
 using CoppAddresd.Application.Interfaces;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,10 +13,17 @@ namespace CoppAddresd.Api.Controllers;
 public class FoodAiController : ControllerBase
 {
     private readonly IFoodAiClient _foodAiClient;
+    private readonly IMediator _mediator;
+    private readonly ILogger<FoodAiController> _logger;
 
-    public FoodAiController(IFoodAiClient foodAiClient)
+    public FoodAiController(
+        IFoodAiClient foodAiClient,
+        IMediator mediator,
+        ILogger<FoodAiController> logger)
     {
         _foodAiClient = foodAiClient;
+        _mediator = mediator;
+        _logger = logger;
     }
 
     /// <summary>
@@ -31,4 +41,55 @@ public class FoodAiController : ControllerBase
             detail = status.Detail,
         });
     }
+
+    /// <summary>
+    /// Ingesta de imagen de comida (multipart). Valida, almacena y envía al
+    /// Food AI Service. Respuesta síncrona: { analysisId, status }.
+    /// </summary>
+    [HttpPost("analyze")]
+    public async Task<ActionResult<AnalyzeFoodImageResult>> Analyze(
+        [FromForm] IFormFile image,
+        CancellationToken ct)
+    {
+        if (image is null || image.Length == 0)
+        {
+            return BadRequest(ErrorResponse(
+                ImageFileValidator.CodeEmptyFile, "No se recibió una imagen."));
+        }
+
+        try
+        {
+            await using var stream = image.OpenReadStream();
+            var command = new AnalyzeFoodImageCommand(
+                stream, image.FileName, image.ContentType, image.Length);
+            var result = await _mediator.Send(command, ct);
+            return Ok(result);
+        }
+        catch (InvalidImageException ex)
+        {
+            _logger.LogInformation(
+                "Imagen inválida en /foodai/analyze: {Code} — {Message}",
+                ex.Code, ex.Message);
+            return BadRequest(ErrorResponse(ex.Code, ex.Message));
+        }
+        catch (FoodAiException ex)
+        {
+            _logger.LogError(ex,
+                "Food AI Service rechazó el análisis (status {Status}): {Detail}",
+                ex.StatusCode, ex.Detail);
+            return StatusCode(502, ErrorResponse(
+                "AI_SERVICE_UNAVAILABLE", "El Food AI Service no pudo procesar la imagen."));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fallo al analizar imagen de comida");
+            return StatusCode(500, ErrorResponse(
+                "INTERNAL_ERROR", "No fue posible procesar la solicitud."));
+        }
+    }
+
+    private static object ErrorResponse(string code, string message) => new
+    {
+        error = new { code, message },
+    };
 }
