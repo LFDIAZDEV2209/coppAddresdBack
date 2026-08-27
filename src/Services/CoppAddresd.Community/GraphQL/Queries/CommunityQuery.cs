@@ -378,7 +378,7 @@ var profile = await db.Profiles
         var now = DateTime.UtcNow;
 
         // Carga secuencial de datos (sin operaciones concurrentes en el mismo DbContext).
-        var profiles = await db.Profiles.ToListAsync(ct);
+        var profiles = await db.Profiles.Where(p => !p.IsSystem).ToListAsync(ct);
         var posts = await db.Posts.ToListAsync(ct);
         var comments = await db.Comments.ToListAsync(ct);
         var likes = await db.Likes.ToListAsync(ct);
@@ -597,7 +597,7 @@ var profile = await db.Profiles
         int take = 20,
         CancellationToken ct = default)
         => await db.Profiles
-            .Where(p => p.Status == ProfileStatus.Active)
+            .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem)
             .OrderByDescending(p => p.CurrentStreak)
             .ThenByDescending(p => p.XpTotal)
             .Take(take)
