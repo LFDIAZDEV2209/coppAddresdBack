@@ -34,11 +34,13 @@ var profile = await db.Profiles
         if (profile is not null) return profile;
 
         // Auto-provisión: primer acceso crea un perfil activo (sin revisión previa).
+        // El DisplayName se toma del claim Name del JWT (Auth emite "FirstName LastName");
+        // si no viene, se usa el nombre del identity o un valor por defecto.
         var created = new Profile
         {
             Id = Guid.NewGuid(),
             UserId = userId.Value,
-            DisplayName = "Miembro ANTARES",
+            DisplayName = DisplayNameFromClaims(http) ?? "Miembro ANTARES",
             Status = ProfileStatus.Active,
             CreatedAt = DateTime.UtcNow,
         };
@@ -556,5 +558,25 @@ var profile = await db.Profiles
         => Guid.TryParse(http.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
             ? id
             : null;
+
+    /// <summary>
+    /// Nombre para mostrar a partir de los claims del JWT. El Auth Service emite
+    /// <see cref="ClaimTypes.Name"/> como "FirstName LastName"; si no está presente
+    /// se intenta con GivenName/Surname y finalmente con el Name del identity.
+    /// </summary>
+    internal static string? DisplayNameFromClaims(IHttpContextAccessor http)
+    {
+        var user = http.HttpContext?.User;
+        if (user is null) return null;
+        var name = user.FindFirstValue(ClaimTypes.Name)
+                   ?? user.FindFirstValue("name")
+                   ?? user.Identity?.Name;
+        if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+        var given = user.FindFirstValue(ClaimTypes.GivenName);
+        var surname = user.FindFirstValue(ClaimTypes.Surname);
+        if (!string.IsNullOrWhiteSpace(given) || !string.IsNullOrWhiteSpace(surname))
+            return $"{given} {surname}".Trim();
+        return null;
+    }
 }
 
