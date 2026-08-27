@@ -54,6 +54,7 @@ public sealed class CalculateScoresCommandValidator : AbstractValidator<Calculat
 /// </summary>
 public sealed class CalculateScoresCommandHandler(
     IProgramRepository repository,
+    IWeaknessDetectionService weaknessDetection,
     ILogger<CalculateScoresCommandHandler> logger) : IRequestHandler<CalculateScoresCommand, ScoresResponseDto>
 {
     public async Task<ScoresResponseDto> Handle(CalculateScoresCommand request, CancellationToken ct)
@@ -83,15 +84,25 @@ public sealed class CalculateScoresCommandHandler(
         var nutritionAwards = await repository.EvaluateNutritionAwardsAsync(
             request.PatientId, request.PeriodEndLocalDate, ct);
 
+        // SPEC §21, C ("Paso 7c"): la detección de debilidades corre SOLO en
+        // este disparador, una vez por recálculo, después de puntajes + XP
+        // clínica + premios semanales (el paquete semanal lee la fila fresca de
+        // health_scores). Idempotente por el dedupe de estado abierto (AC-43):
+        // re-correr /calculate no duplica debilidades abiertas (AC-45).
+        var weaknesses = await weaknessDetection.DetectAndPersistAsync(
+            request.PatientId, ct);
+
         logger.LogInformation(
             "Program.ScoresRecalculated: patient={PatientId} health={HealthScore} " +
             "transformation={TransformationScore} clinicalReviews={ReviewsCreated} " +
             "clinicalXp={ClinicalXp} clinicalRules={ClinicalRules} " +
-            "nutritionXp={NutritionXp} nutritionRules={NutritionRules} actor={ActorId}",
+            "nutritionXp={NutritionXp} nutritionRules={NutritionRules} " +
+            "weaknessRules={WeaknessRules} weaknessesPersisted={WeaknessesPersisted} actor={ActorId}",
             request.PatientId, health.Current, transformation.Current,
             clinicalXp.ReviewsCreated, clinicalXp.TotalXpAwarded,
             string.Join(",", clinicalXp.AwardedRules),
             nutritionAwards.TotalXpAwarded, string.Join(",", nutritionAwards.AwardedRules),
+            weaknesses.RulesFired, weaknesses.NewWeaknessesPersisted,
             request.PatientId);
 
         return new ScoresResponseDto(health, transformation);

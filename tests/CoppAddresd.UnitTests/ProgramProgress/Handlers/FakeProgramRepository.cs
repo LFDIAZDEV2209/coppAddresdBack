@@ -1,7 +1,9 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
@@ -407,4 +409,361 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public Task<NutritionWeeklyAwardsResult> EvaluateNutritionAwardsAsync(
         Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
         => Task.FromResult(NutritionWeeklyAwards);
+
+    // ------------------------------------------------------------ Debilidades (SPEC §21, "Paso 7c")
+
+    /// <summary>Paquete semanal configurado para <c>BuildPatientWeeklyDataAsync</c>.</summary>
+    public PatientWeeklyData? PatientWeeklyData { get; set; }
+
+    /// <summary>Debilidades configuradas para <c>ListWeaknessesAsync</c> / <c>ListOpenWeaknessesAsync</c>.</summary>
+    public List<WeaknessDto> Weaknesses { get; set; } = [];
+
+    /// <summary>Debilidades devueltas por <c>PersistDetectedWeaknessesAsync</c>.</summary>
+    public List<Weakness> PersistedWeaknesses { get; set; } = [];
+
+    /// <summary>Inputs registrados por <c>PersistDetectedWeaknessesAsync</c>.</summary>
+    public List<(Guid PatientId, IReadOnlyList<WeaknessDescriptor> Descriptors)> PersistedWeaknessInputs { get; } = [];
+
+    /// <summary>Hook opcional para <c>UpdateWeaknessStatusAsync</c>.</summary>
+    public Func<Guid, WeaknessStatus, Guid?, IReadOnlyList<string>, CancellationToken, Task<WeaknessDto>>? OnUpdateWeaknessStatus { get; set; }
+
+    public Task<PatientWeeklyData?> BuildPatientWeeklyDataAsync(
+        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
+        => Task.FromResult(PatientWeeklyData);
+
+    public Task<IReadOnlyList<Weakness>> PersistDetectedWeaknessesAsync(
+        Guid patientId, IReadOnlyList<WeaknessDescriptor> descriptors, CancellationToken ct = default)
+    {
+        PersistedWeaknessInputs.Add((patientId, descriptors));
+        if (PersistedWeaknesses.Count > 0)
+        {
+            return Task.FromResult<IReadOnlyList<Weakness>>(PersistedWeaknesses);
+        }
+
+        var list = descriptors.Select(d => new Weakness
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            Code = d.Code,
+            Category = d.Category,
+            Severity = d.Severity,
+            Title = d.Title,
+            Description = d.Description,
+            DetectedAt = DateTime.UtcNow,
+            MetricId = d.MetricId,
+            IndicatorValue = d.IndicatorValue,
+            Source = WeaknessSource.ai,
+            Status = WeaknessStatus.open,
+            CreatedAt = DateTime.UtcNow,
+        }).ToList();
+
+        return Task.FromResult<IReadOnlyList<Weakness>>(list);
+    }
+
+    public Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListWeaknessesAsync(
+        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+    {
+        var items = Weaknesses
+            .Where(w => w.PatientId == patientId || patientId == Guid.Empty)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .ToList();
+        return Task.FromResult<(IReadOnlyList<WeaknessDto>, int)>((items, Weaknesses.Count));
+    }
+
+    public Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListOpenWeaknessesAsync(
+        int page, int pageSize, CancellationToken ct = default)
+    {
+        var items = Weaknesses
+            .Where(w => string.Equals(w.Status, "open", StringComparison.OrdinalIgnoreCase))
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .ToList();
+        return Task.FromResult<(IReadOnlyList<WeaknessDto>, int)>((items, Weaknesses.Count(w => string.Equals(w.Status, "open", StringComparison.OrdinalIgnoreCase))));
+    }
+
+    public Task<WeaknessDto> UpdateWeaknessStatusAsync(
+        Guid weaknessId, WeaknessStatus status, Guid? actorId,
+        IReadOnlyList<string> callerRoles, CancellationToken ct = default)
+    {
+        if (OnUpdateWeaknessStatus is not null)
+        {
+            return OnUpdateWeaknessStatus(weaknessId, status, actorId, callerRoles, ct);
+        }
+
+        var existing = Weaknesses.FirstOrDefault(w => w.Id == weaknessId);
+        if (existing is not null)
+        {
+            var updated = existing with { Status = status.ToString() };
+            return Task.FromResult(updated);
+        }
+
+        return Task.FromResult(new WeaknessDto(
+            weaknessId, Guid.NewGuid(), "WK_SAMPLE", "nutricion", "low",
+            "Muestra", null, DateTime.UtcNow, null, null, "ai",
+            status.ToString(), null, null, DateTime.UtcNow, null));
+    }
+
+    // ------------------------------------------------------------ Intervenciones (SPEC §22, "Paso 7d")
+
+    /// <summary>Intervenciones en memoria para el repositorio fake.</summary>
+    public Dictionary<Guid, Intervention> Interventions { get; } = [];
+
+    /// <summary>Intervenciones configuradas para <c>ListInterventionsAsync</c> / <c>ListOpenInterventionsAsync</c>.</summary>
+    public List<InterventionDto> InterventionDtos { get; set; } = [];
+
+    /// <summary>Intervención devuelta por defecto en mutaciones si no hay hook.</summary>
+    public InterventionDto? SingleInterventionResult { get; set; }
+
+    /// <summary>Inputs registrados por <c>EnsureInterventionFromWeaknessAsync</c>.</summary>
+    public List<(Guid PatientId, Guid WeaknessId, InterventionType Type, string Title, string? Description, Guid? ActorId)> EnsureInterventionInputs { get; } = [];
+
+    /// <summary>Inputs registrados por <c>AcceptInterventionAsync</c>.</summary>
+    public List<(Guid InterventionId, Guid PatientId)> AcceptInterventionInputs { get; } = [];
+
+    /// <summary>Inputs registrados por <c>UpdateInterventionStatusAsync</c>.</summary>
+    public List<(Guid InterventionId, InterventionStatus Status, Guid? ActorId, IReadOnlyList<string> CallerRoles, string? Result, Guid? AssignedTo)> UpdateInterventionStatusInputs { get; } = [];
+
+    /// <summary>Inputs registrados por <c>MarkTeleScheduledAsync</c>.</summary>
+    public List<Guid> MarkTeleScheduledInputs { get; } = [];
+
+    /// <summary>Inputs registrados por <c>MarkTeleAttendedAsync</c>.</summary>
+    public List<(Guid InterventionId, Guid ClinicianId)> MarkTeleAttendedInputs { get; } = [];
+
+    /// <summary>Inputs registrados por <c>MarkTeleComplyAsync</c>.</summary>
+    public List<Guid> MarkTeleComplyInputs { get; } = [];
+
+    /// <summary>Hook opcional para <c>EnsureInterventionFromWeaknessAsync</c>.</summary>
+    public Func<Guid, Guid, InterventionType, string, string?, Guid?, CancellationToken, Task<Intervention>>? OnEnsureInterventionFromWeakness { get; set; }
+
+    /// <summary>Hook opcional para <c>AcceptInterventionAsync</c>.</summary>
+    public Func<Guid, Guid, CancellationToken, Task<InterventionDto>>? OnAcceptIntervention { get; set; }
+
+    /// <summary>Hook opcional para <c>UpdateInterventionStatusAsync</c>.</summary>
+    public Func<Guid, InterventionStatus, Guid?, IReadOnlyList<string>, string?, Guid?, CancellationToken, Task<InterventionDto>>? OnUpdateInterventionStatus { get; set; }
+
+    /// <summary>Hook opcional para <c>MarkTeleScheduledAsync</c>.</summary>
+    public Func<Guid, CancellationToken, Task<InterventionDto>>? OnMarkTeleScheduled { get; set; }
+
+    /// <summary>Hook opcional para <c>MarkTeleAttendedAsync</c>.</summary>
+    public Func<Guid, Guid, CancellationToken, Task<InterventionDto>>? OnMarkTeleAttended { get; set; }
+
+    /// <summary>Hook opcional para <c>MarkTeleComplyAsync</c>.</summary>
+    public Func<Guid, CancellationToken, Task<InterventionDto>>? OnMarkTeleComply { get; set; }
+
+    public Task<Intervention> EnsureInterventionFromWeaknessAsync(
+        Guid patientId, Guid weaknessId, InterventionType type,
+        string title, string? description, Guid? actorId, CancellationToken ct = default)
+    {
+        EnsureInterventionInputs.Add((patientId, weaknessId, type, title, description, actorId));
+        if (OnEnsureInterventionFromWeakness is not null)
+        {
+            return OnEnsureInterventionFromWeakness(patientId, weaknessId, type, title, description, actorId, ct);
+        }
+
+        var existing = Interventions.Values.FirstOrDefault(i => i.WeaknessId == weaknessId);
+        if (existing is not null)
+        {
+            return Task.FromResult(existing);
+        }
+
+        var intervention = new Intervention
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patientId,
+            WeaknessId = weaknessId,
+            Type = type,
+            Title = title,
+            Description = description,
+            Status = InterventionStatus.detected,
+            Severity = "medium",
+            CreatedAt = DateTime.UtcNow,
+        };
+        Interventions[intervention.Id] = intervention;
+        return Task.FromResult(intervention);
+    }
+
+    public Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListInterventionsAsync(
+        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+    {
+        var source = InterventionDtos.Count > 0
+            ? InterventionDtos.Where(i => i.PatientId == patientId || patientId == Guid.Empty)
+            : Interventions.Values.Where(i => i.PatientId == patientId || patientId == Guid.Empty).Select(ToDto);
+
+        var items = source
+            .OrderByDescending(i => i.CreatedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .ToList();
+
+        return Task.FromResult<(IReadOnlyList<InterventionDto>, int)>((items, source.Count()));
+    }
+
+    public Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListOpenInterventionsAsync(
+        int page, int pageSize, CancellationToken ct = default)
+    {
+        var source = InterventionDtos.Count > 0
+            ? InterventionDtos.Where(i => !string.Equals(i.Status, "completed", StringComparison.OrdinalIgnoreCase))
+            : Interventions.Values.Where(i => i.Status != InterventionStatus.completed).Select(ToDto);
+
+        var items = source
+            .OrderBy(i => i.CreatedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .ToList();
+
+        return Task.FromResult<(IReadOnlyList<InterventionDto>, int)>((items, source.Count()));
+    }
+
+    public Task<InterventionDto> AcceptInterventionAsync(
+        Guid interventionId, Guid patientId, CancellationToken ct = default)
+    {
+        AcceptInterventionInputs.Add((interventionId, patientId));
+        if (OnAcceptIntervention is not null)
+        {
+            return OnAcceptIntervention(interventionId, patientId, ct);
+        }
+
+        if (SingleInterventionResult is not null)
+        {
+            return Task.FromResult(SingleInterventionResult);
+        }
+
+        if (Interventions.TryGetValue(interventionId, out var intervention))
+        {
+            intervention.Status = InterventionStatus.accepted;
+            intervention.AcceptedAt = DateTime.UtcNow;
+            intervention.UpdatedAt = DateTime.UtcNow;
+            return Task.FromResult(ToDto(intervention));
+        }
+
+        return Task.FromResult(new InterventionDto(
+            interventionId, patientId, null, "telehealth_referral",
+            "Intervención aceptada", null, "accepted", "medium",
+            null, null, DateTime.UtcNow, null, null, null, 15, DateTime.UtcNow, DateTime.UtcNow));
+    }
+
+    public Task<InterventionDto> UpdateInterventionStatusAsync(
+        Guid interventionId, InterventionStatus status, Guid? actorId,
+        IReadOnlyList<string> callerRoles, string? result = null,
+        Guid? assignedTo = null, CancellationToken ct = default)
+    {
+        UpdateInterventionStatusInputs.Add((interventionId, status, actorId, callerRoles, result, assignedTo));
+        if (OnUpdateInterventionStatus is not null)
+        {
+            return OnUpdateInterventionStatus(interventionId, status, actorId, callerRoles, result, assignedTo, ct);
+        }
+
+        if (SingleInterventionResult is not null)
+        {
+            return Task.FromResult(SingleInterventionResult);
+        }
+
+        if (Interventions.TryGetValue(interventionId, out var intervention))
+        {
+            intervention.Status = status;
+            intervention.UpdatedAt = DateTime.UtcNow;
+            if (status == InterventionStatus.completed)
+            {
+                intervention.CompletedAt = DateTime.UtcNow;
+                intervention.Result = result;
+            }
+            if (assignedTo.HasValue)
+            {
+                intervention.AssignedTo = assignedTo;
+            }
+            return Task.FromResult(ToDto(intervention));
+        }
+
+        return Task.FromResult(new InterventionDto(
+            interventionId, Guid.NewGuid(), null, "clinical_consult",
+            "Intervención actualizada", null, status.ToString(), "medium",
+            assignedTo, null, null, status == InterventionStatus.completed ? DateTime.UtcNow : null,
+            null, result, 0, DateTime.UtcNow, DateTime.UtcNow));
+    }
+
+    public Task<InterventionDto> MarkTeleScheduledAsync(
+        Guid interventionId, CancellationToken ct = default)
+    {
+        MarkTeleScheduledInputs.Add(interventionId);
+        if (OnMarkTeleScheduled is not null)
+        {
+            return OnMarkTeleScheduled(interventionId, ct);
+        }
+
+        if (SingleInterventionResult is not null)
+        {
+            return Task.FromResult(SingleInterventionResult);
+        }
+
+        if (Interventions.TryGetValue(interventionId, out var intervention))
+        {
+            intervention.UpdatedAt = DateTime.UtcNow;
+            return Task.FromResult(ToDto(intervention));
+        }
+
+        return Task.FromResult(new InterventionDto(
+            interventionId, Guid.NewGuid(), null, "telehealth_referral",
+            "Teleconsulta agendada", null, "detected", "medium",
+            null, null, null, null, null, null, 50, DateTime.UtcNow, DateTime.UtcNow));
+    }
+
+    public Task<InterventionDto> MarkTeleAttendedAsync(
+        Guid interventionId, Guid clinicianId, CancellationToken ct = default)
+    {
+        MarkTeleAttendedInputs.Add((interventionId, clinicianId));
+        if (OnMarkTeleAttended is not null)
+        {
+            return OnMarkTeleAttended(interventionId, clinicianId, ct);
+        }
+
+        if (SingleInterventionResult is not null)
+        {
+            return Task.FromResult(SingleInterventionResult);
+        }
+
+        if (Interventions.TryGetValue(interventionId, out var intervention))
+        {
+            intervention.Status = InterventionStatus.in_progress;
+            intervention.UpdatedAt = DateTime.UtcNow;
+            return Task.FromResult(ToDto(intervention));
+        }
+
+        return Task.FromResult(new InterventionDto(
+            interventionId, Guid.NewGuid(), null, "telehealth_referral",
+            "Teleconsulta asistida", null, "in_progress", "medium",
+            clinicianId, null, null, null, null, null, 100, DateTime.UtcNow, DateTime.UtcNow));
+    }
+
+    public Task<InterventionDto> MarkTeleComplyAsync(
+        Guid interventionId, CancellationToken ct = default)
+    {
+        MarkTeleComplyInputs.Add(interventionId);
+        if (OnMarkTeleComply is not null)
+        {
+            return OnMarkTeleComply(interventionId, ct);
+        }
+
+        if (SingleInterventionResult is not null)
+        {
+            return Task.FromResult(SingleInterventionResult);
+        }
+
+        if (Interventions.TryGetValue(interventionId, out var intervention))
+        {
+            intervention.UpdatedAt = DateTime.UtcNow;
+            return Task.FromResult(ToDto(intervention));
+        }
+
+        return Task.FromResult(new InterventionDto(
+            interventionId, Guid.NewGuid(), null, "telehealth_referral",
+            "Cumplimiento evaluado", null, "in_progress", "medium",
+            null, null, null, null, null, null, 50, DateTime.UtcNow, DateTime.UtcNow));
+    }
+
+    private static InterventionDto ToDto(Intervention i) => new(
+        i.Id, i.PatientId, i.WeaknessId, i.Type.ToString(), i.Title,
+        i.Description, i.Status.ToString(), i.Severity, i.AssignedTo,
+        i.RecommendedAt, i.AcceptedAt, i.CompletedAt, i.PatientAction,
+        i.Result, i.XpAwardedTotal, i.CreatedAt, i.UpdatedAt);
 }
