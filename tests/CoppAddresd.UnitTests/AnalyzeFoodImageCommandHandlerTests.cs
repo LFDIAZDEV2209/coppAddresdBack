@@ -41,7 +41,7 @@ public class AnalyzeFoodImageCommandHandlerTests
         {
             SentAnalysisId = analysisId;
             SentResult = new FoodAiAnalyzeResult(
-                analysisId.ToString(), "completed", "food-detector-v1", "food-segmenter-v1", 182,
+                analysisId.ToString(), "completed", "food-detector-v1", "food-segmenter-v1", "detector-based-v1", 182,
                 [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]);
             return Task.FromResult(SentResult);
         }

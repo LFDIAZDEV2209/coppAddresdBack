@@ -51,7 +51,7 @@ public class FoodAiClientSendImageTests
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                """{"analysis_id":"3f3f0f0f-1111-2222-3333-444444444444","status":"completed","model_version":"food-detector-v1","inference_time_ms":182,"seg_model_version":"food-segmenter-v1","foods":[{"name":"pizza","confidence":0.94,"bounding_box":{"x":120,"y":80,"width":300,"height":180},"segmentation":{"mask":"aGVsbG8=","area_pixels":52341}},{"name":"banana","confidence":0.61,"bounding_box":{"x":30,"y":400,"width":90,"height":140}}]}"""),
+                """{"analysis_id":"3f3f0f0f-1111-2222-3333-444444444444","status":"completed","model_version":"food-detector-v1","inference_time_ms":182,"classifier_version":"detector-based-v1","seg_model_version":"food-segmenter-v1","foods":[{"name":"pizza","confidence":0.94,"bounding_box":{"x":120,"y":80,"width":300,"height":180},"segmentation":{"mask":"aGVsbG8=","area_pixels":52341}},{"name":"banana","confidence":0.61,"bounding_box":{"x":30,"y":400,"width":90,"height":140}}]}"""),
         });
         var client = BuildClient(handler);
 
@@ -74,13 +74,18 @@ public class FoodAiClientSendImageTests
         Assert.Equal("food-detector-v1", result.ModelVersion);
         Assert.Equal(182, result.InferenceTimeMs);
         Assert.Equal("food-segmenter-v1", result.SegModelVersion);
+        Assert.Equal("detector-based-v1", result.ClassifierVersion);
         Assert.Equal(2, result.Foods.Count);
         Assert.Equal("pizza", result.Foods[0].Name);
         Assert.Equal(0.94, result.Foods[0].Confidence);
         Assert.Equal(120, result.Foods[0].BoundingBox.X);
         Assert.Equal(80, result.Foods[0].BoundingBox.Y);
         Assert.Equal(300, result.Foods[0].BoundingBox.Width);
-        Assert.Equal(180, result.Foods[0].BoundingBox.Height);`n        Assert.NotNull(result.Foods[0].Segmentation);`n        Assert.Equal("aGVsbG8=", result.Foods[0].Segmentation.Mask);`n        Assert.Equal(52341, result.Foods[0].Segmentation.AreaPixels);`n        Assert.Null(result.Foods[1].Segmentation);
+        Assert.Equal(180, result.Foods[0].BoundingBox.Height);
+        Assert.NotNull(result.Foods[0].Segmentation);
+        Assert.Equal("aGVsbG8=", result.Foods[0].Segmentation.Mask);
+        Assert.Equal(52341, result.Foods[0].Segmentation.AreaPixels);
+        Assert.Null(result.Foods[1].Segmentation);
     }
 
     [Fact]

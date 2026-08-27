@@ -20,5 +20,6 @@ public record AnalyzeFoodImageResult(
     string Status,
     string ModelVersion,
     string SegModelVersion,
+    string ClassifierVersion,
     int InferenceTimeMs,
     IReadOnlyList<DetectedFoodDto> Foods);

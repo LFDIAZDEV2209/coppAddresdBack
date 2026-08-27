@@ -34,7 +34,7 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
             LastAnalysisId = analysisId;
             LastFileName = fileName;
             LastSend = new FoodAiAnalyzeResult(
-                analysisId.ToString(), "completed", "food-detector-v1", "food-segmenter-v1", 182,
+                analysisId.ToString(), "completed", "food-detector-v1", "food-segmenter-v1", "detector-based-v1", 182,
                 [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]);
             return Task.FromResult(LastSend);
         }
