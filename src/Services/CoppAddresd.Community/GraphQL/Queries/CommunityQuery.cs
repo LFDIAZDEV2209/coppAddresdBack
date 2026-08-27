@@ -387,6 +387,172 @@ var profile = await db.Profiles
         return DashboardAggregator.Compute(profiles, posts, comments, likes, feedEvents, now);
     }
 
+    // ─── Analytics (nuevas consultas) ──────────────────────────────────
+
+    /// <summary>Estadísticas por región: miembros activos no-sistema y posts por semana.</summary>
+    [Authorize]
+    public async Task<IReadOnlyList<RegionStat>> RegionStats(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        return AnalyticsAggregator.ComputeRegionStats(profiles, posts, now);
+    }
+
+    /// <summary>Estadísticas por diagnóstico: miembros, posts/semana, promedio racha/XP, adherencia.</summary>
+    [Authorize]
+    public async Task<IReadOnlyList<DiagnosticStat>> DiagnosticStats(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        return AnalyticsAggregator.ComputeDiagnosticStats(profiles, posts, now);
+    }
+
+    /// <summary>Analytics completo del dashboard: feed hoy, overview rachas, inactividad, series XP.</summary>
+    [Authorize]
+    public async Task<CommunityAnalytics> CommunityAnalytics(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        var comments = await db.Comments.ToListAsync(ct);
+        var likes = await db.Likes.ToListAsync(ct);
+        var feedEvents = await db.FeedEvents.ToListAsync(ct);
+        var xpEntries = await db.XpEntries.ToListAsync(ct);
+
+        return new CommunityAnalytics
+        {
+            FeedToday = AnalyticsAggregator.ComputeFeedToday(profiles, posts, comments, likes, xpEntries, now),
+            StreakOverview = AnalyticsAggregator.ComputeStreakOverview(profiles, feedEvents, now),
+            InactivityDistribution = AnalyticsAggregator.ComputeInactivityDistribution(profiles, now),
+            XpDeliveredSeries = AnalyticsAggregator.ComputeXpDeliveredSeries(xpEntries, now),
+        };
+    }
+
+    /// <summary>Lista de reconocimientos con perfil (ordenados por CreatedAt descendente).</summary>
+    [Authorize]
+    public async Task<IReadOnlyList<RecognitionDto>> Recognitions(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var recognitions = await db.Recognitions
+            .OrderByDescending(r => r.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+        var profileIds = recognitions.Select(r => r.ProfileId).Distinct().ToList();
+        var profiles = await db.Profiles.Where(p => profileIds.Contains(p.Id)).ToListAsync(ct);
+        var profileById = profiles.ToDictionary(p => p.Id);
+
+        return recognitions.Select(r =>
+        {
+            profileById.TryGetValue(r.ProfileId, out var profile);
+            return new RecognitionDto
+            {
+                Id = r.Id,
+                ProfileId = r.ProfileId,
+                TypeLabel = r.TypeLabel,
+                Xp = r.Xp,
+                Status = r.Status.ToString(),
+                CreatedAt = r.CreatedAt,
+                Profile = profile is not null
+                    ? new RecognitionProfile
+                    {
+                        Id = profile.Id,
+                        DisplayName = profile.DisplayName,
+                        IsSystem = profile.IsSystem,
+                    }
+                    : null,
+            };
+        }).ToList();
+    }
+
+    /// <summary>Canales de red social con puntos de crecimiento (ordenados por SortOrder).</summary>
+    [Authorize]
+    public async Task<IReadOnlyList<NetworkChannel>> Networks(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        return await db.NetworkChannels
+            .Include(c => c.GrowthPoints)
+            .OrderBy(c => c.SortOrder)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Todos los grupos de chat: id, name, memberCount, messageCount, lastActivityAt.
+    /// Ordenados por messageCount descendente, luego nombre.
+    /// </summary>
+    [Authorize]
+    public async Task<IReadOnlyList<GroupSummary>> CommunityGroups(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var groups = await db.ChatGroups.ToListAsync(ct);
+        var groupIds = groups.Select(g => g.Id).ToList();
+
+        // memberCount por grupo
+        var memberCounts = await db.ChatGroupMembers
+            .Where(m => groupIds.Contains(m.GroupId))
+            .GroupBy(m => m.GroupId)
+            .Select(g => new { GroupId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var memberCountById = memberCounts.ToDictionary(x => x.GroupId, x => x.Count);
+
+        // messageCount y lastActivityAt por grupo
+        var messageStats = await db.Messages
+            .Where(m => m.ConversationId != null && groupIds.Contains(m.ConversationId.Value))
+            .GroupBy(m => m.ConversationId!.Value)
+            .Select(g => new { GroupId = g.Key, Count = g.Count(), LastAt = g.Max(m => m.CreatedAt) })
+            .ToListAsync(ct);
+        var messageStatsById = messageStats.ToDictionary(x => x.GroupId, x => x);
+
+        return groups
+            .Select(g =>
+            {
+                messageStatsById.TryGetValue(g.Id, out var stats);
+                return new GroupSummary
+                {
+                    Id = g.Id,
+                    Name = g.Name,
+                    MemberCount = memberCountById.GetValueOrDefault(g.Id, 0),
+                    MessageCount = stats?.Count ?? 0,
+                    LastActivityAt = stats?.LastAt ?? new DateTimeOffset(g.CreatedAt, TimeSpan.Zero),
+                };
+            })
+            .OrderByDescending(g => g.MessageCount)
+            .ThenBy(g => g.Name)
+            .Skip(skip)
+            .Take(take)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Alcance de mensajes del sistema: TODOS, INACTIVOS, ACTIVOS7 con totales y alcanzados.
+    /// </summary>
+    [Authorize]
+    public async Task<IReadOnlyList<MessageReach>> MessageReach(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var messages = await db.Messages.ToListAsync(ct);
+        return AnalyticsAggregator.ComputeMessageReach(profiles, messages, now);
+    }
+
     /// <summary>Resumen de conversaciones del usuario (último mensaje por interlocutor).</summary>
     [Authorize]
     public async Task<List<Conversation>> Conversations(
