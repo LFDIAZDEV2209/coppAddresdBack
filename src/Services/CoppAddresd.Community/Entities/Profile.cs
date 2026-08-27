@@ -34,7 +34,32 @@ public sealed class Profile
 
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>Región del perfil (catálogo). Almacenado como texto.</summary>
+    public ProfileRegion? Region { get; set; }
+
+    /// <summary>Diagnóstico de referencia del perfil (catálogo). Almacenado como texto.</summary>
+    public ProfileDiagnosis? Diagnosis { get; set; }
+
+    /// <summary>Semana de onboarding/enfoque en la comunidad (ej. 1, 2, 3…).</summary>
+    public int? Week { get; set; }
+
+    /// <summary>Fecha de la última publicación del perfil (para riesgo de inactividad).</summary>
+    public DateTimeOffset? LastPostAt { get; set; }
+
+    /// <summary>Fecha de la última actividad registrada del perfil.</summary>
+    public DateTimeOffset? LastActiveAt { get; set; }
+
+    /// <summary>Racha actual de días consecutivos con publicación (mantenida por side-effect).</summary>
+    public int CurrentStreak { get; set; }
+
+    /// <summary>Mayor racha histórica de días consecutivos con publicación.</summary>
+    public int BestStreak { get; set; }
+
+    /// <summary>XP total acumulado del perfil (suma de XpEntry.Amount, mantenido por side-effect).</summary>
+    public int XpTotal { get; set; }
+
     public ICollection<Post> Posts { get; set; } = [];
     public ICollection<Comment> Comments { get; set; } = [];
     public ICollection<Like> Likes { get; set; } = [];
+    public ICollection<XpEntry> XpEntries { get; set; } = [];
 }
