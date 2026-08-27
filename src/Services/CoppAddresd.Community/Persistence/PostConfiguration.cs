@@ -13,6 +13,9 @@ public sealed class PostConfiguration : IEntityTypeConfiguration<Post>
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
         builder.Property(x => x.ProfileId).HasColumnName("profile_id").IsRequired();
         builder.Property(x => x.Body).HasColumnName("body").HasMaxLength(4000).IsRequired();
+        builder.Property(x => x.Type).HasColumnName("type").HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.Destination).HasColumnName("destination").HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.ViewCount).HasColumnName("view_count").IsRequired();
         builder.Property(x => x.Pinned).HasColumnName("pinned").IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz").HasDefaultValueSql("now()").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamptz");
