@@ -347,7 +347,8 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
             Id = Guid.NewGuid(),
             EvaluationId = evaluation.Id,
             ResultType = HealthTestResultType.score,
-            Code = "score_total",
+            // Contrato actual: el code del score es el código del instrumento.
+            Code = "it_alert",
             Label = "Score total",
             Value = 9m,
             Qualifier = "alto",
@@ -361,8 +362,7 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
             Id = Guid.NewGuid(),
             Code = "rule_alto",
             Name = "Riesgo alto",
-            Condition =
-                """{"when":{"resultType":"score","code":"score_total","severity":["high"]}}""",
+            Condition = """{"when":{"resultType":"score","code":"it_alert","severity":["high"]}}""",
             Severity = HealthTestSeverity.high,
             MessageTemplate = "Riesgo {label} ({value})",
             IsActive = true,

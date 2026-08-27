@@ -208,6 +208,19 @@ con la migración `AddHealthTestsCatalogSeed` (SQL embebido, idempotente).
 - **Nueva batería para un grupo**: asignación masiva `POST /batteries/{id}/assign` con los
   destinatarios.
 
+## Validación E2E
+
+La validación integral del módulo (9 tests con Playwright, casos de error, ERP, consistencia,
+rendimiento con volumen sintético, concurrencia y extensibilidad) está documentada en
+`docs/modules/health-tests/VALIDACION.md`. Cambios derivados de la validación:
+
+- El resultado `score` usa el **código del instrumento** (ej: `orp`) como `code` (antes `score_total`)
+  para que las reglas de alerta lo referencien naturalmente.
+- Índice `ix_health_test_results_type_severity` (migración `AddHealthTestResultsSeverityIndex`) para
+  la agregación por severidad del dashboard.
+- Mobile: render genérico de preguntas del backend (escala/multi/open), acceso a la batería desde el
+  Perfil, y corrección del bug de `openId=0`.
+
 ## Fronteras / fuera de alcance
 
 - NO hay volcado de resultados a `app.clinical_measurements` todavía (la categoría `test_score` está
