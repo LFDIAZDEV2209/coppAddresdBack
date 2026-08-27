@@ -28,12 +28,12 @@ CloudWatch: Logs + Metrics + Alarms
 
 Recursos ya definidos para el storage de archivos de la plataforma (implementado en el backend):
 
-| Recurso | Valor |
-|---|---|
-| Bucket | `cooppadresd-storage-prod` (región `us-east-2`) |
-| ARN bucket | `arn:aws:s3:::cooppadresd-storage-prod` |
-| ARN objetos | `arn:aws:s3:::cooppadresd-storage-prod/*` |
-| IAM role | `cooppadresd-ec2-s3-access-role` (solo este bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:GetBucketLocation`) |
+| Recurso     | Valor                                                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bucket      | `cooppadresd-storage-prod` (región `us-east-2`)                                                                                                 |
+| ARN bucket  | `arn:aws:s3:::cooppadresd-storage-prod`                                                                                                         |
+| ARN objetos | `arn:aws:s3:::cooppadresd-storage-prod/*`                                                                                                       |
+| IAM role    | `cooppadresd-ec2-s3-access-role` (solo este bucket: `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket`, `s3:GetBucketLocation`) |
 
 - El bucket **no es público**: el acceso pasa por presigned URLs SigV4 (PUT/GET firmados con expiración). El backend opera con el IAM role (cadena por defecto del SDK); el navegador sube/descarga directo con el presigned URL.
 - Configuración por variables de entorno: `AWS_REGION`, `AWS_S3_BUCKET`, `AWS_S3_BUCKET_ARN`, `AWS_S3_OBJECT_ARN`, `AWS_S3_IAM_ROLE` (la sección `Storage:S3` del `appsettings` hace fallback a estas variables).
@@ -52,6 +52,12 @@ Recursos ya definidos para el storage de archivos de la plataforma (implementado
 - Backups automáticos + restore probado; snapshots pre-migración.
 - Monitorear: connection utilization, CPU, deadlocks, disk.
 - Migraciones de esquema: ver skill `migrations` (CONCURRENTLY, NOT VALID, chunking, fuera de pico).
+- **Deploy automatizado (dev)**: `deploy-backend.yml` corre un job `migrate` (matrix api/telemedicine,
+  one-off task Fargate en la VPC, entrypoint del servicio en modo `--migrate`) que aplica las
+  migraciones de cada microservicio tras su rollout — idempotente. Cada uno tiene su propio
+  historial: api → `public.__EFMigrationsHistory`, telemedicine → `tele.__ef_migrations_history`.
+  Auth y Community además auto-migran al arrancar (`MigrateAsync` en su `Program.cs`), por lo que
+  no requieren paso en el pipeline.
 
 ## CloudWatch
 
@@ -67,12 +73,12 @@ Recursos ya definidos para el storage de archivos de la plataforma (implementado
 
 ## Runbook (a completar en despliegue)
 
-| Incidente | Diagnóstico | Acción |
-|---|---|---|
-| 5xx masivos | CloudWatch errores + logs | revisar deploy reciente / BD / secretos |
-| Latencia alta p95 | métricas por endpoint + duración query | plan de ejecución, índices, cache |
-| BD sin conexiones | connection utilization | pool size / instancia / queries largas |
-| 401/403 | logs auth | claims/issuer/jwks del servicio Auth |
+| Incidente         | Diagnóstico                            | Acción                                  |
+| ----------------- | -------------------------------------- | --------------------------------------- |
+| 5xx masivos       | CloudWatch errores + logs              | revisar deploy reciente / BD / secretos |
+| Latencia alta p95 | métricas por endpoint + duración query | plan de ejecución, índices, cache       |
+| BD sin conexiones | connection utilization                 | pool size / instancia / queries largas  |
+| 401/403           | logs auth                              | claims/issuer/jwks del servicio Auth    |
 
 ## Checklist de despliegue
 

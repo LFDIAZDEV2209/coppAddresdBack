@@ -22,6 +22,7 @@
     <EmbeddedResource Include="Migrations\Seed\AddPatientCatalogs.sql" />
     <EmbeddedResource Include="Migrations\Seed\AddProfessionalCatalogs.sql" />
   <EmbeddedResource Include="Migrations\Seed\AddDocumentCatalogs.sql" />
+  <EmbeddedResource Include="Migrations\Seed\AddServerCatalogs.sql" />
   </ItemGroup>
 
   <ItemGroup>
