@@ -31,6 +31,10 @@ public static class ApplicationServiceExtensions
         services.Configure<AiServiceSettings>(
             configuration.GetSection(AiServiceSettings.SectionName));
 
+        // Configuración de Firebase Cloud Messaging (pushes a dispositivos).
+        services.Configure<FcmSettings>(
+            configuration.GetSection(FcmSettings.SectionName));
+
         // Clave interna compartida con el microservicio de Telemedicina
         // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).
         services.Configure<TelemedicineServiceSettings>(
@@ -45,6 +49,12 @@ public static class ApplicationServiceExtensions
         services.AddValidatorsFromAssembly(typeof(CreateMediaItemCommand).Assembly);
 
         services.AddHttpClient<IAiServiceClient, AiServiceClient>()
+            .AddResiliencePolicy()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
+        // FCM: mismo patrón que AiServiceClient (HttpClient tipado). El
+        // cliente degrada a "disabled" sin credenciales, nunca lanza.
+        services.AddHttpClient<IFcmClient, FcmClient>()
             .AddResiliencePolicy()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 

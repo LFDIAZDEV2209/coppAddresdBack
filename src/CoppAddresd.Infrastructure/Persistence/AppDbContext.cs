@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<PatientProfile> PatientProfiles => Set<PatientProfile>();
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
     public DbSet<PatientProfessionalAssignment> PatientProfessionalAssignments => Set<PatientProfessionalAssignment>();
     public DbSet<Insurer> Insurers => Set<Insurer>();
     public DbSet<Allergen> Allergens => Set<Allergen>();
