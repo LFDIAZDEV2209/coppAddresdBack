@@ -440,6 +440,11 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("character varying(2000)")
                         .HasColumnName("reason");
 
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("rejection_reason");
+
                     b.Property<Guid>("SpecialtyId")
                         .HasColumnType("uuid")
                         .HasColumnName("specialty_id");

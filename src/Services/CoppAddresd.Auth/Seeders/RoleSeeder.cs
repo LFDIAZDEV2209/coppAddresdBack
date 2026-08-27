@@ -7,12 +7,19 @@ namespace CoppAddresd.Auth.Seeders;
 
 /// <summary>
 /// Siembra los roles del ERP por contexto (OrganizationAdmin, ClinicAdmin,
-/// ClinicalDirector, Physician, Nutritionist, Psychologist, Nurse,
-/// Receptionist, CareCoordinator) con sus permisos por defecto. El rol Admin
+/// ClinicalDirector, Professional, Nurse, Receptionist, CareCoordinator,
+/// Coordinator, Finance, Auditor) con sus permisos por defecto. El rol Admin
 /// (global) se maneja en <see cref="AdminSeeder"/> con todos los permisos.
 /// Estos roles se asignan a usuarios con scope (clínica/organización) vía las
 /// asignaciones scoped; los permisos aquí definidos son la base editable por
 /// el administrador desde la UI.
+///
+/// Convención de escalabilidad: roles FUNCIONALES por capacidad, no por
+/// profesión. Los roles clínicos legado Physician/Nutritionist/Psychologist
+/// (idénticos en permisos) quedan como aliases: se garantiza su existencia
+/// (IsSystem) pero no reciben asignaciones nuevas; los profesionales nuevos
+/// se asignan al rol consolidado <c>Professional</c>. Un tipo de profesional
+/// o especialidad nueva NUNCA exige un rol nuevo.
 /// </summary>
 public static class RoleSeeder
 {
@@ -52,14 +59,53 @@ public static class RoleSeeder
         ("Nurse", [PermissionCodes.PatientsView, PermissionCodes.ProfessionalsView]),
     ];
 
-    public static async Task SeedAsync(AuthDbContext dbContext, ILogger logger, CancellationToken ct = default)
+    /// <summary>
+    /// Aliases legado: roles clínicos por profesión reemplazados por el rol
+    /// consolidado <c>Professional</c>. Se garantiza su existencia e IsSystem
+    /// (los usuarios ya asignados conservan permisos), pero no reciben
+    /// asignaciones por defecto ni deben usarse para usuarios nuevos.
+    /// </summary>
+    private static readonly string[] LegacyAliasRoles =
+    [
+        "Physician",
+        "Nutritionist",
+        "Psychologist",
+    ];
+
+    /// <summary>
+    /// Nombres de todos los roles de sistema (Admin + DefaultRoles + aliases).
+    /// Se marcan IsSystem de forma idempotente al sembrar (también en BD
+    /// existentes), protegiéndolos de renombrado/eliminación accidental.
+    /// </summary>
+    private static readonly string[] SystemRoleNames =
+    [
+        "Admin",
+        "OrganizationAdmin",
+        "ClinicAdmin",
+        "ClinicalDirector",
+        "Professional",
+        "Physician",
+        "Nutritionist",
+        "Psychologist",
+        "Nurse",
+        "Receptionist",
+        "CareCoordinator",
+        "Coordinator",
+        "Finance",
+        "Auditor",
+    ];
+
+    public static async Task SeedAsync(
+        AuthDbContext dbContext,
+        ILogger logger,
+        CancellationToken ct = default
+    )
     {
         logger.LogInformation("Seeding organizational roles...");
 
         foreach (var (roleName, description, permissionCodes) in DefaultRoles)
         {
-            var role = await dbContext.Roles
-                .FirstOrDefaultAsync(r => r.Name == roleName, ct);
+            var role = await dbContext.Roles.FirstOrDefaultAsync(r => r.Name == roleName, ct);
 
             if (role is null)
             {
@@ -68,6 +114,7 @@ public static class RoleSeeder
                     Name = roleName,
                     Description = description,
                     IsActive = true,
+                    IsSystem = true,
                     CreatedAt = DateTime.UtcNow,
                 };
                 dbContext.Roles.Add(role);
@@ -76,13 +123,13 @@ public static class RoleSeeder
             }
 
             // Permisos por defecto (idempotente): solo agrega los que faltan.
-            var assignedIds = await dbContext.RolePermissions
-                .Where(rp => rp.RoleId == role.Id)
+            var assignedIds = await dbContext
+                .RolePermissions.Where(rp => rp.RoleId == role.Id)
                 .Select(rp => rp.PermissionId)
                 .ToListAsync(ct);
 
-            var permissionIds = await dbContext.Permissions
-                .Where(p => permissionCodes.Contains(p.Code))
+            var permissionIds = await dbContext
+                .Permissions.Where(p => permissionCodes.Contains(p.Code))
                 .Select(p => new { p.Id, p.Code })
                 .ToListAsync(ct);
 
@@ -95,7 +142,33 @@ public static class RoleSeeder
             {
                 dbContext.RolePermissions.AddRange(toAssign);
                 await dbContext.SaveChangesAsync(ct);
-                logger.LogInformation("Rol {Role}: asignados {Count} permisos por defecto", roleName, toAssign.Count);
+                logger.LogInformation(
+                    "Rol {Role}: asignados {Count} permisos por defecto",
+                    roleName,
+                    toAssign.Count
+                );
+            }
+        }
+
+        // Aliases legado: garantizar existencia (sin permisos por defecto).
+        foreach (var roleName in LegacyAliasRoles)
+        {
+            var exists = await dbContext.Roles.AnyAsync(r => r.Name == roleName, ct);
+            if (!exists)
+            {
+                dbContext.Roles.Add(
+                    new ApplicationRole
+                    {
+                        Name = roleName,
+                        Description =
+                            "Rol clínico legado (reemplazado por Professional); conserva permisos de usuarios ya asignados",
+                        IsActive = true,
+                        IsSystem = true,
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
+                await dbContext.SaveChangesAsync(ct);
+                logger.LogInformation("Rol legado creado (alias): {Role}", roleName);
             }
         }
 
@@ -104,22 +177,38 @@ public static class RoleSeeder
         // (p. ej. Patients.View → Patients.ViewOwn) se refleje en BD existentes.
         foreach (var (roleName, codes) in RevokedDefaults)
         {
-            var role = await dbContext.Roles
-                .AsNoTracking()
+            var role = await dbContext
+                .Roles.AsNoTracking()
                 .FirstOrDefaultAsync(r => r.Name == roleName, ct);
             if (role is null)
             {
                 continue;
             }
 
-            var revoked = await dbContext.RolePermissions
-                .Where(rp => rp.RoleId == role.Id && codes.Contains(rp.Permission.Code))
+            var revoked = await dbContext
+                .RolePermissions.Where(rp =>
+                    rp.RoleId == role.Id && codes.Contains(rp.Permission.Code)
+                )
                 .ExecuteDeleteAsync(ct);
 
             if (revoked > 0)
             {
-                logger.LogInformation("Rol {Role}: revocados {Count} permisos por convención de defaults", roleName, revoked);
+                logger.LogInformation(
+                    "Rol {Role}: revocados {Count} permisos por convención de defaults",
+                    roleName,
+                    revoked
+                );
             }
+        }
+
+        // Marcado IsSystem (idempotente): protege los roles de sistema del
+        // renombrado/eliminación accidental, incluso en BD existentes.
+        var systemMarked = await dbContext
+            .Roles.Where(r => SystemRoleNames.Contains(r.Name) && !r.IsSystem)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.IsSystem, true), ct);
+        if (systemMarked > 0)
+        {
+            logger.LogInformation("Roles marcados como IsSystem: {Count}", systemMarked);
         }
     }
 
@@ -175,114 +264,198 @@ public static class RoleSeeder
     ];
 
     /// <summary>Rol → (descripción, códigos de permiso por defecto).</summary>
-    private static readonly (string Role, string Description, string[] Permissions)[] DefaultRoles =
+    private static readonly (
+        string Role,
+        string Description,
+        string[] Permissions
+    )[] DefaultRoles =
     [
-        ("OrganizationAdmin", "Administra la organización: estructura, empleados y profesionales",
+        (
+            "OrganizationAdmin",
+            "Administra la organización: estructura, empleados y profesionales",
             [
-                PermissionCodes.OrganizationsView, PermissionCodes.OrganizationsCreate,
-                PermissionCodes.OrganizationsUpdate, PermissionCodes.OrganizationsDelete,
-                PermissionCodes.ClinicsView, PermissionCodes.ClinicsCreate,
-                PermissionCodes.ClinicsUpdate, PermissionCodes.ClinicsDelete,
-                PermissionCodes.LocationsView, PermissionCodes.LocationsCreate,
-                PermissionCodes.LocationsUpdate, PermissionCodes.LocationsDelete,
-                PermissionCodes.EmployeesView, PermissionCodes.EmployeesCreate,
-                PermissionCodes.EmployeesUpdate, PermissionCodes.EmployeesDelete,
-                PermissionCodes.ProfessionalsView, PermissionCodes.ProfessionalsCreate,
-                PermissionCodes.ProfessionalsUpdate, PermissionCodes.ProfessionalsDelete,
-                PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
-                PermissionCodes.PatientsUpdate, PermissionCodes.PatientsDelete,
-                PermissionCodes.PatientsExport, PermissionCodes.PatientsBulkUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.DocumentsDelete,
-                PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
-                PermissionCodes.ClinicalRecordsUpdate,
-                ..AllTelemedicinePermissions,
-                ..ModuleAdminPermissions,
-                ..PrescriberPermissions,
-            ]),
-        ("ClinicAdmin", "Administra una clínica y sus sedes",
-            [
-                PermissionCodes.ClinicsView, PermissionCodes.ClinicsUpdate,
-                PermissionCodes.LocationsView, PermissionCodes.LocationsCreate,
+                PermissionCodes.OrganizationsView,
+                PermissionCodes.OrganizationsCreate,
+                PermissionCodes.OrganizationsUpdate,
+                PermissionCodes.OrganizationsDelete,
+                PermissionCodes.ClinicsView,
+                PermissionCodes.ClinicsCreate,
+                PermissionCodes.ClinicsUpdate,
+                PermissionCodes.ClinicsDelete,
+                PermissionCodes.LocationsView,
+                PermissionCodes.LocationsCreate,
                 PermissionCodes.LocationsUpdate,
-                PermissionCodes.EmployeesView, PermissionCodes.EmployeesCreate,
+                PermissionCodes.LocationsDelete,
+                PermissionCodes.EmployeesView,
+                PermissionCodes.EmployeesCreate,
                 PermissionCodes.EmployeesUpdate,
-                PermissionCodes.ProfessionalsView, PermissionCodes.ProfessionalsCreate,
+                PermissionCodes.EmployeesDelete,
+                PermissionCodes.ProfessionalsView,
+                PermissionCodes.ProfessionalsCreate,
                 PermissionCodes.ProfessionalsUpdate,
-                PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
+                PermissionCodes.ProfessionalsDelete,
+                PermissionCodes.PatientsView,
+                PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
-                PermissionCodes.ClinicalRecordsUpdate,
-                ..AllTelemedicinePermissions,
-                ..ModuleAdminPermissions,
-                ..PrescriberPermissions,
-            ]),
-        ("ClinicalDirector", "Dirección clínica: supervisa historiales y profesionales",
-            [
-                PermissionCodes.PatientsView, PermissionCodes.PatientsUpdate,
+                PermissionCodes.PatientsDelete,
+                PermissionCodes.PatientsExport,
+                PermissionCodes.PatientsBulkUpdate,
                 PermissionCodes.DocumentsView,
-                PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsUpload,
+                PermissionCodes.DocumentsUpdate,
+                PermissionCodes.DocumentsDelete,
+                PermissionCodes.ClinicalRecordsView,
+                PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.ClinicalRecordsUpdate,
+                .. AllTelemedicinePermissions,
+                .. ModuleAdminPermissions,
+                .. PrescriberPermissions,
+            ]
+        ),
+        (
+            "ClinicAdmin",
+            "Administra una clínica y sus sedes",
+            [
+                PermissionCodes.ClinicsView,
+                PermissionCodes.ClinicsUpdate,
+                PermissionCodes.LocationsView,
+                PermissionCodes.LocationsCreate,
+                PermissionCodes.LocationsUpdate,
+                PermissionCodes.EmployeesView,
+                PermissionCodes.EmployeesCreate,
+                PermissionCodes.EmployeesUpdate,
+                PermissionCodes.ProfessionalsView,
+                PermissionCodes.ProfessionalsCreate,
+                PermissionCodes.ProfessionalsUpdate,
+                PermissionCodes.PatientsView,
+                PermissionCodes.PatientsCreate,
+                PermissionCodes.PatientsUpdate,
+                PermissionCodes.DocumentsView,
+                PermissionCodes.DocumentsUpload,
+                PermissionCodes.DocumentsUpdate,
+                PermissionCodes.ClinicalRecordsView,
+                PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.ClinicalRecordsUpdate,
+                .. AllTelemedicinePermissions,
+                .. ModuleAdminPermissions,
+                .. PrescriberPermissions,
+            ]
+        ),
+        (
+            "ClinicalDirector",
+            "Dirección clínica: supervisa historiales y profesionales",
+            [
+                PermissionCodes.PatientsView,
+                PermissionCodes.PatientsUpdate,
+                PermissionCodes.DocumentsView,
+                PermissionCodes.ClinicalRecordsView,
+                PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.ProfessionalsView,
                 PermissionCodes.EmployeesView,
                 PermissionCodes.TelemedicineSessionsManage,
-                ..ProfessionalTelemedicinePermissions,
-                ..ModuleAdminPermissions,
-                ..PrescriberPermissions,
-            ]),
-        ("Physician", "Médico: atiende pacientes y registra historia clínica",
+                .. ProfessionalTelemedicinePermissions,
+                .. ModuleAdminPermissions,
+                .. PrescriberPermissions,
+            ]
+        ),
+        (
+            "Professional",
+            "Profesional clínico: atiende pacientes, registra historia clínica y agenda citas (consolida los roles legado Physician/Nutritionist/Psychologist)",
             [
-                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsCreate,
+                PermissionCodes.PatientsViewOwn,
+                PermissionCodes.PatientsCreate,
                 PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsView,
+                PermissionCodes.DocumentsUpload,
+                PermissionCodes.DocumentsUpdate,
+                PermissionCodes.ClinicalRecordsView,
+                PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
-                ..PrescriberPermissions,
-                ..ProfessionalTelemedicinePermissions,
-            ]),
-        ("Nutritionist", "Nutricionista: manejo de nutrición y pacientes",
+                .. PrescriberPermissions,
+                .. ProfessionalTelemedicinePermissions,
+            ]
+        ),
+        (
+            "Nurse",
+            "Enfermería: soporte clínico y registro",
             [
-                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsCreate,
+                PermissionCodes.PatientsViewOwn,
                 PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
-                PermissionCodes.ClinicalRecordsUpdate,
-                ..PrescriberPermissions,
-                ..ProfessionalTelemedicinePermissions,
-            ]),
-        ("Psychologist", "Psicólogo: salud conductual y pacientes",
-            [
-                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsCreate,
-                PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
-                PermissionCodes.ClinicalRecordsUpdate,
-                ..PrescriberPermissions,
-                ..ProfessionalTelemedicinePermissions,
-            ]),
-        ("Nurse", "Enfermería: soporte clínico y registro",
-            [
-                PermissionCodes.PatientsViewOwn, PermissionCodes.PatientsUpdate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ClinicalRecordsView, PermissionCodes.ClinicalRecordsCreate,
+                PermissionCodes.DocumentsView,
+                PermissionCodes.DocumentsUpload,
+                PermissionCodes.DocumentsUpdate,
+                PermissionCodes.ClinicalRecordsView,
+                PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
                 PermissionCodes.PrescriptionsView,
-                ..ViewerTelemedicinePermissions,
-            ]),
-        ("Receptionist", "Recepción: agenda, registro de pacientes y documentos",
+                .. ViewerTelemedicinePermissions,
+            ]
+        ),
+        (
+            "Receptionist",
+            "Recepción: agenda, registro de pacientes y documentos",
             [
-                PermissionCodes.PatientsView, PermissionCodes.PatientsCreate,
-                PermissionCodes.DocumentsView, PermissionCodes.DocumentsUpload, PermissionCodes.DocumentsUpdate, PermissionCodes.ProfessionalsView,
+                PermissionCodes.PatientsView,
+                PermissionCodes.PatientsCreate,
+                PermissionCodes.DocumentsView,
+                PermissionCodes.DocumentsUpload,
+                PermissionCodes.DocumentsUpdate,
+                PermissionCodes.ProfessionalsView,
                 PermissionCodes.PrescriptionsView,
-                ..StaffTelemedicinePermissions,
-                ..ModuleAdminPermissions,
-            ]),
-        ("CareCoordinator", "Coordinación de cuidados: seguimiento del paciente",
+                .. StaffTelemedicinePermissions,
+                .. ModuleAdminPermissions,
+            ]
+        ),
+        (
+            "CareCoordinator",
+            "Coordinación de cuidados: seguimiento del paciente",
             [
                 PermissionCodes.PatientsView,
                 PermissionCodes.DocumentsView,
                 PermissionCodes.ClinicalRecordsView,
                 PermissionCodes.ProfessionalsView,
                 PermissionCodes.PrescriptionsView,
-                ..ViewerTelemedicinePermissions,
-                ..ModuleAdminPermissions,
-            ]),
+                .. ViewerTelemedicinePermissions,
+                .. ModuleAdminPermissions,
+            ]
+        ),
+        (
+            "Coordinator",
+            "Coordinador: alias funcional de CareCoordinator (visibilidad y seguimiento)",
+            [
+                PermissionCodes.PatientsView,
+                PermissionCodes.DocumentsView,
+                PermissionCodes.ClinicalRecordsView,
+                PermissionCodes.ProfessionalsView,
+                PermissionCodes.PrescriptionsView,
+                .. ViewerTelemedicinePermissions,
+                .. ModuleAdminPermissions,
+            ]
+        ),
+        (
+            "Finance",
+            "Financiero: acceso a información financiera sin acceso clínico",
+            [
+                PermissionCodes.FinanceView,
+                PermissionCodes.FinanceManage,
+                PermissionCodes.EmployeesView,
+                PermissionCodes.ProfessionalsView,
+            ]
+        ),
+        (
+            "Auditor",
+            "Auditor: solo lectura de reportes, pacientes, documentos y auditoría",
+            [
+                PermissionCodes.ReportsView,
+                PermissionCodes.PatientsView,
+                PermissionCodes.DocumentsView,
+                PermissionCodes.AuditView,
+                PermissionCodes.EmployeesView,
+                PermissionCodes.ProfessionalsView,
+                PermissionCodes.TelemedicineAdminView,
+                PermissionCodes.AppointmentsAdminView,
+            ]
+        ),
     ];
 }
-
-

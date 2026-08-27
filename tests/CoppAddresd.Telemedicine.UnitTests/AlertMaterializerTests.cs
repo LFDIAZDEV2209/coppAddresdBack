@@ -17,7 +17,13 @@ public class AlertMaterializerTests
     [Fact]
     public void NewRequest_ConstruyeAlertaInfo()
     {
-        var alert = AlertMaterializer.NewRequest(Recipient, RequestId, TestData.SpecialtyId, "María", "Medicina General");
+        var alert = AlertMaterializer.NewRequest(
+            Recipient,
+            RequestId,
+            TestData.SpecialtyId,
+            "María",
+            "Medicina General"
+        );
 
         Assert.NotNull(alert);
         Assert.Equal(AlertType.NewRequest, alert!.Type);
@@ -29,10 +35,65 @@ public class AlertMaterializerTests
     }
 
     [Fact]
+    public void RequestApproved_ConstruyeAlertaInfo()
+    {
+        var alert = AlertMaterializer.RequestApproved(
+            Recipient,
+            RequestId,
+            TestData.SpecialtyId,
+            "María",
+            "Medicina General"
+        );
+
+        Assert.NotNull(alert);
+        Assert.Equal(AlertType.RequestApproved, alert!.Type);
+        Assert.Equal(AlertSeverity.Info, alert.Severity);
+        Assert.Equal(Recipient, alert.RecipientUserId);
+        Assert.Null(alert.RelatedAppointmentId);
+        Assert.Contains("María", alert.Body);
+    }
+
+    [Fact]
+    public void RequestRejected_EsWarningEIncluyeMotivo()
+    {
+        var alert = AlertMaterializer.RequestRejected(
+            Recipient,
+            RequestId,
+            TestData.SpecialtyId,
+            "Sin cupos"
+        );
+
+        Assert.NotNull(alert);
+        Assert.Equal(AlertType.RequestRejected, alert!.Type);
+        Assert.Equal(AlertSeverity.Warning, alert.Severity);
+        Assert.Equal(Recipient, alert.RecipientUserId);
+        Assert.Contains("Sin cupos", alert.Body);
+    }
+
+    [Fact]
+    public void RequestRejected_SinDestinatario_DevuelveNull()
+    {
+        var alert = AlertMaterializer.RequestRejected(
+            null,
+            RequestId,
+            TestData.SpecialtyId,
+            "Sin cupos"
+        );
+
+        Assert.Null(alert);
+    }
+
+    [Fact]
     public void NewAppointment_AsociaCita()
     {
         var alert = AlertMaterializer.NewAppointment(
-            Recipient, AppointmentId, TestData.SpecialtyId, "María", "Medicina General", DateTimeOffset.UtcNow);
+            Recipient,
+            AppointmentId,
+            TestData.SpecialtyId,
+            "María",
+            "Medicina General",
+            DateTimeOffset.UtcNow
+        );
 
         Assert.NotNull(alert);
         Assert.Equal(AlertType.NewAppointment, alert!.Type);
@@ -42,7 +103,12 @@ public class AlertMaterializerTests
     [Fact]
     public void AppointmentRescheduled_EsWarningYAsociaCita()
     {
-        var alert = AlertMaterializer.AppointmentRescheduled(Recipient, AppointmentId, "María", DateTimeOffset.UtcNow);
+        var alert = AlertMaterializer.AppointmentRescheduled(
+            Recipient,
+            AppointmentId,
+            "María",
+            DateTimeOffset.UtcNow
+        );
 
         Assert.NotNull(alert);
         Assert.Equal(AlertType.AppointmentRescheduled, alert!.Type);
@@ -53,7 +119,12 @@ public class AlertMaterializerTests
     [Fact]
     public void AppointmentCancelled_IncluyeRazon()
     {
-        var alert = AlertMaterializer.AppointmentCancelled(Recipient, AppointmentId, "María", "Emergencia");
+        var alert = AlertMaterializer.AppointmentCancelled(
+            Recipient,
+            AppointmentId,
+            "María",
+            "Emergencia"
+        );
 
         Assert.NotNull(alert);
         Assert.Equal(AlertType.AppointmentCancelled, alert!.Type);
@@ -64,7 +135,12 @@ public class AlertMaterializerTests
     [Fact]
     public void AppointmentCancelled_SinRazon_TerminaEnPunto()
     {
-        var alert = AlertMaterializer.AppointmentCancelled(Recipient, AppointmentId, "María", null!);
+        var alert = AlertMaterializer.AppointmentCancelled(
+            Recipient,
+            AppointmentId,
+            "María",
+            null!
+        );
 
         Assert.NotNull(alert);
         Assert.EndsWith(".", alert!.Body);
@@ -114,9 +190,33 @@ public class AlertMaterializerTests
     [Fact]
     public void SinDestinatario_DevuelveNull()
     {
-        Assert.Null(AlertMaterializer.NewRequest(null, RequestId, TestData.SpecialtyId, "María", "Medicina General"));
-        Assert.Null(AlertMaterializer.NewAppointment(null, AppointmentId, TestData.SpecialtyId, "María", "Medicina General", DateTimeOffset.UtcNow));
-        Assert.Null(AlertMaterializer.AppointmentRescheduled(null, AppointmentId, "María", DateTimeOffset.UtcNow));
+        Assert.Null(
+            AlertMaterializer.NewRequest(
+                null,
+                RequestId,
+                TestData.SpecialtyId,
+                "María",
+                "Medicina General"
+            )
+        );
+        Assert.Null(
+            AlertMaterializer.NewAppointment(
+                null,
+                AppointmentId,
+                TestData.SpecialtyId,
+                "María",
+                "Medicina General",
+                DateTimeOffset.UtcNow
+            )
+        );
+        Assert.Null(
+            AlertMaterializer.AppointmentRescheduled(
+                null,
+                AppointmentId,
+                "María",
+                DateTimeOffset.UtcNow
+            )
+        );
         Assert.Null(AlertMaterializer.AppointmentCancelled(null, AppointmentId, "María", "Razón"));
         Assert.Null(AlertMaterializer.PatientWaiting(null, AppointmentId, "María"));
         Assert.Null(AlertMaterializer.ProfessionalJoined(null, AppointmentId, "María"));

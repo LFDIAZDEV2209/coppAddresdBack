@@ -26,10 +26,24 @@ public class EmployeesController(IMediator mediator) : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] Guid? organizationId = null,
         [FromQuery] Guid? clinicId = null,
-        CancellationToken ct = default)
+        [FromQuery] Guid? specialtyId = null,
+        [FromQuery] Guid? roleId = null,
+        CancellationToken ct = default
+    )
     {
         var result = await mediator.Send(
-            new ListEmployeesQuery(page, pageSize, search, status, organizationId, clinicId), ct);
+            new ListEmployeesQuery(
+                page,
+                pageSize,
+                search,
+                status,
+                organizationId,
+                clinicId,
+                specialtyId,
+                roleId
+            ),
+            ct
+        );
         return Ok(result);
     }
 
@@ -48,7 +62,8 @@ public class EmployeesController(IMediator mediator) : ControllerBase
     [RequirePermission(PermissionCodes.EmployeesCreate)]
     public async Task<ActionResult<EmployeeDto>> Create(
         [FromBody] CreateEmployeeRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var command = new CreateEmployeeCommand(
             request.OrganizationId,
@@ -66,7 +81,8 @@ public class EmployeesController(IMediator mediator) : ControllerBase
             request.Bio,
             request.Clinics,
             request.SpecialtyIds,
-            request.Licenses);
+            request.Licenses
+        );
 
         var employee = await mediator.Send(command, ct);
         return CreatedAtAction(nameof(GetById), new { id = employee.Id }, employee);
@@ -83,7 +99,9 @@ public class EmployeesController(IMediator mediator) : ControllerBase
     {
         var invitedBy = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         var result = await mediator.Send(
-            new InviteEmployeeCommand(id, Guid.TryParse(invitedBy, out var caller) ? caller : null), ct);
+            new InviteEmployeeCommand(id, Guid.TryParse(invitedBy, out var caller) ? caller : null),
+            ct
+        );
         return Ok(result);
     }
 
@@ -92,7 +110,8 @@ public class EmployeesController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<EmployeeDto>> Update(
         Guid id,
         [FromBody] UpdateEmployeeRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var command = new UpdateEmployeeCommand(
             id,
@@ -111,7 +130,8 @@ public class EmployeesController(IMediator mediator) : ControllerBase
             request.Clinics,
             request.SpecialtyIds,
             request.Licenses,
-            request.RemoveProfessionalExtension);
+            request.RemoveProfessionalExtension
+        );
 
         var updated = await mediator.Send(command, ct);
         if (updated is null)
@@ -137,7 +157,8 @@ public record CreateEmployeeRequest(
     string? Bio,
     IReadOnlyList<ClinicAssignmentInput>? Clinics,
     IReadOnlyList<Guid>? SpecialtyIds,
-    IReadOnlyList<LicenseInput>? Licenses);
+    IReadOnlyList<LicenseInput>? Licenses
+);
 
 public record UpdateEmployeeRequest(
     string? FirstName,
@@ -155,4 +176,5 @@ public record UpdateEmployeeRequest(
     IReadOnlyList<ClinicAssignmentInput>? Clinics,
     IReadOnlyList<Guid>? SpecialtyIds,
     IReadOnlyList<LicenseInput>? Licenses,
-    bool RemoveProfessionalExtension = false);
+    bool RemoveProfessionalExtension = false
+);

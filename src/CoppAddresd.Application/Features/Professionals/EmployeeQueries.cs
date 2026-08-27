@@ -10,7 +10,10 @@ public record ListEmployeesQuery(
     string? Search,
     string? Status,
     Guid? OrganizationId,
-    Guid? ClinicId) : IRequest<PaginatedEmployeesResult>;
+    Guid? ClinicId,
+    Guid? SpecialtyId,
+    Guid? RoleId
+) : IRequest<PaginatedEmployeesResult>;
 
 /// <summary>Resultado paginado del listado de empleados.</summary>
 public record PaginatedEmployeesResult(
@@ -18,13 +21,28 @@ public record PaginatedEmployeesResult(
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 public sealed class ListEmployeesQueryHandler(
-    IEmployeeRepository repository) : IRequestHandler<ListEmployeesQuery, PaginatedEmployeesResult>
+    IEmployeeRepository repository,
+    IAuthUsersByRoleClient usersByRole
+) : IRequestHandler<ListEmployeesQuery, PaginatedEmployeesResult>
 {
-    public async Task<PaginatedEmployeesResult> Handle(ListEmployeesQuery request, CancellationToken ct)
+    public async Task<PaginatedEmployeesResult> Handle(
+        ListEmployeesQuery request,
+        CancellationToken ct
+    )
     {
+        // El filtro por rol vive en el Auth Service (schema auth, dueño el
+        // Auth Service): se resuelven los userIds con el rol y se filtra por
+        // employee.user_id. El ERP nunca lee auth.* directamente.
+        IReadOnlyList<Guid>? userIds = null;
+        if (request.RoleId is not null)
+        {
+            userIds = await usersByRole.GetUserIdsByRoleAsync(request.RoleId.Value, ct);
+        }
+
         var (items, total) = await repository.ListAsync(
             request.Page,
             request.PageSize,
@@ -32,26 +50,60 @@ public sealed class ListEmployeesQueryHandler(
             request.Status,
             request.OrganizationId,
             request.ClinicId,
-            ct);
+            request.SpecialtyId,
+            userIds,
+            ct
+        );
 
         return new PaginatedEmployeesResult(
             items.Select(EmployeeListItemDto.FromEntity).ToList(),
             total,
             request.Page,
             request.PageSize,
-            (int)Math.Ceiling(total / (double)request.PageSize));
+            (int)Math.Ceiling(total / (double)request.PageSize)
+        );
     }
 }
 
 /// <summary>Empleado completo con clínicas y extensión profesional.</summary>
 public record GetEmployeeQuery(Guid Id) : IRequest<EmployeeDto?>;
 
-public sealed class GetEmployeeQueryHandler(
-    IEmployeeRepository repository) : IRequestHandler<GetEmployeeQuery, EmployeeDto?>
+public sealed class GetEmployeeQueryHandler(IEmployeeRepository repository)
+    : IRequestHandler<GetEmployeeQuery, EmployeeDto?>
 {
     public async Task<EmployeeDto?> Handle(GetEmployeeQuery request, CancellationToken ct)
     {
         var employee = await repository.GetByIdAsync(request.Id, ct);
         return employee is null ? null : EmployeeDto.FromEntity(employee);
     }
+}
+
+/// <summary>Desglose por tipo de profesional (para las StatCards del directorio).</summary>
+public record EmployeeTypeStatDto(string? ProfessionalTypeName, int Count);
+
+/// <summary>
+/// Estadísticas del directorio con el mismo alcance que el listado
+/// (clínica/organización opcionales): total, activos, invitados, inactivos y
+/// desglose por tipo de profesional. Los "invitados" son empleados con estado
+/// Invited (creados sin usuario de Auth aún).
+/// </summary>
+public record EmployeeStatsDto(
+    int Total,
+    int Active,
+    int Invited,
+    int Inactive,
+    IReadOnlyList<EmployeeTypeStatDto> ByType
+);
+
+/// <summary>Stats del directorio de empleados/profesionales.</summary>
+public record GetEmployeesStatsQuery(Guid? OrganizationId, Guid? ClinicId)
+    : IRequest<EmployeeStatsDto>;
+
+public sealed class GetEmployeesStatsQueryHandler(IEmployeeRepository repository)
+    : IRequestHandler<GetEmployeesStatsQuery, EmployeeStatsDto>
+{
+    public async Task<EmployeeStatsDto> Handle(
+        GetEmployeesStatsQuery request,
+        CancellationToken ct
+    ) => await repository.GetStatsAsync(request.OrganizationId, request.ClinicId, ct);
 }

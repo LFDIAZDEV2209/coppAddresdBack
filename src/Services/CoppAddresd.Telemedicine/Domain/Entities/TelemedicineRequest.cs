@@ -38,6 +38,12 @@ public sealed class TelemedicineRequest
 
     public AppointmentRequestStatus Status { get; set; } = AppointmentRequestStatus.Pending;
 
+    /// <summary>
+    /// Motivo del rechazo (obligatorio al rechazar). Visible para el paciente en
+    /// el detalle de la solicitud; <c>null</c> salvo que la solicitud esté <c>Rejected</c>.
+    /// </summary>
+    public string? RejectionReason { get; set; }
+
     /// <summary>Observaciones internas (recepción/administración).</summary>
     public string? Notes { get; set; }
 
