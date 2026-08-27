@@ -186,8 +186,11 @@ public sealed class SubmitEvaluationCommandHandler(
                         Id = Guid.NewGuid(),
                         EvaluationId = evaluation.Id,
                         ResultType = HealthTestResultType.score,
-                        Code = "score_total",
-                        Label = "Score total",
+                        // El código del score es el código del INSTRUMENTO (ej: "orp")
+                        // para que las reglas de alerta lo referencien naturalmente
+                        // ({"when":{"code":"orp",...}}).
+                        Code = version.Instrument?.Code ?? "score_total",
+                        Label = version.Instrument?.Name ?? "Score total",
                         Value = output.Score,
                         Qualifier = totalClassification.Label,
                         Severity = totalClassification.Severity,

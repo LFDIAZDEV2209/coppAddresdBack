@@ -91,6 +91,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     ) =>
         await dbContext
             .HealthTestVersions.AsNoTracking()
+            .Include(x => x.Instrument)
             .Include(x => x.Questions.OrderBy(q => q.SortOrder))
                 .ThenInclude(q => q.Options.OrderBy(o => o.SortOrder))
             .Include(x => x.ScoreRanges)
@@ -301,6 +302,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         await dbContext
             .HealthTestAssignments.AsNoTracking()
             .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
             .Include(x => x.Patient)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
@@ -328,6 +330,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         var items = await query
             .Include(x => x.Patient)
             .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
             .OrderByDescending(x => x.AssignedAt)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
@@ -359,6 +362,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         var items = await query
             .Include(x => x.Patient)
             .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
             .OrderByDescending(x => x.AssignedAt)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
@@ -374,6 +378,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         await dbContext
             .HealthTestAssignments.AsNoTracking()
             .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
             .Where(x => x.PatientId == patientId)
             .OrderBy(x => x.AssignedAt)
             .ToListAsync(ct);
@@ -385,6 +390,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         await dbContext
             .HealthTestAssignments.AsNoTracking()
             .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
             .Where(x =>
                 x.PatientId == patientId
                 && (
@@ -479,6 +485,8 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         await dbContext
             .HealthTestEvaluations.AsNoTracking()
             .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
+            .Include(x => x.Version)
                 .ThenInclude(v => v!.Questions.OrderBy(q => q.SortOrder))
                     .ThenInclude(q => q.Options)
             .Include(x => x.Responses)
@@ -522,6 +530,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         await dbContext
             .HealthTestEvaluations.AsNoTracking()
             .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
             .Include(x => x.Results)
             .Where(x => x.PatientId == patientId)
             .OrderByDescending(x => x.StartedAt)
