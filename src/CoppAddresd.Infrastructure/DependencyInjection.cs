@@ -43,6 +43,7 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IStoreRepository, StoreRepository>();
         services.AddScoped<ILegalDocumentRepository, LegalDocumentRepository>();
         services.AddScoped<IWellnessRepository, WellnessRepository>();
+        services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
 
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).
