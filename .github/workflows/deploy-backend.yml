@@ -261,6 +261,10 @@ jobs:
       # Idempotente: EF omite las migraciones ya aplicadas.
       # Auth y Community auto-migran al arrancar (MigrateAsync en su Program.cs):
       # no necesitan paso en el pipeline.
+      # REQUISITO IAM en el role cooppadresd-gha-backend: ecs:RunTask,
+      # ecs:DescribeTasks, iam:PassRole (task/execution roles del task def) y
+      # logs:GetLogEvents (opcional, tail de logs en fallo). AccessDenied en
+      # RunTask = falta el permiso en el role, no un error del flujo.
       - name: Aplicar migraciones (${{ matrix.service }}, one-off task ECS)
         timeout-minutes: 20
         shell: bash
