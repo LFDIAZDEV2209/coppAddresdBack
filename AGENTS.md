@@ -38,7 +38,11 @@ Schema auth:    16 tablas (Users, Roles, Permissions, Applications, UserApplicat
 Schema app:     11 tablas (patient_profiles → auth.users, patient_professionals
                 (asignación paciente↔profesional, base del alcance "propios"),
                 insurers, allergens, icd10_codes, medications, patient_diagnoses,
-                patient_medications, patient_allergies, vital_signs)
+                patient_medications, patient_allergies, vital_signs) + 16 tablas
+                del módulo Tests de Salud (health_test_*: instrumentos/versiones/
+                preguntas/opciones/rangos, baterías + ítems + asignaciones,
+                evaluaciones/respuestas/resultados, indicadores, reglas de alerta,
+                alertas, comentarios). Doc: docs/modules/health-tests/README.md
 Schema erp:     12 tablas (organizations → clinics → locations; employees como
                 núcleo HR con extensión clínica 1:0..1 professionals; catálogos
                 professional_types/specialties + puentes N:N + professional_licenses).
@@ -47,7 +51,7 @@ Schema audit:   1 tabla (activity_logs)
 Schema tele:   10 tablas (telemedicine_requests, appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
 
 # Historial de migraciones por microservicio (NO compartir public):
-#   - Backend (AppDbContext): public.__EFMigrationsHistory (25 migraciones)
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (39 migraciones)
 #   - Auth (AuthDbContext):   auth.__ef_migrations_history (10 migraciones, aislada)
 #   - Telemedicina:           tele.__ef_migrations_history (7 migraciones, aislada)
 #   - Community:              community.__ef_migrations_history (5 migraciones, aislada)

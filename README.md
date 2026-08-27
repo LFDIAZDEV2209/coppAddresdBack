@@ -40,11 +40,11 @@
 
 El repositorio contiene:
 
-| Proyecto | Rol |
-|---|---|
-| **API principal** (`CoppAddresd.Api`) | Exposición de endpoints HTTP de la aplicación |
+| Proyecto                                           | Rol                                                |
+| -------------------------------------------------- | -------------------------------------------------- |
+| **API principal** (`CoppAddresd.Api`)              | Exposición de endpoints HTTP de la aplicación      |
 | **Servicio de autenticación** (`CoppAddresd.Auth`) | Servicio independiente para identidad, login y JWT |
-| **Pruebas** (`UnitTests` e `IntegrationTests`) | Suites de tests xUnit |
+| **Pruebas** (`UnitTests` e `IntegrationTests`)     | Suites de tests xUnit                              |
 
 > ⚠️ **Estado actual:** el proyecto está en fase de **esqueleto inicial** — la arquitectura, los paquetes y la estructura de carpetas están preparados, pero los módulos de negocio aún no se han implementado.
 
@@ -60,24 +60,29 @@ El repositorio contiene:
 - ✅ **Autenticación JWT Bearer** preparada (paquetes instalados)
 - ✅ **OpenAPI** para documentación automática de la API
 - ✅ **xUnit** con proyectos de pruebas unitarias e integración
+- ✅ **Tests de Salud** (módulo `health-tests`): catálogo de instrumentos versionados por snapshot,
+  baterías configurables, asignaciones a pacientes, evaluaciones con scoring por estrategia,
+  resultados snapshot, indicadores y alertas parametrizados por datos; API ERP
+  (`/api/v1/health-tests/*`) y API Mobile (`/api/v1/health-tests/me/*`). Ver
+  `docs/modules/health-tests/README.md`.
 - ✅ Solución en formato `.slnx` (nuevo formato de solución XML)
 
 ---
 
 ## 🧱 Stack tecnológico
 
-| Capa | Tecnología | Versión |
-|---|---|---|
-| Runtime | .NET / C# | .NET 10 / C# 13 |
-| Framework web | ASP.NET Core (Minimal API) | 10.0 |
-| ORM | Entity Framework Core + Npgsql | 10.0.10 / 10.0.3 |
-| Base de datos | PostgreSQL | 16+ |
-| CQRS / Mediator | MediatR | 14.2.0 |
-| Validación | FluentValidation | 12.1.1 |
-| Autenticación | ASP.NET Core Identity + JWT Bearer | 10.0.10 |
-| Documentación | Microsoft.AspNetCore.OpenApi | 10.0.5 |
-| Testing | xUnit + Microsoft.NET.Test.Sdk | 2.9.3 / 17.14.1 |
-| Cobertura | coverlet.collector | 6.0.4 |
+| Capa            | Tecnología                         | Versión          |
+| --------------- | ---------------------------------- | ---------------- |
+| Runtime         | .NET / C#                          | .NET 10 / C# 13  |
+| Framework web   | ASP.NET Core (Minimal API)         | 10.0             |
+| ORM             | Entity Framework Core + Npgsql     | 10.0.10 / 10.0.3 |
+| Base de datos   | PostgreSQL                         | 16+              |
+| CQRS / Mediator | MediatR                            | 14.2.0           |
+| Validación      | FluentValidation                   | 12.1.1           |
+| Autenticación   | ASP.NET Core Identity + JWT Bearer | 10.0.10          |
+| Documentación   | Microsoft.AspNetCore.OpenApi       | 10.0.5           |
+| Testing         | xUnit + Microsoft.NET.Test.Sdk     | 2.9.3 / 17.14.1  |
+| Cobertura       | coverlet.collector                 | 6.0.4            |
 
 ---
 
@@ -110,12 +115,12 @@ El proyecto sigue **Clean Architecture** con una dependencia estrictamente unidi
 
 ### Responsabilidades por capa
 
-| Capa | Responsabilidad | Depende de |
-|---|---|---|
-| **Domain** | Entidades, objetos de valor, enumerados y excepciones de dominio. Sin dependencias externas. | — |
-| **Application** | Casos de uso (CQRS), validación, DTOs y contratos (interfaces). Define *qué* hace el sistema. | Domain |
-| **Infrastructure** | Implementaciones concretas: EF Core, PostgreSQL, Identity, JWT, servicios externos. | Domain, Application |
-| **Api / Auth** | Presentación HTTP, inyección de dependencias, middleware y configuración. | Application, Infrastructure |
+| Capa               | Responsabilidad                                                                               | Depende de                  |
+| ------------------ | --------------------------------------------------------------------------------------------- | --------------------------- |
+| **Domain**         | Entidades, objetos de valor, enumerados y excepciones de dominio. Sin dependencias externas.  | —                           |
+| **Application**    | Casos de uso (CQRS), validación, DTOs y contratos (interfaces). Define _qué_ hace el sistema. | Domain                      |
+| **Infrastructure** | Implementaciones concretas: EF Core, PostgreSQL, Identity, JWT, servicios externos.           | Domain, Application         |
+| **Api / Auth**     | Presentación HTTP, inyección de dependencias, middleware y configuración.                     | Application, Infrastructure |
 
 > El servicio `CoppAddresd.Auth` vive en `src/Services/` como un **servicio desacoplado**: gestiona identidad y emisión de tokens de forma independiente de la API principal.
 
@@ -169,11 +174,11 @@ coppAddresdBack/
 
 ## ✅ Requisitos previos
 
-| Requisito | Versión | Notas |
-|---|---|---|
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0+ | Verifica con `dotnet --version` |
-| [PostgreSQL](https://www.postgresql.org/download/) | 16+ | Necesario cuando se configure la persistencia |
-| IDE | Visual Studio 2022 / Rider / VS Code | Compatible con soluciones `.slnx` |
+| Requisito                                                     | Versión                              | Notas                                         |
+| ------------------------------------------------------------- | ------------------------------------ | --------------------------------------------- |
+| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0+                                | Verifica con `dotnet --version`               |
+| [PostgreSQL](https://www.postgresql.org/download/)            | 16+                                  | Necesario cuando se configure la persistencia |
+| IDE                                                           | Visual Studio 2022 / Rider / VS Code | Compatible con soluciones `.slnx`             |
 
 ---
 
@@ -264,7 +269,7 @@ Los scripts `scripts/dev-up` y `scripts/dev-down` orquestan todo el entorno back
 ./scripts/dev-up.sh [-watch]
 ```
 
-- Levanta Postgres con `docker compose` y espera a que esté *healthy*.
+- Levanta Postgres con `docker compose` y espera a que esté _healthy_.
 - Arranca **auth**, **community** y **api** en segundo plano con `dotnet run` (o `dotnet watch run` con `-Watch` para hot reload).
 - **Omite** los servicios cuyo puerto ya esté escuchando (no pisa procesos que ya corren).
 - Guarda logs (`*.log`/`*.err`) y PIDs (`*.pid`) en `scripts/logs/` y muestra un resumen del estado de cada servicio.
@@ -282,10 +287,10 @@ Para detener también Postgres: `docker compose down`.
 
 ### Puertos y perfiles
 
-| Servicio | Perfil HTTP | Perfil HTTPS |
-|---|---|---|
-| **CoppAddresd.Api** | `http://localhost:5122` | `https://localhost:7258` |
-| **CoppAddresd.Auth** | `http://localhost:5123` | `https://localhost:7230` |
+| Servicio                  | Perfil HTTP             | Perfil HTTPS             |
+| ------------------------- | ----------------------- | ------------------------ |
+| **CoppAddresd.Api**       | `http://localhost:5122` | `https://localhost:7258` |
+| **CoppAddresd.Auth**      | `http://localhost:5123` | `https://localhost:7230` |
 | **CoppAddresd.Community** | `http://localhost:5200` | `https://localhost:7078` |
 
 Los perfiles se definen en `Properties/launchSettings.json` (perfiles `http` y `https`), con la variable `ASPNETCORE_ENVIRONMENT=Development` por defecto.
@@ -372,11 +377,11 @@ dotnet run --project src/Services/CoppAddresd.Auth
 
 ## 🤝 Contribución
 
-1. Haz un *fork* del repositorio.
+1. Haz un _fork_ del repositorio.
 2. Crea una rama descriptiva: `git checkout -b feature/mi-funcionalidad`
 3. Realiza tus cambios siguiendo las [convenciones del proyecto](#-convenciones-del-proyecto).
 4. Asegúrate de que las pruebas pasen: `dotnet test`
-5. Envía un *pull request* describiendo los cambios.
+5. Envía un _pull request_ describiendo los cambios.
 
 ---
 
