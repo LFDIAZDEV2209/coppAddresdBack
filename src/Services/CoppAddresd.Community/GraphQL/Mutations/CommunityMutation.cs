@@ -147,6 +147,7 @@ public sealed class CommunityMutation
         string body,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
         CancellationToken ct)
     {
         var profile = await RequireProfileAsync(db, http, ct);
@@ -159,7 +160,24 @@ public sealed class CommunityMutation
             CreatedAt = DateTime.UtcNow,
         };
         db.Comments.Add(comment);
+        profile.LastActiveAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        // Evento de feed para comentarios (actualiza el feed en vivo)
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            Kind = FeedEventKind.Comentario,
+            Body = body.Length > 500 ? body[..500] : body,
+            CreatedAt = comment.CreatedAt,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+
+        await db.Entry(comment).Reference(c => c.Profile).LoadAsync(ct);
+        await sender.SendAsync("comment_added", comment);
+        await sender.SendAsync("feed_event_added", feedEvent);
         return comment;
     }
 
@@ -168,12 +186,13 @@ public sealed class CommunityMutation
         string body,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
         CancellationToken ct)
     {
         var profile = await RequireProfileAsync(db, http, ct);
         var parent = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId, ct)
             ?? throw new GraphQLException("No encontraste el comentario.");
-var reply = new Comment
+        var reply = new Comment
         {
             Id = Guid.NewGuid(),
             PostId = parent.PostId,
@@ -183,7 +202,23 @@ var reply = new Comment
             CreatedAt = DateTime.UtcNow,
         };
         db.Comments.Add(reply);
+        profile.LastActiveAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            Kind = FeedEventKind.Comentario,
+            Body = body.Length > 500 ? body[..500] : body,
+            CreatedAt = reply.CreatedAt,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+
+        await db.Entry(reply).Reference(c => c.Profile).LoadAsync(ct);
+        await sender.SendAsync("comment_added", reply);
+        await sender.SendAsync("feed_event_added", feedEvent);
         return reply;
     }
 

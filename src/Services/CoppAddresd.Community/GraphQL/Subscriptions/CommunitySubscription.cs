@@ -40,6 +40,11 @@ public sealed class CommunitySubscription
     [Topic("feed_event_added")]
     public FeedEvent FeedEventAdded([EventMessage] FeedEvent feedEvent) => feedEvent;
 
+    /// <summary>Comentarios en tiempo real (incluye respuestas anidadas).</summary>
+    [Subscribe]
+    [Topic("comment_added")]
+    public Comment CommentAdded([EventMessage] Comment comment) => comment;
+
     /// <summary>
     /// Cambios de un grupo (creación, renombrado, altas/bajas de miembros). Solo miembros.
     /// </summary>
