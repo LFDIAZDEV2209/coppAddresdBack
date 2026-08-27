@@ -15,23 +15,24 @@ public interface IRoomRepository
     Task<VirtualRoom?> GetByAppointmentIdAsync(
         Guid appointmentId,
         bool includeSessions = false,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Sala por su sid en el proveedor (lectura sin tracking; contexto de webhooks).</summary>
     Task<VirtualRoom?> GetByProviderRoomSidAsync(
         string providerRoomSid,
         bool includeSessions = false,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Sala de una cita TRACKEADA con sus sesiones (para mutaciones del flujo de sala).</summary>
-    Task<VirtualRoom?> GetForUpdateAsync(
-        Guid appointmentId,
-        CancellationToken ct = default);
+    Task<VirtualRoom?> GetForUpdateAsync(Guid appointmentId, CancellationToken ct = default);
 
     /// <summary>Sala TRACKEADA con sus sesiones, por sid del proveedor (mutaciones de webhook).</summary>
     Task<VirtualRoom?> GetForUpdateByProviderRoomSidAsync(
         string providerRoomSid,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Crea la sala. Idempotente: como la sala es 1:1 con la cita, una violación
@@ -50,7 +51,10 @@ public interface IRoomRepository
     /// en el flujo transaccional del webhook, el rollback tambiAcn deshace las
     /// mutaciones del duplicado perdedor.
     /// </summary>
-    Task AddWebhookEventAsync(TelemedicineWebhookEvent webhookEvent, CancellationToken ct = default);
+    Task AddWebhookEventAsync(
+        TelemedicineWebhookEvent webhookEvent,
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Listado administrativo de sesiones de video, paginado y con su cita
@@ -63,8 +67,15 @@ public interface IRoomRepository
         DateTimeOffset? to,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Cuenta las sesiones de video activas (KPI del dashboard admin).</summary>
     Task<int> CountActiveSessionsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Cuenta las sesiones de video activas de las citas de un profesional
+    /// (KPI del dashboard "Mis citas" del profesional, alcance por identidad).
+    /// </summary>
+    Task<int> CountActiveSessionsAsync(Guid professionalId, CancellationToken ct = default);
 }

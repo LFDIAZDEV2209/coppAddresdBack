@@ -70,6 +70,9 @@ connectionstrings.config
 
 # --- Logs y archivos temporales ---
 *.log
+*.err
+*.build.log
+*.build.err
 logs/
 *.tmp
 *.temp
@@ -98,3 +101,8 @@ scripts/*.sql
 
 # appsettings.Example.json SI se versiona: referencia de configuracion para otros desarrolladores
 !appsettings.Example.json
+
+# --- Docker compose (solo local, NO se versiona) ---
+docker-compose.yaml
+docker-compose.yml
+docker-compose.override.yaml

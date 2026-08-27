@@ -87,6 +87,7 @@ builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<IScopedPermissionService, ScopedPermissionService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
+builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<ITokenInvalidationService, TokenInvalidationService>();
 // Cualificado: existe Microsoft.AspNetCore.Identity.SecurityStampValidator con el mismo nombre.
 builder.Services.AddScoped<CoppAddresd.Auth.Security.ISecurityStampValidator, CoppAddresd.Auth.Security.SecurityStampValidator>();
