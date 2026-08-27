@@ -32,25 +32,62 @@ public sealed class CommunityMutation
 
     // --- Publicaciones ---
 
-public async Task<Post> CreatePost(
+    public async Task<Post> CreatePost(
         string body,
+        PostType? type,
+        PostDestination? destination,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
         [Service] ITopicEventSender sender,
         CancellationToken ct)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+        var now = DateTime.UtcNow;
         var post = new Post
         {
             Id = Guid.NewGuid(),
             ProfileId = profile.Id,
             Body = body,
-            CreatedAt = DateTime.UtcNow,
+            Type = type ?? PostType.Texto,
+            Destination = destination ?? PostDestination.TodasLasComunidades,
+            CreatedAt = now,
         };
         db.Posts.Add(post);
+
+        // Actualiza señales de actividad y recalcula la racha del perfil.
+        profile.LastPostAt = DateTimeOffset.UtcNow;
+        profile.LastActiveAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        await RecomputeStreakAsync(db, profile, ct);
+
+        // Emite un evento de feed en vivo a partir del tipo de publicación.
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            Kind = MapPostTypeToFeedEvent(post.Type!.Value),
+            Body = body.Length > 500 ? body[..500] : body,
+            CreatedAt = now,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+
         await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
         await sender.SendAsync("post_added", post);
+        await sender.SendAsync("feed_event_added", feedEvent);
+        return post;
+    }
+
+    public async Task<Post?> ViewPost(
+        Guid id,
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var post = await db.Posts.FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null, ct)
+            ?? throw new GraphQLException("No se encontró la publicación.");
+        post.ViewCount += 1;
+        await db.SaveChangesAsync(ct);
         return post;
     }
 
@@ -551,5 +588,33 @@ var reply = new Comment
             throw new GraphQLException("Tu perfil está suspendido en la comunidad.");
         return profile;
     }
+
+    /// <summary>
+    /// Recalcula la racha actual y la mejor racha del perfil a partir de sus
+    /// publicaciones (días consecutivos con publicación). Actualiza las columnas
+    /// almacenadas para permitir ordenamiento en SQL.
+    /// </summary>
+    private static async Task RecomputeStreakAsync(
+        CommunityDbContext db, Profile profile, CancellationToken ct)
+    {
+        var dates = await db.Posts
+            .Where(p => p.ProfileId == profile.Id && p.DeletedAt == null)
+            .Select(p => p.CreatedAt)
+            .ToListAsync(ct);
+
+        profile.CurrentStreak = CommunityStats.CurrentStreak(dates);
+        profile.BestStreak = Math.Max(profile.BestStreak, CommunityStats.BestStreak(dates));
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Mapea un PostType al FeedEventKind correspondiente.</summary>
+    private static FeedEventKind MapPostTypeToFeedEvent(PostType type) => type switch
+    {
+        PostType.Imagen => FeedEventKind.Foto,
+        PostType.Video => FeedEventKind.Video,
+        PostType.Encuesta => FeedEventKind.Publicacion,
+        PostType.Logro => FeedEventKind.Logro,
+        _ => FeedEventKind.Publicacion,
+    };
 }
 
