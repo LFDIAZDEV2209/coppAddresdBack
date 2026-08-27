@@ -263,6 +263,99 @@ var reply = new Comment
         return post;
     }
 
+    // --- Gamificación (gestión) ---
+
+    /// <summary>
+    /// Otorga XP a un perfil concreto: crea una XpEntry, incrementa el XP total y
+    /// emite un evento de feed (racha/hito). Requiere el permiso Community.Manage.
+    /// </summary>
+    [Authorize(Policy = "Community.Manage")]
+    public async Task<List<Profile>> AwardXp(
+        Guid profileId,
+        int amount,
+        string? reason,
+        [Service] CommunityDbContext db,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        if (amount <= 0) throw new GraphQLException("La cantidad de XP debe ser mayor que cero.");
+        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId, ct)
+            ?? throw new GraphQLException("No se encontró el perfil.");
+
+        db.XpEntries.Add(new XpEntry
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            Amount = amount,
+            Reason = reason,
+            CreatedAt = DateTime.UtcNow,
+        });
+        profile.XpTotal += amount;
+        profile.LastActiveAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            Kind = FeedEventKind.Racha,
+            Body = reason,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync("feed_event_added", feedEvent);
+
+        return [profile];
+    }
+
+    /// <summary>
+    /// Otorga XP a todos los perfiles activos (broadcast). Requiere Community.Manage.
+    /// </summary>
+    [Authorize(Policy = "Community.Manage")]
+    public async Task<List<Profile>> AwardXpToAll(
+        int amount,
+        string? reason,
+        [Service] CommunityDbContext db,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        if (amount <= 0) throw new GraphQLException("La cantidad de XP debe ser mayor que cero.");
+        var profiles = await db.Profiles
+            .Where(p => p.Status == ProfileStatus.Active)
+            .ToListAsync(ct);
+
+        foreach (var profile in profiles)
+        {
+            db.XpEntries.Add(new XpEntry
+            {
+                Id = Guid.NewGuid(),
+                ProfileId = profile.Id,
+                Amount = amount,
+                Reason = reason,
+                CreatedAt = DateTime.UtcNow,
+            });
+            profile.XpTotal += amount;
+            profile.LastActiveAt = DateTimeOffset.UtcNow;
+        }
+        await db.SaveChangesAsync(ct);
+
+        // Evento de sistema (sin perfil) para el feed en vivo.
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = null,
+            Kind = FeedEventKind.Racha,
+            Body = reason,
+            CreatedAt = DateTime.UtcNow,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+        await sender.SendAsync("feed_event_added", feedEvent);
+
+        return profiles;
+    }
+
     // --- Seguimiento ---
 
     public async Task<Profile> FollowUser(

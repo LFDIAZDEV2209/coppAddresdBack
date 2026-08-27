@@ -1,7 +1,9 @@
 using System.Text;
+using CoppAddresd.Community;
 using CoppAddresd.Community.GraphQL;
 using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
+using CoppAddresd.Community.GraphQL.Resolvers;
 using CoppAddresd.Community.GraphQL.Subscriptions;
 using CoppAddresd.Community.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -45,6 +47,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("CommunityModerator", policy =>
         policy.RequireClaim("permission", "Community.Moderate"));
+    options.AddPolicy("Community.Manage", policy =>
+        policy.RequireClaim("permission", "Community.Manage"));
 });
 
 var origins = builder.Configuration["Cors:Origins"]
@@ -61,6 +65,7 @@ builder.Services
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
     .AddSubscriptionType<CommunitySubscription>()
+    .AddTypeExtension<ProfileResolvers>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
@@ -73,6 +78,8 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CommunityDbContext>();
     await db.Database.MigrateAsync();
+    if (app.Environment.IsDevelopment())
+        await CommunitySeeder.SeedAsync(db);
 }
 
 app.UseCors("CommunityCors");
