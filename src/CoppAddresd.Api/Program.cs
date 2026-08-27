@@ -45,6 +45,9 @@ builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
 // Seed de reglas de seguridad clínica para la generación de planes con IA.
 builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
 
+// Seed de la plantilla por defecto del programa de 83 semanas (default-83w).
+builder.Services.AddHostedService<ProgramProgressSeeder>();
+
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
 // (no incluido en el shared framework de .NET 10), así que se usa un check
@@ -108,3 +111,7 @@ app.MapControllers();
 app.MapHealthChecks("/health");
 
 app.Run();
+
+// Clase pública del entry point: requerida por WebApplicationFactory en los
+// tests de integración de la API (B5, T-14/T-15).
+public partial class Program;

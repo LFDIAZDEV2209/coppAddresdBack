@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services;
+using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
@@ -44,6 +45,19 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<ILegalDocumentRepository, LegalDocumentRepository>();
         services.AddScoped<IWellnessRepository, WellnessRepository>();
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
+        services.AddScoped<IProgramRepository, ProgramRepository>();
+
+        // Catálogo de reglas XP (SPEC §14, B5-R): agregado separado de la
+        // inscripción; los fakes de IProgramRepository de los tests no se
+        // acoplan al catálogo.
+        services.AddScoped<IXpRuleCatalogRepository, XpRuleCatalogRepository>();
+
+        // Calculadores del motor de puntajes (SPEC §13, T-37/T-41): funciones
+        // puras consumidas por ProgramRepository; registrados con su ILogger
+        // real para que el log estructurado Program.ScoreComputed se emita
+        // (sin DI caen al NullLogger del constructor opcional).
+        services.AddScoped<IHealthScoreCalculator, HealthScoreCalculator>();
+        services.AddScoped<ITransformationScoreCalculator, TransformationScoreCalculator>();
 
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).

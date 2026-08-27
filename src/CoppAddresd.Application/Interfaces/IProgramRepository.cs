@@ -1,0 +1,403 @@
+using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
+using CoppAddresd.Application.Services.ProgramProgress;
+using CoppAddresd.Domain.Entities.ProgramProgress;
+using CoppAddresd.Domain.Enums.ProgramProgress;
+
+namespace CoppAddresd.Application.Interfaces;
+
+/// <summary>
+/// Repositorio del módulo Progreso del Programa (83 semanas). Persistencia de
+/// inscripciones, semanas, completaciones con XP/racha idempotentes, plantillas
+/// y recomendaciones de adaptación (SPEC §6 y §7).
+///
+/// Reglas de la implementación (TASKS T-07):
+/// - Una transacción = un agregado. Completar una tarea escribe
+///   <c>task_completions</c> + <c>xp_ledger</c> + <c>daily_checkins</c> +
+///   <c>streak_states</c>/<c>streak_freezes</c> dentro de un único
+///   <c>FOR UPDATE</c> sobre <c>program_enrollments</c> (decisión 8).
+/// - Toda lectura sin mutación es <c>AsNoTracking</c>; solo la fila de la
+///   inscripción bloqueada se rastrea en <c>CompleteTaskAsync</c>.
+/// </summary>
+public interface IProgramRepository
+{
+    // --- Inscripciones ---
+
+    /// <summary>
+    /// Crea la inscripción activa, su fila de racha y las semanas del programa
+    /// (semana 1 activa con snapshot; el resto bloqueadas con snapshot vacío
+    /// que se toma al activar, SPEC §4.5/§5.2). Una inscripción activa por
+    /// paciente (índice único parcial): si ya existe, violación → 409.
+    /// </summary>
+    Task<ProgramEnrollment> EnrollAsync(
+        Guid patientId,
+        Guid templateId,
+        string timezone,
+        DateOnly startLocalDate,
+        Guid? createdBy = null,
+        CancellationToken ct = default);
+
+    /// <summary>Pausa la inscripción (Active → Paused). Requiere estado Active.</summary>
+    Task<ProgramEnrollment> PauseAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default);
+
+    /// <summary>Reanuda la inscripción (Paused → Active). Requiere estado Paused.</summary>
+    Task<ProgramEnrollment> ResumeAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default);
+
+    /// <summary>Retira la inscripción (terminal, conserva historial). No admite Completed/Withdrawn.</summary>
+    Task<ProgramEnrollment> WithdrawAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Proyección de una inscripción con su estado de gamificación (racha,
+    /// congelamientos, balance XP y semanas totales de la plantilla), usada por
+    /// los handlers de enroll/pause/resume/withdraw y por el listado del ERP.
+    /// Devuelve null si la inscripción no existe.
+    /// </summary>
+    Task<ProgramEnrollmentDto?> GetEnrollmentAsync(Guid enrollmentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Listado paginado de inscripciones con filtros opcionales por paciente y
+    /// estado (SPEC §7.5, ERP). Ordena por creación descendente.
+    /// </summary>
+    Task<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)> ListEnrollmentsAsync(
+        Guid? patientId,
+        ProgramEnrollmentStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    // --- Completación de tareas ---
+
+    /// <summary>
+    /// Persiste una tarea completada de forma idempotente dentro de una
+    /// transacción con la inscripción bloqueada <c>FOR UPDATE</c>:
+    /// <c>task_completions</c> + <c>xp_ledger</c> (TaskCompletion y DailyBonus
+    /// si el día queda perfecto) + <c>daily_checkins</c> +
+    /// <c>streak_states</c>/<c>streak_freezes</c>.
+    ///
+    /// El resultado distingue primera escritura (Created), replay idempotente
+    /// (Replay, sin doble XP) y clave de idempotencia reutilizada con otra
+    /// tarea/fecha (IdempotencyKeyReused → 409 AC-04).
+    /// </summary>
+    Task<CompleteTaskResult> CompleteTaskAsync(CompleteTaskInput input, CancellationToken ct = default);
+
+    // --- Lecturas del paciente ---
+
+    /// <summary>
+    /// Proyección del snapshot completo (SPEC §7.1) en pocas queries
+    /// set-based (sin N+1). Devuelve null si la inscripción no existe.
+    /// </summary>
+    Task<ProgramSnapshotDto?> GetSnapshotAsync(
+        Guid enrollmentId,
+        DateOnly todayLocalDate,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Hoy en zona local del paciente para una inscripción (SPEC §6.11), o null
+    /// si la inscripción no existe. Lo usan los handlers de completación
+    /// (chequeo "due today") y del snapshot cuando el cliente no envía fecha.
+    /// </summary>
+    Task<DateOnly?> GetPatientLocalTodayAsync(Guid enrollmentId, CancellationToken ct = default);
+
+    /// <summary>Rollups diarios de la ventana [from, to] (SPEC §7.3).</summary>
+    Task<ProgramCalendarDto> GetCalendarAsync(
+        Guid enrollmentId,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct = default);
+
+    /// <summary>Sendero completo de semanas (SPEC §7.4).</summary>
+    Task<ProgramPathDto> GetPathAsync(Guid enrollmentId, CancellationToken ct = default);
+
+    // --- Plantillas (ERP) ---
+
+    Task<(IReadOnlyList<ProgramTemplate> Items, int Total)> ListTemplatesAsync(
+        string? search,
+        string? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>Plantilla con sus filas por día ordenadas.</summary>
+    Task<ProgramTemplate?> GetTemplateAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Busca una plantilla por código (resolución de la plantilla por defecto
+    /// al inscribir, SPEC §8.4: <c>Program:DefaultTemplate:Code</c>, fallback
+    /// <c>default-83w</c>). Devuelve null si no existe.
+    /// </summary>
+    Task<ProgramTemplate?> GetTemplateByCodeAsync(string code, CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserta o actualiza una plantilla reemplazando sus <c>weekly_day_templates</c>.
+    /// No toca <c>version</c> (solo publish la incrementa, SPEC §7.6): el handler
+    /// la ajusta antes de llamar si corresponde.
+    /// </summary>
+    Task<ProgramTemplate> UpsertTemplateAsync(
+        ProgramTemplate template,
+        IReadOnlyList<WeeklyDayTemplate> dayTemplates,
+        Guid? actorId = null,
+        CancellationToken ct = default);
+
+    /// <summary>Reemplazo en bloque de las tareas por día de una plantilla.</summary>
+    Task<IReadOnlyList<WeeklyDayTemplate>> ReplaceWeekdayTasksAsync(
+        Guid templateId,
+        IReadOnlyList<WeeklyDayTemplate> tasks,
+        Guid? actorId = null,
+        CancellationToken ct = default);
+
+    // --- Adaptaciones (ERP) ---
+
+    Task<(IReadOnlyList<AdaptationRecommendation> Items, int Total)> ListAdaptationsAsync(
+        Guid? enrollmentId,
+        AdaptationStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    Task<AdaptationRecommendation?> GetAdaptationAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Transiciones de la máquina de estados (SPEC §5.6):
+    /// Pending → Approved|Rejected (Approve/Reject), Approved → Applied (Apply).
+    /// Cuando la transición deja la recomendación en <c>Applied</c> y
+    /// <paramref name="auditActionOnApply"/> no es nulo, la fila semántica
+    /// (p. ej. <c>AdaptationApplied</c>) se inserta en <c>audit.activity_logs</c>
+    /// en la MISMA transacción que el cambio de estado (AC-17): si el commit
+    /// falla, ni la transición ni la fila quedan a medias. El handler ya no
+    /// audita post-commit.
+    /// </summary>
+    Task<AdaptationRecommendation> DecideAdaptationAsync(
+        Guid adaptationId,
+        AdaptationDecisionAction action,
+        Guid? actorId = null,
+        string? auditActionOnApply = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Marca como <c>Superseded</c> las recomendaciones <c>Pending</c> previas de
+    /// la inscripción con el mismo <c>(kind, target_entity_id)</c> al crear una
+    /// nueva (SPEC §5.6: una Pending nueva reemplaza a la anterior en la misma
+    /// transacción). Excluye la fila recién creada
+    /// (<paramref name="newRecommendationId"/>) para no auto-superarla. Devuelve
+    /// cuántas filas quedaron superadas.
+    /// </summary>
+    Task<int> SupersedePendingAsync(
+        Guid enrollmentId,
+        AdaptationKind kind,
+        Guid targetEntityId,
+        Guid newRecommendationId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Registra una fila semántica en <c>audit.activity_logs</c> (SPEC §5.6 y
+    /// §6.8, AC-17: <c>action = 'AdaptationApplied'</c>). El trigger de
+    /// auditoría cubre el DML de las tablas del módulo; esta fila es un evento
+    /// semántico explícito que el trigger no puede generar, y la capa de
+    /// aplicación nunca toca <c>AppDbContext</c>, por lo que la escribe el
+    /// repositorio con SQL parametrizado (precedente: <c>FOR UPDATE</c> en
+    /// <c>CompleteTaskAsync</c>).
+    /// </summary>
+    Task WriteAuditRowAsync(
+        string action,
+        string schemaName,
+        string tableName,
+        Guid recordId,
+        Guid? actorId = null,
+        CancellationToken ct = default);
+
+    // --- Motor de puntajes (SPEC §13, T-37) ---
+
+    /// <summary>
+    /// Índice de Salud del período del paciente (SPEC §13.2/§13.3):
+    /// compute-on-read. Si existe una fila fresca en
+    /// <c>(patient_id, period_start, period_end)</c> (su <c>period_end</c> es
+    /// hoy o futuro) se devuelve la persistida; si falta o está vencida se
+    /// calcula con <see cref="IHealthScoreCalculator"/> y se persiste una fila
+    /// nueva con <c>score_previous</c> desde la fila anterior. Con
+    /// <paramref name="force"/> se recalcula SIEMPRE y se actualiza la fila del
+    /// período (recálculo manual clínico). Devuelve null si el paciente no
+    /// tiene inscripción activa.
+    /// </summary>
+    /// <param name="periodEndLocalDate">
+    /// Fin del período en fecha local del paciente (SPEC §13.7.2, recálculo
+    /// manual). Opcional: si no se envía, el fin es el "hoy" local. Una fecha
+    /// futura respecto del hoy local del paciente se rechaza con
+    /// <c>422 INVALID_PERIOD</c> (el repositorio es la autoridad del tiempo
+    /// local, nunca confía en <c>DateTime.UtcNow</c> del handler).
+    /// </param>
+    Task<HealthScoreDto?> GetOrComputeHealthScoreAsync(
+        Guid patientId,
+        ScoreTrigger trigger,
+        bool force = false,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Índice de Transformación de la semana actual del paciente (SPEC
+    /// §13.2/§13.5): compute-on-read por <c>week_number</c>. Si existe una fila
+    /// para la semana actual se devuelve la persistida; si no, se calcula con
+    /// <see cref="ITransformationScoreCalculator"/> y se persiste con
+    /// <c>score_previous</c> desde la fila anterior. Con
+    /// <paramref name="force"/> se recalcula y actualiza la fila de la semana.
+    /// Devuelve null si el paciente no tiene inscripción activa.
+    /// </summary>
+    Task<TransformationScoreDto?> GetOrComputeTransformationScoreAsync(
+        Guid patientId,
+        ScoreTrigger trigger,
+        bool force = false,
+        CancellationToken ct = default);
+
+    /// <summary>Líneas base clínicas del paciente (SPEC §13.1.2, lectura).</summary>
+    Task<IReadOnlyList<ClinicalBaselineDto>> ListClinicalBaselinesAsync(
+        Guid patientId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// UPSERT de una línea base clínica con la guardia AC-22: <c>set_by</c> es
+    /// obligatorio y el llamador debe tener un rol clínico
+    /// (<c>Physician</c>, <c>Nutritionist</c>, <c>Psychologist</c>,
+    /// <c>ClinicalDirector</c> o <c>Admin</c>); un paciente auto-asignándose →
+    /// <see cref="Domain.Exceptions.ForbiddenException"/> (403). Valida
+    /// <c>value &gt; 0</c> y <c>target_value &gt; 0</c> dentro de límites
+    /// razonables de la métrica. Único por <c>(patient_id, metric_id)</c>:
+    /// la segunda escritura actualiza la fila existente.
+    /// </summary>
+    Task<ClinicalBaselineDto> UpsertClinicalBaselineAsync(
+        ClinicalBaselineWrite input,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Valor de la medición más reciente de una métrica en la ventana de fechas
+    /// locales del paciente, o null si no hay mediciones en la ventana. Lo usan
+    /// los cálculos del motor de puntajes (una métrica por llamada, sin N+1 en
+    /// las rutas de cálculo que agrupan por métrica).
+    /// </summary>
+    Task<decimal?> GetLatestMeasurementAsync(
+        Guid patientId,
+        Guid metricId,
+        DateOnly fromDate,
+        DateOnly toDate,
+        CancellationToken ct = default);
+
+    // --- XP clínica (SPEC §15, T-46..T-49) ---
+
+    /// <summary>
+    /// Evalúa la evolución clínica del período contra las líneas base y
+    /// produce los otorgamientos/revisiones de XP clínica (SPEC §15, C). Se
+    /// invoca SOLO desde <c>POST /scores/calculate</c> (recálculo manual
+    /// clínico), NUNCA desde <c>GET /scores</c> (el GET solo computa puntajes
+    /// y devuelve la cola de revisiones pendientes).
+    ///
+    /// Por métrica con medición en el período (misma ventana que el Índice de
+    /// Transformación):
+    /// - favorable y |Δ%| ≥ umbral de significancia (default 5%,
+    ///   configurable) → crea/reutiliza una revisión <c>pending</c> en
+    ///   <c>app.clinical_xp_reviews</c> (NO otorga XP aún; la aprueba un
+    ///   clínico).
+    /// - favorable y 1% ≤ |Δ%| &lt; umbral → auto-otorga <c>CLINICAL_IMPROVE</c>.
+    /// - |Δ%| &lt; 1% → auto-otorga <c>CLINICAL_STABLE</c>.
+    /// - desfavorable → NO otorga nada (0 XP; nunca penaliza, SPEC §15).
+    /// - si TODAS las métricas con medición son favorables (y hay al menos
+    ///   una) → auto-otorga <c>CLINICAL_WEEKLY_ALL_UP</c> una vez por período.
+    ///
+    /// Idempotencia: el dedupe parcial <c>(source_ref_type, source_ref_id,
+    /// reason)</c> de <c>xp_ledger</c> con <c>source_ref_type =
+    /// 'clinical_period'</c> y <c>source_ref_id = health_scores.id</c> evita
+    /// el doble otorgamiento por período y regla (violación única → se omite).
+    /// </summary>
+    Task<ClinicalXpEvaluationResult> EvaluateClinicalXpAwardsAsync(
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Cola paginada de revisiones clínicas de XP pendientes (SPEC §15, D):
+    /// mejorías significativas que esperan decisión de un clínico
+    /// (<c>status = 'pending'</c>). Trae paciente, métrica (código/nombre),
+    /// |Δ%| y el período del Índice de Salud. Ordena por creación ascendente
+    /// (FIFO de la cola clínica).
+    /// </summary>
+    Task<(IReadOnlyList<ClinicalReviewDto> Items, int Total)> ListPendingClinicalReviewsAsync(
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Decide una revisión clínica de XP (SPEC §15, D): requiere que el
+    /// llamador tenga un rol clínico (<c>Physician</c>, <c>Nutritionist</c>,
+    /// <c>Psychologist</c>, <c>ClinicalDirector</c> o <c>Admin</c>) — misma
+    /// guardia AC-22 que <see cref="UpsertClinicalBaselineAsync"/> (un paciente
+    /// decidir su propia XP significativa → 403 FORBIDDEN).
+    ///
+    /// - <paramref name="approve"/> = true: marca <c>approved</c> con
+    ///   <c>decided_by</c>/<c>decided_at</c> y otorga <c>CLINICAL_SIGNIFICANT</c>
+    ///   con <c>validated_by = actorId</c> y <c>validated_at = now</c> (mismo
+    ///   dedupe <c>clinical_period</c>; si el período ya tiene el otorgamiento,
+    ///   se omite el doble).
+    /// - <paramref name="approve"/> = false: marca <c>rejected</c> con
+    ///   <c>decided_by</c>/<c>decided_at</c>; sin XP.
+    /// - Ya decidida → <see cref="Domain.Exceptions.BusinessRuleViolationException"/>
+    ///   <c>REVIEW_ALREADY_DECIDED</c> (409).
+    /// </summary>
+    Task<ClinicalReviewDto> DecideClinicalXpReviewAsync(
+        Guid reviewId,
+        bool approve,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default);
+
+    // --- Nutrición granular (SPEC §18, "Paso 6") ---
+
+    /// <summary>
+    /// Registra una comida o hidratación del paciente (SPEC §18, B): crea el
+    /// <c>app.habit_checks</c> de <c>(paciente, plantilla de hábito, fecha
+    /// local)</c> — idempotente, único por tripleta — y otorga la XP granular
+    /// (<c>NUTRITION_MEAL_COMPLETE</c> para comidas,
+    /// <c>NUTRITION_HYDRATION</c> para hidratación) por el camino de resolución
+    /// del catálogo (SPEC §14.3 + §16: multiplicador del paciente y topes
+    /// <c>max_per_day</c>/<c>max_per_week</c>).
+    ///
+    /// El <c>localDate</c> opcional se resuelve contra el hoy local del
+    /// paciente (una fecha futura → 422 <c>INVALID_DATE</c>). Un log duplicado
+    /// (la comida/hidratación de esa fecha ya está registrada) →
+    /// <see cref="Domain.Exceptions.BusinessRuleViolationException"/>
+    /// <c>HABIT_ALREADY_LOGGED</c> (409); la XP nunca se duplica (dedupe
+    /// parcial <c>('habit_log', habit_check.id, reason)</c> como backstop de
+    /// carrera). Paciente sin inscripción activa → 404
+    /// <c>NO_ACTIVE_ENROLLMENT</c>.
+    /// </summary>
+    Task<NutritionLogResultDto> LogNutritionAsync(
+        Guid patientId,
+        MealCode mealCode,
+        DateOnly? localDate = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Otorgamientos semanales de nutrición (SPEC §18, C): se evalúan SOLO en
+    /// <c>POST /scores/calculate</c> (nunca en <c>GET /scores</c>), después de
+    /// persistir la fila de <c>health_scores</c> del período. Usa la MISMA
+    /// fuente de adherencia que la dimensión de nutrición del Índice de Salud
+    /// (<c>app.habit_checks</c> categoría <c>alimentacion</c>; reutiliza la
+    /// lógica de <c>GetNutritionLogAsync</c>, no la duplica):
+    ///
+    /// - adherencia ≥ 85% → auto-otorga <c>NUTRITION_WEEK_85</c> (75 XP) una
+    ///   vez por período.
+    /// - adherencia sube ≥ 20 puntos porcentuales vs el período anterior (la
+    ///   fila previa de <c>health_scores</c>) → auto-otorga
+    ///   <c>NUTRITION_RECOVERY</c> (50 XP) una vez por período.
+    ///
+    /// Idempotencia: el dedupe parcial <c>(source_ref_type, source_ref_id,
+    /// reason)</c> de <c>xp_ledger</c> con <c>source_ref_type =
+    /// 'nutrition_period'</c> y <c>source_ref_id = health_scores.id</c> limita
+    /// a un otorgamiento por regla y período (violación única → se omite).
+    /// Respeta el multiplicador del paciente (SPEC §16, C.4) como todo
+    /// otorgamiento.
+    /// </summary>
+    Task<NutritionWeeklyAwardsResult> EvaluateNutritionAwardsAsync(
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default);
+}

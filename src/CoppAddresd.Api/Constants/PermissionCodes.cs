@@ -36,6 +36,13 @@ public static class PermissionCodes
     public const string PatientsUpdate = "Patients.Update";
     public const string PatientsDelete = "Patients.Delete";
 
+    // Progreso del Programa (T-04): códigos sembrados en el Auth Service.
+    public const string ProgramView = "Program.View";
+    public const string ProgramEdit = "Program.Edit";
+    public const string ProgramEnroll = "Program.Enroll";
+    public const string ProgramAdapt = "Program.Adapt";
+    public const string ProgramForceComplete = "Program.ForceComplete";
+
     /// <summary>Nombres conocidos (para el policy provider que resuelve políticas por código).</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -45,5 +52,6 @@ public static class PermissionCodes
         EmployeesView, EmployeesCreate, EmployeesUpdate, EmployeesDelete,
         ProfessionalsView, ProfessionalsCreate, ProfessionalsUpdate, ProfessionalsDelete,
         PatientsView, PatientsCreate, PatientsUpdate, PatientsDelete,
+        ProgramView, ProgramEdit, ProgramEnroll, ProgramAdapt, ProgramForceComplete,
     ];
 }

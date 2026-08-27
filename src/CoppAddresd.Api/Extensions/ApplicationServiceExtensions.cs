@@ -101,6 +101,11 @@ public static class ApplicationServiceExtensions
 
         services.AddScoped<ICurrentContext, CurrentContext>();
 
+        // Resolución del actor del módulo Progreso del Programa (SPEC §6.14 y
+        // PLAN OQ-1): paciente derivado del JWT (claim patient_id o lookup por
+        // app.patient_profiles.user_id), memoizado por request.
+        services.AddScoped<IProgramActorContext, ProgramActorContext>();
+
         return services;
     }
 
