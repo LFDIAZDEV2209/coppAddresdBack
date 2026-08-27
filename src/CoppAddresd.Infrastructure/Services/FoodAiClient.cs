@@ -109,6 +109,7 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
             body.Status ?? "completed",
             body.ModelVersion ?? "unknown",
             body.SegModelVersion ?? "none",
+            body.ClassifierVersion ?? "none",
             body.InferenceTimeMs ?? 0,
             (body.Foods ?? []).Select(f => new DetectedFoodDto(
                 f.Name,
@@ -132,6 +133,7 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
         public string? Status { get; set; }
         public string? ModelVersion { get; set; }
         public string? SegModelVersion { get; set; }
+        public string? ClassifierVersion { get; set; }
         public int? InferenceTimeMs { get; set; }
         public List<DetectedFoodJson>? Foods { get; set; }
     }

@@ -52,6 +52,6 @@ public class AnalyzeFoodImageCommandHandler
 
         return new AnalyzeFoodImageResult(
             analysisId.ToString(), result.Status, result.ModelVersion, result.SegModelVersion,
-            result.InferenceTimeMs, result.Foods);
+            result.ClassifierVersion, result.InferenceTimeMs, result.Foods);
     }
 }

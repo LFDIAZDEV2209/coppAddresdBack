@@ -13,11 +13,12 @@ public record DetectedFoodDto(
     BoundingBoxDto BoundingBox,
     SegmentationDto? Segmentation = null);
 
-/// <summary>Resultado del análisis de una imagen (ingesta + detección + segmentación).</summary>
+/// <summary>Resultado del análisis de una imagen (ingesta + detección + segmentación + clasificación).</summary>
 public record FoodAiAnalyzeResult(
     string AnalysisId,
     string Status,
     string ModelVersion,
     string SegModelVersion,
+    string ClassifierVersion,
     int InferenceTimeMs,
     IReadOnlyList<DetectedFoodDto> Foods);
