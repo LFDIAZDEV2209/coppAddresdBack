@@ -257,9 +257,9 @@ public static class CommunityContentSeeder
     {
         var profiles = new Dictionary<string, Profile>();
         var existing = await db.Profiles
-            .Where(p => Members.Select(m => DemoUserId(m.DocumentNumber)).Contains(p.UserId))
+            .Where(p => p.UserId != null && Members.Select(m => DemoUserId(m.DocumentNumber)).Contains(p.UserId.Value))
             .ToListAsync(ct);
-        var existingByUserId = existing.ToDictionary(p => p.UserId);
+        var existingByUserId = existing.Where(p => p.UserId != null).ToDictionary(p => p.UserId!.Value);
 
         var days = 0;
         foreach (var m in Members)
@@ -544,7 +544,7 @@ public static class CommunityContentSeeder
         CommunityDbContext db, Dictionary<string, Profile> demoProfiles, CancellationToken ct)
     {
         var demoUserIds = Members.Select(m => DemoUserId(m.DocumentNumber)).ToHashSet();
-        var me = await db.Profiles.FirstOrDefaultAsync(p => !demoUserIds.Contains(p.UserId), ct);
+        var me = await db.Profiles.FirstOrDefaultAsync(p => p.UserId != null && !demoUserIds.Contains(p.UserId.Value), ct);
         if (me is null) return;
 
         // Amigos mutuos con Valentina, Andrés y Carolina; siguiendo a Luisa;
