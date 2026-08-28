@@ -51,7 +51,7 @@ public class FoodAiClientSendImageTests
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent(
-                """{"analysis_id":"3f3f0f0f-1111-2222-3333-444444444444","status":"completed","model_version":"food-detector-v1","inference_time_ms":182,"classifier_version":"detector-based-v1","seg_model_version":"food-segmenter-v1","foods":[{"name":"pizza","confidence":0.94,"bounding_box":{"x":120,"y":80,"width":300,"height":180},"segmentation":{"mask":"aGVsbG8=","area_pixels":52341}},{"name":"banana","confidence":0.61,"bounding_box":{"x":30,"y":400,"width":90,"height":140}}]}"""),
+                """{"analysis_id":"3f3f0f0f-1111-2222-3333-444444444444","status":"completed","model_version":"food-detector-v1","inference_time_ms":182,"classifier_version":"detector-based-v1","seg_model_version":"food-segmenter-v1","foods":[{"name":"pizza","confidence":0.94,"bounding_box":{"x":120,"y":80,"width":300,"height":180},"segmentation":{"mask":"aGVsbG8=","area_pixels":52341},"portion":{"portion_size":"medium","estimated_grams":118,"min_grams":94,"max_grams":142,"confidence":0.55,"method":"basic_reference"}},{"name":"banana","confidence":0.61,"bounding_box":{"x":30,"y":400,"width":90,"height":140}}]}"""),
         });
         var client = BuildClient(handler);
 
@@ -85,6 +85,12 @@ public class FoodAiClientSendImageTests
         Assert.NotNull(result.Foods[0].Segmentation);
         Assert.Equal("aGVsbG8=", result.Foods[0].Segmentation.Mask);
         Assert.Equal(52341, result.Foods[0].Segmentation.AreaPixels);
+        Assert.NotNull(result.Foods[0].Portion);
+        Assert.Equal("medium", result.Foods[0].Portion.PortionSize);
+        Assert.Equal(118, result.Foods[0].Portion.EstimatedGrams);
+        Assert.Equal(0.55, result.Foods[0].Portion.Confidence);
+        Assert.Equal("basic_reference", result.Foods[0].Portion.Method);
+        Assert.Null(result.Foods[1].Portion);
         Assert.Null(result.Foods[1].Segmentation);
     }
 
