@@ -16,8 +16,11 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection no configurada.");
 
 builder.Services.AddDbContext<CommunityDbContext>(options =>
+{
     options.UseNpgsql(connectionString, npgsql =>
-        npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community")));
+        npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community"));
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 builder.Services.AddHttpContextAccessor();
 
@@ -101,9 +104,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseWebSockets();
 
-app.MapGraphQL().WithOptions(o => o.Tool.Enable = false);
+app.MapGraphQL("/api/v1/community/graphql").WithOptions(o => o.Tool.Enable = false);
 app.MapHealthChecks("/health");
-app.MapGraphQLWebSocket();
+app.MapGraphQLWebSocket("/api/v1/community/subscriptions");
 app.MapPostStorageEndpoints();
 
 app.Run();
