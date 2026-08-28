@@ -63,7 +63,30 @@ public class FoodAiController : ControllerBase
             var command = new AnalyzeFoodImageCommand(
                 stream, image.FileName, image.ContentType, image.Length);
             var result = await _mediator.Send(command, ct);
-            return Ok(result);
+            return Ok(new
+            {
+                analysisId = result.AnalysisId,
+                status = result.Status,
+                modelVersion = result.ModelVersion,
+                segModelVersion = result.SegModelVersion,
+                classifierVersion = result.ClassifierVersion,
+                inferenceTimeMs = result.InferenceTimeMs,
+                foods = result.Foods.Select(f => new
+                {
+                    name = f.Name,
+                    confidence = f.Confidence,
+                    boundingBox = f.BoundingBox,
+                    segmentation = f.Segmentation,
+                    portion = f.Portion,
+                    nutrition = f.NutritionResult?.Nutrition,
+                    nutritionRange = f.NutritionResult?.NutritionRange,
+                    nutritionStatus = f.NutritionResult?.NutritionStatus,
+                    source = f.NutritionResult?.Source,
+                    sourceVersion = f.NutritionResult?.SourceVersion,
+                }),
+                summary = result.Summary,
+                summaryRange = result.SummaryRange,
+            });
         }
         catch (InvalidImageException ex)
         {

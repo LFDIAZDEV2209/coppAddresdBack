@@ -24,7 +24,8 @@ public record DetectedFoodDto(
     double Confidence,
     BoundingBoxDto BoundingBox,
     SegmentationDto? Segmentation = null,
-    PortionDto? Portion = null);
+    PortionDto? Portion = null,
+    FoodNutritionResult? NutritionResult = null);
 
 /// <summary>Resultado del análisis de una imagen (ingesta + detección + segmentación + clasificación).</summary>
 public record FoodAiAnalyzeResult(

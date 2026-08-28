@@ -42,9 +42,20 @@ public class AnalyzeFoodImageCommandHandlerTests
             SentAnalysisId = analysisId;
             SentResult = new FoodAiAnalyzeResult(
                 analysisId.ToString(), "completed", "food-detector-v1", "food-segmenter-v1", "detector-based-v1", 182,
-                [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]);
+                [new DetectedFoodDto(
+                    "pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180),
+                    Segmentation: null,
+                    Portion: new PortionDto("large", 128, 118, 160, 0.55, "basic_reference"))]);
             return Task.FromResult(SentResult);
         }
+    }
+
+    private sealed class FakeNutritionProvider : INutritionProvider
+    {
+        public FoodNutritionDto? Result { get; set; }
+
+        public Task<FoodNutritionDto?> GetNutritionAsync(string foodKey, CancellationToken ct = default)
+            => Task.FromResult(Result);
     }
 
     private static readonly byte[] Png1x1 = Convert.FromBase64String(
@@ -52,10 +63,18 @@ public class AnalyzeFoodImageCommandHandlerTests
 
     private static AnalyzeFoodImageCommandHandler BuildHandler(
         FakeImageStorage? storage = null,
-        FakeFoodAiClient? client = null) => new(
+        FakeFoodAiClient? client = null,
+        FakeNutritionProvider? nutritionProvider = null) => new(
             new ImageFileValidator(Options.Create(new FoodAiSettings())),
             storage ?? new FakeImageStorage(),
             client ?? new FakeFoodAiClient(),
+            nutritionProvider ?? new FakeNutritionProvider
+            {
+                Result = new FoodNutritionDto(
+                    "Pizza, cheese, per 100 g", 100m, 266m, 11.39m, 33.33m, 10.4m, 2.3m, 3.6m, 598m,
+                    "USDA FoodData Central", "2026-08-27"),
+            },
+            new NutritionCalculator(),
             NullLogger<AnalyzeFoodImageCommandHandler>.Instance);
 
     [Fact]
