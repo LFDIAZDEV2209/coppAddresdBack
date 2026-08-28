@@ -25,17 +25,24 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
             .Include(x => x.Patient)
             .AsQueryable();
 
-        if (isTemplate.HasValue)
-            query = query.Where(x => x.IsTemplate == isTemplate.Value);
+        if (patientId.HasValue && !isTemplate.HasValue)
+        {
+            query = query.Where(x => x.IsTemplate || x.PatientId == patientId.Value);
+        }
+        else
+        {
+            if (isTemplate.HasValue)
+                query = query.Where(x => x.IsTemplate == isTemplate.Value);
+
+            if (patientId.HasValue)
+                query = query.Where(x => x.PatientId == patientId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(x => x.Name.Contains(search));
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(x => x.Status.ToString() == status);
-
-        if (patientId.HasValue)
-            query = query.Where(x => x.PatientId == patientId.Value);
 
         var total = await query.CountAsync(ct);
 
