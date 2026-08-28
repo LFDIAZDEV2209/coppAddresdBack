@@ -12,6 +12,17 @@ public sealed class Food
     public string DisplayName { get; set; } = default!;
     public string Category { get; set; } = default!;
     public bool IsActive { get; set; } = true;
+
+    /// <summary>
+    /// Estado del mapping nutricional (DIRECT_MATCH | GOOD_EQUIVALENCE |
+    /// AMBIGUOUS | REVIEW_REQUIRED | NO_RELIABLE_MATCH). Independiente de la
+    /// confianza de detección/clasificación.
+    /// </summary>
+    public string? MappingStatus { get; set; }
+
+    /// <summary>Confianza del mapping visual → nutrición (0..1), separada de la clasificación.</summary>
+    public decimal? MappingConfidence { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 

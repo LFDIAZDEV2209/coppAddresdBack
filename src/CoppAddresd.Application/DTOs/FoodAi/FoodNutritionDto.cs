@@ -15,4 +15,5 @@ public record FoodNutritionDto(
     decimal Sugar,
     decimal Sodium,
     string Source,
-    string SourceVersion);
+    string SourceVersion,
+    string? SourceId = null);

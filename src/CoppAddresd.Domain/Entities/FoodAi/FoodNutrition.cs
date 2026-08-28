@@ -20,6 +20,10 @@ public sealed class FoodNutrition
     public decimal Sodium { get; set; }
     public string Source { get; set; } = default!;
     public string SourceVersion { get; set; } = default!;
+
+    /// <summary>Identificador del registro en la fuente (FDC ID de USDA).</summary>
+    public string? SourceId { get; set; }
+
     public DateTime ImportedAt { get; set; } = DateTime.UtcNow;
 
     public Food Food { get; set; } = default!;

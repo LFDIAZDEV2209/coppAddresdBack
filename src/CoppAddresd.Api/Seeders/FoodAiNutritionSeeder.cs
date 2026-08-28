@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CoppAddresd.Domain.Entities.FoodAi;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -5,29 +6,38 @@ using Microsoft.EntityFrameworkCore;
 namespace CoppAddresd.Api.Seeders;
 
 /// <summary>
-/// Seed del catálogo nutricional de Food AI (schema foodai).
+/// Seed del catálogo nutricional de Food AI (schema foodai) a partir del
+/// archivo curado <c>Seeders/data/food_usda_curated.json</c>.
 ///
-/// Fuente: USDA FoodData Central (fdc.nal.usda.gov) — datos de dominio
-/// público del gobierno de EE. UU. (sin restricción de licencia). Valores por
-/// 100 g, tomados manualmente de las entradas FDC referenciadas en
-/// docs/nutrition.md (fecha de consulta: 2026-08-27).
+/// Fuente: USDA FoodData Central — datos de dominio público (CC0 1.0).
+/// El JSON registra por alimento: fdc_id, nombre FDC, status del mapping
+/// (DIRECT_MATCH/GOOD_EQUIVALENCE/REVIEW_REQUIRED/NO_RELIABLE_MATCH),
+/// confianza del mapping y valores por 100 g. Alimentos sin nutrition (null)
+/// NO se insertan (identificación visual ≠ disponibilidad nutricional).
 ///
-/// Idempotente por alias (los aliases son los nombres del modelo de visión).
-/// Cada operación usa un scope propio con su propio DbContext, igual que
-/// ClinicalMeasurementsSeeder.
+/// Idempotente por alias (nombres del modelo de visión). Reconstruible desde
+/// entorno limpio. Actualizar valores = editar el JSON y re-ejecutar (el
+/// alias existente no se duplica; para refrescar un valor se usa el campo
+/// source_version del JSON en futuras versiones).
 /// </summary>
 public sealed class FoodAiNutritionSeeder(
     IServiceScopeFactory scopeFactory,
     ILogger<FoodAiNutritionSeeder> logger) : IHostedService
 {
-    private const string Source = "USDA FoodData Central";
-    private const string SourceVersion = "2026-08-27";
+    private const string CuratedDataPath = "Seeders/data/food_usda_curated.json";
 
-    private sealed record FoodSeed(
-        string Alias,
-        string Name,
+    private sealed record CuratedFood(
+        string Canonical,
         string DisplayName,
         string Category,
+        string Alias,
+        string? FdcId,
+        string? FdcName,
+        string MappingStatus,
+        decimal MappingConfidence,
+        CuratedNutrition? Nutrition);
+
+    private sealed record CuratedNutrition(
         decimal Calories,
         decimal Protein,
         decimal Carbohydrates,
@@ -35,22 +45,6 @@ public sealed class FoodAiNutritionSeeder(
         decimal Fiber,
         decimal Sugar,
         decimal Sodium);
-
-    // Valores por 100 g (unidad canónica). Alias = clase YOLO.
-    // "sandwich" NO se incluye: sin entrada FDC fiable para un sándwich
-    // genérico — no se inventan equivalencias (ver docs/nutrition.md).
-    private static readonly IReadOnlyList<FoodSeed> Foods =
-    [
-        new("banana", "Banana, raw", "Banana", "fruit", 89m, 1.09m, 22.84m, 0.33m, 2.6m, 12.23m, 1m),
-        new("apple", "Apple, raw, with skin", "Manzana", "fruit", 52m, 0.26m, 13.81m, 0.17m, 2.4m, 10.39m, 1m),
-        new("orange", "Orange, raw", "Naranja", "fruit", 47m, 0.94m, 11.75m, 0.12m, 2.4m, 9.35m, 0m),
-        new("broccoli", "Broccoli, raw", "Brócoli", "vegetable", 34m, 2.82m, 6.64m, 0.37m, 2.6m, 1.7m, 33m),
-        new("carrot", "Carrot, raw", "Zanahoria", "vegetable", 41m, 0.93m, 9.58m, 0.24m, 2.8m, 4.74m, 69m),
-        new("pizza", "Pizza, cheese, per 100 g", "Pizza", "prepared", 266m, 11.39m, 33.33m, 10.4m, 2.3m, 3.6m, 598m),
-        new("hot dog", "Frankfurter, beef, per 100 g", "Hot dog", "prepared", 290m, 12.0m, 2.7m, 25.0m, 0m, 1.1m, 1050m),
-        new("donut", "Doughnuts, cake-type, plain, per 100 g", "Dona", "confection", 452m, 4.9m, 51.3m, 25.4m, 1.5m, 24.8m, 445m),
-        new("cake", "Cake, yellow, plain, without frosting, per 100 g", "Pastel", "confection", 361m, 5.3m, 53.2m, 14.6m, 0.7m, 27.9m, 392m),
-    ];
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -72,9 +66,21 @@ public sealed class FoodAiNutritionSeeder(
 
     private async Task SeedAsync(CancellationToken ct)
     {
-        var seeded = 0;
-        foreach (var seed in Foods)
+        var foods = LoadCurated();
+        if (foods.Count == 0)
         {
+            logger.LogWarning("Catálogo curado vacío o no encontrado: {Path}", CuratedDataPath);
+            return;
+        }
+
+        var seeded = 0;
+        foreach (var seed in foods)
+        {
+            if (seed.Nutrition is null)
+            {
+                continue; // sin equivalencia confiable → sin fila nutricional
+            }
+
             var exists = await WithContext(
                 db => db.FoodAliases.AnyAsync(a => a.Alias == seed.Alias, ct), ct);
             if (exists)
@@ -86,27 +92,30 @@ public sealed class FoodAiNutritionSeeder(
             {
                 var food = new Food
                 {
-                    Name = seed.Name,
+                    Name = seed.FdcName ?? seed.Canonical,
                     DisplayName = seed.DisplayName,
                     Category = seed.Category,
+                    MappingStatus = seed.MappingStatus,
+                    MappingConfidence = seed.MappingConfidence,
                 };
                 food.NutritionEntries.Add(new FoodNutrition
                 {
                     ServingGrams = 100m,
-                    Calories = seed.Calories,
-                    Protein = seed.Protein,
-                    Carbohydrates = seed.Carbohydrates,
-                    Fat = seed.Fat,
-                    Fiber = seed.Fiber,
-                    Sugar = seed.Sugar,
-                    Sodium = seed.Sodium,
-                    Source = Source,
-                    SourceVersion = SourceVersion,
+                    Calories = seed.Nutrition.Calories,
+                    Protein = seed.Nutrition.Protein,
+                    Carbohydrates = seed.Nutrition.Carbohydrates,
+                    Fat = seed.Nutrition.Fat,
+                    Fiber = seed.Nutrition.Fiber,
+                    Sugar = seed.Nutrition.Sugar,
+                    Sodium = seed.Nutrition.Sodium,
+                    Source = "USDA FoodData Central",
+                    SourceVersion = "2026-08-28",
+                    SourceId = seed.FdcId,
                 });
                 food.Aliases.Add(new FoodAlias
                 {
                     Alias = seed.Alias,
-                    Source = "yolo-coco-food-detector",
+                    Source = "food-catalog-clip",
                 });
                 db.Foods.Add(food);
                 await db.SaveChangesAsync(ct);
@@ -115,7 +124,53 @@ public sealed class FoodAiNutritionSeeder(
             seeded++;
         }
 
-        logger.LogInformation("Catálogo nutricional sembrado: {Seeded} alimentos nuevos", seeded);
+        logger.LogInformation(
+            "Catálogo nutricional sembrado: {Seeded} nuevos de {Total} curados",
+            seeded, foods.Count);
+    }
+
+    private static List<CuratedFood> LoadCurated()
+    {
+        var path = Path.Combine(
+            AppContext.BaseDirectory, CuratedDataPath);
+        if (!File.Exists(path))
+        {
+            return [];
+        }
+
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        var list = new List<CuratedFood>();
+        foreach (var element in doc.RootElement.GetProperty("foods").EnumerateArray())
+        {
+            var nutritionElement = element.GetProperty("nutrition");
+            CuratedNutrition? nutrition = null;
+            if (nutritionElement.ValueKind == JsonValueKind.Object)
+            {
+                nutrition = new CuratedNutrition(
+                    Calories: nutritionElement.GetProperty("calories").GetDecimal(),
+                    Protein: nutritionElement.GetProperty("protein").GetDecimal(),
+                    Carbohydrates: nutritionElement.GetProperty("carbohydrates").GetDecimal(),
+                    Fat: nutritionElement.GetProperty("fat").GetDecimal(),
+                    Fiber: nutritionElement.GetProperty("fiber").GetDecimal(),
+                    Sugar: nutritionElement.GetProperty("sugar").GetDecimal(),
+                    Sodium: nutritionElement.GetProperty("sodium").GetDecimal());
+            }
+
+            list.Add(new CuratedFood(
+                Canonical: element.GetProperty("canonical").GetString()!,
+                DisplayName: element.GetProperty("display_name").GetString()!,
+                Category: element.GetProperty("category").GetString()!,
+                Alias: element.GetProperty("alias").GetString()!,
+                FdcId: element.GetProperty("fdc_id").ValueKind == JsonValueKind.String
+                    ? element.GetProperty("fdc_id").GetString() : null,
+                FdcName: element.GetProperty("fdc_name").ValueKind == JsonValueKind.String
+                    ? element.GetProperty("fdc_name").GetString() : null,
+                MappingStatus: element.GetProperty("mapping_status").GetString()!,
+                MappingConfidence: element.GetProperty("mapping_confidence").GetDecimal(),
+                Nutrition: nutrition));
+        }
+
+        return list;
     }
 
     private async Task<T> WithContext<T>(
