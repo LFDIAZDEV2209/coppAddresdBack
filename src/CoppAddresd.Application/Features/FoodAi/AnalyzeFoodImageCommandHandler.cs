@@ -72,6 +72,18 @@ public class AnalyzeFoodImageCommandHandler
 
         var summary = ComputeSummary(foods);
 
+        // Observabilidad (FASE 16): éxito nutricional por análisis y razones
+        // de fallo — sin datos de usuario.
+        var nutritionOk = foods.Count(f => f.NutritionResult?.NutritionStatus == "available");
+        var failures = foods
+            .Where(f => f.NutritionResult is not null && f.NutritionResult.NutritionStatus != "available")
+            .Select(f => $"{f.Name}:{f.NutritionResult!.NutritionStatus}")
+            .ToList();
+        _logger.LogInformation(
+            "nutrition_resumen analysis_id={AnalysisId} foods={Foods} nutricion_ok={Ok}/{Total} fallos={Failures}",
+            analysisId, foods.Count, nutritionOk, foods.Count,
+            failures.Count == 0 ? "ninguno" : string.Join(",", failures));
+
         await PersistAsync(analysisId, request.UserId, imageKey, result, foods, summary, ct);
 
         return new AnalyzeFoodImageResult(
