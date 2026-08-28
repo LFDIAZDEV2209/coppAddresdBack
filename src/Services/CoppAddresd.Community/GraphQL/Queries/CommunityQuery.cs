@@ -145,11 +145,15 @@ var profile = await db.Profiles
         ProfileStatus? status,
         string? search,
         [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
         CancellationToken ct,
         int take = 50,
         int skip = 0)
     {
+        var currentUserId = CurrentUserId(http);
         var query = db.Profiles.AsQueryable();
+        // El ERP no lista al perfil sistema (Equipo ANTARES) ni al propio admin.
+        query = query.Where(p => !p.IsSystem && (currentUserId == null || p.UserId != currentUserId));
         if (status is not null) query = query.Where(p => p.Status == status);
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(p => EF.Functions.ILike(EF.Functions.Unaccent(p.DisplayName), EF.Functions.Unaccent($"%{search}%")));
