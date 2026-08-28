@@ -51,6 +51,7 @@ builder.Services.AddAuthCors(builder.Configuration);
 
 builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
 builder.Services.Configure<DevPatientSettings>(builder.Configuration.GetSection(DevPatientSettings.SectionName));
+builder.Services.Configure<CommunityDemoSettings>(builder.Configuration.GetSection(CommunityDemoSettings.SectionName));
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
 builder.Services.Configure<TwilioSettings>(builder.Configuration.GetSection(TwilioSettings.SectionName));
 builder.Services.Configure<OtpSecuritySettings>(builder.Configuration.GetSection(OtpSecuritySettings.SectionName));
@@ -159,10 +160,12 @@ using (var scope = app.Services.CreateScope())
     var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
     var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;
     var devPatientSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DevPatientSettings>>().Value;
+    var communityDemoSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<CommunityDemoSettings>>().Value;
 
     await AdminSeeder.SeedAsync(dbContext, userManager, roleManager, authSettings, logger);
     await ApplicationSeeder.SeedAsync(dbContext, userManager, authSettings.AdminEmail, logger);
     await DevPatientSeeder.SeedAsync(dbContext, userManager, devPatientSettings, logger);
+    await CommunityDemoSeeder.SeedAsync(dbContext, userManager, communityDemoSettings, logger);
     await RoleSeeder.SeedAsync(dbContext, logger);
 }
 

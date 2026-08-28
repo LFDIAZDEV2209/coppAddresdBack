@@ -4,6 +4,8 @@ using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.GraphQL.Subscriptions;
 using CoppAddresd.Community.Persistence;
+using CoppAddresd.Community.Seeders;
+using CoppAddresd.Community.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -18,6 +20,10 @@ builder.Services.AddDbContext<CommunityDbContext>(options =>
         npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community")));
 
 builder.Services.AddHttpContextAccessor();
+
+// Almacenamiento de objetos (imágenes de publicaciones). Proveedor según
+// Storage:Provider (Local por defecto; S3/MinIO con Storage:S3).
+builder.Services.AddCommunityStorage(builder.Configuration);
 
 var jwt = builder.Configuration.GetSection("Jwt");
 var secret = jwt["Secret"]!;
@@ -61,6 +67,8 @@ builder.Services
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
     .AddSubscriptionType<CommunitySubscription>()
+    .AddType<PostImageUrlResolver>()
+    .AddType<ProfileImageUrlResolver>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
@@ -73,6 +81,19 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CommunityDbContext>();
     await db.Database.MigrateAsync();
+
+    // Contenido demo de la comunidad (idempotente). No-op si la sección
+    // CommunityDemo no está configurada con Enabled=true (producción).
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var demo = builder.Configuration.GetSection(CommunityDemoSettings.SectionName).Get<CommunityDemoSettings>();
+    if (demo is { Enabled: true })
+    {
+        await CommunityContentSeeder.SeedAsync(db, logger, CancellationToken.None);
+    }
+    else
+    {
+        logger.LogInformation("CommunityDemo not configured, skipping content seed");
+    }
 }
 
 app.UseCors("CommunityCors");
@@ -83,5 +104,6 @@ app.UseWebSockets();
 app.MapGraphQL().WithOptions(o => o.Tool.Enable = false);
 app.MapHealthChecks("/health");
 app.MapGraphQLWebSocket();
+app.MapPostStorageEndpoints();
 
 app.Run();
