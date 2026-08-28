@@ -88,6 +88,26 @@ public class FoodAiController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Nutrición por 100 g de un alimento (alias del modelo o nombre canónico).
+    /// Consulta la BD nutricional (USDA FDC); no usa IA. 404 controlado si el
+    /// alimento no existe o no tiene entrada.
+    /// </summary>
+    [HttpGet("nutrition/{foodKey}")]
+    public async Task<ActionResult<CoppAddresd.Application.DTOs.FoodAi.FoodNutritionDto>> Nutrition(
+        string foodKey,
+        CancellationToken ct)
+    {
+        var result = await _mediator.Send(new GetFoodNutritionQuery(foodKey), ct);
+        if (result is null)
+        {
+            return NotFound(ErrorResponse(
+                "FOOD_NOT_FOUND", $"No hay información nutricional para '{foodKey}'."));
+        }
+
+        return Ok(result);
+    }
+
     private static object ErrorResponse(string code, string message) => new
     {
         error = new { code, message },

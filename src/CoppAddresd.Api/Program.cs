@@ -45,6 +45,9 @@ builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
 // Seed de reglas de seguridad clínica para la generación de planes con IA.
 builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
 
+// Seed del catálogo nutricional de Food AI (schema foodai, USDA FDC).
+builder.Services.AddHostedService<FoodAiNutritionSeeder>();
+
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
 // (no incluido en el shared framework de .NET 10), así que se usa un check
