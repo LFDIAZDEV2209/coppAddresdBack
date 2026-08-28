@@ -20,7 +20,7 @@ public sealed record ConfirmTelemedicineRequestCommand(
     DateTimeOffset ScheduledStart,
     int? DurationMinutes,
     Guid? LocationId,
-    Guid CreatedBy) : IRequest<TelemedicineAppointmentDto>;
+    Guid CreatedBy) : IRequest<AppointmentDto>;
 
 public sealed class ConfirmTelemedicineRequestCommandValidator
     : AbstractValidator<ConfirmTelemedicineRequestCommand>
@@ -37,12 +37,12 @@ public sealed class ConfirmTelemedicineRequestCommandValidator
 public sealed class ConfirmTelemedicineRequestCommandHandler(
     IRequestRepository requests,
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
     IAlertRepository alerts)
-    : IRequestHandler<ConfirmTelemedicineRequestCommand, TelemedicineAppointmentDto>
+    : IRequestHandler<ConfirmTelemedicineRequestCommand, AppointmentDto>
 {
-    public async Task<TelemedicineAppointmentDto> Handle(
+    public async Task<AppointmentDto> Handle(
         ConfirmTelemedicineRequestCommand request,
         CancellationToken ct)
     {
@@ -72,7 +72,7 @@ public sealed class ConfirmTelemedicineRequestCommandHandler(
                 "El profesional ya tiene una cita en ese horario.");
         }
 
-        var appointment = new TelemedicineAppointment
+        var appointment = new Appointment
         {
             RequestId = entity.Id,
             PatientId = entity.PatientId,
@@ -106,7 +106,7 @@ public sealed class ConfirmTelemedicineRequestCommandHandler(
             await alerts.AddRangeAsync([alert], ct);
         }
 
-        return new TelemedicineAppointmentDto(
+        return new AppointmentDto(
             appointment.Id,
             appointment.RequestId,
             appointment.PatientId,

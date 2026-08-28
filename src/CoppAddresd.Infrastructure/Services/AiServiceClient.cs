@@ -6,6 +6,8 @@ using System.Text.Json.Serialization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.Ai;
 using CoppAddresd.Application.Features.Chat;
+using CoppAddresd.Application.Features.Threads;
+using CoppAddresd.Application.Features.Wellness;
 using CoppAddresd.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -50,6 +52,21 @@ public class AiServiceClient : IAiServiceClient
     };
 
     /// <summary>
+    /// Payload de generación de plan: type + contexto clínico consolidado +
+    /// restricciones de seguridad. Se serializa con JsonOpts (snake_case), por
+    /// lo que los DTOs de contexto se envían acorde al contrato del AI Service.
+    /// </summary>
+    private static object BuildGeneratePlanPayload(
+        string type,
+        ClinicalContextDto context,
+        IReadOnlyList<RestrictionDto> restrictions) => new
+    {
+        type,
+        clinical_context = context,
+        restrictions,
+    };
+
+    /// <summary>
     /// Header de autenticación del canal interno backend → AI Service. El
     /// frontend jamás lo conoce; la clave vive solo en configuración
     /// (appsettings/variables de entorno, gitignoreado).
@@ -88,6 +105,38 @@ public class AiServiceClient : IAiServiceClient
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
         return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent);
+    }
+
+    public async Task<AiPlanResult> GeneratePlanAsync(
+        string type,
+        ClinicalContextDto context,
+        IReadOnlyList<RestrictionDto> restrictions,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation("Generating {Type} plan via AI service", type);
+        var payload = BuildGeneratePlanPayload(type, context, restrictions);
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.PlanGenerateEndpoint)
+        {
+            Content = JsonContent.Create(payload, options: JsonOpts),
+        };
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<GeneratePlanResponseJson>(JsonOpts, ct);
+        if (result is null
+            || result.Plan.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            throw new AiServiceException(
+                (int)response.StatusCode,
+                "El AI Service no devolvió un plan en la respuesta.");
+        }
+
+        _logger.LogInformation("AI service returned {Type} plan", result.Type);
+        return new AiPlanResult(result.Type, result.Plan);
     }
 
     public async IAsyncEnumerable<SseEvent> StreamChatAsync(
@@ -145,12 +194,68 @@ public class AiServiceClient : IAiServiceClient
         _logger.LogDebug("Stream completed");
     }
 
+    public async Task<ProactiveMessageResult> ProactiveMessageAsync(
+        Guid userId,
+        string message,
+        string agentTypeId = "base",
+        CancellationToken ct = default)
+    {
+        _logger.LogDebug("Injecting proactive message for userId={UserId}", userId);
+
+        // `thread_id` NO se envía: el AI Service resuelve el thread estable
+        // `proactive-{userId}`. El payload respeta el contrato del endpoint
+        // (user_id, agent_type_id, message) en snake_case.
+        var payload = new
+        {
+            user_id = userId.ToString(),
+            agent_type_id = string.IsNullOrWhiteSpace(agentTypeId) ? "base" : agentTypeId,
+            message,
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.ProactiveMessageEndpoint)
+        {
+            Content = JsonContent.Create(payload, options: JsonOpts),
+        };
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<ProactiveMessageResponseJson>(JsonOpts, ct);
+        _logger.LogDebug("AI service injected proactive message: ThreadId={ThreadId}", result?.ThreadId);
+        return new ProactiveMessageResult(result!.ThreadId, result.MessageId);
+    }
+
     private static async Task ThrowForResponseAsync(
         HttpResponseMessage response,
         CancellationToken ct)
     {
         var detail = await response.Content.ReadAsStringAsync(ct);
         throw new AiServiceException((int)response.StatusCode, detail);
+    }
+
+    public async Task<ThreadStateResult> GetThreadStateAsync(
+        string threadId,
+        string userId,
+        CancellationToken ct = default)
+    {
+        // Proxy de lectura del historial de un thread (canal interno). El AI
+        // Service aísla el thread por user_id (`{user_id}::{thread_id}`) y
+        // exige X-Internal-Key — el frontend jamás lo conoce.
+        var url = $"{_settings.ApiPrefix}/threads/{Uri.EscapeDataString(threadId)}/state?user_id={Uri.EscapeDataString(userId)}";
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Get, url);
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<ThreadStateResponseJson>(JsonOpts, ct);
+        if (result is null)
+            return new ThreadStateResult(threadId, 0, null);
+
+        return new ThreadStateResult(result.ThreadId, result.MessageCount, result.LastMessage);
     }
 
     private SseEvent? ParseSseEvent(StreamChatChunk chunk)
@@ -211,4 +316,24 @@ public class AiServiceClient : IAiServiceClient
     private record DoneJson(string ThreadId);
     private record NodeJson(string Node);
     private record MessageJson(string Type, string? Content);
+
+    // Contrato del ai-service para generación de planes: `type` + `plan`
+    // (snake_case). El plan es JSON crudo (JsonElement) para no acoplarse al
+    // shape de los DTOs de creación del módulo Wellness.
+    private sealed record GeneratePlanResponseJson(
+        [property: JsonPropertyName("type")] string Type,
+        [property: JsonPropertyName("plan")] JsonElement Plan);
+
+    // Contrato del endpoint de inyección proactiva: `thread_id` + `message_id`
+    // (snake_case).
+    private sealed record ProactiveMessageResponseJson(
+        [property: JsonPropertyName("thread_id")] string ThreadId,
+        [property: JsonPropertyName("message_id")] string MessageId);
+
+    // Contrato del AI Service para el estado de un thread: `thread_id`,
+    // `message_count` y `last_message` (snake_case).
+    private sealed record ThreadStateResponseJson(
+        [property: JsonPropertyName("thread_id")] string ThreadId,
+        [property: JsonPropertyName("message_count")] int MessageCount,
+        [property: JsonPropertyName("last_message")] string? LastMessage);
 }

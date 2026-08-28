@@ -16,4 +16,14 @@ public class AiServiceSettings
     public string ExecutionsEndpoint => $"{ApiPrefix}/admin/executions";
     public string SyncAgentConfigEndpoint => "/internal/agents/sync-config";
     public string IngestDocumentEndpoint => "/internal/agents/ingest";
+
+    /// <summary>Endpoint interno de generación de planes de alimentación/rutinas (AI Service).</summary>
+    public string PlanGenerateEndpoint { get; set; } = "/internal/wellness/generate-plan";
+
+    /// <summary>
+    /// Endpoint interno de inyección de mensajes proactivos del bot (sin LLM,
+    /// costo cero). Se omite <c>thread_id</c> en el payload para que el AI
+    /// Service use el thread estable <c>proactive-{userId}</c>.
+    /// </summary>
+    public string ProactiveMessageEndpoint { get; set; } = "/internal/agents/proactive-message";
 }

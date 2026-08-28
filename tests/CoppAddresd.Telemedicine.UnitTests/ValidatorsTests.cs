@@ -13,8 +13,16 @@ public class ValidatorsTests
     {
         var validator = new CreateTelemedicineRequestCommandValidator();
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, null, TestData.Clinic, TestData.LocationId,
-            null, "", TestData.UserId);
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            null,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "",
+            TestData.UserId
+        );
 
         var result = validator.Validate(command);
 
@@ -27,8 +35,16 @@ public class ValidatorsTests
     {
         var validator = new CreateTelemedicineRequestCommandValidator();
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, null, TestData.Clinic, TestData.LocationId,
-            null, "Dolor abdominal", TestData.UserId);
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            null,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId
+        );
 
         Assert.True(validator.Validate(command).IsValid);
     }
@@ -36,10 +52,18 @@ public class ValidatorsTests
     [Fact]
     public void ScheduleAppointment_SinIdsObligatorios_Invalido()
     {
-        var validator = new ScheduleTelemedicineAppointmentCommandValidator();
-        var command = new ScheduleTelemedicineAppointmentCommand(
-            Guid.Empty, Guid.Empty, Guid.Empty, Guid.Empty, null, null,
-            DateTimeOffset.UtcNow.AddDays(1), null, Guid.Empty);
+        var validator = new ScheduleAppointmentCommandValidator();
+        var command = new ScheduleAppointmentCommand(
+            Guid.Empty,
+            Guid.Empty,
+            Guid.Empty,
+            Guid.Empty,
+            null,
+            null,
+            DateTimeOffset.UtcNow.AddDays(1),
+            null,
+            Guid.Empty
+        );
 
         var result = validator.Validate(command);
 
@@ -53,18 +77,62 @@ public class ValidatorsTests
     [Fact]
     public void CancelAppointment_SinRazon_Invalido()
     {
-        var validator = new CancelTelemedicineAppointmentCommandValidator();
-        var command = new CancelTelemedicineAppointmentCommand(Guid.NewGuid(), "", CancelledBy.Professional, TestData.UserId);
+        var validator = new CancelAppointmentCommandValidator();
+        var command = new CancelAppointmentCommand(
+            Guid.NewGuid(),
+            "",
+            CancelledBy.Professional,
+            TestData.UserId
+        );
 
         Assert.False(validator.Validate(command).IsValid);
     }
 
     [Fact]
+    public void ReviewRequest_RejectSinMotivo_Invalido()
+    {
+        var validator = new ReviewTelemedicineRequestCommandValidator();
+        var command = new ReviewTelemedicineRequestCommand(
+            Guid.NewGuid(),
+            RequestDecision.Rejected,
+            "",
+            TestData.UserId,
+            HasAdminView: true
+        );
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == "Reason");
+    }
+
+    [Fact]
+    public void ReviewRequest_ApproveSinMotivo_EsValido()
+    {
+        var validator = new ReviewTelemedicineRequestCommandValidator();
+        var command = new ReviewTelemedicineRequestCommand(
+            Guid.NewGuid(),
+            RequestDecision.Approved,
+            null,
+            TestData.UserId,
+            HasAdminView: true
+        );
+
+        Assert.True(validator.Validate(command).IsValid);
+    }
+
+    [Fact]
     public void RescheduleAppointment_SinNuevoInicio_Invalido()
     {
-        var validator = new RescheduleTelemedicineAppointmentCommandValidator();
-        var command = new RescheduleTelemedicineAppointmentCommand(
-            Guid.NewGuid(), default, null, null, RescheduleRequestedBy.Patient, TestData.UserId);
+        var validator = new RescheduleAppointmentCommandValidator();
+        var command = new RescheduleAppointmentCommand(
+            Guid.NewGuid(),
+            default,
+            null,
+            null,
+            RescheduleRequestedBy.Patient,
+            TestData.UserId
+        );
 
         Assert.False(validator.Validate(command).IsValid);
     }
@@ -72,10 +140,15 @@ public class ValidatorsTests
     [Fact]
     public void RescheduleAppointment_RazonLarga_Invalido()
     {
-        var validator = new RescheduleTelemedicineAppointmentCommandValidator();
-        var command = new RescheduleTelemedicineAppointmentCommand(
-            Guid.NewGuid(), DateTimeOffset.UtcNow.AddDays(1), null, new string('x', 2001),
-            RescheduleRequestedBy.Patient, TestData.UserId);
+        var validator = new RescheduleAppointmentCommandValidator();
+        var command = new RescheduleAppointmentCommand(
+            Guid.NewGuid(),
+            DateTimeOffset.UtcNow.AddDays(1),
+            null,
+            new string('x', 2001),
+            RescheduleRequestedBy.Patient,
+            TestData.UserId
+        );
 
         Assert.False(validator.Validate(command).IsValid);
     }
@@ -102,7 +175,12 @@ public class ValidatorsTests
     public void EndSession_RazonLarga_Invalido()
     {
         var validator = new EndSessionCommandValidator();
-        var command = new EndSessionCommand(Guid.NewGuid(), new string('x', 501), TestData.UserId, false);
+        var command = new EndSessionCommand(
+            Guid.NewGuid(),
+            new string('x', 501),
+            TestData.UserId,
+            false
+        );
 
         Assert.False(validator.Validate(command).IsValid);
     }

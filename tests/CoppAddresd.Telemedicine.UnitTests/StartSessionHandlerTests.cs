@@ -26,7 +26,7 @@ public class StartSessionHandlerTests
         _referenceData.UserToProfessional[TestData.UserId] = TestData.ProfessionalId;
     }
 
-    private TelemedicineAppointment AddConfirmed(DateTimeOffset? start = null)
+    private Appointment AddConfirmed(DateTimeOffset? start = null)
     {
         // Inicio dentro de la ventana de acceso (abre 10 min antes, cierra 15 después).
         var appointment = TestData.Appointment(

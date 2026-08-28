@@ -45,7 +45,7 @@ public sealed record DashboardAnalyticsDto(
     IReadOnlyList<StatusCountDto> StatusDistribution,
     IReadOnlyList<HourlyCountDto> HourlyDistribution,
     IReadOnlyList<ProfessionalActivityDto> ProfessionalActivity,
-    IReadOnlyList<TelemedicineAppointmentDto> UpcomingAppointments);
+    IReadOnlyList<AppointmentDto> UpcomingAppointments);
 
 /// <summary>
 /// Consulta los datos del dashboard de Telemedicina. <paramref name="ProfessionalId"/>
@@ -59,7 +59,7 @@ public sealed record GetDashboardAnalyticsQuery(
 
 public sealed class GetDashboardAnalyticsQueryHandler(
     IAppointmentRepository appointments,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<GetDashboardAnalyticsQuery, DashboardAnalyticsDto>
 {
     private const int UpcomingLimit = 8;
@@ -105,7 +105,7 @@ public sealed class GetDashboardAnalyticsQueryHandler(
 
         var hourlyDistribution = BuildCompleteHourlyDistribution(hours);
 
-        var upcomingDtos = await TelemedicineAppointmentMapper.BuildDtosAsync(upcoming, referenceData, ct);
+        var upcomingDtos = await AppointmentMapper.BuildDtosAsync(upcoming, referenceData, ct);
 
         var activityDtos = await BuildProfessionalActivityDtosAsync(professionalActivity, referenceData, ct);
 
@@ -169,7 +169,7 @@ public sealed class GetDashboardAnalyticsQueryHandler(
     /// <summary>Resuelve los nombres de los profesionales con una sola pasada deduplicada (sin N+1).</summary>
     private static async Task<IReadOnlyList<ProfessionalActivityDto>> BuildProfessionalActivityDtosAsync(
         IReadOnlyList<ProfessionalAppointmentActivity> items,
-        ITelemedicineReferenceDataService referenceData,
+        IAppointmentReferenceDataService referenceData,
         CancellationToken ct)
     {
         var names = new Dictionary<Guid, string>();

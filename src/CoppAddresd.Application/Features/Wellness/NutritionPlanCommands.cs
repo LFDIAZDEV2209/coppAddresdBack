@@ -79,6 +79,7 @@ public sealed class CreateNutritionPlanCommandHandler(
             {
                 Id = Guid.NewGuid(),
                 DayNumber = d.DayNumber,
+                DailyWaterMl = d.DailyWaterMl > 0 ? d.DailyWaterMl : 2000,
                 MealType = d.MealType,
                 Description = string.IsNullOrWhiteSpace(d.Description) ? null : d.Description.Trim(),
                 Foods = string.IsNullOrWhiteSpace(d.Foods) ? null : d.Foods.Trim(),
@@ -90,14 +91,38 @@ public sealed class CreateNutritionPlanCommandHandler(
             }).ToList();
         }
 
-        await repository.AddPlanAsync(plan, ct);
+        // Modo personalizado: el plan se asigna al paciente en la misma
+        // transacción que su creación (nunca un plan sin asignación).
+        NutritionPlanAssignment? assignment = null;
+
+        if (r.PatientId is not null && !r.IsTemplate)
+        {
+            assignment = new NutritionPlanAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = r.PatientId.Value,
+                PlanId = plan.Id,
+                StartDate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc),
+                EndDate = null,
+                Status = AssignmentStatus.Active,
+                Notes = null,
+                CreatedBy = request.CreatedBy,
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            await repository.AddPlanWithAssignmentAsync(plan, assignment, ct);
+        }
+        else
+        {
+            await repository.AddPlanAsync(plan, ct);
+        }
 
         logger.LogInformation("NutritionPlan creado: {Id} ({Name})", plan.Id, plan.Name);
 
         var created = await repository.GetPlanByIdAsync(plan.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer el plan creado.");
 
-        return NutritionPlanDto.FromEntity(created);
+        return NutritionPlanDto.FromEntity(created, assignment?.Id);
     }
 }
 
@@ -134,6 +159,7 @@ public sealed class UpdateNutritionPlanCommandHandler(
                 Id = Guid.NewGuid(),
                 PlanId = plan.Id,
                 DayNumber = d.DayNumber,
+                DailyWaterMl = d.DailyWaterMl > 0 ? d.DailyWaterMl : 2000,
                 MealType = d.MealType,
                 Description = string.IsNullOrWhiteSpace(d.Description) ? null : d.Description.Trim(),
                 Foods = string.IsNullOrWhiteSpace(d.Foods) ? null : d.Foods.Trim(),
@@ -180,7 +206,7 @@ public sealed class DeleteNutritionPlanCommandHandler(
 
 // --- Clone Nutrition Plan (template → patient) ---
 
-public record CloneNutritionPlanCommand(Guid SourcePlanId, Guid PatientId, Guid? CreatedBy = null)
+public record CloneNutritionPlanCommand(Guid SourcePlanId, Guid? PatientId, Guid? CreatedBy = null)
     : IRequest<NutritionPlanDto?>;
 
 public sealed class CloneNutritionPlanCommandHandler(
@@ -210,6 +236,7 @@ public sealed class CloneNutritionPlanCommandHandler(
             {
                 Id = Guid.NewGuid(),
                 DayNumber = d.DayNumber,
+                DailyWaterMl = d.DailyWaterMl,
                 MealType = d.MealType,
                 Description = d.Description,
                 Foods = d.Foods,
@@ -221,7 +248,32 @@ public sealed class CloneNutritionPlanCommandHandler(
             }).ToList(),
         };
 
-        await repository.AddPlanAsync(cloned, ct);
+        // Modo personalizado: el plan clonado se asigna al paciente en la misma
+        // transacción que su creación (nunca un plan sin asignación), igual que
+        // el flujo de creación. Sin paciente, se clona solo la plantilla.
+        NutritionPlanAssignment? assignment = null;
+
+        if (request.PatientId is { } patientId)
+        {
+            assignment = new NutritionPlanAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientId,
+                PlanId = cloned.Id,
+                StartDate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc),
+                EndDate = null,
+                Status = AssignmentStatus.Active,
+                Notes = null,
+                CreatedBy = request.CreatedBy,
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            await repository.AddPlanWithAssignmentAsync(cloned, assignment, ct);
+        }
+        else
+        {
+            await repository.AddPlanAsync(cloned, ct);
+        }
 
         logger.LogInformation("NutritionPlan clonado: {SourceId} → {ClonedId} (Paciente: {PatientId})",
             source.Id, cloned.Id, request.PatientId);
@@ -229,6 +281,6 @@ public sealed class CloneNutritionPlanCommandHandler(
         var created = await repository.GetPlanByIdAsync(cloned.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer el plan clonado.");
 
-        return NutritionPlanDto.FromEntity(created);
+        return NutritionPlanDto.FromEntity(created, assignment?.Id);
     }
 }

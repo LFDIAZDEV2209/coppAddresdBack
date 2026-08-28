@@ -119,6 +119,32 @@ if [[ $WATCH -eq 0 ]]; then
 fi
 
 echo ""
+draw_banner "AI SERVICE (PYTHON/FastAPI)" 36
+AI_ROOT="$ROOT/../ai-service"
+AI_NAME="ai"
+AI_PORT=8000
+AI_STARTED=0
+AI_RESULT=""
+if [[ ! -d "$AI_ROOT" ]]; then
+  color 33 "  ai-service repo not found (expected at ../ai-service). Skipped."
+  AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|Missing|33"
+elif [[ ! -f "$AI_ROOT/.env" ]]; then
+  color 33 "  ai-service: .env missing (cp .env.example .env). Skipped."
+  AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|Skipped|33"
+elif [[ ! -d "$AI_ROOT/.venv" ]]; then
+  color 33 "  ai-service: .venv missing (run 'uv sync' in ai-service). Skipped."
+  AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|Skipped|33"
+elif port_open "$AI_PORT"; then
+  color 33 "  $AI_NAME already running on :$AI_PORT (skipped)"
+  AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|Running|36"
+else
+  color 36 "  Starting $AI_NAME..."
+  (cd "$AI_ROOT" && nohup uv run python run_dev.py > "$LOGS/$AI_NAME.log" 2> "$LOGS/$AI_NAME.err" & echo $! > "$LOGS/$AI_NAME.pid")
+  AI_STARTED=1
+  color 36 " PID $(cat "$LOGS/$AI_NAME.pid")"
+fi
+
+echo ""
 draw_banner "STARTING SERVICES" 36
 
 started=()
@@ -158,12 +184,34 @@ for entry in "${SERVICES[@]}"; do
     color 31 " FAILED"
     results+=("$name|$url|$port|FAILED|31")
     failed=1
+    if [[ -f "$LOGS/$name.err" ]] && grep -qi "Application Control policy has blocked" "$LOGS/$name.err"; then
+      color 33 "  Windows Application Control (Smart App Control / WDAC) blocked the executable."
+      color 33 "  Allow the repo path in Windows Security > App & browser control, or disable Smart App Control."
+    fi
     [[ -f "$LOGS/$name.log" ]] && {
       color 90 "  --- Last 15 lines of $name.log ---"
       tail -n 15 "$LOGS/$name.log" 2>/dev/null | while IFS= read -r line; do color 90 "  $line"; done
     }
   fi
 done
+
+# AI service wait (non-fatal: backend has circuit breaker if it is down).
+if [[ $AI_STARTED -eq 1 && -n "$AI_RESULT" ]]; then
+  color 36 "  Waiting for $AI_NAME on port $AI_PORT..." -n
+  if wait_port "$AI_PORT" "$WAIT_TIMEOUT"; then
+    color 32 " READY"
+    AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|Running|36"
+  else
+    color 31 " FAILED (non-fatal)"
+    AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|FAILED|31"
+    [[ -f "$LOGS/$AI_NAME.log" ]] && {
+      color 90 "  --- Last 15 lines of $AI_NAME.log ---"
+      tail -n 15 "$LOGS/$AI_NAME.log" 2>/dev/null | while IFS= read -r line; do color 90 "  $line"; done
+    }
+  fi
+fi
+
+[[ -n "$AI_RESULT" ]] && results+=("$AI_RESULT")
 
 echo ""
 draw_banner "SERVICE STATUS" 36
@@ -184,3 +232,5 @@ fi
 draw_banner "ALL SERVICES RUNNING" 32
 color 90 "  Stop with: ./scripts/dev-down.sh"
 color 90 "  Logs in: $LOGS"
+color 90 "  View logs: ./scripts/dev-logs.sh <service> [-follow] [-err]"
+color 90 "  Services: auth, community, gateway, telemedicine, api, ai, postgres"

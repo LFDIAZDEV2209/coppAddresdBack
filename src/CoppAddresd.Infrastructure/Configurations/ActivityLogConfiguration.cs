@@ -27,7 +27,9 @@ public sealed class ActivityLogConfiguration : IEntityTypeConfiguration<Activity
 
         builder.Property(x => x.Action)
             .HasColumnName("action")
-            .HasMaxLength(10)
+            // Ensanchado a 32: los eventos semánticos del módulo de programa
+            // (p. ej. 'AdaptationApplied') superan los 10 chars de TG_OP.
+            .HasMaxLength(32)
             .HasConversion<string>();
 
         builder.Property(x => x.SchemaName)

@@ -18,7 +18,7 @@ public class PermissionPolicyProvider(IOptions<AuthorizationOptions> options) : 
 
     public Task<AuthorizationPolicy?> GetPolicyAsync(string policyName)
     {
-        if (TelemedicinePermissionCodes.All.Contains(policyName))
+        if (AppointmentPermissionCodes.All.Contains(policyName))
         {
             var policy = new AuthorizationPolicyBuilder()
                 .RequireAuthenticatedUser()

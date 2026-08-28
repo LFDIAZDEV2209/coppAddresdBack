@@ -4,7 +4,7 @@ namespace CoppAddresd.Telemedicine.Domain.Entities;
 
 /// <summary>
 /// Historial inmutable de cancelaciones de una cita (append-only). El estado
-/// vigente (razón/quien) vive en <see cref="TelemedicineAppointment"/>; esta
+/// vigente (razón/quien) vive en <see cref="Appointment"/>; esta
 /// tabla conserva la traza completa para auditoría.
 /// </summary>
 public sealed class AppointmentCancellation
@@ -22,5 +22,5 @@ public sealed class AppointmentCancellation
 
     public DateTimeOffset CancelledAt { get; set; } = DateTimeOffset.UtcNow;
 
-    public TelemedicineAppointment? Appointment { get; set; }
+    public Appointment? Appointment { get; set; }
 }

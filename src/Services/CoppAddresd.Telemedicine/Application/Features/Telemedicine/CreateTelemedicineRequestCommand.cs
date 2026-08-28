@@ -23,7 +23,8 @@ public sealed record CreateTelemedicineRequestCommand(
     Guid? LocationId,
     DateTimeOffset? PreferredStart,
     string Reason,
-    Guid CreatedBy) : IRequest<TelemedicineRequestDto>;
+    Guid CreatedBy
+) : IRequest<TelemedicineRequestDto>;
 
 public sealed class CreateTelemedicineRequestCommandValidator
     : AbstractValidator<CreateTelemedicineRequestCommand>
@@ -34,7 +35,8 @@ public sealed class CreateTelemedicineRequestCommandValidator
         RuleFor(x => x.OrganizationId).NotEmpty();
         RuleFor(x => x.SpecialtyId).NotEmpty();
         RuleFor(x => x.Reason)
-            .NotEmpty().WithMessage("El motivo de la consulta es obligatorio.")
+            .NotEmpty()
+            .WithMessage("El motivo de la consulta es obligatorio.")
             .MaximumLength(2000);
         RuleFor(x => x.CreatedBy).NotEmpty();
     }
@@ -42,37 +44,56 @@ public sealed class CreateTelemedicineRequestCommandValidator
 
 public sealed class CreateTelemedicineRequestCommandHandler(
     IRequestRepository requests,
-    ITelemedicineReferenceDataService referenceData,
+    IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IAlertRepository alerts)
-    : IRequestHandler<CreateTelemedicineRequestCommand, TelemedicineRequestDto>
+    IAlertRepository alerts
+) : IRequestHandler<CreateTelemedicineRequestCommand, TelemedicineRequestDto>
 {
     public async Task<TelemedicineRequestDto> Handle(
         CreateTelemedicineRequestCommand request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var patient = await ReferenceDataGuard.RequirePatientAsync(referenceData, request.PatientId, ct);
-        var specialty = await ReferenceDataGuard.RequireSpecialtyAsync(referenceData, request.SpecialtyId, ct);
+        var patient = await ReferenceDataGuard.RequirePatientAsync(
+            referenceData,
+            request.PatientId,
+            ct
+        );
+        var specialty = await ReferenceDataGuard.RequireSpecialtyAsync(
+            referenceData,
+            request.SpecialtyId,
+            ct
+        );
 
         ProfessionalRefDto? professional = null;
         if (request.ProfessionalId is { } professionalId)
         {
-            professional = await ReferenceDataGuard.RequireProfessionalAsync(referenceData, professionalId, ct);
+            professional = await ReferenceDataGuard.RequireProfessionalAsync(
+                referenceData,
+                professionalId,
+                ct
+            );
 
             // Si el paciente eligió un profesional, la especialidad debe estar
             // entre las que atiende (catálogo de especialidades del profesional).
-            if (professional.SpecialtyIds.Count > 0
-                && !professional.SpecialtyIds.Contains(request.SpecialtyId))
+            if (
+                professional.SpecialtyIds.Count > 0
+                && !professional.SpecialtyIds.Contains(request.SpecialtyId)
+            )
             {
                 throw new BusinessRuleViolationException(
-                    "El profesional seleccionado no atiende la especialidad solicitada.");
+                    "El profesional seleccionado no atiende la especialidad solicitada."
+                );
             }
         }
 
         if (request.PreferredStart is { } preferred)
         {
             var settings = await settingsProvider.GetSettingsAsync(
-                request.OrganizationId, request.ClinicId, ct);
+                request.OrganizationId,
+                request.ClinicId,
+                ct
+            );
             var now = DateTimeOffset.UtcNow;
 
             // La preferencia es una ventana (no un slot reservado): se valida
@@ -80,13 +101,15 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             if (preferred < now.AddHours(settings.MinAdvanceBookingHours))
             {
                 throw new BusinessRuleViolationException(
-                    $"La fecha preferida debe tener al menos {settings.MinAdvanceBookingHours} h de anticipación.");
+                    $"La fecha preferida debe tener al menos {settings.MinAdvanceBookingHours} h de anticipación."
+                );
             }
 
             if (preferred > now.AddDays(settings.MaxAdvanceBookingDays))
             {
                 throw new BusinessRuleViolationException(
-                    $"La fecha preferida no puede superar los {settings.MaxAdvanceBookingDays} días.");
+                    $"La fecha preferida no puede superar los {settings.MaxAdvanceBookingDays} días."
+                );
             }
         }
 
@@ -111,13 +134,20 @@ public sealed class CreateTelemedicineRequestCommandHandler(
         // paciente eligió uno; si no, la asigna el staff/agenda).
         if (entity.ProfessionalId is { } targetProfessionalId)
         {
-            var targetProfessional = await referenceData.GetProfessionalAsync(targetProfessionalId, ct);
-            if (AlertMaterializer.NewRequest(
+            var targetProfessional = await referenceData.GetProfessionalAsync(
+                targetProfessionalId,
+                ct
+            );
+            if (
+                AlertMaterializer.NewRequest(
                     targetProfessional?.UserId,
                     entity.Id,
                     entity.SpecialtyId,
                     patient.FullName,
-                    specialty.Name) is { } alert)
+                    specialty.Name
+                ) is
+                { } alert
+            )
             {
                 await alerts.AddRangeAsync([alert], ct);
             }
@@ -136,6 +166,8 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             entity.PreferredStart,
             entity.Reason,
             entity.Status,
-            entity.CreatedAt);
+            entity.CreatedAt,
+            entity.RejectionReason
+        );
     }
 }

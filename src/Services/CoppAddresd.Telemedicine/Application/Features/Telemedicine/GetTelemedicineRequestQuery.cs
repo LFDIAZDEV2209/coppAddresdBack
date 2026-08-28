@@ -6,19 +6,20 @@ using MediatR;
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
 /// <summary>Detalle de una solicitud, enriquecido con datos de referencia.</summary>
-public sealed record GetTelemedicineRequestQuery(Guid RequestId)
-    : IRequest<TelemedicineRequestDto>;
+public sealed record GetTelemedicineRequestQuery(Guid RequestId) : IRequest<TelemedicineRequestDto>;
 
 public sealed class GetTelemedicineRequestQueryHandler(
     IRequestRepository requests,
-    ITelemedicineReferenceDataService referenceData)
-    : IRequestHandler<GetTelemedicineRequestQuery, TelemedicineRequestDto>
+    IAppointmentReferenceDataService referenceData
+) : IRequestHandler<GetTelemedicineRequestQuery, TelemedicineRequestDto>
 {
     public async Task<TelemedicineRequestDto> Handle(
         GetTelemedicineRequestQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var entity = await requests.GetByIdAsync(request.RequestId, ct)
+        var entity =
+            await requests.GetByIdAsync(request.RequestId, ct)
             ?? throw new NotFoundException("Solicitud", request.RequestId);
 
         PatientRefDto? patient = null;
@@ -41,6 +42,8 @@ public sealed class GetTelemedicineRequestQueryHandler(
             entity.PreferredStart,
             entity.Reason,
             entity.Status,
-            entity.CreatedAt);
+            entity.CreatedAt,
+            entity.RejectionReason
+        );
     }
 }

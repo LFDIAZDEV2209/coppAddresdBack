@@ -14,7 +14,7 @@ namespace CoppAddresd.Telemedicine.Controllers;
 /// (datos clínicos sensibles).
 /// </summary>
 [ApiController]
-[Route("api/v1/telemedicine/appointments/{appointmentId:guid}/encounter")]
+[Route("api/v1/appointments/{appointmentId:guid}/encounter")]
 [Authorize]
 public class EncountersController(IMediator mediator) : ControllerBase
 {
@@ -67,7 +67,7 @@ public class EncountersController(IMediator mediator) : ControllerBase
     }
 
     private bool HasManagePermission()
-        => User.HasClaim("permission", CoppAddresd.Telemedicine.Application.Constants.TelemedicinePermissionCodes.SessionsManage);
+        => User.HasClaim("permission", CoppAddresd.Telemedicine.Application.Constants.AppointmentPermissionCodes.SessionsManage);
 }
 
 public sealed record SaveClinicalEncounterDto(

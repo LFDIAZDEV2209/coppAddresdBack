@@ -25,7 +25,7 @@ public class AppointmentRepositoryPersistenceTests
     private static DateTimeOffset UtcNoon(int days)
         => new(DateTimeOffset.UtcNow.Date.AddDays(days).AddHours(12), TimeSpan.Zero);
 
-    private static TelemedicineAppointment Appointment(
+    private static Appointment Appointment(
         Guid? professionalId = null, DateTimeOffset? start = null,
         AppointmentStatus status = AppointmentStatus.Confirmed)
         => new()

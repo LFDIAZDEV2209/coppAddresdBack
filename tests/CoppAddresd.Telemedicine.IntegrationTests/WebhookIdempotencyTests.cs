@@ -30,7 +30,7 @@ public class WebhookIdempotencyTests
         bool startSession = true)
     {
         var db = _ctx.Create();
-        var appointment = new TelemedicineAppointment
+        var appointment = new Appointment
         {
             ProfessionalId = Guid.NewGuid(), // único por test (BD compartida)
             PatientId = TestData.PatientId,

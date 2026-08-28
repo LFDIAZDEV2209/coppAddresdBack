@@ -26,91 +26,151 @@ public static class ApplicationServiceExtensions
 
     public static IServiceCollection AddCoppAddresdApplicationServices(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
         services.Configure<AiServiceSettings>(
-            configuration.GetSection(AiServiceSettings.SectionName));
+            configuration.GetSection(AiServiceSettings.SectionName)
+        );
+
+        // Configuración de Firebase Cloud Messaging (pushes a dispositivos).
+        services.Configure<FcmSettings>(
+            configuration.GetSection(FcmSettings.SectionName));
 
         // Clave interna compartida con el microservicio de Telemedicina
         // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).
         services.Configure<TelemedicineServiceSettings>(
-            configuration.GetSection(TelemedicineServiceSettings.SectionName));
+            configuration.GetSection(TelemedicineServiceSettings.SectionName)
+        );
 
         services.AddMediatR(cfg =>
         {
-            cfg.RegisterServicesFromAssembly(typeof(CoppAddresd.Application.Features.Chat.ChatCommand).Assembly);
+            cfg.RegisterServicesFromAssembly(
+                typeof(CoppAddresd.Application.Features.Chat.ChatCommand).Assembly
+            );
             cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
         });
 
         services.AddValidatorsFromAssembly(typeof(CreateMediaItemCommand).Assembly);
 
-        services.AddHttpClient<IAiServiceClient, AiServiceClient>()
+        services
+            .AddHttpClient<IAiServiceClient, AiServiceClient>()
             .AddResiliencePolicy()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
-        services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
-        {
-            var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
-            client.BaseAddress = new Uri(aiSettings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
-        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+// FCM: mismo patrón que AiServiceClient (HttpClient tipado). El
+        // cliente degrada a "disabled" sin credenciales, nunca lanza.
+        services.AddHttpClient<IFcmClient, FcmClient>()
+            .AddResiliencePolicy()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
-        services.AddHttpClient<IAgentExecutionsQueryService, AgentExecutionsQueryService>((sp, client) =>
-        {
-            var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
-            client.BaseAddress = new Uri(aiSettings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
-        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+        services
+            .AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>(
+                (sp, client) =>
+                {
+                    var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(aiSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
+                }
+            )
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
+        services
+            .AddHttpClient<IAgentExecutionsQueryService, AgentExecutionsQueryService>(
+                (sp, client) =>
+                {
+                    var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(aiSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
+                }
+            )
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         // Introspección de permisos scoped hacia el Auth Service.
         services.Configure<AuthServiceSettings>(
-            configuration.GetSection(AuthServiceSettings.SectionName));
-        services.AddHttpClient<IScopedAuthorizationClient, ScopedAuthorizationClient>((sp, client) =>
-        {
-            var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-            client.BaseAddress = new Uri(authSettings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
-            client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
-        }).AddResiliencePolicy();
+            configuration.GetSection(AuthServiceSettings.SectionName)
+        );
+        services
+            .AddHttpClient<IScopedAuthorizationClient, ScopedAuthorizationClient>(
+                (sp, client) =>
+                {
+                    var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+                }
+            )
+            .AddResiliencePolicy();
 
-        services.AddHttpClient<IAuthInvitationsClient, AuthInvitationsClient>((sp, client) =>
-        {
-            var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-            client.BaseAddress = new Uri(authSettings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
-            client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
-        }).AddResiliencePolicy();
+        services
+            .AddHttpClient<IAuthInvitationsClient, AuthInvitationsClient>(
+                (sp, client) =>
+                {
+                    var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+                }
+            )
+            .AddResiliencePolicy();
 
-        services.AddHttpClient<IAuthScopedAssignmentsClient, AuthScopedAssignmentsClient>((sp, client) =>
-        {
-            var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-            client.BaseAddress = new Uri(authSettings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
-            client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
-        }).AddResiliencePolicy();
+        services
+            .AddHttpClient<IAuthScopedAssignmentsClient, AuthScopedAssignmentsClient>(
+                (sp, client) =>
+                {
+                    var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+                }
+            )
+            .AddResiliencePolicy();
+
+        services
+            .AddHttpClient<IAuthUsersByRoleClient, AuthUsersByRoleClient>(
+                (sp, client) =>
+                {
+                    var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+                }
+            )
+            .AddResiliencePolicy();
 
         services.AddScoped<ICurrentContext, CurrentContext>();
+
+        // Resolución del actor del módulo Progreso del Programa (SPEC §6.14 y
+        // PLAN OQ-1): paciente derivado del JWT (claim patient_id o lookup por
+        // app.patient_profiles.user_id), memoizado por request.
+        services.AddScoped<IProgramActorContext, ProgramActorContext>();
 
         return services;
     }
 
     public static IServiceCollection ConfigureCors(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
-        var origins = configuration["Cors:Origins"]
-            ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        var origins =
+            configuration["Cors:Origins"]
+                ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             ?? ["http://localhost:3000", "http://localhost:5080"];
 
         services.AddCors(options =>
         {
-            options.AddPolicy(CorsPolicyName, policy =>
-            {
-                policy.WithOrigins(origins)
-                      .AllowCredentials()
-                      .AllowAnyMethod()
-                      .AllowAnyHeader();
-            });
+            options.AddPolicy(
+                CorsPolicyName,
+                policy =>
+                {
+                    policy
+                        .WithOrigins(origins)
+                        .AllowCredentials()
+                        .AllowAnyMethod()
+                        .AllowAnyHeader();
+                }
+            );
         });
 
         return services;
@@ -118,7 +178,8 @@ public static class ApplicationServiceExtensions
 
     public static IServiceCollection ConfigureJwtAuthentication(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
         var jwtSettings = configuration.GetSection("Jwt");
         var secret = jwtSettings["Secret"]!;
@@ -128,30 +189,31 @@ public static class ApplicationServiceExtensions
         // Esta API sirve endpoints para ambas aplicaciones, por lo que acepta
         // todos los códigos conocidos; si no se configuran, se asume la lista
         // de aplicaciones actuales.
-        var validAudiences = jwtSettings.GetSection("ValidAudiences").Get<string[]>()
-            ?? ["erp", "app"];
+        var validAudiences =
+            jwtSettings.GetSection("ValidAudiences").Get<string[]>() ?? ["erp", "app"];
 
-        services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(options =>
-        {
-            options.RequireHttpsMetadata = false;
-            options.SaveToken = true;
-            options.TokenValidationParameters = new TokenValidationParameters
+        services
+            .AddAuthentication(options =>
             {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-                ValidateIssuer = true,
-                ValidIssuer = issuer,
-                ValidateAudience = true,
-                ValidAudiences = validAudiences,
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
-            };
-        });
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = false;
+                options.SaveToken = true;
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+                    ValidateIssuer = true,
+                    ValidIssuer = issuer,
+                    ValidateAudience = true,
+                    ValidAudiences = validAudiences,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero,
+                };
+            });
 
         services.AddAuthorization();
 

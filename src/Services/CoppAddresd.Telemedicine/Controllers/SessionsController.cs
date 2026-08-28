@@ -15,7 +15,7 @@ namespace CoppAddresd.Telemedicine.Controllers;
 /// de la cita o supervisor con <c>Telemedicine.SessionsManage</c>).
 /// </summary>
 [ApiController]
-[Route("api/v1/telemedicine/appointments/{appointmentId:guid}")]
+[Route("api/v1/appointments/{appointmentId:guid}")]
 [Authorize]
 public class SessionsController(IMediator mediator) : ControllerBase
 {
@@ -36,15 +36,15 @@ public class SessionsController(IMediator mediator) : ControllerBase
 
     /// <summary>Inicia la sesión de video (solo el profesional de la cita o un supervisor).</summary>
     [HttpPost("session/start")]
-    [ProducesResponseType(typeof(TelemedicineAppointmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<TelemedicineAppointmentDto>> Start(Guid appointmentId, CancellationToken ct)
+    public async Task<ActionResult<AppointmentDto>> Start(Guid appointmentId, CancellationToken ct)
         => Ok(await mediator.Send(new StartSessionCommand(appointmentId, CurrentUserId(), HasManagePermission()), ct));
 
     /// <summary>Finaliza la sesión de video y completa la cita (idempotente).</summary>
     [HttpPost("session/end")]
-    [ProducesResponseType(typeof(TelemedicineAppointmentDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<TelemedicineAppointmentDto>> End(
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AppointmentDto>> End(
         Guid appointmentId,
         [FromBody] EndSessionDto request,
         CancellationToken ct)
@@ -58,7 +58,7 @@ public class SessionsController(IMediator mediator) : ControllerBase
     }
 
     private bool HasManagePermission()
-        => User.HasClaim("permission", TelemedicinePermissionCodes.SessionsManage);
+        => User.HasClaim("permission", AppointmentPermissionCodes.SessionsManage);
 }
 
 public sealed record EndSessionDto(string? EndReason);

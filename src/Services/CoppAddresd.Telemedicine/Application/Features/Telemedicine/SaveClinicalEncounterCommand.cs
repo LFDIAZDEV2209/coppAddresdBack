@@ -46,7 +46,7 @@ public sealed class SaveClinicalEncounterCommandValidator
 public sealed class SaveClinicalEncounterCommandHandler(
     IAppointmentRepository appointments,
     IEncounterRepository encounters,
-    ITelemedicineReferenceDataService referenceData)
+    IAppointmentReferenceDataService referenceData)
     : IRequestHandler<SaveClinicalEncounterCommand, ClinicalEncounterDto>
 {
     public async Task<ClinicalEncounterDto> Handle(
@@ -108,7 +108,7 @@ public sealed class SaveClinicalEncounterCommandHandler(
     }
 
     /// <summary>Víncula el encuentro a la sesión activa de la cita (si existe).</summary>
-    private static Guid? ActiveSessionId(TelemedicineAppointment appointment)
+    private static Guid? ActiveSessionId(Appointment appointment)
         => appointment.Sessions
             .Where(s => s.Status == TelemedicineSessionStatus.Active)
             .OrderByDescending(s => s.StartedAt)
