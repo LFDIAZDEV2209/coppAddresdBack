@@ -40,7 +40,8 @@ public sealed class CommunityMutation
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
         [Service] ITopicEventSender sender,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool pinned = false)
     {
         var profile = await RequireProfileAsync(db, http, ct);
         var now = DateTime.UtcNow;
@@ -51,6 +52,7 @@ public sealed class CommunityMutation
             Body = body,
             Type = type ?? PostType.Texto,
             Destination = destination ?? PostDestination.TodasLasComunidades,
+            Pinned = pinned,
             CreatedAt = now,
         };
         db.Posts.Add(post);
