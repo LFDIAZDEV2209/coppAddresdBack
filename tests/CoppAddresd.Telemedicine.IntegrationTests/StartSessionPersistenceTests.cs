@@ -26,7 +26,7 @@ public class StartSessionPersistenceTests
     public async Task AgregarSesionAlAgregado_PersisteComoInsert()
     {
         // Seed: cita Confirmed + sala (como la crea el join-token).
-        var appointment = new TelemedicineAppointment
+        var appointment = new Appointment
         {
             ProfessionalId = Guid.NewGuid(),
             PatientId = TestData.PatientId,

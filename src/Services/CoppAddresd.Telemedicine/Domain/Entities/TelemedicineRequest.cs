@@ -4,7 +4,7 @@ namespace CoppAddresd.Telemedicine.Domain.Entities;
 
 /// <summary>
 /// Solicitud de telemedicina creada por un paciente. Representa la intención de
-/// agenda; su confirmación deriva en una <see cref="TelemedicineAppointment"/>.
+/// agenda; su confirmación deriva en una <see cref="Appointment"/>.
 /// Los vínculos a paciente/profesional/especialidad/sede son referencias
 /// débiles (Id) al ERP: este microservicio no posee esos datos maestros.
 /// </summary>
@@ -38,6 +38,12 @@ public sealed class TelemedicineRequest
 
     public AppointmentRequestStatus Status { get; set; } = AppointmentRequestStatus.Pending;
 
+    /// <summary>
+    /// Motivo del rechazo (obligatorio al rechazar). Visible para el paciente en
+    /// el detalle de la solicitud; <c>null</c> salvo que la solicitud esté <c>Rejected</c>.
+    /// </summary>
+    public string? RejectionReason { get; set; }
+
     /// <summary>Observaciones internas (recepción/administración).</summary>
     public string? Notes { get; set; }
 
@@ -48,5 +54,5 @@ public sealed class TelemedicineRequest
 
     public DateTime? UpdatedAt { get; set; }
 
-    public ICollection<TelemedicineAppointment> Appointments { get; set; } = [];
+    public ICollection<Appointment> Appointments { get; set; } = [];
 }

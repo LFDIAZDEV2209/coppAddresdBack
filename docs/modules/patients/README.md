@@ -42,6 +42,7 @@ El seed se genera con `scripts/generate_professional_catalogs_seed.py`
 ### Vocabularios cerrados (códigos estables en inglés)
 
 `ProfessionalOptions` en `Application/Features/Professionals/`:
+
 - `EmployeeStatuses`: Invited / Active / Inactive
 - `AssignmentStatuses`: Active / Inactive
 - `LicenseTypes`: StateLicense / BoardCertification / DeaRegistration / Npi /
@@ -90,7 +91,7 @@ User
 - **Gestión**: `POST/DELETE /api/auth/users/{id}/scoped/roles` y
   `/scoped/permissions` (exigen Roles.Assign / Permissions.Assign).
 - **Endpoints de la API** ahora exigen permiso global vía `[RequirePermission]`
-  (policy por código): Organizations.*, Clinics.*, Locations.*, Employees.*.
+  (policy por código): Organizations._, Clinics._, Locations._, Employees._.
 
 ## Onboarding del profesional (Fase 3)
 
@@ -133,7 +134,7 @@ Profesional abre enlace → establece su contraseña (accept, un solo uso)
   `clinic_id`; detalle/update/delete de un paciente de otra clínica responde 404
   (sin fuga de existencia entre clínicas). Sin contexto activo se ve el
   directorio completo. `PatientsController` evalúa `Patients.{View,Create,Update,
-  Delete}` con `HasPermissionAsync` (claims globales OR introspección scoped) —
+Delete}` con `HasPermissionAsync` (claims globales OR introspección scoped) —
   no usa `[RequirePermission]` porque ese handler no resuelve permisos scoped.
 - **Soft delete**: `deleted_at` marca el paciente como eliminado; listado y
   detalle lo excluyen, y el chequeo de MRN único ignora eliminados. Nunca se
@@ -148,11 +149,17 @@ Profesional abre enlace → establece su contraseña (accept, un solo uso)
 - **Endpoints**:
   ```
   GET    /api/v1/patients            # lista paginada filtrada por clínica activa
+  GET    /api/v1/patients/stats      # estadísticas scoped (total, activos, nuevos
+                                     #   del mes, sin profesional asignado) — mismo
+                                     #   alcance que el listado, un solo roundtrip
   GET    /api/v1/patients/{id}       # detalle completo (404 si es de otra clínica)
   POST   /api/v1/patients            # crea en la clínica activa del contexto
   PUT    /api/v1/patients/{id}       # actualiza (registra updated_by)
   DELETE /api/v1/patients/{id}       # soft delete (registra el actor)
   ```
+- El listado incluye `professionalNames` (asignaciones activas del paciente,
+  nombres resueltos contra `erp.employees` en una sola consulta agrupada, sin
+  N+1) para la columna "Profesional" de la vista global del directorio.
 - **Frontend**: columna "Clínica" en el listado; la fila navega a la nueva
   página de detalle `/patients/[id]` (reemplaza el dialog) con secciones de
   resumen, datos personales, contacto, cobertura, clínica/sede, estilo de vida,
@@ -166,5 +173,9 @@ Profesional abre enlace → establece su contraseña (accept, un solo uso)
 - Unit: `tests/CoppAddresd.UnitTests/Features/Patients/PatientScopingTests.cs` —
   asignación de clínica/actor al crear, `updated_by` en update, soft delete con
   actor en delete, filtro por clínica en el listado (con y sin contexto).
-- Integración: pendiente — los repositorios nuevos aún no tienen tests contra
-  PostgreSQL real (patrón: `COP_TEST_DB_CONNECTION`).
+- Unit: `tests/CoppAddresd.UnitTests/Features/Patients/PatientStatsTests.cs` —
+  el query de stats delega al repositorio con la frontera correcta (clínica +
+  alcance propio) y el inicio del mes UTC.
+- Integración: `tests/CoppAddresd.IntegrationTests/PatientDirectoryIntegrationTests.cs`
+  (PostgreSQL real vía `COP_TEST_DB_CONNECTION`, fixture en transacción revertida):
+  stats scoped y `professionalNames` en el listado.

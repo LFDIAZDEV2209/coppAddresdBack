@@ -1,5 +1,6 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using CoppAddresd.Auth.Interfaces;
+using CoppAddresd.Auth.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,11 +13,13 @@ public class MeController : ControllerBase
 {
     private readonly IUserService _userService;
     private readonly IPermissionService _permissionService;
+    private readonly IUserPreferenceService _userPreferenceService;
 
-    public MeController(IUserService userService, IPermissionService permissionService)
+    public MeController(IUserService userService, IPermissionService permissionService, IUserPreferenceService userPreferenceService)
     {
         _userService = userService;
         _permissionService = permissionService;
+        _userPreferenceService = userPreferenceService;
     }
 
     [HttpGet]
@@ -43,6 +46,31 @@ public class MeController : ControllerBase
             user.LastName,
             user.Roles,
             permissions.ToArray()));
+    }
+
+    private Guid GetUserId()
+    {
+        var claim = User.FindFirst(ClaimTypes.NameIdentifier);
+        if (claim is null || !Guid.TryParse(claim.Value, out var userId))
+            throw new UnauthorizedAccessException();
+        return userId;
+    }
+
+    [HttpGet("preferences")]
+    public async Task<ActionResult<UserPreferenceResponse>> GetPreferences(CancellationToken ct)
+    {
+        var prefs = await _userPreferenceService.GetByUserIdAsync(GetUserId(), ct);
+        return Ok(new UserPreferenceResponse(prefs?.Lang));
+    }
+
+    [HttpPut("preferences")]
+    public async Task<IActionResult> UpdatePreferences([FromBody] UpdateUserPreferenceRequest request, CancellationToken ct)
+    {
+        if (request.Lang != "es" && request.Lang != "en")
+            return BadRequest(new { message = "Lang must be 'es' or 'en'" });
+
+        await _userPreferenceService.UpsertAsync(GetUserId(), request.Lang, ct);
+        return Ok(new { message = "Preferences updated" });
     }
 }
 

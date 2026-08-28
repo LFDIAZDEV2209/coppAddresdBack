@@ -34,8 +34,8 @@ namespace CoppAddresd.Infrastructure.Migrations
 
                     b.Property<string>("Action")
                         .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
                         .HasColumnName("action");
 
                     b.Property<string>("ActorType")
@@ -701,6 +701,49 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("countries", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.DeviceToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("platform");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("token");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Token")
+                        .IsUnique()
+                        .HasDatabaseName("ix_device_tokens_user_id_token");
+
+                    b.ToTable("device_tokens", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Document", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1251,6 +1294,973 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_exercise_routines_status");
 
                     b.ToTable("exercise_routines", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAlert", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Body")
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<Guid?>("ResultId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("result_id");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<Guid?>("ReviewedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reviewed_by");
+
+                    b.Property<Guid?>("RuleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("rule_id");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("high")
+                        .HasColumnName("severity");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("active")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_health_test_alerts_patient_id");
+
+                    b.HasIndex("RuleId");
+
+                    b.HasIndex("ResultId", "RuleId")
+                        .HasDatabaseName("ix_health_test_alerts_result_rule");
+
+                    b.HasIndex("Status", "Severity")
+                        .HasDatabaseName("ix_health_test_alerts_status_severity");
+
+                    b.ToTable("health_test_alerts", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAlertRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("Condition")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("condition");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("MessageTemplate")
+                        .HasColumnType("text")
+                        .HasColumnName("message_template");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("high")
+                        .HasColumnName("severity");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_alert_rules_code");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("ix_health_test_alert_rules_is_active");
+
+                    b.ToTable("health_test_alert_rules", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAnswerOption", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid?>("DependsOnOptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("depends_on_option_id");
+
+                    b.Property<Guid?>("DependsOnQuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("depends_on_question_id");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("question_id");
+
+                    b.Property<decimal?>("ScoreValue")
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("score_value");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestionId")
+                        .HasDatabaseName("ix_health_test_answer_options_question_id");
+
+                    b.ToTable("health_test_answer_options", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("assigned_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("AssignedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_by");
+
+                    b.Property<Guid?>("BatteryAssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("battery_assignment_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("due_date");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<int?>("Priority")
+                        .HasColumnType("integer")
+                        .HasColumnName("priority");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("pending")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("version_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatteryAssignmentId")
+                        .HasDatabaseName("ix_health_test_assignments_battery_assignment_id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_health_test_assignments_patient_id");
+
+                    b.HasIndex("VersionId")
+                        .HasDatabaseName("ix_health_test_assignments_version_id");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_health_test_assignments_patient_status");
+
+                    b.HasIndex("Status", "DueDate")
+                        .HasDatabaseName("ix_health_test_assignments_status_due");
+
+                    b.ToTable("health_test_assignments", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestBattery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<bool>("AutoAssignOnPatientCreate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("auto_assign_on_patient_create");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_batteries_code");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("ix_health_test_batteries_is_active");
+
+                    b.ToTable("health_test_batteries", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestBatteryAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("assigned_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("AssignedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_by");
+
+                    b.Property<Guid>("BatteryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("battery_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime?>("DueDate")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("due_date");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("pending")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatteryId")
+                        .HasDatabaseName("ix_health_test_battery_assignments_battery_id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_health_test_battery_assignments_patient_id");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_health_test_battery_assignments_patient_status");
+
+                    b.ToTable("health_test_battery_assignments", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestBatteryItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("BatteryId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("battery_id");
+
+                    b.Property<int?>("FrequencyDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("frequency_days");
+
+                    b.Property<Guid>("InstrumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("instrument_id");
+
+                    b.Property<bool>("IsRequired")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_required");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<Guid?>("VersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("version_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatteryId")
+                        .HasDatabaseName("ix_health_test_battery_items_battery_id");
+
+                    b.HasIndex("InstrumentId")
+                        .HasDatabaseName("ix_health_test_battery_items_instrument_id");
+
+                    b.HasIndex("VersionId");
+
+                    b.HasIndex("BatteryId", "InstrumentId")
+                        .HasDatabaseName("ix_health_test_battery_items_battery_instrument");
+
+                    b.ToTable("health_test_battery_items", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("EvaluationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("evaluation_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EvaluationId")
+                        .HasDatabaseName("ix_health_test_comments_evaluation_id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_health_test_comments_patient_id");
+
+                    b.ToTable("health_test_comments", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("AssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assignment_id");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<decimal?>("Score")
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("score");
+
+                    b.Property<decimal?>("ScorePercentage")
+                        .HasColumnType("numeric(6,2)")
+                        .HasColumnName("score_percentage");
+
+                    b.Property<DateTime>("StartedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("started_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("started")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("version_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignmentId")
+                        .HasDatabaseName("ix_health_test_evaluations_assignment_id");
+
+                    b.HasIndex("VersionId")
+                        .HasDatabaseName("ix_health_test_evaluations_version_id");
+
+                    b.HasIndex("PatientId", "CompletedAt")
+                        .HasDatabaseName("ix_health_test_evaluations_patient_completed");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_health_test_evaluations_patient_status");
+
+                    b.ToTable("health_test_evaluations", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestIndicatorDef", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("Computation")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("computation");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_indicator_defs_code");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("ix_health_test_indicator_defs_is_active");
+
+                    b.ToTable("health_test_indicator_defs", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestInstrument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category")
+                        .HasDatabaseName("ix_health_test_instruments_category");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_instruments_code");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("ix_health_test_instruments_is_active");
+
+                    b.ToTable("health_test_instruments", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestQuestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("ScoringDirection")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("positive")
+                        .HasColumnName("scoring_direction");
+
+                    b.Property<string>("Section")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("section");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("scale")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("version_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VersionId")
+                        .HasDatabaseName("ix_health_test_questions_version_id");
+
+                    b.HasIndex("VersionId", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_questions_version_code");
+
+                    b.ToTable("health_test_questions", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestResponse", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid?>("AnswerOptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("answer_option_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("EvaluationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("evaluation_id");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("question_id");
+
+                    b.Property<string>("ValueText")
+                        .HasColumnType("text")
+                        .HasColumnName("value_text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnswerOptionId");
+
+                    b.HasIndex("EvaluationId")
+                        .HasDatabaseName("ix_health_test_responses_evaluation_id");
+
+                    b.HasIndex("QuestionId");
+
+                    b.HasIndex("EvaluationId", "QuestionId")
+                        .HasDatabaseName("ix_health_test_responses_evaluation_question");
+
+                    b.ToTable("health_test_responses", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestResult", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("EvaluationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("evaluation_id");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("label");
+
+                    b.Property<string>("Qualifier")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("qualifier");
+
+                    b.Property<string>("ResultType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("result_type");
+
+                    b.Property<string>("Severity")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("severity");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EvaluationId")
+                        .HasDatabaseName("ix_health_test_results_evaluation_id");
+
+                    b.HasIndex("EvaluationId", "Code")
+                        .HasDatabaseName("ix_health_test_results_evaluation_code");
+
+                    b.ToTable("health_test_results", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestScoreRange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("label");
+
+                    b.Property<decimal>("MaxValue")
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("max_value");
+
+                    b.Property<decimal>("MinValue")
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("min_value");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("low")
+                        .HasColumnName("severity");
+
+                    b.Property<Guid>("VersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("version_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VersionId")
+                        .HasDatabaseName("ix_health_test_score_ranges_version_id");
+
+                    b.ToTable("health_test_score_ranges", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("InstrumentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("instrument_id");
+
+                    b.Property<bool>("IsCurrent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_current");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<int?>("Points")
+                        .HasColumnType("integer")
+                        .HasColumnName("points");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("published_at");
+
+                    b.Property<DateTime?>("RetiredAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("retired_at");
+
+                    b.Property<string>("ScoringStrategy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("sum")
+                        .HasColumnName("scoring_strategy");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("draft")
+                        .HasColumnName("status");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("version_number");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstrumentId")
+                        .HasDatabaseName("ix_health_test_versions_instrument_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_health_test_versions_status");
+
+                    b.HasIndex("InstrumentId", "IsCurrent")
+                        .HasDatabaseName("ix_health_test_versions_instrument_current");
+
+                    b.HasIndex("InstrumentId", "VersionNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_versions_instrument_number");
+
+                    b.ToTable("health_test_versions", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Icd10Code", b =>
@@ -2472,6 +3482,12 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<int>("DailyWaterMl")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(2000)
+                        .HasColumnName("daily_water_ml");
+
                     b.Property<int>("DayNumber")
                         .HasColumnType("integer")
                         .HasColumnName("day_number");
@@ -2977,6 +3993,84 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_patient_profiles_user_id");
 
                     b.ToTable("patient_profiles", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.PlanSafetyRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("MetricCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("metric_code");
+
+                    b.Property<string>("Operator")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("operator");
+
+                    b.Property<string>("Restriction")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("restriction");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("severity");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<decimal?>("ThresholdMax")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("threshold_max");
+
+                    b.Property<decimal?>("ThresholdMin")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("threshold_min");
+
+                    b.Property<string>("UnitCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("unit_code");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MetricCode")
+                        .HasDatabaseName("ix_plan_safety_rules_metric_code");
+
+                    b.HasIndex("IsActive", "MetricCode")
+                        .HasDatabaseName("ix_plan_safety_rules_active_metric");
+
+                    b.ToTable("plan_safety_rules", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PostalCode", b =>
@@ -3628,6 +4722,12 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("description");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -3663,6 +4763,1775 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_professional_type_specialties_specialty_id");
 
                     b.ToTable("professional_type_specialties", "erp");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.AdaptationRecommendation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("applied_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("decided_at");
+
+                    b.Property<Guid?>("DecidedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("decided_by");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("kind");
+
+                    b.Property<JsonElement>("Payload")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid?>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<bool>("RequiresApproval")
+                        .HasColumnType("boolean")
+                        .HasColumnName("requires_approval");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Pending")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TargetEntityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_entity_id");
+
+                    b.Property<string>("TargetEntityType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("target_entity_type");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrollmentId")
+                        .HasDatabaseName("ix_adaptation_recommendations_enrollment_id");
+
+                    b.HasIndex("Kind")
+                        .HasDatabaseName("ix_adaptation_recommendations_kind");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_adaptation_recommendations_status");
+
+                    b.ToTable("adaptation_recommendations", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.AppNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("push")
+                        .HasColumnName("channel");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("normal")
+                        .HasColumnName("priority");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("read_at");
+
+                    b.Property<DateTime>("SentAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("sent_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId", "SentAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_notifications_patient_sent_at");
+
+                    b.ToTable("notifications", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ClinicalBaseline", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<short>("FavorableDirection")
+                        .HasColumnType("smallint")
+                        .HasColumnName("favorable_direction");
+
+                    b.Property<DateOnly>("MeasuredAt")
+                        .HasColumnType("date")
+                        .HasColumnName("measured_at");
+
+                    b.Property<Guid>("MetricId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("metric_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("SetBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("set_by");
+
+                    b.Property<decimal?>("TargetValue")
+                        .HasPrecision(10, 4)
+                        .HasColumnType("numeric(10,4)")
+                        .HasColumnName("target_value");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("unit_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(10, 4)
+                        .HasColumnType("numeric(10,4)")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MetricId")
+                        .HasDatabaseName("ix_clinical_baselines_metric_id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_clinical_baselines_patient_id");
+
+                    b.HasIndex("SetBy")
+                        .HasDatabaseName("ix_clinical_baselines_set_by");
+
+                    b.HasIndex("UnitId");
+
+                    b.HasIndex("PatientId", "MetricId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_clinical_baselines_patient_metric");
+
+                    b.ToTable("clinical_baselines", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_clinical_baselines_favorable_direction", "\"favorable_direction\" IN (-1, 1)");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ClinicalXpReview", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("decided_at");
+
+                    b.Property<Guid?>("DecidedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("decided_by");
+
+                    b.Property<decimal?>("DeltaPct")
+                        .HasPrecision(8, 3)
+                        .HasColumnType("numeric(8,3)")
+                        .HasColumnName("delta_pct");
+
+                    b.Property<Guid>("HealthScoreId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("health_score_id");
+
+                    b.Property<Guid>("MetricId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("metric_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("RuleCode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasDefaultValue("CLINICAL_SIGNIFICANT")
+                        .HasColumnName("rule_code");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("pending")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DecidedBy")
+                        .HasDatabaseName("ix_clinical_xp_reviews_decided_by");
+
+                    b.HasIndex("HealthScoreId");
+
+                    b.HasIndex("MetricId");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_clinical_xp_reviews_status");
+
+                    b.HasIndex("PatientId", "HealthScoreId", "MetricId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_clinical_xp_reviews_patient_score_metric");
+
+                    b.ToTable("clinical_xp_reviews", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.DailyCheckIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Barriers")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("barriers");
+
+                    b.Property<int>("BonusAwarded")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("bonus_awarded");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<bool>("IsPerfectDay")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_perfect_day");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("local_date");
+
+                    b.Property<short?>("MoodScore")
+                        .HasColumnType("smallint")
+                        .HasColumnName("mood_score");
+
+                    b.Property<Guid>("ProgramWeekId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("program_week_id");
+
+                    b.Property<int>("TotalPoints")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("total_points");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<short>("Weekday")
+                        .HasColumnType("smallint")
+                        .HasColumnName("weekday");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrollmentId")
+                        .HasDatabaseName("ix_daily_checkins_enrollment_id");
+
+                    b.HasIndex("ProgramWeekId")
+                        .HasDatabaseName("ix_daily_checkins_program_week_id");
+
+                    b.HasIndex("EnrollmentId", "LocalDate")
+                        .IsUnique()
+                        .HasDatabaseName("uq_daily_checkins_enrollment_date");
+
+                    b.ToTable("daily_checkins", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_daily_checkins_mood_score_range", "\"mood_score\" BETWEEN 1 AND 5");
+
+                            t.HasCheckConstraint("ck_daily_checkins_weekday_range", "\"weekday\" BETWEEN 1 AND 7");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.EmotionalRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Barriers")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("barriers");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<short>("MoodScore")
+                        .HasColumnType("smallint")
+                        .HasColumnName("mood_score");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text")
+                        .HasColumnName("notes");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid?>("ProgramEnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("program_enrollment_id");
+
+                    b.Property<DateOnly>("RecordedLocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("recorded_local_date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_emotional_records_patient_id");
+
+                    b.HasIndex("ProgramEnrollmentId")
+                        .HasDatabaseName("ix_emotional_records_program_enrollment_id");
+
+                    b.HasIndex("ProgramEnrollmentId", "PatientId");
+
+                    b.HasIndex("ProgramEnrollmentId", "RecordedLocalDate")
+                        .IsUnique()
+                        .HasDatabaseName("uq_emotional_records_enrollment_date");
+
+                    b.ToTable("emotional_records", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_emotional_records_mood_score_range", "\"mood_score\" BETWEEN 1 AND 5");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.HabitCheck", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("HabitTemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("habit_template_id");
+
+                    b.Property<bool>("IsDone")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_done");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("local_date");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("HabitTemplateId")
+                        .HasDatabaseName("ix_habit_checks_habit_template_id");
+
+                    b.HasIndex("LocalDate")
+                        .HasDatabaseName("ix_habit_checks_local_date");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_habit_checks_patient_id");
+
+                    b.HasIndex("PatientId", "HabitTemplateId", "LocalDate")
+                        .IsUnique()
+                        .HasDatabaseName("uq_habit_checks_patient_template_date");
+
+                    b.ToTable("habit_checks", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.HabitTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category")
+                        .HasDatabaseName("ix_habit_templates_category");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("uq_habit_templates_code");
+
+                    b.ToTable("habit_templates", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.HealthScore", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("calculated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateOnly>("PeriodEnd")
+                        .HasColumnType("date")
+                        .HasColumnName("period_end");
+
+                    b.Property<DateOnly>("PeriodStart")
+                        .HasColumnType("date")
+                        .HasColumnName("period_start");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
+                    b.Property<int>("ScoreAdherence")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_adherence");
+
+                    b.Property<int>("ScoreClinical")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_clinical");
+
+                    b.Property<int>("ScoreExercise")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_exercise");
+
+                    b.Property<int>("ScoreNutrition")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_nutrition");
+
+                    b.Property<int?>("ScorePrevious")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_previous");
+
+                    b.Property<int>("ScorePsychology")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_psychology");
+
+                    b.Property<string>("Trend")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("trend");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId", "PeriodEnd")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_health_scores_patient_id_period_end");
+
+                    b.HasIndex("PatientId", "PeriodStart", "PeriodEnd")
+                        .IsUnique()
+                        .HasDatabaseName("uq_health_scores_patient_period");
+
+                    b.ToTable("health_scores", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_health_scores_score_adherence_range", "\"score_adherence\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_health_scores_score_clinical_range", "\"score_clinical\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_health_scores_score_exercise_range", "\"score_exercise\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_health_scores_score_nutrition_range", "\"score_nutrition\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_health_scores_score_previous_range", "\"score_previous\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_health_scores_score_psychology_range", "\"score_psychology\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_health_scores_score_range", "\"score\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_health_scores_trend_values", "\"trend\" IN ('up','down','stable')");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.HealthScoreWeight", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Dimension")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("dimension");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<decimal>("Weight")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("weight");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Dimension")
+                        .IsUnique()
+                        .HasDatabaseName("uq_health_score_weights_dimension");
+
+                    b.ToTable("health_score_weights", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_health_score_weights_weight_range", "\"weight\" >= 0 AND \"weight\" <= 1");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.Intervention", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<Guid?>("AssignedTo")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_to");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("PatientAction")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("patient_action");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTime?>("RecommendedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("recommended_at");
+
+                    b.Property<string>("Result")
+                        .HasColumnType("text")
+                        .HasColumnName("result");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("medium")
+                        .HasColumnName("severity");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("detected")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("WeaknessId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("weakness_id");
+
+                    b.Property<int>("XpAwardedTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("xp_awarded_total");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_interventions_status");
+
+                    b.HasIndex("WeaknessId");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_interventions_patient_status");
+
+                    b.ToTable("interventions", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_interventions_status_values", "\"status\" IN ('detected', 'evaluated', 'recommended', 'accepted', 'in_progress', 'completed', 'reevaluation')");
+
+                            t.HasCheckConstraint("ck_interventions_type_values", "\"type\" IN ('nutrition_adjustment', 'exercise_adjustment', 'psychological_support', 'telehealth_nutrition', 'telehealth_medical', 'telehealth_psychology', 'recovery_mission', 'plan_adaptation')");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("CurrentWeekNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("current_week_number");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTime?>("PausedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("paused_at");
+
+                    b.Property<DateOnly>("StartLocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_local_date");
+
+                    b.Property<DateTime>("StartedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("started_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Active")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("America/Bogota")
+                        .HasColumnName("timezone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<DateTime?>("WithdrawnAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("withdrawn_at");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("Id", "PatientId")
+                        .HasName("uq_program_enrollments_id_patient");
+
+                    b.HasIndex("PatientId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_program_enrollments_patient_active")
+                        .HasFilter("\"status\" = 'Active'");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_program_enrollments_status");
+
+                    b.HasIndex("TemplateId")
+                        .HasDatabaseName("ix_program_enrollments_template_id");
+
+                    b.ToTable("program_enrollments", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_program_enrollments_current_week_positive", "\"current_week_number\" >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("EssentialTaskCodes")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("essential_task_codes")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Draft")
+                        .HasColumnName("status");
+
+                    b.Property<short>("StreakMinTasks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)1)
+                        .HasColumnName("streak_min_tasks");
+
+                    b.Property<int>("TotalWeeks")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(83)
+                        .HasColumnName("total_weeks");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<int>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_program_templates_code");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_program_templates_status");
+
+                    b.ToTable("program_templates", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_program_templates_streak_min_tasks_positive", "\"streak_min_tasks\" >= 1");
+
+                            t.HasCheckConstraint("ck_program_templates_total_weeks_positive", "\"total_weeks\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramWeek", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("activated_at");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Locked")
+                        .HasColumnName("status");
+
+                    b.Property<JsonElement>("TasksSnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("tasks_snapshot");
+
+                    b.Property<int>("TemplateVersionAtStart")
+                        .HasColumnType("integer")
+                        .HasColumnName("template_version_at_start");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<DateOnly>("WeekEndDateLocal")
+                        .HasColumnType("date")
+                        .HasColumnName("week_end_date_local");
+
+                    b.Property<int>("WeekNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("week_number");
+
+                    b.Property<DateOnly>("WeekStartDateLocal")
+                        .HasColumnType("date")
+                        .HasColumnName("week_start_date_local");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrollmentId")
+                        .HasDatabaseName("ix_program_weeks_enrollment_id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_program_weeks_status");
+
+                    b.HasIndex("WeekStartDateLocal")
+                        .HasDatabaseName("ix_program_weeks_week_start_date_local");
+
+                    b.HasIndex("EnrollmentId", "WeekNumber")
+                        .IsUnique()
+                        .HasDatabaseName("uq_program_weeks_enrollment_week");
+
+                    b.ToTable("program_weeks", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_program_weeks_week_number_positive", "\"week_number\" >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.StreakFreeze", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<DateTime?>("GrantedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("granted_at");
+
+                    b.Property<string>("GrantedReason")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("granted_reason");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateOnly?>("UsedOnLocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("used_on_local_date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrollmentId")
+                        .HasDatabaseName("ix_streak_freezes_enrollment_id");
+
+                    b.HasIndex("Kind")
+                        .HasDatabaseName("ix_streak_freezes_kind");
+
+                    b.ToTable("streak_freezes", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.StreakState", b =>
+                {
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<int>("CurrentStreak")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("current_streak");
+
+                    b.Property<int>("FreezesRemaining")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("freezes_remaining");
+
+                    b.Property<int>("FreezesUsedTotal")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("freezes_used_total");
+
+                    b.Property<DateOnly?>("LastActiveDate")
+                        .HasColumnType("date")
+                        .HasColumnName("last_active_date");
+
+                    b.Property<DateOnly?>("LastBreakDate")
+                        .HasColumnType("date")
+                        .HasColumnName("last_break_date");
+
+                    b.Property<int>("LongestStreak")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("longest_streak");
+
+                    b.Property<decimal>("MultiplierActive")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(4, 2)
+                        .HasColumnType("numeric(4,2)")
+                        .HasDefaultValue(1.0m)
+                        .HasColumnName("multiplier_active");
+
+                    b.Property<DateTime?>("MultiplierEndsAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("multiplier_ends_at");
+
+                    b.Property<short>("NbCurrentStreak")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("nb_current_streak");
+
+                    b.Property<DateOnly?>("NbLastCompletedDate")
+                        .HasColumnType("date")
+                        .HasColumnName("nb_last_completed_date");
+
+                    b.Property<short>("NbLongestStreak")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("nb_longest_streak");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("EnrollmentId");
+
+                    b.HasIndex("LastActiveDate")
+                        .HasDatabaseName("ix_streak_states_last_active_date");
+
+                    b.ToTable("streak_states", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_streak_states_freezes_remaining_range", "\"freezes_remaining\" >= 0 AND \"freezes_remaining\" <= 3");
+
+                            t.HasCheckConstraint("ck_streak_states_multiplier_active_positive", "\"multiplier_active\" >= 1.0");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.TaskCompletion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime?>("ClientCompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("client_completed_at");
+
+                    b.Property<string>("ClientRequestId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("client_request_id");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("ContentFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_fingerprint");
+
+                    b.Property<Guid>("DailyCheckinId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("daily_checkin_id");
+
+                    b.Property<Guid?>("EmotionalRecordId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("emotional_record_id");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<Guid?>("ExerciseRoutineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exercise_routine_id");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("local_date");
+
+                    b.Property<Guid?>("MediaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("media_id");
+
+                    b.Property<Guid?>("NutribioticProductId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("nutribiotic_product_id");
+
+                    b.Property<short?>("NutritionPlanDayNumber")
+                        .HasColumnType("smallint")
+                        .HasColumnName("nutrition_plan_day_number");
+
+                    b.Property<Guid?>("NutritionPlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("nutrition_plan_id");
+
+                    b.Property<int>("PointsAwarded")
+                        .HasColumnType("integer")
+                        .HasColumnName("points_awarded");
+
+                    b.Property<Guid>("ProgramWeekId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("program_week_id");
+
+                    b.Property<string>("SourceRefType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source_ref_type");
+
+                    b.Property<string>("TaskCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("task_code");
+
+                    b.Property<Guid?>("VitalSignsBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vital_signs_batch_id");
+
+                    b.Property<short>("Weekday")
+                        .HasColumnType("smallint")
+                        .HasColumnName("weekday");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClientRequestId")
+                        .HasDatabaseName("ix_task_completions_client_request_id");
+
+                    b.HasIndex("DailyCheckinId")
+                        .HasDatabaseName("ix_task_completions_daily_checkin_id");
+
+                    b.HasIndex("EmotionalRecordId");
+
+                    b.HasIndex("EnrollmentId")
+                        .HasDatabaseName("ix_task_completions_enrollment_id");
+
+                    b.HasIndex("ExerciseRoutineId");
+
+                    b.HasIndex("MediaId");
+
+                    b.HasIndex("NutribioticProductId");
+
+                    b.HasIndex("NutritionPlanId");
+
+                    b.HasIndex("ProgramWeekId")
+                        .HasDatabaseName("ix_task_completions_program_week_id");
+
+                    b.HasIndex("VitalSignsBatchId");
+
+                    b.HasIndex("EnrollmentId", "LocalDate", "TaskCode")
+                        .IsUnique()
+                        .HasDatabaseName("uq_task_completions_enrollment_date_task");
+
+                    b.ToTable("task_completions", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_task_completions_plan_day_number_range", "\"nutrition_plan_day_number\" BETWEEN 1 AND 7");
+
+                            t.HasCheckConstraint("ck_task_completions_weekday_range", "\"weekday\" BETWEEN 1 AND 7");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.TransformationScore", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("calculated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<JsonElement>("Detail")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("detail")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<string>("OverallTrend")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("overall_trend");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("integer")
+                        .HasColumnName("score");
+
+                    b.Property<int?>("ScorePrevious")
+                        .HasColumnType("integer")
+                        .HasColumnName("score_previous");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("WeekNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("week_number");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId", "WeekNumber")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_transformation_scores_patient_week");
+
+                    b.ToTable("transformation_scores", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_transformation_scores_overall_trend_values", "\"overall_trend\" IN ('up','down','stable')");
+
+                            t.HasCheckConstraint("ck_transformation_scores_score_previous_range", "\"score_previous\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_transformation_scores_score_range", "\"score\" BETWEEN 0 AND 100");
+
+                            t.HasCheckConstraint("ck_transformation_scores_week_number_range", "\"week_number\" >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.Weakness", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid?>("AssignedTo")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_to");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<DateTime>("DetectedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("detected_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<decimal?>("IndicatorValue")
+                        .HasPrecision(10, 4)
+                        .HasColumnType("numeric(10,4)")
+                        .HasColumnName("indicator_value");
+
+                    b.Property<Guid?>("MetricId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("metric_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("low")
+                        .HasColumnName("severity");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("ai")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("open")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MetricId");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_weaknesses_status");
+
+                    b.HasIndex("PatientId", "Status")
+                        .HasDatabaseName("ix_weaknesses_patient_status");
+
+                    b.ToTable("weaknesses", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_weaknesses_category_values", "\"category\" IN ('nutritional', 'clinical', 'psychological', 'exercise', 'adherence', 'supplement', 'sleep', 'motivation')");
+
+                            t.HasCheckConstraint("ck_weaknesses_severity_values", "\"severity\" IN ('low', 'medium', 'high', 'critical')");
+
+                            t.HasCheckConstraint("ck_weaknesses_source_values", "\"source\" IN ('ai', 'professional', 'system')");
+
+                            t.HasCheckConstraint("ck_weaknesses_status_values", "\"status\" IN ('open', 'acknowledged', 'in_intervention', 'resolved', 'dismissed')");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.WeeklyDayTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid?>("MediaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("media_id");
+
+                    b.Property<int>("Points")
+                        .HasColumnType("integer")
+                        .HasColumnName("points");
+
+                    b.Property<int>("SortOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("TaskCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("task_code");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("template_id");
+
+                    b.Property<short>("Weekday")
+                        .HasColumnType("smallint")
+                        .HasColumnName("weekday");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaId")
+                        .HasDatabaseName("ix_weekly_day_templates_media_id");
+
+                    b.HasIndex("TemplateId")
+                        .HasDatabaseName("ix_weekly_day_templates_template_id");
+
+                    b.HasIndex("TemplateId", "Weekday", "TaskCode")
+                        .IsUnique()
+                        .HasDatabaseName("uq_weekly_day_templates_template_weekday_task");
+
+                    b.ToTable("weekly_day_templates", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_weekly_day_templates_points_non_negative", "\"points\" >= 0");
+
+                            t.HasCheckConstraint("ck_weekly_day_templates_weekday_range", "\"weekday\" BETWEEN 1 AND 7");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.XpLedgerEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int>("Amount")
+                        .HasColumnType("integer")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTime>("AwardedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("awarded_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("BalanceAfter")
+                        .HasColumnType("integer")
+                        .HasColumnName("balance_after");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<Guid?>("GrantedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("granted_by");
+
+                    b.Property<decimal?>("MultiplierUsed")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("numeric(4,2)")
+                        .HasColumnName("multiplier_used");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("RuleCode")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("rule_code");
+
+                    b.Property<Guid?>("SourceRefId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_ref_id");
+
+                    b.Property<string>("SourceRefType")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("source_ref_type");
+
+                    b.Property<DateTime?>("ValidatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("validated_at");
+
+                    b.Property<Guid?>("ValidatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("validated_by");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrollmentId")
+                        .HasDatabaseName("ix_xp_ledger_enrollment_id");
+
+                    b.HasIndex("RuleCode");
+
+                    b.HasIndex("EnrollmentId", "AwardedAt")
+                        .HasDatabaseName("ix_xp_ledger_enrollment_awarded_at");
+
+                    b.HasIndex("SourceRefType", "SourceRefId", "Reason")
+                        .IsUnique()
+                        .HasDatabaseName("uq_xp_ledger_source_dedupe")
+                        .HasFilter("\"source_ref_id\" IS NOT NULL");
+
+                    b.ToTable("xp_ledger", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.XpRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<bool>("Active")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("active");
+
+                    b.Property<int?>("BaseXp")
+                        .HasColumnType("integer")
+                        .HasColumnName("base_xp");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int?>("MaxPerDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_per_day");
+
+                    b.Property<int?>("MaxPerWeek")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_per_week");
+
+                    b.Property<decimal>("Multiplier")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(4, 2)
+                        .HasColumnType("numeric(4,2)")
+                        .HasDefaultValue(1.0m)
+                        .HasColumnName("multiplier");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<bool>("RequiresValidation")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("requires_validation");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<DateOnly>("ValidFrom")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("date")
+                        .HasColumnName("valid_from")
+                        .HasDefaultValueSql("CURRENT_DATE");
+
+                    b.Property<DateOnly?>("ValidUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("valid_until");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Active")
+                        .HasDatabaseName("ix_xp_rules_active");
+
+                    b.HasIndex("Category")
+                        .HasDatabaseName("ix_xp_rules_category");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("uq_xp_rules_code");
+
+                    b.ToTable("xp_rules", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_xp_rules_base_xp_non_negative", "\"base_xp\" IS NULL OR \"base_xp\" >= 0");
+
+                            t.HasCheckConstraint("ck_xp_rules_max_limits_non_negative", "(\"max_per_day\" IS NULL OR \"max_per_day\" >= 0) AND (\"max_per_week\" IS NULL OR \"max_per_week\" >= 0)");
+
+                            t.HasCheckConstraint("ck_xp_rules_multiplier_positive", "\"multiplier\" > 0");
+                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.RoutineAssignment", b =>
@@ -3858,6 +6727,12 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("description");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -4352,6 +7227,228 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Media");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAlert", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestResult", "Result")
+                        .WithMany()
+                        .HasForeignKey("ResultId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestAlertRule", "Rule")
+                        .WithMany()
+                        .HasForeignKey("RuleId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Result");
+
+                    b.Navigation("Rule");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAnswerOption", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestQuestion", "Question")
+                        .WithMany("Options")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAssignment", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestBatteryAssignment", "BatteryAssignment")
+                        .WithMany("Assignments")
+                        .HasForeignKey("BatteryAssignmentId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", "Version")
+                        .WithMany()
+                        .HasForeignKey("VersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BatteryAssignment");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Version");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestBatteryAssignment", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestBattery", "Battery")
+                        .WithMany("Assignments")
+                        .HasForeignKey("BatteryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Battery");
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestBatteryItem", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestBattery", "Battery")
+                        .WithMany("Items")
+                        .HasForeignKey("BatteryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestInstrument", "Instrument")
+                        .WithMany()
+                        .HasForeignKey("InstrumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", "Version")
+                        .WithMany()
+                        .HasForeignKey("VersionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Battery");
+
+                    b.Navigation("Instrument");
+
+                    b.Navigation("Version");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestComment", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", "Evaluation")
+                        .WithMany()
+                        .HasForeignKey("EvaluationId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Evaluation");
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestAssignment", "Assignment")
+                        .WithMany("Evaluations")
+                        .HasForeignKey("AssignmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", "Version")
+                        .WithMany()
+                        .HasForeignKey("VersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Assignment");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Version");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestQuestion", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", "Version")
+                        .WithMany("Questions")
+                        .HasForeignKey("VersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Version");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestResponse", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestAnswerOption", "AnswerOption")
+                        .WithMany()
+                        .HasForeignKey("AnswerOptionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", "Evaluation")
+                        .WithMany("Responses")
+                        .HasForeignKey("EvaluationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestQuestion", "Question")
+                        .WithMany()
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AnswerOption");
+
+                    b.Navigation("Evaluation");
+
+                    b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestResult", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", "Evaluation")
+                        .WithMany("Results")
+                        .HasForeignKey("EvaluationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Evaluation");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestScoreRange", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", "Version")
+                        .WithMany("ScoreRanges")
+                        .HasForeignKey("VersionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Version");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestInstrument", "Instrument")
+                        .WithMany("Versions")
+                        .HasForeignKey("InstrumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Instrument");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryEntryLine", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.InventoryEntry", "Entry")
@@ -4785,6 +7882,355 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Specialty");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.AdaptationRecommendation", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany("Adaptations")
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Enrollment");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.AppNotification", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ClinicalBaseline", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.MeasurementMetric", "Metric")
+                        .WithMany()
+                        .HasForeignKey("MetricId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.UnitOfMeasure", "Unit")
+                        .WithMany()
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Metric");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Unit");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ClinicalXpReview", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.HealthScore", "HealthScore")
+                        .WithMany()
+                        .HasForeignKey("HealthScoreId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.MeasurementMetric", "Metric")
+                        .WithMany()
+                        .HasForeignKey("MetricId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("HealthScore");
+
+                    b.Navigation("Metric");
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.DailyCheckIn", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany("DailyCheckIns")
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramWeek", "Week")
+                        .WithMany("DailyCheckIns")
+                        .HasForeignKey("ProgramWeekId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Enrollment");
+
+                    b.Navigation("Week");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.EmotionalRecord", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany("EmotionalRecords")
+                        .HasForeignKey("ProgramEnrollmentId", "PatientId")
+                        .HasPrincipalKey("Id", "PatientId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Enrollment");
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.HabitCheck", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.HabitTemplate", "HabitTemplate")
+                        .WithMany("HabitChecks")
+                        .HasForeignKey("HabitTemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("HabitTemplate");
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.HealthScore", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.Intervention", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.Weakness", "Weakness")
+                        .WithMany()
+                        .HasForeignKey("WeaknessId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Weakness");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramTemplate", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramWeek", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany("Weeks")
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Enrollment");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.StreakFreeze", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany("StreakFreezes")
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Enrollment");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.StreakState", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithOne("StreakState")
+                        .HasForeignKey("CoppAddresd.Domain.Entities.ProgramProgress.StreakState", "EnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Enrollment");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.TaskCompletion", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.DailyCheckIn", "DailyCheckIn")
+                        .WithMany("TaskCompletions")
+                        .HasForeignKey("DailyCheckinId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.EmotionalRecord", "EmotionalRecord")
+                        .WithMany()
+                        .HasForeignKey("EmotionalRecordId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany("TaskCompletions")
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ExerciseRoutine", "ExerciseRoutine")
+                        .WithMany()
+                        .HasForeignKey("ExerciseRoutineId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.MediaItem", "Media")
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.Product", "NutribioticProduct")
+                        .WithMany()
+                        .HasForeignKey("NutribioticProductId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.NutritionPlan", "NutritionPlan")
+                        .WithMany()
+                        .HasForeignKey("NutritionPlanId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramWeek", "Week")
+                        .WithMany("TaskCompletions")
+                        .HasForeignKey("ProgramWeekId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.VitalSign", "VitalSignsBatch")
+                        .WithMany()
+                        .HasForeignKey("VitalSignsBatchId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("DailyCheckIn");
+
+                    b.Navigation("EmotionalRecord");
+
+                    b.Navigation("Enrollment");
+
+                    b.Navigation("ExerciseRoutine");
+
+                    b.Navigation("Media");
+
+                    b.Navigation("NutribioticProduct");
+
+                    b.Navigation("NutritionPlan");
+
+                    b.Navigation("VitalSignsBatch");
+
+                    b.Navigation("Week");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.TransformationScore", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.Weakness", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.MeasurementMetric", "Metric")
+                        .WithMany()
+                        .HasForeignKey("MetricId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Metric");
+
+                    b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.WeeklyDayTemplate", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.MediaItem", "Media")
+                        .WithMany()
+                        .HasForeignKey("MediaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramTemplate", "Template")
+                        .WithMany("DayTemplates")
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Media");
+
+                    b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.XpLedgerEntry", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany("XpLedgerEntries")
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.XpRule", "Rule")
+                        .WithMany()
+                        .HasForeignKey("RuleCode")
+                        .HasPrincipalKey("Code")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Enrollment");
+
+                    b.Navigation("Rule");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.RoutineAssignment", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
@@ -4909,6 +8355,47 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Exercises");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAssignment", b =>
+                {
+                    b.Navigation("Evaluations");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestBattery", b =>
+                {
+                    b.Navigation("Assignments");
+
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestBatteryAssignment", b =>
+                {
+                    b.Navigation("Assignments");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", b =>
+                {
+                    b.Navigation("Responses");
+
+                    b.Navigation("Results");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestInstrument", b =>
+                {
+                    b.Navigation("Versions");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestQuestion", b =>
+                {
+                    b.Navigation("Options");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", b =>
+                {
+                    b.Navigation("Questions");
+
+                    b.Navigation("ScoreRanges");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Icd10Code", b =>
                 {
                     b.Navigation("Diagnoses");
@@ -5010,6 +8497,47 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Professionals");
 
                     b.Navigation("Specialties");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.DailyCheckIn", b =>
+                {
+                    b.Navigation("TaskCompletions");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.HabitTemplate", b =>
+                {
+                    b.Navigation("HabitChecks");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
+                {
+                    b.Navigation("Adaptations");
+
+                    b.Navigation("DailyCheckIns");
+
+                    b.Navigation("EmotionalRecords");
+
+                    b.Navigation("StreakFreezes");
+
+                    b.Navigation("StreakState");
+
+                    b.Navigation("TaskCompletions");
+
+                    b.Navigation("Weeks");
+
+                    b.Navigation("XpLedgerEntries");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramTemplate", b =>
+                {
+                    b.Navigation("DayTemplates");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramWeek", b =>
+                {
+                    b.Navigation("DailyCheckIns");
+
+                    b.Navigation("TaskCompletions");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Specialty", b =>

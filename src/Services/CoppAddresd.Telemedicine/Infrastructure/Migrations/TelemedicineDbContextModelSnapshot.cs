@@ -23,6 +23,129 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.Appointment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("cancellation_reason");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<string>("CancelledBy")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("cancelled_by");
+
+                    b.Property<Guid?>("ClinicId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("clinic_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("DurationMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_minutes");
+
+                    b.Property<Guid?>("LocationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("location_id");
+
+                    b.Property<string>("NoShowReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("no_show_reason");
+
+                    b.Property<Guid>("OrganizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organization_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("ProfessionalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("professional_id");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("request_id");
+
+                    b.Property<int>("RescheduleCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("reschedule_count");
+
+                    b.Property<DateTimeOffset>("ScheduledEnd")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_end");
+
+                    b.Property<DateTimeOffset>("ScheduledStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_start");
+
+                    b.Property<Guid>("SpecialtyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("specialty_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_appointments");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_appointments_patient_id");
+
+                    b.HasIndex("ProfessionalId")
+                        .HasDatabaseName("ix_appointments_professional_id");
+
+                    b.HasIndex("RequestId")
+                        .HasDatabaseName("ix_appointments_request_id_lookup");
+
+                    b.HasIndex("ScheduledStart")
+                        .HasDatabaseName("ix_appointments_scheduled_start");
+
+                    b.HasIndex("SpecialtyId")
+                        .HasDatabaseName("ix_appointments_specialty_id");
+
+                    b.HasIndex("OrganizationId", "Status")
+                        .HasDatabaseName("ix_appointments_organization_id_status");
+
+                    b.HasIndex("ProfessionalId", "ScheduledStart")
+                        .IsUnique()
+                        .HasDatabaseName("ix_appointments_professional_start_active")
+                        .HasFilter("appointments.status IN ('Requested','Confirmed','InProgress')");
+
+                    b.ToTable("appointments", "tele");
+                });
+
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.AppointmentCancellation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -268,129 +391,6 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.ToTable("telemedicine_alerts", "tele");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("CancellationReason")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
-                        .HasColumnName("cancellation_reason");
-
-                    b.Property<DateTimeOffset?>("CancelledAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("cancelled_at");
-
-                    b.Property<string>("CancelledBy")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("cancelled_by");
-
-                    b.Property<Guid?>("ClinicId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("clinic_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid>("CreatedBy")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by");
-
-                    b.Property<int>("DurationMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("duration_minutes");
-
-                    b.Property<Guid?>("LocationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("location_id");
-
-                    b.Property<string>("NoShowReason")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)")
-                        .HasColumnName("no_show_reason");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("organization_id");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("patient_id");
-
-                    b.Property<Guid>("ProfessionalId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("professional_id");
-
-                    b.Property<Guid?>("RequestId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("request_id");
-
-                    b.Property<int>("RescheduleCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("reschedule_count");
-
-                    b.Property<DateTimeOffset>("ScheduledEnd")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("scheduled_end");
-
-                    b.Property<DateTimeOffset>("ScheduledStart")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("scheduled_start");
-
-                    b.Property<Guid>("SpecialtyId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("specialty_id");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasColumnName("status");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<uint>("Version")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("xid")
-                        .HasColumnName("xmin");
-
-                    b.HasKey("Id")
-                        .HasName("pk_telemedicine_appointments");
-
-                    b.HasIndex("PatientId")
-                        .HasDatabaseName("ix_telemedicine_appointments_patient_id");
-
-                    b.HasIndex("ProfessionalId")
-                        .HasDatabaseName("ix_telemedicine_appointments_professional_id");
-
-                    b.HasIndex("RequestId")
-                        .HasDatabaseName("ix_telemedicine_appointments_request_id");
-
-                    b.HasIndex("ScheduledStart")
-                        .HasDatabaseName("ix_telemedicine_appointments_scheduled_start");
-
-                    b.HasIndex("SpecialtyId")
-                        .HasDatabaseName("ix_telemedicine_appointments_specialty_id");
-
-                    b.HasIndex("OrganizationId", "Status")
-                        .HasDatabaseName("ix_telemedicine_appointments_organization_id_status");
-
-                    b.HasIndex("ProfessionalId", "ScheduledStart")
-                        .IsUnique()
-                        .HasDatabaseName("ix_appointments_professional_start_active")
-                        .HasFilter("telemedicine_appointments.status IN ('Requested','Confirmed','InProgress')");
-
-                    b.ToTable("telemedicine_appointments", "tele");
-                });
-
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -439,6 +439,11 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
                         .HasColumnName("reason");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("rejection_reason");
 
                     b.Property<Guid>("SpecialtyId")
                         .HasColumnType("uuid")
@@ -732,38 +737,49 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.ToTable("virtual_rooms", "tele");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.Appointment", b =>
+                {
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineRequest", "Request")
+                        .WithMany("Appointments")
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_appointments_requests_request_id");
+
+                    b.Navigation("Request");
+                });
+
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.AppointmentCancellation", b =>
                 {
-                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", "Appointment")
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.Appointment", "Appointment")
                         .WithMany("Cancellations")
                         .HasForeignKey("AppointmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_appointment_cancellations_telemedicine_appointments_appoint");
+                        .HasConstraintName("fk_appointment_cancellations_appointments_appointment_id");
 
                     b.Navigation("Appointment");
                 });
 
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.AppointmentReschedule", b =>
                 {
-                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", "Appointment")
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.Appointment", "Appointment")
                         .WithMany("Reschedules")
                         .HasForeignKey("AppointmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_appointment_reschedules_telemedicine_appointments_appointme");
+                        .HasConstraintName("fk_appointment_reschedules_appointments_appointment_id");
 
                     b.Navigation("Appointment");
                 });
 
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ClinicalEncounter", b =>
                 {
-                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", "Appointment")
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.Appointment", "Appointment")
                         .WithOne("Encounter")
                         .HasForeignKey("CoppAddresd.Telemedicine.Domain.Entities.ClinicalEncounter", "AppointmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_clinical_encounters_telemedicine_appointments_appointment_id");
+                        .HasConstraintName("fk_clinical_encounters_appointments_appointment_id");
 
                     b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineSession", "Session")
                         .WithOne("Encounter")
@@ -776,25 +792,14 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.Navigation("Session");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", b =>
-                {
-                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineRequest", "Request")
-                        .WithMany("Appointments")
-                        .HasForeignKey("RequestId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_telemedicine_appointments_requests_request_id");
-
-                    b.Navigation("Request");
-                });
-
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineSession", b =>
                 {
-                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", "Appointment")
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.Appointment", "Appointment")
                         .WithMany("Sessions")
                         .HasForeignKey("AppointmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_telemedicine_sessions_telemedicine_appointments_appointment");
+                        .HasConstraintName("fk_telemedicine_sessions_appointments_appointment_id");
 
                     b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.VirtualRoom", "Room")
                         .WithMany("Sessions")
@@ -810,17 +815,17 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
 
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.VirtualRoom", b =>
                 {
-                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", "Appointment")
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.Appointment", "Appointment")
                         .WithOne("Room")
                         .HasForeignKey("CoppAddresd.Telemedicine.Domain.Entities.VirtualRoom", "AppointmentId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_virtual_rooms_telemedicine_appointments_appointment_id");
+                        .HasConstraintName("fk_virtual_rooms_appointments_appointment_id");
 
                     b.Navigation("Appointment");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAppointment", b =>
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.Appointment", b =>
                 {
                     b.Navigation("Cancellations");
 

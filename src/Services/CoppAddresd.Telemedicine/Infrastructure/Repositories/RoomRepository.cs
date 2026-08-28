@@ -18,29 +18,32 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
     public async Task<VirtualRoom?> GetByAppointmentIdAsync(
         Guid appointmentId,
         bool includeSessions = false,
-        CancellationToken ct = default)
-        => await Query(includeSessions)
-            .FirstOrDefaultAsync(r => r.AppointmentId == appointmentId, ct);
+        CancellationToken ct = default
+    ) =>
+        await Query(includeSessions).FirstOrDefaultAsync(r => r.AppointmentId == appointmentId, ct);
 
     public async Task<VirtualRoom?> GetByProviderRoomSidAsync(
         string providerRoomSid,
         bool includeSessions = false,
-        CancellationToken ct = default)
-        => await Query(includeSessions)
+        CancellationToken ct = default
+    ) =>
+        await Query(includeSessions)
             .FirstOrDefaultAsync(r => r.ProviderRoomSid == providerRoomSid, ct);
 
     public async Task<VirtualRoom?> GetForUpdateAsync(
         Guid appointmentId,
-        CancellationToken ct = default)
-        => await dbContext.Rooms
-            .Include(r => r.Sessions)
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Rooms.Include(r => r.Sessions)
             .FirstOrDefaultAsync(r => r.AppointmentId == appointmentId, ct);
 
     public async Task<VirtualRoom?> GetForUpdateByProviderRoomSidAsync(
         string providerRoomSid,
-        CancellationToken ct = default)
-        => await dbContext.Rooms
-            .Include(r => r.Sessions)
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Rooms.Include(r => r.Sessions)
             .FirstOrDefaultAsync(r => r.ProviderRoomSid == providerRoomSid, ct);
 
     public async Task<VirtualRoom> AddAsync(VirtualRoom room, CancellationToken ct = default)
@@ -57,8 +60,8 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
             // La sala es 1:1 con la cita: el único duplicado posible es la sala de
             // la misma cita creada por otra petición concurrente (join-token).
             // Devolver la existente hace la creación idempotente sin error.
-            return await dbContext.Rooms
-                .AsNoTracking()
+            return await dbContext
+                .Rooms.AsNoTracking()
                 .Include(r => r.Sessions)
                 .FirstAsync(r => r.AppointmentId == room.AppointmentId, ct);
         }
@@ -74,7 +77,10 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
         await SaveWithConflictTranslationAsync(ct);
     }
 
-    public async Task AddWebhookEventAsync(TelemedicineWebhookEvent webhookEvent, CancellationToken ct = default)
+    public async Task AddWebhookEventAsync(
+        TelemedicineWebhookEvent webhookEvent,
+        CancellationToken ct = default
+    )
     {
         dbContext.WebhookEvents.Add(webhookEvent);
 
@@ -84,8 +90,7 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
         }
         catch (DbUpdateException ex) when (ex.IsUniqueViolation())
         {
-            throw new BusinessRuleViolationException(
-                "El webhook del proveedor ya fue procesado.");
+            throw new BusinessRuleViolationException("El webhook del proveedor ya fue procesado.");
         }
     }
 
@@ -95,7 +100,8 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
         DateTimeOffset? to,
         int page,
         int pageSize,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var query = dbContext.Sessions.AsNoTracking();
 
@@ -121,9 +127,22 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
         return (items, total);
     }
 
-    public async Task<int> CountActiveSessionsAsync(CancellationToken ct = default)
-        => await dbContext.Sessions.CountAsync(
-            s => s.Status == TelemedicineSessionStatus.Active, ct);
+    public async Task<int> CountActiveSessionsAsync(CancellationToken ct = default) =>
+        await dbContext.Sessions.CountAsync(s => s.Status == TelemedicineSessionStatus.Active, ct);
+
+    public async Task<int> CountActiveSessionsAsync(
+        Guid professionalId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Sessions.AsNoTracking()
+            .CountAsync(
+                s =>
+                    s.Status == TelemedicineSessionStatus.Active
+                    && s.Appointment != null
+                    && s.Appointment.ProfessionalId == professionalId,
+                ct
+            );
 
     private IQueryable<VirtualRoom> Query(bool includeSessions)
     {
@@ -140,7 +159,8 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
         catch (DbUpdateException ex) when (ex.IsExclusionViolation() || ex.IsUniqueViolation())
         {
             throw new BusinessRuleViolationException(
-                "Conflicto de concurrencia al persistir la sala virtual.");
+                "Conflicto de concurrencia al persistir la sala virtual."
+            );
         }
     }
 }

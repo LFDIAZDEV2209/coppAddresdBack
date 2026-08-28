@@ -1,5 +1,6 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
+using CoppAddresd.Telemedicine.Infrastructure.Cache;
 using CoppAddresd.Telemedicine.Infrastructure.Configuration;
 using CoppAddresd.Telemedicine.Infrastructure.Extensions;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
@@ -8,9 +9,13 @@ using CoppAddresd.Telemedicine.Infrastructure.Security;
 using CoppAddresd.Telemedicine.Infrastructure.Services;
 using CoppAddresd.Telemedicine.Infrastructure.VideoProvider;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace CoppAddresd.Telemedicine.Infrastructure;
 
@@ -23,28 +28,35 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddTelemedicineInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
+        var connectionString =
+            configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException(
-                "ConnectionStrings:DefaultConnection no configurada para Telemedicina.");
+                "ConnectionStrings:DefaultConnection no configurada para Telemedicina."
+            );
 
         services.AddHttpContextAccessor();
         services.AddScoped<HttpAuditActorContext>();
 
-        services.AddDbContext<TelemedicineDbContext>((serviceProvider, options) =>
-            options
-                .UseNpgsql(
-                    connectionString,
-                    npgsql => npgsql
-                        .EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)
-                        // Historial de migraciones aislado en el schema tele:
-                        // la instancia compartida tiene su historial en public.
-                        .MigrationsHistoryTable("__ef_migrations_history", "tele"))
-                .UseSnakeCaseNamingConvention()
-                // Auditoría (Fase 12): propaga actor JWT + correlación a los GUC
-                // audit.* al iniciar cada transacción (trigger del encuentro clínico).
-                .AddInterceptors(serviceProvider.GetRequiredService<AuditTriggerInterceptor>()));
+        services.AddDbContext<TelemedicineDbContext>(
+            (serviceProvider, options) =>
+                options
+                    .UseNpgsql(
+                        connectionString,
+                        npgsql =>
+                            npgsql
+                                .EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)
+                                // Historial de migraciones aislado en el schema tele:
+                                // la instancia compartida tiene su historial en public.
+                                .MigrationsHistoryTable("__ef_migrations_history", "tele")
+                    )
+                    .UseSnakeCaseNamingConvention()
+                    // Auditoría (Fase 12): propaga actor JWT + correlación a los GUC
+                    // audit.* al iniciar cada transacción (trigger del encuentro clínico).
+                    .AddInterceptors(serviceProvider.GetRequiredService<AuditTriggerInterceptor>())
+        );
         services.AddScoped<AuditTriggerInterceptor>();
 
         services.AddMemoryCache();
@@ -58,7 +70,8 @@ public static class DependencyInjection
         services.AddScoped<ITelemedicineUnitOfWork, TelemedicineUnitOfWork>();
 
         services.Configure<Application.Configuration.TelemedicineOptions>(
-            configuration.GetSection(Application.Configuration.TelemedicineOptions.SectionName));
+            configuration.GetSection(Application.Configuration.TelemedicineOptions.SectionName)
+        );
 
         AddBackendReferenceDataClient(services, configuration);
 
@@ -66,7 +79,89 @@ public static class DependencyInjection
 
         AddVideoProvider(services, configuration);
 
+        AddDistributedCache(services, configuration);
+
         return services;
+    }
+
+    /// <summary>
+    /// Caché distribuida compartida (Valkey) con degradación controlada: el
+    /// proveedor se elige por <c>Cache:Provider</c> (Valkey|Memory|None), con
+    /// claves namespaced <c>tele:...</c> y connection string
+    /// <c>ConnectionStrings:Valkey</c> (en prod, ElastiCache for Valkey).
+    /// Fail-open por operación: un Valkey caído nunca rompe una petición.
+    /// </summary>
+    private static void AddDistributedCache(
+        IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        services.Configure<CacheOptions>(configuration.GetSection(CacheOptions.SectionName));
+
+        var provider = (configuration["Cache:Provider"] ?? CacheOptions.DefaultProvider).Trim();
+        var keyPrefix = configuration["Cache:KeyPrefix"] ?? CacheOptions.DefaultKeyPrefix;
+        var connectionString = configuration.GetConnectionString("Valkey");
+
+        switch (provider.ToLowerInvariant())
+        {
+            case "valkey":
+                // Singleton thread-safe con multiplexado (una conexión por instancia).
+                services.AddSingleton<IConnectionMultiplexer>(_ =>
+                {
+                    var raw = connectionString ?? "127.0.0.1:6379";
+                    var options = ConfigurationOptions.Parse(raw);
+                    // Contrato fail-open: el arranque nunca se bloquea por
+                    // caché ausente; las operaciones degradan por operación.
+                    options.AbortOnConnectFail = false;
+                    if (!raw.Contains("syncTimeout", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.SyncTimeout = 2000;
+                    }
+                    if (!raw.Contains("asyncTimeout", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.AsyncTimeout = 2000;
+                    }
+                    if (!raw.Contains("connectTimeout", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.ConnectTimeout = 5000;
+                    }
+
+                    return ConnectionMultiplexer.Connect(options);
+                });
+                services.AddSingleton<ICacheService>(sp => new ValkeyCacheService(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    keyPrefix,
+                    sp.GetRequiredService<ILogger<ValkeyCacheService>>()
+                ));
+                // Degraded (no Unhealthy): Valkey caído → /health 200 con el
+                // componente degradado; el micro sigue operativo.
+                services
+                    .AddHealthChecks()
+                    .AddCheck<ValkeyHealthCheck>(
+                        "valkey",
+                        failureStatus: HealthStatus.Degraded,
+                        tags: ["cache"]
+                    );
+                break;
+
+            case "memory":
+                services.AddMemoryCache();
+                services.AddSingleton<ICacheService>(sp => new MemoryCacheService(
+                    sp.GetRequiredService<IMemoryCache>(),
+                    keyPrefix,
+                    sp.GetRequiredService<ILogger<MemoryCacheService>>()
+                ));
+                break;
+
+            case "none":
+                services.AddSingleton<ICacheService, NoCacheService>();
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Cache:Provider desconocido: '{provider}'. Valores soportados: Valkey, Memory, None."
+                );
+        }
     }
 
     /// <summary>
@@ -77,19 +172,26 @@ public static class DependencyInjection
     /// </summary>
     private static void AddAuthScopedAuthorizationClient(
         IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
         services.Configure<AuthServiceSettings>(
-            configuration.GetSection(AuthServiceSettings.SectionName));
+            configuration.GetSection(AuthServiceSettings.SectionName)
+        );
 
-        services.AddHttpClient<ITelemedicineScopedAuthorizationClient, TelemedicineScopedAuthorizationClient>(
+        services
+            .AddHttpClient<
+                ITelemedicineScopedAuthorizationClient,
+                TelemedicineScopedAuthorizationClient
+            >(
                 (sp, client) =>
                 {
                     var settings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
                     client.BaseAddress = new Uri(settings.BaseUrl);
                     client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
-                })
+                }
+            )
             .AddResiliencePolicy();
     }
 
@@ -100,19 +202,23 @@ public static class DependencyInjection
     /// </summary>
     private static void AddBackendReferenceDataClient(
         IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
         services.Configure<BackendServiceSettings>(
-            configuration.GetSection(BackendServiceSettings.SectionName));
+            configuration.GetSection(BackendServiceSettings.SectionName)
+        );
 
-        services.AddHttpClient<ITelemedicineReferenceDataService, BackendReferenceDataService>(
+        services
+            .AddHttpClient<IAppointmentReferenceDataService, AppointmentReferenceDataService>(
                 (sp, client) =>
                 {
                     var settings = sp.GetRequiredService<IOptions<BackendServiceSettings>>().Value;
                     client.BaseAddress = new Uri(settings.BaseUrl);
                     client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
-                })
+                }
+            )
             .AddResiliencePolicy();
     }
 
@@ -121,9 +227,7 @@ public static class DependencyInjection
     /// <c>Telemedicine:Provider</c> (por defecto, <c>twilio</c>). Añadir un
     /// proveedor futuro = nueva clase + un <c>else if</c> aquí.
     /// </summary>
-    private static void AddVideoProvider(
-        IServiceCollection services,
-        IConfiguration configuration)
+    private static void AddVideoProvider(IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<TwilioOptions>(configuration.GetSection(TwilioOptions.SectionName));
 
@@ -137,7 +241,8 @@ public static class DependencyInjection
                 if (!twilioOptions.IsConfigured)
                 {
                     throw new InvalidOperationException(
-                        "Twilio no configurado: define Twilio:AccountSid/ApiKeySid/ApiKeySecret.");
+                        "Twilio no configurado: define Twilio:AccountSid/ApiKeySid/ApiKeySecret."
+                    );
                 }
                 return ActivatorUtilities.CreateInstance<TwilioVideoProvider>(sp);
             });
@@ -145,6 +250,7 @@ public static class DependencyInjection
         }
 
         throw new InvalidOperationException(
-            $"Proveedor de video desconocido: '{provider}'. Valores soportados: 'twilio'.");
+            $"Proveedor de video desconocido: '{provider}'. Valores soportados: 'twilio'."
+        );
     }
 }

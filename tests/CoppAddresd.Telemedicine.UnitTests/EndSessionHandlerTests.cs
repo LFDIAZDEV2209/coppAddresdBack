@@ -29,7 +29,7 @@ public class EndSessionHandlerTests
         _referenceData.Specialties[TestData.SpecialtyId] = TestData.Specialty();
     }
 
-    private TelemedicineAppointment AddWithActiveSession()
+    private Appointment AddWithActiveSession()
     {
         var appointment = TestData.Appointment(status: AppointmentStatus.InProgress);
         var room = new VirtualRoom
