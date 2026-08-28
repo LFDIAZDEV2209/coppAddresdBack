@@ -9,6 +9,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.DecideAdaptation
 using CoppAddresd.Application.Features.ProgramProgress.Commands.DecideClinicalReview;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatient;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.LogNutrition;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkNotificationRead;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PauseEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PublishTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceWeekdayTasks;
@@ -19,6 +20,19 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.WithdrawEnrollme
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Notifications;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateWeaknessStatus;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenWeaknesses;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListWeaknesses;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.AcceptIntervention;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateInterventionStatus;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleScheduled;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleAttended;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleComply;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListInterventions;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenInterventions;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetAdaptation;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetCalendar;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetPath;
@@ -28,6 +42,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.GetTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListAdaptations;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListClinicalReviews;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListEnrollments;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListNotifications;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListTemplates;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListXpRules;
 using CoppAddresd.Application.Interfaces;
@@ -526,6 +541,226 @@ public sealed class ProgramController(
 
         return Ok(result);
     }
+
+    // ============ PACIENTE: notificaciones gamificadas (SPEC §20, D) ============
+
+    /// <summary>
+    /// Centro de notificaciones gamificadas del paciente autenticado (SPEC §20,
+    /// D): log de hitos de racha / racha del nutribiótico / subida de nivel /
+    /// día perfecto, paginado (default 20, orden descendente por fecha), con
+    /// <c>readAt</c> por fila y el <c>unreadCount</c> total para el badge del
+    /// móvil. El <c>patientId</c> se resuelve del JWT (nunca del body): sin
+    /// perfil de paciente → 404 (anti-IDOR AC-11).
+    /// </summary>
+    [HttpGet("notifications")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<PaginatedNotificationsResult>> ListNotifications(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        return Ok(await mediator.Send(new ListNotificationsQuery(patientId.Value, page, pageSize), ct));
+    }
+
+    /// <summary>
+    /// Marca una notificación del paciente autenticado como leída (SPEC §20, D):
+    /// <c>read_at = now</c>. La notificación debe pertenecer al paciente
+    /// (anti-IDOR AC-11): si no, 404 sin distinguir si existe.
+    /// </summary>
+    [HttpPost("notifications/{id:guid}/read")]
+    [RequirePermission("Program.View")]
+    public async Task<IActionResult> MarkNotificationRead(Guid id, CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        var marked = await mediator.Send(new MarkNotificationReadCommand(id, patientId.Value), ct);
+        if (!marked)
+        {
+            return NotFound(new { message = "Notificación no encontrada" });
+        }
+
+        return NoContent();
+    }
+
+    // ============ DEBILIDADES DEL PACIENTE (SPEC §21, D — "Paso 7c") ============
+
+    /// <summary>
+    /// Debilidades del paciente autenticado (SPEC §21, D): hallazgos del motor
+    /// de detección (y de los profesionales) paginados (default 20, orden
+    /// descendente por <c>detectedAt</c>), con categoría, severidad, indicador
+    /// y ciclo de vida. El <c>patientId</c> se resuelve del JWT (nunca del
+    /// body): sin perfil de paciente → 404 (anti-IDOR AC-11).
+    /// </summary>
+    [HttpGet("weaknesses")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<PaginatedWeaknessesResult>> ListWeaknesses(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        return Ok(await mediator.Send(new ListWeaknessesQuery(patientId.Value, page, pageSize), ct));
+    }
+
+    /// <summary>
+    /// Cola clínica de debilidades abiertas (SPEC §21, D): los hallazgos
+    /// <c>status = 'open'</c> que esperan decisión de un clínico, paginados
+    /// (default 20, orden ascendente FIFO por <c>detectedAt</c> — la más
+    /// antigua primero). Requiere <c>Program.Adapt</c> (decisión clínica del
+    /// módulo). Es la vista previa de
+    /// <c>POST /api/v1/program/weaknesses/{{id}}/status</c>.
+    /// </summary>
+    [HttpGet("weaknesses/open")]
+    [RequirePermission("Program.Adapt")]
+    public async Task<ActionResult<PaginatedWeaknessesResult>> ListOpenWeaknesses(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+        => Ok(await mediator.Send(new ListOpenWeaknessesQuery(page, pageSize), ct));
+
+    /// <summary>
+    /// Transición de estado de una debilidad (SPEC §21, D — AC-44):
+    /// <c>{ status: 'acknowledged'|'in_intervention'|'resolved'|'dismissed' }</c>.
+    /// Requiere <c>Program.Adapt</c> + rol clínico del actor (AC-22: un paciente
+    /// cambiando el estado de su propia debilidad → 403). Transición
+    /// idempotente (aplicar el mismo estado no es error); <c>resolved</c> fija
+    /// <c>resolvedAt</c>.
+    /// </summary>
+    [HttpPost("weaknesses/{id:guid}/status")]
+    [RequirePermission("Program.Adapt")]
+    public async Task<ActionResult<WeaknessDto>> UpdateWeaknessStatus(
+        Guid id,
+        [FromBody] UpdateWeaknessStatusRequest request,
+        CancellationToken ct)
+        => Ok(await mediator.Send(new UpdateWeaknessStatusCommand(
+            id, request.Status, actorContext.UserId, actorContext.Roles), ct));
+
+    // ============ INTERVENCIONES (SPEC §22, "Paso 7d") ============
+
+    /// <summary>
+    /// Intervenciones del paciente autenticado (SPEC §22, D): listado paginado
+    /// (default 20, orden descendente por <c>createdAt</c>) de las intervenciones
+    /// derivadas de debilidades y registradas por profesionales. El
+    /// <c>patientId</c> se resuelve del JWT (nunca del body): sin perfil de
+    /// paciente → 404 (anti-IDOR AC-11).
+    /// </summary>
+    [HttpGet("interventions")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<PaginatedInterventionsResult>> ListInterventions(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        return Ok(await mediator.Send(new ListInterventionsQuery(patientId.Value, page, pageSize), ct));
+    }
+
+    /// <summary>
+    /// Paciente acepta una intervención (SPEC §22, D — AC-47):
+    /// <c>detected→accepted</c>, fija <c>accepted_at</c>, otorga
+    /// <c>INTERV_ACCEPT</c> (+15). Si es <c>recovery_mission</c> también
+    /// <c>RECOVERY_MISSION</c> (+50). La intervención debe pertenecer al
+    /// paciente autenticado (anti-IDOR AC-11). Estado inválido → 409.
+    /// </summary>
+    [HttpPost("interventions/{id:guid}/accept")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<InterventionDto>> AcceptIntervention(Guid id, CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        return Ok(await mediator.Send(new AcceptInterventionCommand(id, patientId.Value), ct));
+    }
+
+    /// <summary>
+    /// Cola clínica de intervenciones abiertas (SPEC §22, D): las
+    /// intervenciones con <c>status != 'completed'</c> que esperan decisión,
+    /// paginadas (default 20, orden ascendente FIFO por <c>createdAt</c>).
+    /// Requiere <c>Program.Adapt</c> (decisión clínica del módulo).
+    /// </summary>
+    [HttpGet("interventions/open")]
+    [RequirePermission("Program.Adapt")]
+    public async Task<ActionResult<PaginatedInterventionsResult>> ListOpenInterventions(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+        => Ok(await mediator.Send(new ListOpenInterventionsQuery(page, pageSize), ct));
+
+    /// <summary>
+    /// Clínico actualiza el estado de una intervención (SPEC §22, D — AC-48):
+    /// <c>{ status, result?, assignedTo? }</c>. Requiere <c>Program.Adapt</c> +
+    /// rol clínico del actor (AC-22). <c>completed</c> requiere resultado y
+    /// otorga <c>INTERV_COMPLETE</c> (+200, validated_by). Estado inválido → 409.
+    /// </summary>
+    [HttpPost("interventions/{id:guid}/status")]
+    [RequirePermission("Program.Adapt")]
+    public async Task<ActionResult<InterventionDto>> UpdateInterventionStatus(
+        Guid id,
+        [FromBody] UpdateInterventionStatusRequest request,
+        CancellationToken ct)
+        => Ok(await mediator.Send(new UpdateInterventionStatusCommand(
+            id, request.Status, actorContext.UserId, actorContext.Roles,
+            request.Result, request.AssignedTo), ct));
+
+    /// <summary>
+    /// Hook de telemedicina: teleconsulta agendada (SPEC §22, D — AC-49):
+    /// otorga <c>TELE_SCHEDULE</c> (+50). Callable por el servicio de
+    /// telemedicina o por un clínico con <c>Program.Adapt</c>.
+    /// </summary>
+    [HttpPost("interventions/{id:guid}/tele-scheduled")]
+    [RequirePermission("Program.Adapt")]
+    public async Task<ActionResult<InterventionDto>> MarkTeleScheduled(Guid id, CancellationToken ct)
+        => Ok(await mediator.Send(new MarkTeleScheduledCommand(id), ct));
+
+    /// <summary>
+    /// Hook de telemedicina: asistencia confirmada por el clínico
+    /// (SPEC §22, D — AC-49): otorga <c>TELE_ATTEND</c> (+100, validated_by)
+    /// y mueve la intervención a <c>in_progress</c>.
+    /// </summary>
+    [HttpPost("interventions/{id:guid}/tele-attended")]
+    [RequirePermission("Program.Adapt")]
+    public async Task<ActionResult<InterventionDto>> MarkTeleAttended(Guid id, CancellationToken ct)
+    {
+        if (actorContext.UserId is not { } userId)
+        {
+            return Unauthorized(new { message = "Usuario no identificado." });
+        }
+
+        return Ok(await mediator.Send(new MarkTeleAttendedCommand(id, userId), ct));
+    }
+
+    /// <summary>
+    /// Hook de telemedicina: cumplimiento evaluado (SPEC §22, D — AC-49):
+    /// otorga <c>TELE_COMPLY</c> (+50) y puede avanzar hacia
+    /// <c>completed</c>.
+    /// </summary>
+    [HttpPost("interventions/{id:guid}/tele-comply")]
+    [RequirePermission("Program.Adapt")]
+    public async Task<ActionResult<InterventionDto>> MarkTeleComply(Guid id, CancellationToken ct)
+        => Ok(await mediator.Send(new MarkTeleComplyCommand(id), ct));
 
     // ===================== helpers =====================
 

@@ -133,6 +133,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HabitTemplate> HabitTemplates => Set<HabitTemplate>();
     public DbSet<HabitCheck> HabitChecks => Set<HabitCheck>();
 
+    // Program Progress — Notificaciones gamificadas (SPEC §20)
+    public DbSet<AppNotification> AppNotifications => Set<AppNotification>();
+
+    // Program Progress — Debilidades del paciente (SPEC §21, "Paso 7c")
+    public DbSet<Weakness> Weaknesses => Set<Weakness>();
+
+    // Program Progress — Intervenciones derivadas de debilidades (SPEC §22, "Paso 7d")
+    public DbSet<Intervention> Interventions => Set<Intervention>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

@@ -77,6 +77,15 @@ public static class DependencyInjection
         services.AddSingleton<IndicatorEngine>();
         services.AddSingleton<AlertEngine>();
 
+        // Notificaciones gamificadas (SPEC §20, "Paso 7b"): servicio best-effort
+        // de la capa de aplicación + repositorio del log `app.notifications`.
+        // El servicio reutiliza IFcmClient/IDeviceTokenRepository (registrados
+        // arriba) y es consumido por ProgramRepository dentro de los flujos de
+        // otorgamiento (hitos, día perfecto, subida de nivel) sin romper la
+        // transacción de XP (AC-42).
+        services.AddScoped<INotificationLogRepository, NotificationLogRepository>();
+        services.AddScoped<IGamifiedNotificationService, GamifiedNotificationService>();
+
         // Catálogo de reglas XP (SPEC §14, B5-R): agregado separado de la
         // inscripción; los fakes de IProgramRepository de los tests no se
         // acoplan al catálogo.
@@ -88,6 +97,13 @@ public static class DependencyInjection
         // (sin DI caen al NullLogger del constructor opcional).
         services.AddScoped<IHealthScoreCalculator, HealthScoreCalculator>();
         services.AddScoped<ITransformationScoreCalculator, TransformationScoreCalculator>();
+
+        // Detección de debilidades (SPEC §21, "Paso 7c"): servicio best-effort
+        // de la capa de aplicación que orquesta el paquete semanal, el motor de
+        // reglas (función pura) y la persistencia con dedupe (AC-43). Se
+        // dispara SOLO en POST /scores/calculate (AC-45) vía
+        // CalculateScoresCommandHandler.
+        services.AddScoped<IWeaknessDetectionService, WeaknessDetectionService>();
 
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).
