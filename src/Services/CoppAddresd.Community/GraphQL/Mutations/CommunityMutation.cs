@@ -462,11 +462,14 @@ public sealed class CommunityMutation
         CancellationToken ct)
     {
         if (amount <= 0) throw new GraphQLException("La cantidad de XP debe ser mayor que cero.");
+        var adminProfileId = CommunityQuery.CurrentUserId(http);
+        // El broadcast nunca toca al perfil sistema (Equipo ANTARES) ni al propio admin.
         var profiles = await db.Profiles
-            .Where(p => p.Status == ProfileStatus.Active)
+            .Where(p => p.Status == ProfileStatus.Active
+                && !p.IsSystem
+                && (adminProfileId == null || p.UserId != adminProfileId))
             .ToListAsync(ct);
 
-        var adminProfileId = CommunityQuery.CurrentUserId(http);
         var adminProfile = adminProfileId.HasValue
             ? await db.Profiles.FirstOrDefaultAsync(p => p.UserId == adminProfileId, ct)
             : null;
@@ -880,6 +883,9 @@ public sealed class CommunityMutation
             default:
                 throw new GraphQLException("Alcance no válido.");
         }
+
+        // Nunca enviar al propio admin (su perfil autoprovisionado suele quedar "inactivo").
+        targets = targets.Where(p => p.Id != adminProfile.Id).ToList();
 
         if (targets.Count == 0) return 0;
 
