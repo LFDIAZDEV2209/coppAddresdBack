@@ -18,13 +18,13 @@ La adherencia a planes crónicos cae sin refuerzo emocional. Las apps de idiomas
 
 ### 1.3 Reglas de oro (en palabras simples)
 
-| # | Regla | En la práctica |
-|---|-------|----------------|
-| 1 | Los puntos premian **acción**, no apertura de la app | Solo se gana XP por tareas registradas: podcast escuchado, plan nutricional cumplido, ejercicio hecho, etc. Abrir la app no suma puntos. |
-| 2 | Un resultado clínico adverso **nunca** castiga | Si el peso sube o la glucosa empeora, el paciente no pierde XP ni rompe su racha. La gamificación reconoce el esfuerzo; el indicador clínico mide otra cosa. |
-| 3 | La gamificación es el **vehículo**, el resultado clínico es el destino | XP y nivel motivan a volver cada día; los Índices de Salud y Transformación son lo que importa clínicamente. La UI los etiqueta distinto y nunca mezcla uno con otro. |
-| 4 | **Nada de castigo** | No hay "vidas", no hay XP negativa, no hay copy tipo "perdiste salud". Los congelamientos de racha son tokens **positivos**: se ganan por días perfectos, no se pierden. |
-| 5 | Las mejorías grandes requieren validación profesional | Si un indicador clínico mejora de forma significativa, la XP correspondiente queda en revisión hasta que un clínico la apruebe. No se otorgan "premios inventados". |
+| #   | Regla                                                                  | En la práctica                                                                                                                                                           |
+| --- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Los puntos premian **acción**, no apertura de la app                   | Solo se gana XP por tareas registradas: podcast escuchado, plan nutricional cumplido, ejercicio hecho, etc. Abrir la app no suma puntos.                                 |
+| 2   | Un resultado clínico adverso **nunca** castiga                         | Si el peso sube o la glucosa empeora, el paciente no pierde XP ni rompe su racha. La gamificación reconoce el esfuerzo; el indicador clínico mide otra cosa.             |
+| 3   | La gamificación es el **vehículo**, el resultado clínico es el destino | XP y nivel motivan a volver cada día; los Índices de Salud y Transformación son lo que importa clínicamente. La UI los etiqueta distinto y nunca mezcla uno con otro.    |
+| 4   | **Nada de castigo**                                                    | No hay "vidas", no hay XP negativa, no hay copy tipo "perdiste salud". Los congelamientos de racha son tokens **positivos**: se ganan por días perfectos, no se pierden. |
+| 5   | Las mejorías grandes requieren validación profesional                  | Si un indicador clínico mejora de forma significativa, la XP correspondiente queda en revisión hasta que un clínico la apruebe. No se otorgan "premios inventados".      |
 
 ### 1.4 Qué problema de negocio resuelve
 
@@ -132,12 +132,12 @@ El módulo de **Progreso del Programa** está estructurado bajo un **modelo ERP 
 
 Además de la jerarquía operativa principal, el módulo organiza 4 sub-sistemas satélites vinculados al `ProgramEnrollment`:
 
-| Sub-sistema | Entidades | Relación y Función Semántica |
-|-------------|-----------|------------------------------|
+| Sub-sistema              | Entidades                                                | Relación y Función Semántica                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Gamificación & Racha** | `StreakState`, `StreakFreeze`, `XpLedgerEntry`, `XpRule` | • **`StreakState`** (`1:1` con `ProgramEnrollment`): Mantiene la racha actual de días consecutivos, días récord, multiplicador x2 activo y su vencimiento.<br>• **`StreakFreeze`** (`1:N` con `ProgramEnrollment`): Inventario y auditoría de tokens de congelamiento de racha (máx. 3).<br>• **`XpLedgerEntry`** (`1:N` con `ProgramEnrollment`): Libro mayor contable de otorgamientos de XP.<br>• **`XpRule`** (Catálogo global): Reglas de otorgamiento y topes anti-fraude. |
-| **Hábitos Granulares** | `HabitTemplate`, `HabitCheck` | • **`HabitTemplate`** (`1:N` con `ProgramTemplate`): Plantillas de hábitos configurables.<br>• **`HabitCheck`** (`1:N` con `ProgramEnrollment`): Registros diarios detallados de hábitos nutricionales (desayuno, almuerzo, merienda, cena, agua). |
-| **Indicadores Clínicos** | `ClinicalBaseline`, `HealthScore`, `TransformationScore` | • **`ClinicalBaseline`** (`1:N` por paciente): Línea base de valores clínicos fijada obligatoriamente por profesionales.<br>• **`HealthScore`** (`1:N` con `ProgramEnrollment`): Historial de cálculos del Índice de Salud (0–100 en 5 dimensiones).<br>• **`TransformationScore`** (`1:N` con `ProgramEnrollment`): Historial de cálculos del Índice de Transformación (cambio % vs. línea base). |
-| **Adaptación & Salud** | `Weakness`, `Intervention`, `AdaptationRecommendation` | • **`Weakness`** / **`Intervention`** (`1:N` con `ProgramEnrollment`): Debilidades detectadas por el motor determinista e intervenciones asociadas.<br>• **`AdaptationRecommendation`** (`1:N` con `ProgramEnrollment`): Recomendaciones clínicas de ajuste de programa o dificultad. |
+| **Hábitos Granulares**   | `HabitTemplate`, `HabitCheck`                            | • **`HabitTemplate`** (`1:N` con `ProgramTemplate`): Plantillas de hábitos configurables.<br>• **`HabitCheck`** (`1:N` con `ProgramEnrollment`): Registros diarios detallados de hábitos nutricionales (desayuno, almuerzo, merienda, cena, agua).                                                                                                                                                                                                                               |
+| **Indicadores Clínicos** | `ClinicalBaseline`, `HealthScore`, `TransformationScore` | • **`ClinicalBaseline`** (`1:N` por paciente): Línea base de valores clínicos fijada obligatoriamente por profesionales.<br>• **`HealthScore`** (`1:N` con `ProgramEnrollment`): Historial de cálculos del Índice de Salud (0–100 en 5 dimensiones).<br>• **`TransformationScore`** (`1:N` con `ProgramEnrollment`): Historial de cálculos del Índice de Transformación (cambio % vs. línea base).                                                                               |
+| **Adaptación & Salud**   | `Weakness`, `Intervention`, `AdaptationRecommendation`   | • **`Weakness`** / **`Intervention`** (`1:N` con `ProgramEnrollment`): Debilidades detectadas por el motor determinista e intervenciones asociadas.<br>• **`AdaptationRecommendation`** (`1:N` con `ProgramEnrollment`): Recomendaciones clínicas de ajuste de programa o dificultad.                                                                                                                                                                                            |
 
 ---
 
@@ -147,14 +147,14 @@ Además de la jerarquía operativa principal, el módulo organiza 4 sub-sistemas
 
 La plantilla semanal del paciente (`default-83w`) programa **6 tipos de tarea** sobre 7 días. Los puntos base están alineados con la app móvil actual:
 
-| Tipo | Significado | Puntos base (plantilla) |
-|------|-------------|-------------------------|
-| `podcast` | Escuchar podcast educativo | 80 |
-| `vitals` | Medir signos vitales | 120 |
-| `nut` | Cumplir plan nutricional del día | 150 |
-| `ejercicio` | Hacer ejercicio del día | 150 |
-| `nutribiotico` | Tomar nutribiótico ADRED | 80 |
-| `emocional` | Check-in emocional (ánimo, barreras) | 120 |
+| Tipo           | Significado                          | Puntos base (plantilla) |
+| -------------- | ------------------------------------ | ----------------------- |
+| `podcast`      | Escuchar podcast educativo           | 80                      |
+| `vitals`       | Medir signos vitales                 | 120                     |
+| `nut`          | Cumplir plan nutricional del día     | 150                     |
+| `ejercicio`    | Hacer ejercicio del día              | 150                     |
+| `nutribiotico` | Tomar nutribiótico ADRED             | 80                      |
+| `emocional`    | Check-in emocional (ánimo, barreras) | 120                     |
 
 **Día perfecto**: cuando el paciente completa todas las tareas programadas de su día, recibe un **bonus de +50 XP**. El día perfecto es la unidad de cadencia para la concesión de congelamientos de racha (ver §2.4).
 
@@ -168,12 +168,12 @@ Los puntos y topes ya no son código: viven en una tabla catálogo (`app.xp_rule
 - **Multiplicador** propio de la regla.
 - **Topes por día y por semana** (anti-fraude): cuántas veces puede otorgarse por paciente local.
 
-| Categoría | Reglas sembradas | Puntos base | Topes |
-|-----------|------------------|-------------|-------|
+| Categoría  | Reglas sembradas                                                         | Puntos base                | Topes                                               |
+| ---------- | ------------------------------------------------------------------------ | -------------------------- | --------------------------------------------------- |
 | Adherencia | `TASK_PODCAST/VITALS/NUT/EJERCICIO/NUTRIBIOTICO/EMOCIONAL` + `DAY_BONUS` | NULL (tareas) / 50 (bonus) | 1/día · 7/semana (tareas); 1/día · 7/semana (bonus) |
-| Racha | `STREAK_7/11/22/50` | 100 / 200 / 500 / 1500 | 1/día · 1/semana |
-| Clínica | `CLINICAL_IMPROVE/STABLE/WEEKLY_ALL_UP/SIGNIFICANT` | 50 / 20 / 150 / 100 | Una vez por período (sin topes diarios) |
-| Nutrición | `NUTRITION_MEAL_COMPLETE/HYDRATION/WEEK_85/RECOVERY` | 10 / 5 / 75 / 50 | 4/día (comida) · 1/día (agua) |
+| Racha      | `STREAK_7/11/22/50`                                                      | 100 / 200 / 500 / 1500     | 1/día · 1/semana                                    |
+| Clínica    | `CLINICAL_IMPROVE/STABLE/WEEKLY_ALL_UP/SIGNIFICANT`                      | 50 / 20 / 150 / 100        | Una vez por período (sin topes diarios)             |
+| Nutrición  | `NUTRITION_MEAL_COMPLETE/HYDRATION/WEEK_85/RECOVERY`                     | 10 / 5 / 75 / 50           | 4/día (comida) · 1/día (agua)                       |
 
 **Edición prospectiva**: editar una regla cambia los otorgamientos futuros; nunca reescribe el historial del libro mayor (`xp_ledger`). Si una regla está inactiva o vencida, los puntos vuelven al comportamiento por defecto (plantilla) sin topes — la fila del libro mayor queda marcada con `rule_code = NULL` para que se sepa que esa XP no pasó por el catálogo.
 
@@ -181,15 +181,15 @@ Los puntos y topes ya no son código: viven en una tabla catálogo (`app.xp_rule
 
 El XP acumulado define un nivel motivacional (texto y barra de progreso). Los rangos actuales vienen del mock móvil (`antares-paciente/src/data/program.ts`) y se ajustarán cuando la integración móvil los pida:
 
-| Nivel | Rango de XP |
-|-------|-------------|
-| Explorador | 0 – 499 |
-| Iniciado | 500 – 1 499 |
-| Constante | 1 500 – 2 999 |
-| Disciplinado | 3 000 – 4 999 |
-| Transformación | 5 000 – 7 999 |
-| Bienestar | 8 000 – 11 999 |
-| Maestro | 12 000 en adelante |
+| Nivel          | Rango de XP        |
+| -------------- | ------------------ |
+| Explorador     | 0 – 499            |
+| Iniciado       | 500 – 1 499        |
+| Constante      | 1 500 – 2 999      |
+| Disciplinado   | 3 000 – 4 999      |
+| Transformación | 5 000 – 7 999      |
+| Bienestar      | 8 000 – 11 999     |
+| Maestro        | 12 000 en adelante |
 
 Cruzar el umbral de **5 000 XP** (nivel Transformación) dispara una recomendación clínica de **incremento de dificultad** que requiere aprobación del profesional antes de aplicarse.
 
@@ -205,11 +205,11 @@ La racha cuenta **días consecutivos que cumplen el umbral del programa**. Confi
 **Hitos de racha y multiplicador x2**: al alcanzar ciertos días consecutivos, el paciente recibe XP del catálogo **una sola vez por inscripción** y, en los hitos 11/22/50, activa un multiplicador x2 temporal:
 
 | Día | XP otorgada | Multiplicador x2 |
-|-----|-------------|------------------|
-| 7 | +100 | — |
-| 11 | +200 | x2 por 24 h |
-| 22 | +500 | x2 por 48 h |
-| 50 | +1 500 | x2 por 72 h |
+| --- | ----------- | ---------------- |
+| 7   | +100        | —                |
+| 11  | +200        | x2 por 24 h      |
+| 22  | +500        | x2 por 48 h      |
+| 50  | +1 500      | x2 por 72 h      |
 
 El x2 **se sobrescribe** si el paciente alcanza un nuevo hito antes de que venza la ventana (se extiende desde ahora), y aplica a **toda** la XP mientras está vigente (tareas, bonus, hitos, clínica). Cuando vence, se resetea a 1.0 de forma perezosa en el próximo otorgamiento.
 
@@ -223,13 +223,13 @@ Son **indicadores clínicos reales** (no gamificación), calculados a partir de 
 
 **Índice de Salud** es un 0–100 ponderado por 5 dimensiones. Pesos por defecto (configurables, suman 1.0000):
 
-| Dimensión | Peso | Lectura |
-|-----------|------|---------|
-| Adherencia | 0.30 | % de días perfectos / parciales / rescatados / perdidos en la ventana |
-| Clínica | 0.30 | Comparación de cada medición vs línea base clínica |
-| Nutrición | 0.20 | Adherencia al plan nutricional (logs por comida) |
-| Psicología | 0.10 | Promedio del ánimo (1–5) escalado a 0–100 |
-| Actividad física | 0.10 | % de días con `ejercicio` completado |
+| Dimensión        | Peso | Lectura                                                               |
+| ---------------- | ---- | --------------------------------------------------------------------- |
+| Adherencia       | 0.30 | % de días perfectos / parciales / rescatados / perdidos en la ventana |
+| Clínica          | 0.30 | Comparación de cada medición vs línea base clínica                    |
+| Nutrición        | 0.20 | Adherencia al plan nutricional (logs por comida)                      |
+| Psicología       | 0.10 | Promedio del ánimo (1–5) escalado a 0–100                             |
+| Actividad física | 0.10 | % de días con `ejercicio` completado                                  |
 
 Valores neutros cuando no hay datos: `clinical = 50`, `nutrition = 0`, `psychology = 60`, `exercise = 0`, `adherence = 0`.
 
@@ -241,13 +241,13 @@ Valores neutros cuando no hay datos: `clinical = 50`, `nutrition = 0`, `psycholo
 
 Solo se otorga cuando un clínico ejecuta `POST /scores/calculate`. Por cada indicador del período:
 
-| Situación | Acción | XP |
-|-----------|--------|-----|
+| Situación                          | Acción                                                                            | XP                                       |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------- |
 | Mejora ≥ 5 % (umbral configurable) | **Revisión profesional pendiente** — la XP no cuenta hasta que un clínico apruebe | +100 al aprobar (`CLINICAL_SIGNIFICANT`) |
-| Mejora 1 % – 5 % | Auto-otorgada | +50 (`CLINICAL_IMPROVE`) |
-| Estable (`|Δ%|` < 1 %) | Auto-otorgada | +20 (`CLINICAL_STABLE`) |
-| Desfavorable | **Nunca penaliza** | 0 |
-| Todos los indicadores favorables | Auto-otorgada al final del período | +150 (`CLINICAL_WEEKLY_ALL_UP`) |
+| Mejora 1 % – 5 %                   | Auto-otorgada                                                                     | +50 (`CLINICAL_IMPROVE`)                 |
+| Estable (`                         | Δ%                                                                                | ` < 1 %)                                 | Auto-otorgada | +20 (`CLINICAL_STABLE`) |
+| Desfavorable                       | **Nunca penaliza**                                                                | 0                                        |
+| Todos los indicadores favorables   | Auto-otorgada al final del período                                                | +150 (`CLINICAL_WEEKLY_ALL_UP`)          |
 
 Las pendientes **no cuentan** en los totales de XP hasta que el clínico las aprueba. La aprobación y el rechazo dejan rastro de auditoría.
 
@@ -255,42 +255,42 @@ Las pendientes **no cuentan** en los totales de XP hasta que el clínico las apr
 
 El paciente registra comida por comida (`des`, `alm`, `mer`, `cen`) e hidratación (`agua`) desde la pantalla de Nutrición. Por cada registro:
 
-| Registro | XP inmediata | Tope |
-|----------|--------------|------|
-| Comida (`NUTRITION_MEAL_COMPLETE`) | +10 | 4 por día |
-| Hidratación (`NUTRITION_HYDRATION`) | +5 | 1 por día |
+| Registro                            | XP inmediata | Tope      |
+| ----------------------------------- | ------------ | --------- |
+| Comida (`NUTRITION_MEAL_COMPLETE`)  | +10          | 4 por día |
+| Hidratación (`NUTRITION_HYDRATION`) | +5           | 1 por día |
 
 Los registros duplicados del mismo día devuelven `409 HABIT_ALREADY_LOGGED` (sin doble XP). **Adicional, no sustituto**: la tarea diaria `nut` del programa sigue dando sus 150 puntos de plantilla; los registros granulares premian el detalle. El doble premio es visible y se puede ajustar bajando `base_xp` o subiendo topes en `xp_rules` sin migrar.
 
 Al calcularse el Índice de Salud del período:
 
-| Regla semanal | Condición | XP |
-|---------------|-----------|-----|
-| `NUTRITION_WEEK_85` | Adherencia nutricional ≥ 85 % | +75 |
+| Regla semanal        | Condición                      | XP  |
+| -------------------- | ------------------------------ | --- |
+| `NUTRITION_WEEK_85`  | Adherencia nutricional ≥ 85 %  | +75 |
 | `NUTRITION_RECOVERY` | +20 puntos vs período anterior | +50 |
 
 Si no hay registros en el período → adherencia 0, sin premio, sin castigo.
 
 ### 2.9 Anti-fraude
 
-| Mecanismo | Cómo se aplica |
-|-----------|----------------|
-| **Idempotencia por DB** | Único por `(enrollment_id, local_date, task_code)` en tareas y `(paciente, plantilla, fecha)` en nutrición. Un reintento del móvil con la misma clave nunca duplica XP. |
-| **Idempotencia por libro mayor** | Único parcial `(source_ref_type, source_ref_id, reason)` en `xp_ledger` — un otorgamiento por regla y origen. |
-| **Clave de cliente** | `clientRequestId` del móvil se persiste para deduplicar reintentos de red. Reusar la misma clave con otra fecha → 409. |
-| **Servidor como autoridad** | Toda la XP se calcula en el backend; la UI solo refleja. |
-| **Hora local del paciente** | Streak y ventanas usan la zona horaria del paciente (`program_enrollments.timezone`). No se rompe la racha al cruzar zonas horarias. |
-| **Topes por catálogo** | `max_per_day` y `max_per_week` por regla, aplicados dentro de la transacción de otorgamiento (no se pueden burlar con concurrencia). |
+| Mecanismo                        | Cómo se aplica                                                                                                                                                          |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Idempotencia por DB**          | Único por `(enrollment_id, local_date, task_code)` en tareas y `(paciente, plantilla, fecha)` en nutrición. Un reintento del móvil con la misma clave nunca duplica XP. |
+| **Idempotencia por libro mayor** | Único parcial `(source_ref_type, source_ref_id, reason)` en `xp_ledger` — un otorgamiento por regla y origen.                                                           |
+| **Clave de cliente**             | `clientRequestId` del móvil se persiste para deduplicar reintentos de red. Reusar la misma clave con otra fecha → 409.                                                  |
+| **Servidor como autoridad**      | Toda la XP se calcula en el backend; la UI solo refleja.                                                                                                                |
+| **Hora local del paciente**      | Streak y ventanas usan la zona horaria del paciente (`program_enrollments.timezone`). No se rompe la racha al cruzar zonas horarias.                                    |
+| **Topes por catálogo**           | `max_per_day` y `max_per_week` por regla, aplicados dentro de la transacción de otorgamiento (no se pueden burlar con concurrencia).                                    |
 
 ### 2.10 Autorización
 
-| Permiso | Quién lo usa | Para qué |
-|---------|--------------|----------|
-| `Program.View` | Paciente (sobre sí mismo) y clínico (sobre sus pacientes asignados) | Leer snapshot, calendario, sendero, scores, reglas XP |
-| `Program.Edit` | Clínico / admin | Editar plantillas, recalcular scores, editar catálogo `xp_rules` |
-| `Program.Enroll` | Clínico / admin | Inscribir, pausar, reanudar, retirar pacientes |
-| `Program.Adapt` | Clínico / admin | Aprobar/rechazar recomendaciones y revisiones de XP clínica significativa |
-| `Program.ForceComplete` | Clínico | Forzar completación con override de fingerprint |
+| Permiso                 | Quién lo usa                                                        | Para qué                                                                  |
+| ----------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `Program.View`          | Paciente (sobre sí mismo) y clínico (sobre sus pacientes asignados) | Leer snapshot, calendario, sendero, scores, reglas XP                     |
+| `Program.Edit`          | Clínico / admin                                                     | Editar plantillas, recalcular scores, editar catálogo `xp_rules`          |
+| `Program.Enroll`        | Clínico / admin                                                     | Inscribir, pausar, reanudar, retirar pacientes                            |
+| `Program.Adapt`         | Clínico / admin                                                     | Aprobar/rechazar recomendaciones y revisiones de XP clínica significativa |
+| `Program.ForceComplete` | Clínico                                                             | Forzar completación con override de fingerprint                           |
 
 **Anti-IDOR**: cualquier lectura cruzada entre pacientes devuelve `404`. Los clínicos ven solo pacientes asignados vía `app.patient_professionals`.
 
@@ -324,25 +324,26 @@ Este flujo se complementa con la configuración de plantillas (§7.6) y las reco
 
 ### 4.1 Backend — completado en código (P1.5)
 
-| Paso | Alcance | Estado del código |
-|------|---------|-------------------|
-| 1 — Núcleo P1 | Plantilla semanal, inscripción, completación de tareas, racha, congelamientos, bonus de día | Implementado |
-| 2 — Índices de Salud y Transformación | 4 tablas nuevas, calculadores, `GET /scores` y `POST /scores/calculate` | Implementado |
-| 3 — Catálogo `xp_rules` | Tabla de reglas, resolución con precedencia y topes, admin `GET/PUT /xp-rules` | Implementado |
-| 4 — XP clínica con validación profesional | Revisiones pendientes, aprobación/rechazo, exclusión de pendientes del total | Implementado |
-| 5 — Multiplicador x2 por hito | Hitos 7/11/22/50, ventana 24/48/72 h, snapshot expone estado | Implementado |
-| 6 — Umbral de racha configurable + tareas esenciales | Columnas en plantilla, rescate solo con esencial | Implementado |
-| 6 — Nutrición granular | `POST /nutrition/log`, premios semanales en `/scores/calculate` | Implementado |
-| 7 — Configuración de contenido por semana (ERP) | `GET/PUT /program/enrollments/{id}/content`, `GET/PUT .../content/week/{weekNumber}` — endpoints de configuración de plan nutricional y rutina por semana (SPEC §7.8, T-74..T-78) | Implementado (contrato documentado) |
+| Paso                                                 | Alcance                                                                                                                                                                           | Estado del código                   |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| 1 — Núcleo P1                                        | Plantilla semanal, inscripción, completación de tareas, racha, congelamientos, bonus de día                                                                                       | Implementado                        |
+| 2 — Índices de Salud y Transformación                | 4 tablas nuevas, calculadores, `GET /scores` y `POST /scores/calculate`                                                                                                           | Implementado                        |
+| 3 — Catálogo `xp_rules`                              | Tabla de reglas, resolución con precedencia y topes, admin `GET/PUT /xp-rules`                                                                                                    | Implementado                        |
+| 4 — XP clínica con validación profesional            | Revisiones pendientes, aprobación/rechazo, exclusión de pendientes del total                                                                                                      | Implementado                        |
+| 5 — Multiplicador x2 por hito                        | Hitos 7/11/22/50, ventana 24/48/72 h, snapshot expone estado                                                                                                                      | Implementado                        |
+| 6 — Umbral de racha configurable + tareas esenciales | Columnas en plantilla, rescate solo con esencial                                                                                                                                  | Implementado                        |
+| 6 — Nutrición granular                               | `POST /nutrition/log`, premios semanales en `/scores/calculate`                                                                                                                   | Implementado                        |
+| 7 — Configuración de contenido por semana (ERP)      | `GET/PUT /program/enrollments/{id}/content`, `GET/PUT .../content/week/{weekNumber}` — endpoints de configuración de plan nutricional y rutina por semana (SPEC §7.8, T-74..T-78) | Implementado (contrato documentado) |
 
 ### 4.2 Backend — pendiente
 
-- **Aplicar 6 migraciones pendientes** (`AddXpRulesCatalog`, `AddProgramProgressClinicalXp`, `AddProgramProgressMultiplier`, `AddProgramProgressStreakConfig`, `AddProgramProgressNutritionXp`, `AddMediaProgressions` — esta última de P2). Las migraciones están generadas pero **no aplicadas** en la base de datos de desarrollo.
-- **Reiniciar procesos de dev** (API + Auth Service) para que los seeders poblen catálogo y configuración.
-- **Validación manual** de los criterios de aceptación P1.5 (AC-19 a AC-36): los batches B5-R, B5-C, B5-M, B5-T y B5-N corren pruebas manuales por convención del flujo actual, no automatizadas.
-- **Pantallas ERP** (B7): gestión de plantillas, lista de inscripciones, cola de revisiones pendientes y de adaptaciones. **Las pantallas de configuración de contenido por semana (SPEC §7.8) ya tienen contrato documentado** — pendiente implementación de UI en `coppaddresd-front`.
-- **Motor de adaptación** (P2): `ProgramAdaptationEngine` y el flujo de aprobación.
-- **Rotación de podcasts** (P2): tabla `app.media_progressions` y resolutor por fecha.
+- **Migraciones**: todas las migraciones del módulo están **aplicadas en la BD de desarrollo** (historial `public.__EFMigrationsHistory` = 45, verificado 2026-08-28). Incluye `AddWeeklyDayTemplateContentLinks` (T-77: columnas `routine_id`/`nutrition_plan_id` en `app.weekly_day_templates` — el modelo las traía desde T-77 pero la migración faltaba y rompía el enroll con 42703). El seeder sembró 31 reglas XP, 5 habit templates y los pesos de scores.
+- **Validación manual** de los criterios de aceptación P1.5 (AC-19 a AC-36): los batches B5-R, B5-C, B5-M, B5-T, B5-N y B5-WK corren pruebas manuales por convención del flujo actual, no automatizadas.
+- **Pantallas ERP** (B7): gestión de plantillas, lista de inscripciones, cola de revisiones pendientes y de adaptaciones. Las pantallas de configuración de contenido por semana (SPEC §7.8) están implementadas. **Pendiente**: cola de adaptaciones (T-26).
+- **Motor de adaptación** (P2): `ProgramAdaptationEngine` **implementado** (T-23) — motor de reglas determinista (Application/Services/ProgramProgress) evaluado tras cada `CompleteTask` en la misma transacción: 2+ días imperfectos en 7 días → `RoutineContentRefresh` auto-aplicada (Applied + audit `AdaptationApplied`); ánimo ≤ 2 por 7 días → variante suave; cruce de 5000 XP → `DifficultyChange` con aprobación (cola ERP, supersede de Pending previas). Dedupe temporal de 7 días por (kind, target). Tests: `AdaptationEngineTests` (10). La cola ERP de decisión (T-26) ya está en el frontend (`/program/adaptations`).
+- **Rotación de podcasts** (P2): tabla `app.media_progressions` y resolutor por fecha (T-25). ⚠️ Requiere sincronizar la rama con `dev` antes de generar la migración (la BD local contiene migraciones de `dev` —health-tests, server catalogs— ausentes del código de la rama actual; `dotnet ef migrations add` generaría DROPs).
+- **Scoping de clínico** (T-81): pendiente en `GET/PUT /enrollments/{id}/content` (hoy cualquier `Program.View` lee cualquier inscripción); ya aplicado en `GET /enrollments/{id}/week/{n}`.
+- **Transacción en SetWeekContent** (T-82) y **optimización de GET content** (T-83): aplazados (B18).
 - **Reconciliación nocturna** (P3): job que recorre `xp_ledger` y recalcula `streak_states` por inscripción.
 - **Inscripción masiva y exporte CSV** (P3): `IJobDispatcher` para >100 pacientes, endpoint de exporte.
 - **i18n en la app** (P3): strings en inglés.
@@ -362,30 +363,30 @@ Sin pantallas del módulo todavía. Las pantallas de gestión de plantillas y re
 
 Estas preguntas siguen abiertas en el plan y se recomienda resolver antes de empezar el trabajo de UI:
 
-| # | Decisión | Estado | Pregunta a resolver |
-|---|----------|--------|---------------------|
-| 1 | Semántica de `nextMilestoneDays` en el snapshot | Diseñado pero ambiguo | ¿Es la distancia al próximo **hito semanal de racha** (7/11/22/50) o al próximo **"cofre" de 50 días** del mock móvil (`NEXT_CHEST_DAYS = 50`)? No hay cofre real: el campo es derivado, pero falta confirmar la cadencia que prefiere el producto. |
-| 2 | Valores por defecto de XP | Sembrados del mock actual | Los puntos base del catálogo (`TASK_*`, `DAY_BONUS`, `STREAK_*`) vienen de los valores que la app móvil ya muestra. ¿Se mantienen como definitivos o se ajustan antes de exponerlos a clínicos reales? |
-| 3 | Mapeo de permisos para paciente | Diseñado pero no implementado | El JWT de paciente no incluye aún el permiso `Program.View`. ¿Se resuelve desde `ICurrentContext.UserId → app.patient_profiles.user_id` (un query por request, cacheado), o se agrega el permiso al token? |
-| 4 | Aprobación clínica para cambios de rutina | Decisión por defecto | ¿Toda edición de rutina requiere aprobación o solo cambios de dificultad/nivel? El plan sugiere auto-aplicar cambios de contenido dentro de la misma categoría. |
-| 5 | Cadencia de concesión de congelamientos | Decisión por defecto | 1 cada 7 días perfectos (tope 3). ¿Se mantiene o se ajusta por cohorte? |
-| 6 | Avance de semana | Decisión por defecto | Al cruzar medianoche local del domingo, ¿o al completar la primera tarea de la nueva semana? El plan asume medianoche local. |
-| 7 | Línea base: ¿solo clínicos o también admin? | Definido parcialmente | El campo `set_by` requiere rol clínico. ¿El rol `Admin` cuenta o se restringe a `Physician / Nutritionist / Psychologist / ClinicalDirector`? |
+| #   | Decisión                                        | Estado                        | Pregunta a resolver                                                                                                                                                                                                                                 |
+| --- | ----------------------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Semántica de `nextMilestoneDays` en el snapshot | Diseñado pero ambiguo         | ¿Es la distancia al próximo **hito semanal de racha** (7/11/22/50) o al próximo **"cofre" de 50 días** del mock móvil (`NEXT_CHEST_DAYS = 50`)? No hay cofre real: el campo es derivado, pero falta confirmar la cadencia que prefiere el producto. |
+| 2   | Valores por defecto de XP                       | Sembrados del mock actual     | Los puntos base del catálogo (`TASK_*`, `DAY_BONUS`, `STREAK_*`) vienen de los valores que la app móvil ya muestra. ¿Se mantienen como definitivos o se ajustan antes de exponerlos a clínicos reales?                                              |
+| 3   | Mapeo de permisos para paciente                 | Diseñado pero no implementado | El JWT de paciente no incluye aún el permiso `Program.View`. ¿Se resuelve desde `ICurrentContext.UserId → app.patient_profiles.user_id` (un query por request, cacheado), o se agrega el permiso al token?                                          |
+| 4   | Aprobación clínica para cambios de rutina       | Decisión por defecto          | ¿Toda edición de rutina requiere aprobación o solo cambios de dificultad/nivel? El plan sugiere auto-aplicar cambios de contenido dentro de la misma categoría.                                                                                     |
+| 5   | Cadencia de concesión de congelamientos         | Decisión por defecto          | 1 cada 7 días perfectos (tope 3). ¿Se mantiene o se ajusta por cohorte?                                                                                                                                                                             |
+| 6   | Avance de semana                                | Decisión por defecto          | Al cruzar medianoche local del domingo, ¿o al completar la primera tarea de la nueva semana? El plan asume medianoche local.                                                                                                                        |
+| 7   | Línea base: ¿solo clínicos o también admin?     | Definido parcialmente         | El campo `set_by` requiere rol clínico. ¿El rol `Admin` cuenta o se restringe a `Physician / Nutritionist / Psychologist / ClinicalDirector`?                                                                                                       |
 
 ---
 
 ## 6. Referencias
 
-| Documento | Rol |
-|-----------|-----|
-| [`PLAN.md`](./PLAN.md) | Plan maestro del módulo: decisiones, fases, riesgos y verificación |
-| [`SPEC.md`](./SPEC.md) | Especificación funcional y técnica: modelo de datos, contratos, reglas, criterios de aceptación |
-| [`TASKS.md`](./TASKS.md) | Backlog ordenado por dependencias con IDs estables (T-01 a T-61) |
-| `../README.md` | Índice de módulos de `coppAddresdBack/docs/modules` |
-| `../../../antares-paciente/AGENTS.md` | Convenciones de la app móvil y mock que este módulo reemplaza |
-| `../../../antares-paciente/src/data/program.ts` | Mock actual de tareas, niveles, XP y `NEXT_CHEST_DAYS` |
-| `../../../antares-paciente/src/pages/ProgramPage.tsx` | Pantalla móvil del programa (consume `GET /program/scores` cuando se conecte) |
-| `../../../General-context.md` | Contexto general de la plataforma Coppaddresd (monorepo, módulos, alcance) |
-| `coppAddresdBack/docs/agents/skills/` | Skills de estándares del backend (arquitectura, EF, query performance, etc.) |
+| Documento                                             | Rol                                                                                             |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [`PLAN.md`](./PLAN.md)                                | Plan maestro del módulo: decisiones, fases, riesgos y verificación                              |
+| [`SPEC.md`](./SPEC.md)                                | Especificación funcional y técnica: modelo de datos, contratos, reglas, criterios de aceptación |
+| [`TASKS.md`](./TASKS.md)                              | Backlog ordenado por dependencias con IDs estables (T-01 a T-61)                                |
+| `../README.md`                                        | Índice de módulos de `coppAddresdBack/docs/modules`                                             |
+| `../../../antares-paciente/AGENTS.md`                 | Convenciones de la app móvil y mock que este módulo reemplaza                                   |
+| `../../../antares-paciente/src/data/program.ts`       | Mock actual de tareas, niveles, XP y `NEXT_CHEST_DAYS`                                          |
+| `../../../antares-paciente/src/pages/ProgramPage.tsx` | Pantalla móvil del programa (consume `GET /program/scores` cuando se conecte)                   |
+| `../../../General-context.md`                         | Contexto general de la plataforma Coppaddresd (monorepo, módulos, alcance)                      |
+| `coppAddresdBack/docs/agents/skills/`                 | Skills de estándares del backend (arquitectura, EF, query performance, etc.)                    |
 
 **Inspiración clínica**: los hitos de racha, el multiplicador x2 y el rescate con tareas esenciales siguen la **referencia ADRED** del módulo (citada en `SPEC.md` §16 y §17). La regla "rescate exige tarea esencial" y los hitos 7/11/22/50 son una adaptación ADRED a la economía de congelamientos del programa.
