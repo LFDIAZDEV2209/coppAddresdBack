@@ -11,7 +11,8 @@ public record AnalyzeFoodImageCommand(
     Stream ImageStream,
     string FileName,
     string ContentType,
-    long Length)
+    long Length,
+    Guid? UserId = null)
     : IRequest<AnalyzeFoodImageResult>;
 
 public record AnalyzeFoodImageResult(

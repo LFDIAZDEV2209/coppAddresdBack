@@ -85,6 +85,11 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<FoodNutrition> FoodNutritionEntries => Set<FoodNutrition>();
     public DbSet<FoodAlias> FoodAliases => Set<FoodAlias>();
 
+    // Food AI — Análisis y feedback (schema foodai)
+    public DbSet<FoodAnalysis> FoodAnalyses => Set<FoodAnalysis>();
+    public DbSet<FoodAnalysisItem> FoodAnalysisItems => Set<FoodAnalysisItem>();
+    public DbSet<FoodAnalysisFeedback> FoodAnalysisFeedbacks => Set<FoodAnalysisFeedback>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

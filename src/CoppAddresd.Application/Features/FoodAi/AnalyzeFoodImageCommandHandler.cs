@@ -1,5 +1,6 @@
 using CoppAddresd.Application.DTOs.FoodAi;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Domain.Entities.FoodAi;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -13,6 +14,7 @@ public class AnalyzeFoodImageCommandHandler
     private readonly IFoodAiClient _foodAiClient;
     private readonly INutritionProvider _nutritionProvider;
     private readonly INutritionCalculator _nutritionCalculator;
+    private readonly IFoodAnalysisRepository _analysisRepository;
     private readonly ILogger<AnalyzeFoodImageCommandHandler> _logger;
 
     public AnalyzeFoodImageCommandHandler(
@@ -21,6 +23,7 @@ public class AnalyzeFoodImageCommandHandler
         IFoodAiClient foodAiClient,
         INutritionProvider nutritionProvider,
         INutritionCalculator nutritionCalculator,
+        IFoodAnalysisRepository analysisRepository,
         ILogger<AnalyzeFoodImageCommandHandler> logger)
     {
         _validator = validator;
@@ -28,6 +31,7 @@ public class AnalyzeFoodImageCommandHandler
         _foodAiClient = foodAiClient;
         _nutritionProvider = nutritionProvider;
         _nutritionCalculator = nutritionCalculator;
+        _analysisRepository = analysisRepository;
         _logger = logger;
     }
 
@@ -51,7 +55,7 @@ public class AnalyzeFoodImageCommandHandler
             analysisId, request.FileName, request.Length);
 
         request.ImageStream.Position = 0;
-        await _imageStorage.SaveImageAsync(analysisId, request.FileName, request.ImageStream, ct);
+        var imageKey = await _imageStorage.SaveImageAsync(analysisId, request.FileName, request.ImageStream, ct);
 
         request.ImageStream.Position = 0;
         var result = await _foodAiClient.SendImageAsync(
@@ -68,10 +72,108 @@ public class AnalyzeFoodImageCommandHandler
 
         var summary = ComputeSummary(foods);
 
+        await PersistAsync(analysisId, request.UserId, imageKey, result, foods, summary, ct);
+
         return new AnalyzeFoodImageResult(
             analysisId.ToString(), result.Status, result.ModelVersion, result.SegModelVersion,
             result.ClassifierVersion, result.InferenceTimeMs, foods,
             summary.Summary, summary.SummaryRange);
+    }
+
+    /// <summary>
+    /// Persiste el análisis (snapshot nutricional + versiones + máscaras en
+    /// object storage). Un fallo de persistencia se registra pero no rompe la
+    /// respuesta del análisis (el resultado ya está calculado).
+    /// </summary>
+    private async Task PersistAsync(
+        Guid analysisId,
+        Guid? userId,
+        string imageKey,
+        FoodAiAnalyzeResult result,
+        IReadOnlyList<DetectedFoodDto> foods,
+        (NutritionValueDto? Summary, NutritionRangeDto? SummaryRange) summary,
+        CancellationToken ct)
+    {
+        try
+        {
+            var analysis = new FoodAnalysis
+            {
+                AnalysisId = analysisId,
+                Status = "completed",
+                ImageKey = imageKey,
+                UserId = userId,
+                DetectorVersion = result.ModelVersion,
+                SegmenterVersion = result.SegModelVersion,
+                ClassifierVersion = result.ClassifierVersion,
+                PortionMethod = foods.FirstOrDefault()?.Portion?.Method ?? "unknown",
+                DepthModelVersion = null,
+                SummaryCalories = summary.Summary?.Calories,
+                SummaryProtein = summary.Summary?.Protein,
+                SummaryCarbohydrates = summary.Summary?.Carbohydrates,
+                SummaryFat = summary.Summary?.Fat,
+                SummaryFiber = summary.Summary?.Fiber,
+                SummarySugar = summary.Summary?.Sugar,
+                SummarySodium = summary.Summary?.Sodium,
+                Source = foods.FirstOrDefault(f => f.NutritionResult?.Source is not null)?.NutritionResult?.Source,
+                SourceVersion = foods.FirstOrDefault(f => f.NutritionResult?.SourceVersion is not null)?.NutritionResult?.SourceVersion,
+            };
+
+            for (var index = 0; index < foods.Count; index++)
+            {
+                var food = foods[index];
+                string? maskKey = null;
+                if (food.Segmentation is not null && !string.IsNullOrWhiteSpace(food.Segmentation.Mask))
+                {
+                    try
+                    {
+                        var maskBytes = Convert.FromBase64String(food.Segmentation.Mask);
+                        await using var maskStream = new MemoryStream(maskBytes);
+                        maskKey = await _imageStorage.SaveMaskAsync(analysisId, index, maskStream, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        // La máscara no bloquea la persistencia del análisis.
+                        _logger.LogWarning(ex, "No se pudo guardar la máscara del item {Index}", index);
+                    }
+                }
+
+                analysis.Items.Add(new FoodAnalysisItem
+                {
+                    ItemIndex = index,
+                    Name = food.Name,
+                    DetectionConfidence = food.Confidence,
+                    BboxX = food.BoundingBox.X,
+                    BboxY = food.BoundingBox.Y,
+                    BboxWidth = food.BoundingBox.Width,
+                    BboxHeight = food.BoundingBox.Height,
+                    MaskKey = maskKey,
+                    MaskAreaPixels = food.Segmentation?.AreaPixels,
+                    PortionSize = food.Portion?.PortionSize,
+                    EstimatedGrams = food.Portion?.EstimatedGrams,
+                    MinGrams = food.Portion?.MinGrams,
+                    MaxGrams = food.Portion?.MaxGrams,
+                    PortionConfidence = food.Portion?.Confidence,
+                    PortionMethod = food.Portion?.Method,
+                    NutritionStatus = food.NutritionResult?.NutritionStatus,
+                    Calories = food.NutritionResult?.Nutrition?.Calories,
+                    Protein = food.NutritionResult?.Nutrition?.Protein,
+                    Carbohydrates = food.NutritionResult?.Nutrition?.Carbohydrates,
+                    Fat = food.NutritionResult?.Nutrition?.Fat,
+                    Fiber = food.NutritionResult?.Nutrition?.Fiber,
+                    Sugar = food.NutritionResult?.Nutrition?.Sugar,
+                    Sodium = food.NutritionResult?.Nutrition?.Sodium,
+                    Source = food.NutritionResult?.Source,
+                    SourceVersion = food.NutritionResult?.SourceVersion,
+                });
+            }
+
+            await _analysisRepository.AddAsync(analysis, ct);
+            _logger.LogInformation("Análisis persistido: AnalysisId={AnalysisId}, Items={ItemCount}", analysisId, foods.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Falló la persistencia del análisis {AnalysisId}", analysisId);
+        }
     }
 
     private async Task<FoodNutritionResult?> ResolveNutritionAsync(

@@ -13,4 +13,15 @@ public interface IImageStorage
         string fileName,
         Stream content,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Guarda la máscara de segmentación de un item (PNG) en object storage.
+    /// La BD solo conserva la clave (<c>foodai/masks/&lt;analysisId&gt;/&lt;index&gt;.png</c>),
+    /// nunca el base64.
+    /// </summary>
+    Task<string> SaveMaskAsync(
+        Guid analysisId,
+        int itemIndex,
+        Stream pngContent,
+        CancellationToken ct = default);
 }
