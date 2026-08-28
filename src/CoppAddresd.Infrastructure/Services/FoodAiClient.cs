@@ -117,7 +117,10 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
                 new BoundingBoxDto(f.BoundingBox?.X ?? 0, f.BoundingBox?.Y ?? 0, f.BoundingBox?.Width ?? 0, f.BoundingBox?.Height ?? 0),
                 f.Segmentation is null
                     ? null
-                    : new SegmentationDto(f.Segmentation.Mask, f.Segmentation.AreaPixels)))
+                    : new SegmentationDto(f.Segmentation.Mask, f.Segmentation.AreaPixels),
+                f.Portion is null
+                    ? null
+                    : new PortionDto(f.Portion.PortionSize, f.Portion.EstimatedGrams, f.Portion.MinGrams, f.Portion.MaxGrams, f.Portion.Confidence, f.Portion.Method)))
             .ToList());
         }
         catch (JsonException ex)
@@ -144,6 +147,17 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
         public double Confidence { get; set; }
         public BoundingBoxJson? BoundingBox { get; set; }
         public SegmentationJson? Segmentation { get; set; }
+        public PortionJson? Portion { get; set; }
+    }
+
+    private sealed class PortionJson
+    {
+        public string? PortionSize { get; set; }
+        public int? EstimatedGrams { get; set; }
+        public int? MinGrams { get; set; }
+        public int? MaxGrams { get; set; }
+        public double Confidence { get; set; }
+        public string? Method { get; set; }
     }
 
     private sealed class SegmentationJson
