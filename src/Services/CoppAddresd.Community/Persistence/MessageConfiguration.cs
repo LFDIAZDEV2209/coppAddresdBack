@@ -19,7 +19,10 @@ public sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
 
         builder.HasOne<Profile>().WithMany().HasForeignKey(x => x.SenderProfileId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<Profile>().WithMany().HasForeignKey(x => x.RecipientProfileId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne<Profile>().WithMany().HasForeignKey(x => x.TriggeredByProfileId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<ChatGroup>().WithMany(g => g.Messages).HasForeignKey(x => x.ConversationId).OnDelete(DeleteBehavior.Cascade);
+
+        builder.Property(x => x.TriggeredByProfileId).HasColumnName("triggered_by_profile_id");
 
         builder.HasIndex(x => new { x.SenderProfileId, x.RecipientProfileId, x.CreatedAt }).IsDescending(false, false, true).HasDatabaseName("ix_messages_sender_recipient_created");
         builder.HasIndex(x => new { x.ConversationId, x.CreatedAt }).IsDescending(false, true).HasDatabaseName("ix_messages_conversation_created");
