@@ -82,6 +82,49 @@ public sealed class CommunityMutation
         return post;
     }
 
+    [Authorize(Policy = "Community.Manage")]
+    public async Task<Post> CreateAnnouncement(
+        string body,
+        PostType? type,
+        PostDestination? destination,
+        [Service] CommunityDbContext db,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct,
+        bool pinned = false)
+    {
+        body = body.Trim();
+        if (body.Length == 0) throw new GraphQLException("Escribe el contenido de la publicación.");
+        var systemProfile = await GetSystemProfileAsync(db, ct);
+        var now = DateTime.UtcNow;
+        var post = new Post
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = systemProfile.Id,
+            Body = body,
+            Type = type ?? PostType.Texto,
+            Destination = destination ?? PostDestination.TodasLasComunidades,
+            Pinned = pinned,
+            CreatedAt = now,
+        };
+        db.Posts.Add(post);
+
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = systemProfile.Id,
+            Kind = MapPostTypeToFeedEvent(post.Type!.Value),
+            Body = body.Length > 500 ? body[..500] : body,
+            CreatedAt = now,
+        };
+        db.FeedEvents.Add(feedEvent);
+        await db.SaveChangesAsync(ct);
+
+        await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
+        await sender.SendAsync("post_added", post);
+        await sender.SendAsync("feed_event_added", feedEvent);
+        return post;
+    }
+
     public async Task<Post?> ViewPost(
         Guid id,
         [Service] CommunityDbContext db,
