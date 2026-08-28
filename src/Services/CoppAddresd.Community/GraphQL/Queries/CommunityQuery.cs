@@ -468,7 +468,9 @@ var profile = await db.Profiles
         CancellationToken ct)
     {
         var now = DateTime.UtcNow;
-        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var profiles = await db.Profiles
+            .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem && p.Region != null)
+            .ToListAsync(ct);
         var posts = await db.Posts.ToListAsync(ct);
         return AnalyticsAggregator.ComputeRegionStats(profiles, posts, now);
     }
@@ -480,7 +482,9 @@ var profile = await db.Profiles
         CancellationToken ct)
     {
         var now = DateTime.UtcNow;
-        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var profiles = await db.Profiles
+            .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem && p.Diagnosis != null)
+            .ToListAsync(ct);
         var posts = await db.Posts.ToListAsync(ct);
         return AnalyticsAggregator.ComputeDiagnosticStats(profiles, posts, now);
     }
