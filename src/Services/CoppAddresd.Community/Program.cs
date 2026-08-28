@@ -1,7 +1,9 @@
 using System.Text;
+using CoppAddresd.Community;
 using CoppAddresd.Community.GraphQL;
 using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
+using CoppAddresd.Community.GraphQL.Resolvers;
 using CoppAddresd.Community.GraphQL.Subscriptions;
 using CoppAddresd.Community.Persistence;
 using CoppAddresd.Community.Seeders;
@@ -54,6 +56,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("CommunityModerator", policy =>
         policy.RequireClaim("permission", "Community.Moderate"));
+    options.AddPolicy("Community.Manage", policy =>
+        policy.RequireClaim("permission", "Community.Manage"));
 });
 
 var origins = builder.Configuration["Cors:Origins"]
@@ -72,6 +76,7 @@ builder.Services
     .AddSubscriptionType<CommunitySubscription>()
     .AddType<PostImageUrlResolver>()
     .AddType<ProfileImageUrlResolver>()
+    .AddTypeExtension<ProfileResolvers>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
@@ -85,8 +90,11 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<CommunityDbContext>();
     await db.Database.MigrateAsync();
 
-    // Contenido demo de la comunidad (idempotente). No-op si la sección
-    // CommunityDemo no está configurada con Enabled=true (producción).
+    if (app.Environment.IsDevelopment())
+        await CommunitySeeder.SeedAsync(db, builder.Configuration);
+
+    // Contenido demo adicional (polls/imágenes) — idempotente. No-op si
+    // CommunityDemo no está configurado con Enabled=true (producción).
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var demo = builder.Configuration.GetSection(CommunityDemoSettings.SectionName).Get<CommunityDemoSettings>();
     if (demo is { Enabled: true })

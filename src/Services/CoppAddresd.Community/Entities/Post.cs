@@ -12,6 +12,15 @@ public sealed class Post
     /// <summary>Clave de almacenamiento de la imagen adjunta (null si el post es solo texto).</summary>
     public string? ImageKey { get; set; }
 
+    /// <summary>Tipo de publicación (Texto, Imagen, Video, Encuesta, Logro). Por defecto Texto.</summary>
+    public PostType? Type { get; set; }
+
+    /// <summary>Destino/canal de la publicación. Por defecto TodasLasComunidades.</summary>
+    public PostDestination? Destination { get; set; }
+
+    /// <summary>Cantidad de visualizaciones (incrementado por viewPost).</summary>
+    public int ViewCount { get; set; }
+
     public bool Pinned { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -28,4 +37,5 @@ public sealed class Post
 
     public ICollection<Comment> Comments { get; set; } = [];
     public ICollection<Like> Likes { get; set; } = [];
+    public ICollection<PostReport> Reports { get; set; } = [];
 }
