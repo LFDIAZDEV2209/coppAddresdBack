@@ -6,7 +6,10 @@ public enum ProfileRegion
     Miami,
     NY,
     Barranquilla,
-    Bogota,
     Orlando,
-    CDMX,
+    Houston,
+    Dallas,
+    Atlanta,
+    Seattle,
+    Denver,
 }
