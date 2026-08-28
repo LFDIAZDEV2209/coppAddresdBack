@@ -50,6 +50,14 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
     private static readonly byte[] Png1x1 = Convert.FromBase64String(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
 
+    private sealed class StubNutritionProvider : INutritionProvider
+    {
+        public FoodNutritionDto? Result { get; set; }
+
+        public Task<FoodNutritionDto?> GetNutritionAsync(string foodKey, CancellationToken ct = default)
+            => Task.FromResult(Result);
+    }
+
     private readonly WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> _factory;
 
     public FoodAiAnalyzeEndpointTests(WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> factory)
@@ -117,6 +125,51 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("CORRUPT_FILE", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Nutrition_encuentra_alimento_devuelve_200_con_valores_por_100g()
+    {
+        var stubProvider = new StubNutritionProvider
+        {
+            Result = new FoodNutritionDto(
+                "Banana, raw", 100m, 89m, 1.09m, 22.84m, 0.33m, 2.6m, 12.23m, 1m,
+                "USDA FoodData Central", "2026-08-27"),
+        };
+        var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+                services.AddScoped<INutritionProvider>(_ => stubProvider)));
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/v1/foodai/nutrition/banana");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<NutritionResponseJson>();
+        Assert.NotNull(body);
+        Assert.Equal("Banana, raw", body.FoodName);
+        Assert.Equal(89m, body.Calories);
+        Assert.Equal(100m, body.ServingGrams);
+    }
+
+    [Fact]
+    public async Task Nutrition_alimento_inexistente_responde_404_FOOD_NOT_FOUND()
+    {
+        var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services =>
+                services.AddScoped<INutritionProvider>(_ => new StubNutritionProvider { Result = null })));
+        var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/api/v1/foodai/nutrition/arepa");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Contains("FOOD_NOT_FOUND", await response.Content.ReadAsStringAsync());
+    }
+
+    private sealed class NutritionResponseJson
+    {
+        public string? FoodName { get; set; }
+        public decimal ServingGrams { get; set; }
+        public decimal Calories { get; set; }
     }
 
     private sealed class FoodAiAnalyzeEndpointTestsResponse

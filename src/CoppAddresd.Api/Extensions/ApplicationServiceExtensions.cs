@@ -56,6 +56,7 @@ public static class ApplicationServiceExtensions
 
         services.AddScoped<IImageStorage, LocalImageStorage>();
         services.AddScoped<CoppAddresd.Application.Features.FoodAi.ImageFileValidator>();
+        services.AddScoped<INutritionProvider, DatabaseNutritionProvider>();
 
         services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
         {

@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Entities.FoodAi;
 using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Infrastructure.Persistence;
@@ -78,6 +79,11 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<ClinicalMeasurement> ClinicalMeasurements => Set<ClinicalMeasurement>();
     public DbSet<PlanSafetyRule> PlanSafetyRules => Set<PlanSafetyRule>();
+
+    // Food AI — Nutrición (schema foodai)
+    public DbSet<Food> Foods => Set<Food>();
+    public DbSet<FoodNutrition> FoodNutritionEntries => Set<FoodNutrition>();
+    public DbSet<FoodAlias> FoodAliases => Set<FoodAlias>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
