@@ -36,6 +36,111 @@ Para la aseguradora y las clínicas, el programa ataca tres problemas a la vez:
 
 ---
 
+### 1.5 Modelo de Entidades y Jerarquía Semántica (Modelo ERP)
+
+El módulo de **Progreso del Programa** está estructurado bajo un **modelo ERP relacional y semántico** que divide claramente la **Definición Maestra / Catálogo** (plantilla reutilizable) de la **Inscripción y Ejecución del Paciente** (runtime en ejecución).
+
+```
+                      +----------------------------------+
+                      |         ProgramTemplate          |
+                      |   (Plantilla de 83 semanas)      |
+                      +----------------------------------+
+                                        | 1:N
+                                        v
+                      +----------------------------------+
+                      |        WeeklyDayTemplate         |
+                      |   (Tareas programadas por día)   |
+                      +----------------------------------+
+                                        | (Instanciación / Copia)
+                                        v
++-----------------------------------------------------------------------------------+
+| INSCRIPCIÓN Y EJECUCIÓN DEL PACIENTE (RUNTIME)                                    |
+|                                                                                   |
+|  +--------------------------------+                                               |
+|  |       PatientProfile           |                                               |
+|  +--------------------------------+                                               |
+|                  | 1:1 / 1:N                                                      |
+|                  v                                                                |
+|  +--------------------------------+                                               |
+|  |       ProgramEnrollment        | <--- (Agregado Raíz del Programa del Paciente)|
+|  +--------------------------------+                                               |
+|                  | 1:N                                                            |
+|                  v                                                                |
+|  +--------------------------------+                                               |
+|  |          ProgramWeek           | <--- (Semana 1..83 concreta con jsonb snapshot)|
+|  +--------------------------------+                                               |
+|                  | 1:N                                                            |
+|                  v                                                                |
+|  +--------------------------------+                                               |
+|  |          DailyCheckIn          | <--- (Día local del paciente: resumen y ánimo)|
+|  +--------------------------------+                                               |
+|                  | 1:N                                                            |
+|                  v                                                                |
+|  +--------------------------------+                                               |
+|  |         TaskCompletion         | <--- (Misión/Tarea diaria completada)         |
+|  +--------------------------------+                                               |
+|                  | 1:1 (Vinculación opcional en runtime)                          |
+|                  +----------------------+--------------------+--------------------+
+|                  |                      |                    |                    |
+|                  v                      v                    v                    v
+|        +-------------------+  +-------------------+  +---------------+  +------------------+
+|        |   NutritionPlan   |  |  ExerciseRoutine  |  |   MediaItem   |  |   VitalSign /    |
+|        | (Plan Nutricional)|  | (Rutina Ejercicio)|  |   (Podcast)   |  | Product / Ánimo  |
+|        +-------------------+  +-------------------+  +---------------+  +------------------+
++-----------------------------------------------------------------------------------+
+```
+
+#### Jerarquía Operativa Principal (Programa → Semanas → Días → Misiones)
+
+```
+[Programa] ProgramEnrollment (Agregado Raíz)
+   └── (1:N) [Semana] ProgramWeek (Semanas 1 a 83)
+          └── (1:N) [Día] DailyCheckIn (Días locales 1 a 7 de la semana)
+                 └── (1:N) [Misión] TaskCompletion (Misiones diarias completadas)
+                        └── (1:1 opcional) Contenido resuelto (Plan Nutricional / Rutina / Podcast / Vitales)
+```
+
+1. **Programa (`ProgramEnrollment`)**
+   - Es el **Agregado Raíz** que representa la inscripción activa del paciente a un protocolo clínico (ej. 83 semanas).
+   - Posee el balance acumulado de XP, nivel, zona horaria IANA del paciente y estado general (`Active`, `Paused`, `Completed`, `Withdrawn`).
+   - Contiene **muchas Semanas (`ProgramWeek`)** (relación `1:N`).
+
+2. **Semana (`ProgramWeek`)**
+   - Representa **una semana concreta** (de la 1 a la 83) dentro del ciclo del paciente, delimitada de lunes (`WeekStartDateLocal`) a domingo (`WeekEndDateLocal`).
+   - Posee un `TasksSnapshot` (`jsonb`) que congela la definición de misiones de esa semana al iniciarla, garantizando que futuras ediciones en la plantilla no alteren semanas en curso.
+   - Contiene **7 Días (`DailyCheckIn`)** (relación `1:N`).
+
+3. **Día (`DailyCheckIn`)**
+   - Representa **un día específico** en la zona horaria local del paciente (`LocalDate`).
+   - Consolida el desempeño diario: estado del día (`IsPerfectDay`), bonus de día perfecto (`BonusAwarded`), total de puntos del día, nivel de ánimo (`MoodScore`) y barreras reportadas.
+   - Contiene **varias Misiones / Tareas Completadas (`TaskCompletion`)** (relación `1:N`).
+
+4. **Misión / Tarea Completada (`TaskCompletion`)**
+   - Representa la **ejecución y cumplimiento de 1 misión programada** para el día (`TaskCode`: `podcast`, `vitals`, `nut`, `ejercicio`, `nutribiotico`, `emocional`).
+   - Mantiene la clave de idempotencia del cliente (`ClientRequestId`) para evitar duplicación de puntos por reintentos de red.
+   - Se vincula semánticamente en runtime con la entidad de contenido correspondiente (relación opcional `1:1` según el tipo de tarea):
+     - `nut` ➔ `NutritionPlan` / `NutritionPlanDay`
+     - `ejercicio` ➔ `ExerciseRoutine`
+     - `podcast` ➔ `MediaItem`
+     - `vitals` ➔ `VitalSignsBatch` (`VitalSign`)
+     - `nutribiotico` ➔ `Product`
+     - `emocional` ➔ `EmotionalRecord`
+
+---
+
+#### Entidades Satélites y Sub-sistemas del Dominio
+
+Además de la jerarquía operativa principal, el módulo organiza 4 sub-sistemas satélites vinculados al `ProgramEnrollment`:
+
+| Sub-sistema | Entidades | Relación y Función Semántica |
+|-------------|-----------|------------------------------|
+| **Gamificación & Racha** | `StreakState`, `StreakFreeze`, `XpLedgerEntry`, `XpRule` | • **`StreakState`** (`1:1` con `ProgramEnrollment`): Mantiene la racha actual de días consecutivos, días récord, multiplicador x2 activo y su vencimiento.<br>• **`StreakFreeze`** (`1:N` con `ProgramEnrollment`): Inventario y auditoría de tokens de congelamiento de racha (máx. 3).<br>• **`XpLedgerEntry`** (`1:N` con `ProgramEnrollment`): Libro mayor contable de otorgamientos de XP.<br>• **`XpRule`** (Catálogo global): Reglas de otorgamiento y topes anti-fraude. |
+| **Hábitos Granulares** | `HabitTemplate`, `HabitCheck` | • **`HabitTemplate`** (`1:N` con `ProgramTemplate`): Plantillas de hábitos configurables.<br>• **`HabitCheck`** (`1:N` con `ProgramEnrollment`): Registros diarios detallados de hábitos nutricionales (desayuno, almuerzo, merienda, cena, agua). |
+| **Indicadores Clínicos** | `ClinicalBaseline`, `HealthScore`, `TransformationScore` | • **`ClinicalBaseline`** (`1:N` por paciente): Línea base de valores clínicos fijada obligatoriamente por profesionales.<br>• **`HealthScore`** (`1:N` con `ProgramEnrollment`): Historial de cálculos del Índice de Salud (0–100 en 5 dimensiones).<br>• **`TransformationScore`** (`1:N` con `ProgramEnrollment`): Historial de cálculos del Índice de Transformación (cambio % vs. línea base). |
+| **Adaptación & Salud** | `Weakness`, `Intervention`, `AdaptationRecommendation` | • **`Weakness`** / **`Intervention`** (`1:N` con `ProgramEnrollment`): Debilidades detectadas por el motor determinista e intervenciones asociadas.<br>• **`AdaptationRecommendation`** (`1:N` con `ProgramEnrollment`): Recomendaciones clínicas de ajuste de programa o dificultad. |
+
+---
+
 ## 2. Reglas de negocio completas
 
 ### 2.1 Misiones diarias
@@ -202,6 +307,17 @@ Si no hay registros en el período → adherencia 0, sin premio, sin castigo.
 7. **Recomendaciones de adaptación** — El motor de adaptación detecta patrones (2+ días perdidos, ánimo bajo sostenido, cruce de nivel) y crea recomendaciones. Cambios de rutina o nutrición se aplican automáticamente; cambios de dificultad o nivel requieren aprobación del clínico.
 8. **Ajustes de contenido** — El clínico puede cambiar el plan nutricional, la rutina de ejercicio o el podcast asignado sin re-inscribir al paciente. El snapshot de la semana actual no cambia (las ediciones aplican a la semana siguiente).
 
+### 3.9 Configuración de contenido desde el ERP
+
+El clínico configura, desde el ERP, **qué plan de nutrición y qué rutina de ejercicio corre cada semana** del programa del paciente. La pantalla muestra una vista por semana sobre las asignaciones de Wellness existentes (`app.nutrition_plan_assignments` / `app.routine_assignments`):
+
+1. **Leer** — `GET /api/v1/program/enrollments/{id}/content` devuelve el timeline completo: array de semanas con ventana de fechas (lunes–domingo, local al paciente) y el plan/rutina asignado (o `null` si no hay asignación).
+2. **Escribir** — `PUT /api/v1/program/enrollments/{id}/content/week/{weekNumber}` con `{ nutritionPlanId, exerciseRoutineId }` reemplaza las asignaciones de Wellness para la ventana de esa semana. `null` en un campo desasigna esa dimensión. Re-PUT con el mismo o distinto ID reemplaza sin duplicar.
+3. **Resolución en runtime** — El módulo programa resuelve el contenido por fecha cuando el paciente completa una tarea (SPEC §4.2/§4.3/§6.10): la tarea `nut` busca el `NutritionPlanAssignment` activo para la fecha, la tarea `ejercicio` busca el `RoutineAssignment` activo.
+4. **Sin asignación** — Cuando no hay plan/rutina asignado para la semana, la tarea se registra con `content = null` y la UI muestra el badge **"Sin asignar"**. La experiencia del paciente (XP, racha, gamificación) **no depende del contenido** — la acción se registra igual.
+
+Este flujo se complementa con la configuración de plantillas (§7.6) y las recomendaciones de adaptación (§7.7). El ERP nunca llama directamente al AI Service — todo el tráfico pasa por el backend (.NET) que actúa como proxy autenticado (regla de seguridad del monorepo).
+
 ---
 
 ## 4. Estado actual
@@ -217,13 +333,14 @@ Si no hay registros en el período → adherencia 0, sin premio, sin castigo.
 | 5 — Multiplicador x2 por hito | Hitos 7/11/22/50, ventana 24/48/72 h, snapshot expone estado | Implementado |
 | 6 — Umbral de racha configurable + tareas esenciales | Columnas en plantilla, rescate solo con esencial | Implementado |
 | 6 — Nutrición granular | `POST /nutrition/log`, premios semanales en `/scores/calculate` | Implementado |
+| 7 — Configuración de contenido por semana (ERP) | `GET/PUT /program/enrollments/{id}/content`, `GET/PUT .../content/week/{weekNumber}` — endpoints de configuración de plan nutricional y rutina por semana (SPEC §7.8, T-74..T-78) | Implementado (contrato documentado) |
 
 ### 4.2 Backend — pendiente
 
 - **Aplicar 6 migraciones pendientes** (`AddXpRulesCatalog`, `AddProgramProgressClinicalXp`, `AddProgramProgressMultiplier`, `AddProgramProgressStreakConfig`, `AddProgramProgressNutritionXp`, `AddMediaProgressions` — esta última de P2). Las migraciones están generadas pero **no aplicadas** en la base de datos de desarrollo.
 - **Reiniciar procesos de dev** (API + Auth Service) para que los seeders poblen catálogo y configuración.
 - **Validación manual** de los criterios de aceptación P1.5 (AC-19 a AC-36): los batches B5-R, B5-C, B5-M, B5-T y B5-N corren pruebas manuales por convención del flujo actual, no automatizadas.
-- **Pantallas ERP** (B7): gestión de plantillas, lista de inscripciones, cola de revisiones pendientes y de adaptaciones.
+- **Pantallas ERP** (B7): gestión de plantillas, lista de inscripciones, cola de revisiones pendientes y de adaptaciones. **Las pantallas de configuración de contenido por semana (SPEC §7.8) ya tienen contrato documentado** — pendiente implementación de UI en `coppaddresd-front`.
 - **Motor de adaptación** (P2): `ProgramAdaptationEngine` y el flujo de aprobación.
 - **Rotación de podcasts** (P2): tabla `app.media_progressions` y resolutor por fecha.
 - **Reconciliación nocturna** (P3): job que recorre `xp_ledger` y recalcula `streak_states` por inscripción.

@@ -2,7 +2,7 @@
 
 **Module**: 83-week patient program progress (gamified clinical journey).
 **Repo**: `coppAddresdBack` (backend) + `antares-paciente` (mobile) + `erp` (admin).
-**Status**: Planning. No code, schema, or migrations written yet.
+**Status**: **P1 & P1.5 MVP Completed** (Backend core, 12 migrations, unit tests 454/454 passing + ERP Frontend `/program/content` & `WeekTasksDialog` hybrid view implemented). P2/P3 Pending.
 
 ---
 

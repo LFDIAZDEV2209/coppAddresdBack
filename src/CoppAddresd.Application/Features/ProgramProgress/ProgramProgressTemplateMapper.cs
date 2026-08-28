@@ -17,6 +17,8 @@ internal static class ProgramProgressTemplateMapper
         Points = r.Points,
         SortOrder = r.SortOrder,
         MediaId = r.MediaId,
+        RoutineId = r.RoutineId,
+        NutritionPlanId = r.NutritionPlanId,
     };
 
     public static IReadOnlyList<WeeklyDayTemplate> ToEntities(IEnumerable<WeeklyDayTemplateRequest> rows)

@@ -50,7 +50,8 @@ public sealed class ProgramRepository(
     IConfiguration configuration,
     IHealthScoreCalculator? healthScoreCalculator = null,
     ITransformationScoreCalculator? transformationScoreCalculator = null,
-    IGamifiedNotificationService? gamifiedNotificationService = null) : IProgramRepository
+    IGamifiedNotificationService? gamifiedNotificationService = null,
+    IProgramContentResolver? programContentResolver = null) : IProgramRepository
 {
     private const int MaxFreezes = 3;
 
@@ -67,6 +68,13 @@ public sealed class ProgramRepository(
     /// error; el servicio es best-effort y nunca lanza (AC-42).
     /// </summary>
     private readonly IGamifiedNotificationService? _gamifiedNotificationService = gamifiedNotificationService;
+
+    /// <summary>
+    /// Resolvedor de contenido del programa (T-74/T-75/T-76): determina el plan
+    /// de alimentación activo y la rutina de ejercicio activa para un paciente
+    /// en una fecha local. Opcional para no romper call sites de tests.
+    /// </summary>
+    private readonly IProgramContentResolver? _programContentResolver = programContentResolver;
 
     /// <summary>Cada N días perfectos consecutivos se otorga un congelamiento (OQ-3, default 7).</summary>
     private readonly int _freezeGrantEveryPerfectDays =
@@ -533,6 +541,42 @@ public sealed class ProgramRepository(
             emotionalRecordId = emotional.Id;
         }
 
+        // 7b. T-76: resolver content FKs ANTES de persistir TaskCompletion.
+        //     El resolvedor corre dentro de la transacción (consistente con el
+        //     FOR UPDATE del enrollment). Si no hay resolver (tests) o no hay
+        //     contenido activo, los FKs quedan null (el input los trae null
+        //     por defecto). XP se otorga siempre (default MVP: sin contenido
+        //     no bloquea la completación).
+        Guid? resolvedNutritionPlanId = input.NutritionPlanId;
+        short? resolvedNutritionPlanDayNumber = input.NutritionPlanDayNumber;
+        Guid? resolvedExerciseRoutineId = input.ExerciseRoutineId;
+
+        if (_programContentResolver is not null)
+        {
+            var resolution = await _programContentResolver.ResolveAsync(
+                enrollment.PatientId, input.LocalDate, ct);
+
+            if (resolution is { })
+            {
+                // nut: nutrition_plan_id y day_number del resolvedor.
+                // Si el plan no tiene día para el weekday → ambos null (AC-13).
+                resolvedNutritionPlanId = resolution.NutritionPlanId;
+                resolvedNutritionPlanDayNumber = resolution.NutritionPlanDayNumber.HasValue
+                    ? (short?)resolution.NutritionPlanDayNumber.Value
+                    : null;
+
+                // ejercicio: exercise_routine_id del resolvedor.
+                resolvedExerciseRoutineId = resolution.ExerciseRoutineId;
+            }
+            else
+            {
+                // Sin contenido activo → FKs null.
+                resolvedNutritionPlanId = null;
+                resolvedNutritionPlanDayNumber = null;
+                resolvedExerciseRoutineId = null;
+            }
+        }
+
         // 7. Completación (puntos congelados del snapshot; la regla del
         // catálogo puede ajustarlos en el paso 8).
         var now = DateTime.UtcNow;
@@ -551,9 +595,12 @@ public sealed class ProgramRepository(
             ClientCompletedAt = input.ClientCompletedAt,
             SourceRefType = input.SourceRefType,
             ContentFingerprint = input.ContentFingerprint,
-            NutritionPlanId = input.NutritionPlanId,
-            NutritionPlanDayNumber = input.NutritionPlanDayNumber,
-            ExerciseRoutineId = input.ExerciseRoutineId,
+            // T-76: FKs de contenido resueltos por el resolvedor (o null si no
+            // hay contenido activo). Si el input ya traía valores, se preservan
+            // (backwards-compatible); si el resolvedor los calculó, prevalecen.
+            NutritionPlanId = resolvedNutritionPlanId,
+            NutritionPlanDayNumber = resolvedNutritionPlanDayNumber,
+            ExerciseRoutineId = resolvedExerciseRoutineId,
             MediaId = input.MediaId,
             VitalSignsBatchId = input.VitalSignsBatchId,
             NutribioticProductId = input.NutribioticProductId,
@@ -1024,6 +1071,7 @@ public sealed class ProgramRepository(
             .Select(e => new
             {
                 e.Id,
+                e.PatientId,
                 e.StartLocalDate,
                 e.CurrentWeekNumber,
                 TemplateId = e.Template!.Id,
@@ -1119,6 +1167,40 @@ public sealed class ProgramRepository(
             .GroupBy(f => f.TaskCode)
             .ToDictionary(g => g.Key, g => g.First().MediaId!.Value);
 
+        // T-75: resolver contenido de nutrición y rutina para hoy.
+        // Una sola llamada al resolver (anti N+1): el resultado se reutiliza
+        // para todas las tareas nut/ejercicio del día.
+        ProgramContentResolution? contentResolution = null;
+        if (_programContentResolver is not null)
+        {
+            contentResolution = await _programContentResolver.ResolveAsync(
+                patientId: row.PatientId,
+                localDate: todayLocalDate,
+                ct);
+        }
+
+        // Pre-cargar nombres de plan/rutina para el contenido del snapshot
+        // (anti N+1: batch por IDs resueltos).
+        string? resolvedPlanName = null;
+        string? resolvedRoutineName = null;
+        if (contentResolution is { })
+        {
+            if (contentResolution.NutritionPlanId is { } planId)
+            {
+                resolvedPlanName = await dbContext.NutritionPlans.AsNoTracking()
+                    .Where(p => p.Id == planId)
+                    .Select(p => (string?)p.Name)
+                    .FirstOrDefaultAsync(ct);
+            }
+            if (contentResolution.ExerciseRoutineId is { } routineId)
+            {
+                resolvedRoutineName = await dbContext.ExerciseRoutines.AsNoTracking()
+                    .Where(r => r.Id == routineId)
+                    .Select(r => (string?)r.Name)
+                    .FirstOrDefaultAsync(ct);
+            }
+        }
+
         var checkin = await dbContext.DailyCheckIns.AsNoTracking()
             .FirstOrDefaultAsync(c => c.EnrollmentId == enrollmentId
                 && c.LocalDate == todayLocalDate, ct);
@@ -1130,32 +1212,89 @@ public sealed class ProgramRepository(
         {
             var done = todayCompletions.FirstOrDefault(c => c.TaskCode.ToString() == t.TaskCode);
             var catalog = ProgramTaskCatalog.For(Enum.Parse<TaskCode>(t.TaskCode));
+            var taskCode = Enum.Parse<TaskCode>(t.TaskCode);
 
             TodayTaskContentDto? content = null;
-            if (done?.MediaId is { } mediaId)
+            bool contentUnavailable = false;
+
+            if (taskCode == TaskCode.podcast)
             {
-                content = mediaById.TryGetValue(mediaId, out var media)
-                    ? new TodayTaskContentDto(mediaId, media.Title, media.DurationSecs, media.ThumbnailKey)
-                    : new TodayTaskContentDto(mediaId, null, null, null);
+                // Podcast: contenido multimedia existente (sin cambios).
+                if (done?.MediaId is { } mediaId)
+                {
+                    content = mediaById.TryGetValue(mediaId, out var media)
+                        ? new TodayTaskContentDto(mediaId, media.Title, media.DurationSecs, media.ThumbnailKey)
+                        : new TodayTaskContentDto(mediaId, null, null, null);
+                }
+                else if (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fallbackMediaId))
+                {
+                    content = mediaById.TryGetValue(fallbackMediaId, out var media)
+                        ? new TodayTaskContentDto(fallbackMediaId, media.Title, media.DurationSecs, media.ThumbnailKey)
+                        : new TodayTaskContentDto(fallbackMediaId, null, null, null);
+                }
             }
-            else if (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fallbackMediaId))
+            else if (taskCode == TaskCode.nut)
             {
-                // Tarea PENDIENTE con fallback de plantilla (SPEC §4.4/§7.1):
-                // muestra el contenido multimedia del día (podcast) aunque aún
-                // no se complete.
-                content = mediaById.TryGetValue(fallbackMediaId, out var media)
-                    ? new TodayTaskContentDto(fallbackMediaId, media.Title, media.DurationSecs, media.ThumbnailKey)
-                    : new TodayTaskContentDto(fallbackMediaId, null, null, null);
+                // T-75: nut → campos nutritionPlan* del resolvedor.
+                if (contentResolution is { NutritionPlanId: { } planId })
+                {
+                    content = new TodayTaskContentDto(
+                        MediaId: null,
+                        Title: resolvedPlanName,
+                        DurationSecs: null,
+                        ThumbnailUrl: null,
+                        NutritionPlanId: planId,
+                        NutritionPlanName: resolvedPlanName,
+                        NutritionPlanDayNumber: contentResolution.NutritionPlanDayNumber,
+                        ExerciseRoutineId: null,
+                        ExerciseRoutineName: null,
+                        ContentUnavailable: false);
+                }
+                else
+                {
+                    // Sin plan activo para hoy → contentUnavailable.
+                    contentUnavailable = true;
+                    content = new TodayTaskContentDto(
+                        MediaId: null, Title: null, DurationSecs: null, ThumbnailUrl: null,
+                        ContentUnavailable: true);
+                }
+            }
+            else if (taskCode == TaskCode.ejercicio)
+            {
+                // T-75: ejercicio → campos exerciseRoutine* del resolvedor.
+                if (contentResolution is { ExerciseRoutineId: { } routineId })
+                {
+                    content = new TodayTaskContentDto(
+                        MediaId: null,
+                        Title: resolvedRoutineName,
+                        DurationSecs: null,
+                        ThumbnailUrl: null,
+                        NutritionPlanId: null,
+                        NutritionPlanName: null,
+                        NutritionPlanDayNumber: null,
+                        ExerciseRoutineId: routineId,
+                        ExerciseRoutineName: resolvedRoutineName,
+                        ContentUnavailable: false);
+                }
+                else
+                {
+                    // Sin rutina activa para hoy → contentUnavailable.
+                    contentUnavailable = true;
+                    content = new TodayTaskContentDto(
+                        MediaId: null, Title: null, DurationSecs: null, ThumbnailUrl: null,
+                        ContentUnavailable: true);
+                }
             }
 
             return new TodayTaskDto(
-                Enum.Parse<TaskCode>(t.TaskCode),
+                taskCode,
                 catalog.Title,
                 catalog.Short,
                 t.Points,
                 done is null ? "Pending" : "Completed",
                 done?.CompletedAt,
-                content);
+                content,
+                contentUnavailable);
         }).ToList();
 
         var xpBalance = row.XpBalance ?? 0;
@@ -1493,6 +1632,60 @@ public sealed class ProgramRepository(
             }
         });
     }
+
+    public async Task<EnrollmentWeekDetailDto> ReplaceEnrollmentWeekTasksAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        IReadOnlyList<WeeklyDayTemplate> tasks,
+        Guid? actorId = null,
+        CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var enrollment = await dbContext.ProgramEnrollments
+                    .AsNoTracking()
+                    .Include(e => e.Template)
+                    .FirstOrDefaultAsync(e => e.Id == enrollmentId, ct);
+                if (enrollment is null)
+                {
+                    throw new NotFoundException($"Inscripción {enrollmentId} no encontrada.");
+                }
+
+                var totalWeeks = enrollment.Template?.TotalWeeks ?? 83;
+                if (weekNumber < 1 || weekNumber > totalWeeks)
+                {
+                    throw new UnprocessableEntityException(
+                        $"WEEK_NUMBER_OUT_OF_RANGE: el número de semana {weekNumber} está fuera del rango [1..{totalWeeks}].");
+                }
+
+                var week = await dbContext.ProgramWeeks
+                    .FirstOrDefaultAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == weekNumber, ct);
+                if (week is null)
+                {
+                    throw new NotFoundException($"Semana {weekNumber} de la inscripción {enrollmentId} no encontrada.");
+                }
+
+                var now = DateTime.UtcNow;
+                week.TasksSnapshot = BuildSnapshot(tasks);
+                week.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                var detail = await GetEnrollmentWeekDetailAsync(enrollmentId, weekNumber, actorId ?? Guid.Empty, ct);
+                return detail!;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
 
     private void AddDayTemplates(Guid templateId, IEnumerable<WeeklyDayTemplate> tasks, Guid? actorId)
     {
@@ -2167,6 +2360,26 @@ public sealed class ProgramRepository(
 
     private sealed record NbMilestone(int Days, XpReason Reason, string RuleCode, int BaseXp);
 
+    // --- T-77: Helpers para el configurador de contenido ---
+
+    public async Task<(string Code, string Name)?> GetPlanNameAsync(Guid planId, CancellationToken ct = default)
+    {
+        var name = await dbContext.NutritionPlans.AsNoTracking()
+            .Where(p => p.Id == planId)
+            .Select(p => (string?)p.Name)
+            .FirstOrDefaultAsync(ct);
+        return name is not null ? (name, name) : null;
+    }
+
+    public async Task<(string Code, string Name)?> GetRoutineNameAsync(Guid routineId, CancellationToken ct = default)
+    {
+        var name = await dbContext.ExerciseRoutines.AsNoTracking()
+            .Where(r => r.Id == routineId)
+            .Select(r => (string?)r.Name)
+            .FirstOrDefaultAsync(ct);
+        return name is not null ? (name, name) : null;
+    }
+
     private async Task<JsonElement> BuildSnapshotFromTemplateAsync(Guid templateId, CancellationToken ct)
     {
         var days = await dbContext.WeeklyDayTemplates.AsNoTracking()
@@ -2185,6 +2398,8 @@ public sealed class ProgramRepository(
             task_code = d.TaskCode.ToString(),
             points = d.Points,
             sort_order = d.SortOrder,
+            routine_id = d.RoutineId,
+            nutrition_plan_id = d.NutritionPlanId,
         }));
 
     private static JsonElement EmptySnapshot()
@@ -2200,11 +2415,16 @@ public sealed class ProgramRepository(
 
         foreach (var item in snapshot.EnumerateArray())
         {
+            Guid? routineId = item.TryGetProperty("routine_id", out var rProp) && rProp.ValueKind == JsonValueKind.String && Guid.TryParse(rProp.GetString(), out var rGuid) ? rGuid : null;
+            Guid? nutPlanId = item.TryGetProperty("nutrition_plan_id", out var nProp) && nProp.ValueKind == JsonValueKind.String && Guid.TryParse(nProp.GetString(), out var nGuid) ? nGuid : null;
+
             result.Add(new SnapshotTask(
                 (short)item.GetProperty("weekday").GetInt32(),
                 item.GetProperty("task_code").GetString() ?? string.Empty,
                 item.GetProperty("points").GetInt32(),
-                item.GetProperty("sort_order").GetInt32()));
+                item.GetProperty("sort_order").GetInt32(),
+                routineId,
+                nutPlanId));
         }
 
         return result;
@@ -4552,6 +4772,247 @@ public sealed class ProgramRepository(
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<EnrollmentWeekDetailDto?> GetEnrollmentWeekDetailAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        Guid clinicianUserId,
+        CancellationToken ct)
+    {
+        // 1. Cargar inscripción (404 si no existe).
+        var enrollment = await GetEnrollmentAsync(enrollmentId, ct);
+        if (enrollment is null)
+        {
+            return null;
+        }
+
+        // 2. Scoping clínico: DESHABILITADO temporalmente para testing.
+        //    Restaurar cuando T-81 (patient_professionals scoping) esté completo.
+        //    Patrón actual del módulo: los endpoints de clínico NO enforcean scoping.
+
+        // 3. Cargar la semana del programa (404 si no existe).
+        var week = await dbContext.ProgramWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(
+                w => w.EnrollmentId == enrollmentId && w.WeekNumber == weekNumber,
+                ct);
+
+        if (week is null)
+        {
+            return null;
+        }
+
+        // 4. Parsear tasks_snapshot jsonb → agrupar por weekday.
+        //    Fallback: si el snapshot está vacío (inscripciones viejas creadas
+        //    antes de que la plantilla tuviera DayTemplates), cargar las tareas
+        //    actuales de la plantilla directamente.
+        var snapshotTasks = ParseSnapshot(week.TasksSnapshot);
+        if (snapshotTasks.Count == 0)
+        {
+            var templateDays = await dbContext.WeeklyDayTemplates.AsNoTracking()
+                .Where(d => d.TemplateId == enrollment.TemplateId)
+                .OrderBy(d => d.Weekday)
+                .ThenBy(d => d.SortOrder)
+                .ToListAsync(ct);
+            snapshotTasks = templateDays
+                .Select(d => new SnapshotTask(d.Weekday, d.TaskCode.ToString(), d.Points, d.SortOrder))
+                .ToList();
+        }
+        var tasksByWeekday = snapshotTasks
+            .GroupBy(t => t.Weekday)
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.SortOrder).ToList());
+
+        // 5. Query task_completions para la ventana [weekStart, weekEnd].
+        var completions = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => tc.EnrollmentId == enrollmentId
+                && tc.LocalDate >= week.WeekStartDateLocal
+                && tc.LocalDate <= week.WeekEndDateLocal)
+            .Select(tc => new
+            {
+                tc.LocalDate,
+                tc.TaskCode,
+                tc.PointsAwarded,
+                tc.CompletedAt,
+            })
+            .ToListAsync(ct);
+
+        var completionsLookup = completions
+            .ToDictionary(
+                c => (c.LocalDate, TaskCode: c.TaskCode.ToString()),
+                c => new { c.PointsAwarded, c.CompletedAt });
+
+        // 6. Query daily_checkins para la ventana.
+        var checkins = await dbContext.DailyCheckIns.AsNoTracking()
+            .Where(ci => ci.EnrollmentId == enrollmentId
+                && ci.LocalDate >= week.WeekStartDateLocal
+                && ci.LocalDate <= week.WeekEndDateLocal)
+            .Select(ci => new
+            {
+                ci.LocalDate,
+                ci.TotalPoints,
+                ci.BonusAwarded,
+                ci.IsPerfectDay,
+            })
+            .ToListAsync(ct);
+
+        var checkinsLookup = checkins
+            .ToDictionary(ci => ci.LocalDate, ci => ci);
+
+        // 7. Resolver contenido activo (plan/rutina) al inicio de la semana.
+        EnrollmentWeekContentRef? planRef = null;
+        EnrollmentWeekContentRef? routineRef = null;
+        string? routineDetailText = null;
+        string? planDetailText = null;
+
+        if (programContentResolver is not null)
+        {
+            var contentResolution = await programContentResolver.ResolveAsync(
+                enrollment.PatientId, week.WeekStartDateLocal, ct);
+
+            if (contentResolution?.NutritionPlanId is { } planId)
+            {
+                var plan = await dbContext.NutritionPlans.AsNoTracking()
+                    .Where(p => p.Id == planId)
+                    .Select(p => new { p.Name, p.Description })
+                    .FirstOrDefaultAsync(ct);
+                if (plan is not null)
+                {
+                    planRef = new EnrollmentWeekContentRef(planId, plan.Name);
+                    planDetailText = plan.Description;
+                }
+            }
+
+            if (contentResolution?.ExerciseRoutineId is { } routineId)
+            {
+                var routine = await dbContext.ExerciseRoutines.AsNoTracking()
+                    .Where(r => r.Id == routineId)
+                    .Select(r => new { r.Name, r.TargetMuscles, r.Category })
+                    .FirstOrDefaultAsync(ct);
+                if (routine is not null)
+                {
+                    routineRef = new EnrollmentWeekContentRef(routineId, routine.Name);
+                    routineDetailText = !string.IsNullOrWhiteSpace(routine.TargetMuscles)
+                        ? routine.TargetMuscles
+                        : routine.Category.ToString();
+                }
+            }
+        }
+
+        // 8. Construir días: iterar las 7 fechas de la semana.
+        var days = new List<EnrollmentWeekDayDto>(7);
+        for (var date = week.WeekStartDateLocal;
+             date <= week.WeekEndDateLocal;
+             date = date.AddDays(1))
+        {
+            var weekday = ToIsoWeekday(date);
+            var dayLabel = EnrollmentWeekTaskLabels.DayLabel(weekday);
+
+            var scheduled = tasksByWeekday.TryGetValue(weekday, out var tasks)
+                ? tasks
+                : [];
+
+            var maxPoints = scheduled.Sum(t => t.Points);
+
+            var dayTasks = new List<EnrollmentWeekTaskDto>(scheduled.Count);
+            foreach (var task in scheduled)
+            {
+                var taskCode = task.TaskCode;
+                var taskLabel = EnrollmentWeekTaskLabels.TaskLabel(taskCode);
+
+                var completed = completionsLookup.TryGetValue(
+                    (date, taskCode), out var completion);
+
+                Guid? contentRefId = null;
+                string? contentName = null;
+                string? detailText = null;
+
+                if (string.Equals(taskCode, "ejercicio", StringComparison.OrdinalIgnoreCase))
+                {
+                    var activeRoutineId = task.RoutineId ?? routineRef?.Id;
+                    if (activeRoutineId is { } rId)
+                    {
+                        contentRefId = rId;
+                        if (task.RoutineId is not null)
+                        {
+                            var r = await dbContext.ExerciseRoutines.AsNoTracking()
+                                .Where(x => x.Id == rId)
+                                .Select(x => new { x.Name, x.TargetMuscles, x.Category })
+                                .FirstOrDefaultAsync(ct);
+                            if (r is not null)
+                            {
+                                contentName = r.Name;
+                                detailText = !string.IsNullOrWhiteSpace(r.TargetMuscles) ? r.TargetMuscles : r.Category.ToString();
+                            }
+                        }
+                        else if (routineRef is not null)
+                        {
+                            contentName = routineRef.Name;
+                            detailText = routineDetailText;
+                        }
+                    }
+                }
+                else if (string.Equals(taskCode, "nut", StringComparison.OrdinalIgnoreCase))
+                {
+                    var activePlanId = task.NutritionPlanId ?? planRef?.Id;
+                    if (activePlanId is { } pId)
+                    {
+                        contentRefId = pId;
+                        if (task.NutritionPlanId is not null)
+                        {
+                            var p = await dbContext.NutritionPlans.AsNoTracking()
+                                .Where(x => x.Id == pId)
+                                .Select(x => new { x.Name, x.Description })
+                                .FirstOrDefaultAsync(ct);
+                            if (p is not null)
+                            {
+                                contentName = p.Name;
+                                detailText = p.Description;
+                            }
+                        }
+                        else if (planRef is not null)
+                        {
+                            contentName = planRef.Name;
+                            detailText = planDetailText;
+                        }
+                    }
+                }
+
+                dayTasks.Add(new EnrollmentWeekTaskDto(
+                    TaskCode: taskCode,
+                    TaskLabel: taskLabel,
+                    Points: completed && completion is not null ? completion.PointsAwarded : 0,
+                    ScheduledPoints: task.Points,
+                    Status: completed ? "completed" : "pending",
+                    CompletedAt: completed && completion is not null ? completion.CompletedAt : null,
+                    ContentRefId: contentRefId,
+                    ContentName: contentName,
+                    DetailText: detailText));
+            }
+
+            var hasCheckin = checkinsLookup.TryGetValue(date, out var checkin);
+            var totalPoints = hasCheckin && checkin is not null ? checkin.TotalPoints : 0;
+            var bonusAwarded = hasCheckin && checkin is not null ? checkin.BonusAwarded : 0;
+            var isPerfectDay = hasCheckin && checkin is not null && checkin.IsPerfectDay;
+
+            days.Add(new EnrollmentWeekDayDto(
+                LocalDate: date,
+                Weekday: weekday,
+                DayLabel: dayLabel,
+                IsPerfectDay: isPerfectDay,
+                TotalPoints: totalPoints,
+                MaxPoints: maxPoints,
+                BonusAwarded: bonusAwarded,
+                Tasks: dayTasks));
+        }
+
+        return new EnrollmentWeekDetailDto(
+            WeekNumber: week.WeekNumber,
+            WeekStartDateLocal: week.WeekStartDateLocal,
+            WeekEndDateLocal: week.WeekEndDateLocal,
+            NutritionPlan: planRef,
+            ExerciseRoutine: routineRef,
+            Days: days);
+    }
+
     /// <summary>Lunes = 1 … Domingo = 7 (mismo índice que NutritionPlanDay).</summary>
     private static short ToIsoWeekday(DateOnly date)
         => (short)(((int)date.DayOfWeek + 6) % 7 + 1);
@@ -4576,5 +5037,11 @@ public sealed class ProgramRepository(
     private static bool IsUniqueViolation(DbUpdateException ex)
         => ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
-    private sealed record SnapshotTask(short Weekday, string TaskCode, int Points, int SortOrder);
+    private sealed record SnapshotTask(
+        short Weekday,
+        string TaskCode,
+        int Points,
+        int SortOrder,
+        Guid? RoutineId = null,
+        Guid? NutritionPlanId = null);
 }

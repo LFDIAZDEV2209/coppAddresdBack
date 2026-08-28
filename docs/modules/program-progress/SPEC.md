@@ -85,6 +85,51 @@
 | **AdaptationRecommendation** | A clinician-visible proposed change (difficulty, template swap, content refresh). | `app.adaptation_recommendations` |
 | **MediaProgression** (P2) | Optional rotation table binding a MediaItem to a `(template, weekday)` window. | `app.media_progressions` |
 
+### 2.1 Operational Hierarchy & Domain Entity Relationships (ERP Model)
+
+The domain model follows a hierarchical ERP-style operational structure that decouples **Master Definition / Template** from **Patient Runtime Execution**:
+
+```
+[Template Level]
+ProgramTemplate (83-week Master Definition)
+   └── (1:N) WeeklyDayTemplate (Day & Task Configuration: podcast, vitals, nut, ejercicio, nutribiotico, emocional)
+
+[Patient Runtime Level]
+ProgramEnrollment (Aggregate Root / Active Patient Program)
+   └── (1:N) ProgramWeek (Concrete Weeks 1..83 with frozen TasksSnapshot)
+          └── (1:N) DailyCheckIn (Patient-local Days 1..7: mood, barriers, points, perfect day status)
+                 └── (1:N) TaskCompletion (Completed daily missions/tasks)
+                        └── (1:1 optional) Resolved Content (NutritionPlan / ExerciseRoutine / MediaItem / VitalSigns)
+```
+
+#### Primary Hierarchy Flow
+
+1. **Program (`ProgramEnrollment`)**:
+   - Aggregate Root for patient execution. Holds total XP, motivational level, IANA timezone, and status (`Active`, `Paused`, `Completed`, `Withdrawn`).
+   - Owns `1:N` **Weeks (`ProgramWeek`)**.
+
+2. **Week (`ProgramWeek`)**:
+   - Represents a specific 7-day period (weeks 1 to 83) from Monday (`WeekStartDateLocal`) to Sunday (`WeekEndDateLocal`).
+   - Holds a `TasksSnapshot` (`jsonb`) taken at week start so template edits never break active weeks.
+   - Owns `1:N` **Days (`DailyCheckIn`)**.
+
+3. **Day (`DailyCheckIn`)**:
+   - Summary rollup for a single patient-local date (`LocalDate`).
+   - Tracks `IsPerfectDay`, `BonusAwarded`, `MoodScore`, `Barriers`, and total day points.
+   - Owns `1:N` **Completed Tasks (`TaskCompletion`)**.
+
+4. **Task / Mission (`TaskCompletion`)**:
+   - Execution record of a single scheduled task (`TaskCode`: `podcast`, `vitals`, `nut`, `ejercicio`, `nutribiotico`, `emocional`).
+   - Carries the `ClientRequestId` idempotency key to prevent double XP awards on network retries.
+   - Resolves content dynamically at runtime (`1:1` optional link to `NutritionPlan`, `ExerciseRoutine`, `MediaItem`, `VitalSign`, `Product`, or `EmotionalRecord`).
+
+#### Satellite Sub-systems
+
+- **Gamification & Streak**: `StreakState` (`1:1`), `StreakFreeze` (`1:N`), `XpLedgerEntry` (`1:N`), `XpRule` (Global Catalog).
+- **Granular Habits**: `HabitTemplate` (`1:N` with template), `HabitCheck` (`1:N` with enrollment for meal & hydration logs).
+- **Clinical Tracking**: `ClinicalBaseline` (`1:N` per patient), `HealthScore` (`1:N`), `TransformationScore` (`1:N`).
+- **Adaptation Engine**: `Weakness` (`1:N`), `Intervention` (`1:N`), `AdaptationRecommendation` (`1:N`).
+
 **Aggregate rules**
 
 - One transaction = one aggregate. Completing a task writes `task_completions` + (sometimes) `xp_ledger` + `daily_checkins` + `streak_freezes`/`streak_states` inside one `FOR UPDATE` on `program_enrollments`.
@@ -752,6 +797,94 @@ Returns the long-run path: list of weeks with `weekNumber`, `status`, `weekStart
 - `POST /api/v1/program/adaptations/{id}/decide` — body `{ decision: 'Approve' | 'Reject', note? }`. Requires `Program.Adapt`.
 - `GET /api/v1/program/adaptations/{id}` — Requires `Program.View`.
 
+### 7.8 Configuración de contenido por semana (ERP)
+
+Desde el ERP, el clínico configura **qué plan de nutrición y qué rutina de ejercicio corren cada semana** de la inscripción del paciente. Estos endpoints operan sobre las asignaciones de Wellness existentes (`app.nutrition_plan_assignments` / `app.routine_assignments`) y reutilizan `IWellnessRepository` — no crean tablas nuevas. El módulo programa resuelve el contenido en runtime por fecha (SPEC §4.2/§4.3/§6.10).
+
+#### 7.8.1 `GET /api/v1/program/enrollments/{id}/content`
+
+Returns the full content timeline: `weeks` array with `weekNumber`, date window, and assigned nutrition plan / exercise routine per week.
+
+**Permission**: `Program.View`, clinician-scoped (anti-IDOR → `404` if enrollment not found or not in clinician scope via `app.patient_professionals`).
+
+**Week window formula**: week N = `[startLocalDate + 7*(N-1), startLocalDate + 7*(N-1) + 6]` (patient-local). Total weeks = `program_templates.total_weeks` for the enrollment's template.
+
+**Response 200**
+
+```json
+{
+  "enrollmentId": "3fa85164-1f24-4b8f-9d5e-6e5b6a148a90",
+  "patientId": "9c1e0d3a-5b7a-4c8f-a1d2-3e4f5a6b7c8d",
+  "templateId": "1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d",
+  "totalWeeks": 83,
+  "startLocalDate": "2026-09-21",
+  "weeks": [
+    {
+      "weekNumber": 1,
+      "weekStartDateLocal": "2026-09-21",
+      "weekEndDateLocal": "2026-09-27",
+      "nutritionPlan": {
+        "id": "uuid",
+        "code": "xyz",
+        "name": "Plan xyz"
+      },
+      "exerciseRoutine": {
+        "id": "uuid",
+        "code": "jkl",
+        "name": "Rutina jkl"
+      }
+    },
+    {
+      "weekNumber": 2,
+      "weekStartDateLocal": "2026-09-28",
+      "weekEndDateLocal": "2026-10-04",
+      "nutritionPlan": null,
+      "exerciseRoutine": null
+    }
+  ]
+}
+```
+
+Each `weeks[]` item has:
+- `weekNumber` (`int`, 1-based) — sequential week number within the enrollment.
+- `weekStartDateLocal` / `weekEndDateLocal` (`date`) — patient-local date window (Monday–Sunday).
+- `nutritionPlan` — resolved from `app.nutrition_plan_assignments` where the assignment's date window overlaps the week's date window, joined to `app.nutrition_plans` for `id`/`code`/`name`. `null` if no active assignment covers the week.
+- `exerciseRoutine` — resolved from `app.routine_assignments` where the assignment's date window overlaps the week's date window, joined to `app.exercise_routines` for `id`/`code`/`name`. `null` if no active assignment covers the week.
+
+**Errors**: `404 NOT_FOUND` (enrollment not found / not in clinician scope), `401 UNAUTHORIZED`.
+
+#### 7.8.2 `PUT /api/v1/program/enrollments/{id}/content/week/{weekNumber}`
+
+Upserts the underlying Wellness assignments for the specified week's date window. Replaces any existing assignment for that window — no duplication. Setting a dimension to `null` unassigns it.
+
+**Permission**: `Program.Edit`, clinician-scoped.
+
+**Request body**
+
+```json
+{
+  "nutritionPlanId": "uuid" | null,
+  "exerciseRoutineId": "uuid" | null
+}
+```
+
+**Behavior**:
+- Computes the week's date window using the formula from §7.8.1.
+- `nutritionPlanId`: if non-null, upserts an `app.nutrition_plan_assignments` row covering the week's date window (`start_date = weekStartDateLocal`, `end_date = weekEndDateLocal`). An existing assignment within the same window is replaced (deleted + re-inserted) — never duplicated. If `null`, any existing `nutrition_plan_assignment` within the window is deleted (unassign).
+- `exerciseRoutineId`: same semantics for `app.routine_assignments`.
+- **Overlap trimming**: after the write, exactly one active assignment per dimension covers the window. If a broader assignment previously covered the window, it is trimmed (split or replaced) so that only the week-specific assignment remains active for that window.
+- Re-PUT with the same or different IDs replaces without duplicating (idempotent).
+- Body fields are independent: omitting one dimension (or sending `null`) leaves it unchanged **only if the client explicitly sends `null`**; the handler does not interpret missing fields as "no change" — explicit `null` means unassign, explicit UUID means assign.
+
+**Response 200**: the updated week item (same shape as a single `weeks[]` element from §7.8.1).
+
+**Errors**:
+- `404 NOT_FOUND` — enrollment not found or not in clinician scope.
+- `422 WEEK_NUMBER_OUT_OF_RANGE` — `weekNumber` < 1 or > `totalWeeks`.
+- `422 INVALID_PLAN_ID` — `nutritionPlanId` provided but no matching `app.nutrition_plans` row exists.
+- `422 INVALID_ROUTINE_ID` — `exerciseRoutineId` provided but no matching `app.exercise_routines` row exists.
+- `401 UNAUTHORIZED`.
+
 ---
 
 ## 8. Backend mapping
@@ -895,6 +1028,8 @@ The mobile app keeps the existing UI shapes (XP gauge, level badge, 6 task cards
 | AC-43 | Clinician runs `POST /scores/calculate` for a patient with nutrition adherence 58% and weekly adherence 45%. | The rules engine fires `WK_NUT_LOW_ADHERENCE` (medium) and `WK_ADH_LOW_STREAK` (medium) and persists **2 new** `app.weaknesses` rows (`source='ai'`, `status='open'`, `detected_at` set). Re-running `/calculate` for the same period does **NOT** duplicate: the open-status dedupe skips both codes (SPEC §21, C). |
 | AC-44 | Clinician transitions a weakness via `POST /api/v1/program/weaknesses/{id}/status { status: 'resolved' }`. | The row moves to `resolved` with `resolved_at` set; the clinician's `auth.users.id` and roles are validated (AC-22 — a patient calling the endpoint receives `403 FORBIDDEN`). Applying the same status again is idempotent (no error). `acknowledged`/`in_intervention`/`dismissed` are also valid transitions; `open` is rejected (a row already starts open). |
 | AC-45 | Weakness detection runs once per `POST /scores/calculate` invocation (after scores + clinical XP + weekly nutrition awards) and never on `GET /scores`. | The `CalculateScoresCommandHandler` calls `IWeaknessDetectionService.DetectAndPersistAsync` exactly once per recalculation; `GET /api/v1/program/scores` never detects or persists weaknesses. A patient without an active enrollment gets an empty detection result (no error, no rows). |
+| AC-50 | Clinician calls `GET /api/v1/program/enrollments/{id}/content` for an enrollment with `startLocalDate = 2026-09-21` and `totalWeeks = 83`. Week 1 has a `nutrition_plan_assignment` covering `2026-09-21..2026-09-27` and a `routine_assignment` covering `2026-09-21..2026-09-27`; week 2 has no assignments. | Response contains `totalWeeks = 83`, `startLocalDate = "2026-09-21"`, `weeks` array with 83 entries. `weeks[0]` has `weekNumber = 1`, `weekStartDateLocal = "2026-09-21"`, `weekEndDateLocal = "2026-09-27"`, non-null `nutritionPlan` and `exerciseRoutine` with `id`/`code`/`name` from the resolved assignments. `weeks[1]` has `weekNumber = 2`, `weekStartDateLocal = "2026-09-28"`, `weekEndDateLocal = "2026-10-04"`, `nutritionPlan = null`, `exerciseRoutine = null`. No duplication, no extra assignments. |
+| AC-51 | Clinician calls `PUT /api/v1/program/enrollments/{id}/content/week/1` with `{ "nutritionPlanId": "plan-xyz-uuid", "exerciseRoutineId": null }`. | A `nutrition_plan_assignment` row is created (or replaced) with `start_date = "2026-09-21"`, `end_date = "2026-09-27"`, `nutrition_plan_id = "plan-xyz-uuid"`. The response `weeks[0].nutritionPlan` shows `{ "id": "plan-xyz-uuid", "code": "xyz", "name": "Plan xyz" }` and `exerciseRoutine = null`. A second PUT with the same `nutritionPlanId` replaces the existing row without duplicating. A third PUT with `{ "nutritionPlanId": null, "exerciseRoutineId": "routine-jkl-uuid" }` deletes the nutrition assignment and creates the routine assignment — `nutritionPlan = null`, `exerciseRoutine` is populated. |
 
 ### 10.3 DB / concurrency / idempotency / auth tests
 

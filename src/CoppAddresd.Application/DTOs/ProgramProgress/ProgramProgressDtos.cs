@@ -95,6 +95,10 @@ public sealed record ProgramSnapshotTemplateDto(
 /// del día (SPEC §4.4 y §7.1). P1:
 /// <c>ThumbnailUrl</c> transporta la storage key de la miniatura; la forma
 /// final de URL (proxy local / presign S3) se resuelve en la capa API (B5).
+///
+/// T-75: <c>ContentUnavailable</c> es true cuando la tarea es nut/ejercicio
+/// y no hay asignación activa que cubra hoy (el móvil oculta el contenido y
+/// muestra un fallback).
 /// </summary>
 public sealed record TodayTaskDto(
     TaskCode TaskCode,
@@ -103,17 +107,33 @@ public sealed record TodayTaskDto(
     int Points,
     string Status,
     DateTime? CompletedAt,
-    TodayTaskContentDto? Content);
+    TodayTaskContentDto? Content,
+    bool ContentUnavailable = false);
 
 /// <summary>
-/// Contenido multimedia de una tarea del día (podcast). La resolución la hace
-/// el repositorio en <c>GetSnapshotAsync</c> (una sola query set, sin N+1).
+/// Contenido multimedia de una tarea del día (podcast) más contenido resuelto
+/// de nutrición y ejercicio (T-75/T-76). La resolución la hace el repositorio
+/// en <c>GetSnapshotAsync</c> (una sola query set, sin N+1).
+///
+/// Campos de podcast: <c>MediaId</c>, <c>Title</c>, <c>DurationSecs</c>,
+/// <c>ThumbnailUrl</c>.
+/// Campos de nutrición: <c>NutritionPlanId</c>, <c>NutritionPlanName</c>,
+/// <c>NutritionPlanDayNumber</c>.
+/// Campos de ejercicio: <c>ExerciseRoutineId</c>, <c>ExerciseRoutineName</c>.
+/// <c>ContentUnavailable</c>: true cuando una tarea tipo nut/ejercicio necesita
+/// contenido pero no hay asignación activa que cubra hoy (SPEC §4.2/§4.3).
 /// </summary>
 public sealed record TodayTaskContentDto(
     Guid? MediaId,
     string? Title,
     int? DurationSecs,
-    string? ThumbnailUrl);
+    string? ThumbnailUrl,
+    Guid? NutritionPlanId = null,
+    string? NutritionPlanName = null,
+    int? NutritionPlanDayNumber = null,
+    Guid? ExerciseRoutineId = null,
+    string? ExerciseRoutineName = null,
+    bool ContentUnavailable = false);
 
 /// <summary>XP + nivel de gamificación (nunca métrica clínica, SPEC §6.15).</summary>
 public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
@@ -294,7 +314,9 @@ public sealed record WeeklyDayTemplateRequest(
     TaskCode TaskCode,
     int Points,
     int SortOrder = 0,
-    Guid? MediaId = null);
+    Guid? MediaId = null,
+    Guid? RoutineId = null,
+    Guid? NutritionPlanId = null);
 
 /// <summary>Fila por día de la semana de una plantilla (respuesta).</summary>
 public sealed record WeeklyDayTemplateDto(
@@ -449,4 +471,120 @@ public sealed record XpRuleDto(
         r.Id, r.Code, r.Name, r.Category, r.BaseXp, r.Multiplier,
         r.MaxPerDay, r.MaxPerWeek, r.RequiresValidation, r.Active,
         r.ValidFrom, r.ValidUntil, r.CreatedAt, r.UpdatedAt);
+}
+
+// ===================== T-77: Endpoints del configurador =====================
+
+/// <summary>
+/// Respuesta de <c>GET /program/enrollments/{id}/content</c> (T-77): contenido
+/// de nutrición y ejercicio configurado por semana para la inscripción.
+/// </summary>
+public sealed record ProgramContentResponse(
+    Guid EnrollmentId,
+    Guid PatientId,
+    Guid TemplateId,
+    int TotalWeeks,
+    DateOnly StartLocalDate,
+    IReadOnlyList<ProgramContentWeekDto> Weeks);
+
+/// <summary>
+/// Contenido configurado para una semana del programa (T-77): plan de
+/// alimentación y rutina de ejercicio activos para la ventana de 7 días.
+/// </summary>
+public sealed record ProgramContentWeekDto(
+    int WeekNumber,
+    DateOnly WeekStartDateLocal,
+    DateOnly WeekEndDateLocal,
+    ProgramContentPlanRef? NutritionPlan,
+    ProgramContentRoutineRef? ExerciseRoutine);
+
+/// <summary>Referencia a un plan de alimentación (T-77).</summary>
+public sealed record ProgramContentPlanRef(Guid Id, string Code, string Name);
+
+/// <summary>Referencia a una rutina de ejercicio (T-77).</summary>
+public sealed record ProgramContentRoutineRef(Guid Id, string Code, string Name);
+
+/// <summary>
+/// Payload de <c>PUT /program/enrollments/{id}/content/week/{weekNumber}</c>
+/// (T-77): ambos campos opcionales; null o ausente = desasignar esa dimensión
+/// para la semana.
+/// </summary>
+public sealed record SetWeekContentRequest(
+    Guid? NutritionPlanId = null,
+    Guid? ExerciseRoutineId = null);
+
+// ===================== GET /enrollments/{id}/week/{weekNumber} =====================
+
+/// <summary>
+/// Respuesta de <c>GET /program/enrollments/{id}/week/{weekNumber}</c>:
+/// detalle de una semana con tareas, completaciones y contenido activo.
+/// </summary>
+public sealed record EnrollmentWeekDetailDto(
+    int WeekNumber,
+    DateOnly WeekStartDateLocal,
+    DateOnly WeekEndDateLocal,
+    EnrollmentWeekContentRef? NutritionPlan,
+    EnrollmentWeekContentRef? ExerciseRoutine,
+    IReadOnlyList<EnrollmentWeekDayDto> Days);
+
+/// <summary>Referencia a contenido activo de la semana (plan o rutina).</summary>
+public sealed record EnrollmentWeekContentRef(Guid Id, string Name);
+
+/// <summary>Día detallado dentro de una semana del programa.</summary>
+public sealed record EnrollmentWeekDayDto(
+    DateOnly LocalDate,
+    short Weekday,
+    string DayLabel,
+    bool IsPerfectDay,
+    int TotalPoints,
+    int MaxPoints,
+    int BonusAwarded,
+    IReadOnlyList<EnrollmentWeekTaskDto> Tasks);
+
+/// <summary>Tarea individual de un día (completada o pendiente) con metadatos de contenido resuelto.</summary>
+public sealed record EnrollmentWeekTaskDto(
+    string TaskCode,
+    string TaskLabel,
+    int Points,
+    int ScheduledPoints,
+    string Status,
+    DateTime? CompletedAt,
+    Guid? ContentRefId = null,
+    string? ContentName = null,
+    string? DetailText = null);
+
+/// <summary>
+/// Etiquetas en español neutro de las tareas del programa (SPEC §7.1).
+/// Usado por el endpoint de detalle de semana.
+/// </summary>
+public static class EnrollmentWeekTaskLabels
+{
+    private static readonly IReadOnlyDictionary<string, string> Labels =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["podcast"] = "Podcast",
+            ["vitals"] = "Signos vitales",
+            ["nut"] = "Plan nutricional",
+            ["ejercicio"] = "Ejercicio",
+            ["nutribiotico"] = "Nutribiótico",
+            ["emocional"] = "Evaluación emocional",
+        };
+
+    private static readonly IReadOnlyDictionary<short, string> DayLabels =
+        new Dictionary<short, string>
+        {
+            [1] = "Lunes",
+            [2] = "Martes",
+            [3] = "Miércoles",
+            [4] = "Jueves",
+            [5] = "Viernes",
+            [6] = "Sábado",
+            [7] = "Domingo",
+        };
+
+    public static string TaskLabel(string taskCode)
+        => Labels.TryGetValue(taskCode, out var label) ? label : taskCode;
+
+    public static string DayLabel(short weekday)
+        => DayLabels.TryGetValue(weekday, out var label) ? label : $"Día {weekday}";
 }

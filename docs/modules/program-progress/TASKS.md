@@ -10,13 +10,54 @@
 
 ## 0. Phases & batches at a glance
 
-| Phase | Batches | Exit criteria |
-|-------|---------|---------------|
-| **P0 — Plan** | (this file + SPEC + PLAN) | Reviewer sign-off (Gate G1) |
-| **P1 — MVP** | B1 Foundations · B2 Seeder · B3 Repository · B4 Application · B5 API · B5-S Health & Transformation Score engine · B5-R XP Rules catalog · B5-C Clinical XP · B5-M Streak multiplier (P1.5) · B5-T Streak threshold & essentials (P1.5) · B5-N Granular nutrition XP (P1.5) · B5-NB Nutriobiótico streak (P1.5) · B5-NOT Gamified notifications (P1.5) · B5-WK Weakness detection (P1.5) · B5-IV Interventions & tele XP (P1.5) · B6 Mobile Slice 1+2 · B7 ERP Phase-1 | All P1 acceptance scenarios AC-01..AC-15 pass; P1.5 acceptance scenarios AC-19..AC-22 pass; XP rules acceptance AC-23/AC-24 pass (manual, B5-R); clinical XP acceptance AC-25..AC-27 pass (manual, B5-C); streak multiplier acceptance AC-28..AC-30 pass (manual, B5-M); streak threshold & essentials acceptance AC-31/AC-32 pass (manual, B5-T); granular nutrition acceptance AC-33..AC-36 pass (manual, B5-N); nutribiótico streak acceptance AC-37..AC-39 pass (manual, B5-NB); gamified notifications acceptance AC-40..AC-42 pass (manual, B5-NOT); weakness detection acceptance AC-43..AC-45 pass (manual, B5-WK); intervention acceptance AC-46..AC-49 pass (manual, B5-IV); Gate G2 review before apply |
-| **P2 — Adaptation** | B8 Mobile Slice 3+4 · B9 Adaptation engine · B10 ERP Adaptation queue · B11 Media rotation | AC-16/AC-17 pass; clinician can approve and the next week reflects new content |
-| **P3 — Enhancements** | B12 Streak rescue audit · B13 Bulk enrollment · B14 CSV export · B15 i18n | All P2 acceptance scenarios pass; locale parity in EN/ES |
-| **Gate G3 — Final verification** | B16 Verification & observability | All SPEC §10.2 acceptance scenarios pass; mobile demo continuity proven |
+| Phase | Batches | Status | Exit criteria |
+|-------|---------|--------|---------------|
+| **P0 — Plan** | (this file + SPEC + PLAN) | ✅ **COMPLETED** | Reviewer sign-off (Gate G1) |
+| **P1 — MVP Backend Core** | B1 Foundations · B2 Seeder · B3 Repository · B4 Application · B5 API | ✅ **COMPLETED** | 12 EF Core migrations, 454 unit tests passing |
+| **P1.5 — Gamification & Clinical Engines** | B5-S Scores · B5-R XP Rules · B5-C Clinical XP · B5-M Streak Multipliers · B5-T Streak Essentials · B5-N Nutrition XP · B5-NB Nutriobiótico Streak · B5-NOT Notifications · B5-WK Weaknesses · B5-IV Interventions | ✅ **COMPLETED** | Score engine, multi-streak, XP catalog, weakness rules & notification persistence implemented |
+| **P1.5 / B7 — ERP Admin Frontend** | Templates, Enrollments, Program Content (`/program/content`), `WeekTasksDialog` (hybrid 7-day Read / Tabbed Edit mode) | ✅ **COMPLETED** | `coppaddresd-front` full UI, per-day routine pickers (`routineId`), 1-click day-copy shortcuts |
+| **P2 — Adaptation & AI** | B8 Mobile Slice 3+4 · B9 Adaptation engine · B10 ERP Adaptation queue · B11 Media rotation | ⏳ **PENDING** | AC-16/AC-17 pass; clinician can approve adaptation; LLM weekly assessment narrative |
+| **P3 — Enhancements** | B12 Streak rescue audit · B13 Bulk enrollment · B14 CSV export · B15 i18n | ⏳ **PENDING** | All P2 acceptance scenarios pass; locale parity in EN/ES |
+| **Gate G3 — Final verification** | B16 Verification & observability | ⏳ **PENDING** | All SPEC §10.2 acceptance scenarios pass; mobile demo continuity proven |
+
+---
+
+### Implementation Status Checklist
+
+- [x] **P0: Planning & Specification**
+  - [x] Domain model, PostgreSQL schema isolation (`app.`), API contracts documented in SPEC.md/PLAN.md/TASKS.md.
+- [x] **P1: Backend MVP Core (`coppAddresdBack`)**
+  - [x] **B1: Foundations**: 11 Domain entities & enums created (`ProgramTemplate`, `ProgramEnrollment`, `ProgramWeek`, `TaskCompletion`, etc.).
+  - [x] **B2: Seeder & Auth**: 5 `Program.*` permissions seeded + `default-83w` 83-week template seeder.
+  - [x] **B3: Repository Layer**: `ProgramRepository` implemented with `FOR UPDATE` concurrency, snapshot jsonb, per-day task routine resolution (`RoutineId`, `NutritionPlanId`).
+  - [x] **B4: Application Layer**: MediatR CQRS commands, queries & FluentValidation for task completions, enrollment states, template management.
+  - [x] **B5: API Layer**: `ProgramController` endpoints mapped and secured.
+- [x] **P1.5: Advanced Clinical & Gamification Engines**
+  - [x] **B5-S**: Health & Transformation Score calculation engine (`app.health_scores`, `app.transformation_scores`).
+  - [x] **B5-R**: Dynamic `app.xp_rules` catalog & execution pipeline.
+  - [x] **B5-C**: Clinical improvement XP awarding with clinician validation gate.
+  - [x] **B5-M**: Streak milestone x2 multiplier engine (11/22/50 days).
+  - [x] **B5-T**: Configurable streak threshold & essential task checks (`nut`, `ejercicio`, `nutribiotico`).
+  - [x] **B5-N**: Granular nutrition XP (`app.habit_checks`) + 85% weekly adherence bonus.
+  - [x] **B5-NB**: Dedicated Nutriobiótico streak tracking (`nb_current_streak`) & milestone awards.
+  - [x] **B5-NOT**: Transactional notification logging (`app.notifications`) + FCM push client.
+  - [x] **B5-WK**: Deterministic weakness detection rule engine (`app.weaknesses`).
+  - [x] **B5-IV**: Telemedicine & clinical intervention XP tracking (`app.interventions`).
+- [x] **B7 / ERP Admin Frontend (`coppaddresd-front`)**
+  - [x] Templates page (`/program/templates`) & Template detail editor (`/program/templates/[id]`).
+  - [x] Enrollments page (`/program/enrollments`) with patient enrollment modal.
+  - [x] Program content page (`/program/content`): Weekly nutrition plan & exercise routine assignment table with clean Select labels (`textValue`).
+  - [x] `WeekTasksDialog`: Hybrid 7-day Read Mode (panorama completo de toda la semana) + Tabbed Day Edit Mode con selectores por día (`routineId`), puntos XP, eliminación/adición de tareas y botones de copia rápida (Lun-Vie, toda la semana).
+- [ ] **P2: Adaptation Engine & Mobile Live Sync**
+  - [ ] **B8**: Mobile `antares-paciente` live API integration (Slices 3+4).
+  - [ ] **B9**: Automated recommendation engine triggers.
+  - [ ] **B10**: ERP Adaptation queue UI panel.
+  - [ ] **AI Weekly Assessment**: LLM-driven narrative generation in `ai-service` (SPEC §21.5).
+- [ ] **P3: Enhancements**
+  - [ ] **B12**: Streak rescue audit log UI.
+  - [ ] **B13**: Bulk patient enrollment modal.
+  - [ ] **B14**: CSV export for clinical adherence reports.
+  - [ ] **B15**: i18n EN/ES localization parity.
 
 ---
 
@@ -1487,6 +1528,141 @@
 
 ---
 
+## Batch B17 — Content resolver & configuración de contenido desde ERP (P1.5)
+
+> Cierra el gap de resolución de contenido del SPEC §4.2/§4.3/§6.10 (nutrición y
+> rutina por fecha) y agrega la configuración por semana desde el ERP. Sin
+> migraciones nuevas: lee/escribe tablas existentes de Wellness
+> (`nutrition_plan_assignments`, `routine_assignments`, `nutrition_plan_days`).
+
+### T-74 — Resolver de contenido por fecha (nutrición + rutina)
+
+- **Phase**: P1.5
+- **Depends on**: T-12 (módulo programa estable); tablas de asignación Wellness existentes
+- **Objective**: Implementar el resolver de contenido que, para un `(patientId, localDate)`, devuelve la asignación activa de plan nutricional y de rutina: `status = Active` y `start_date <= local_date <= COALESCE(end_date, 'infinity')`; si hay superposición, gana la de `start_date` más reciente (SPEC §6.10). Incluye la verificación de día (SPEC §4.2): si el plan no tiene día para ese weekday, el resultado lo indica (`HasDayForWeekday = false`).
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Interfaces/IProgramContentResolver.cs` (nuevo)
+  - `src/CoppAddresd.Application/Services/ProgramProgress/ProgramContentResolver.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/DependencyInjection.cs` (registro)
+- **Implementation notes**: El resolver puede inyectar `AppDbContext` (lectura) o `IWellnessRepository` (que ya expone `ListPlanAssignmentsByPatientAsync`/`ListAssignmentsByPatientAsync`); evaluar traer todas las asignaciones del paciente y filtrar en memoria vs query por ventana. Sin escrituras. Respetar el skill `query-performance` (evitar N+1).
+- **Acceptance criteria**: Para Brian con asignación xyz (semana 1) y abc (semana 3), el resolver devuelve xyz para fechas de semana 1 y abc para fechas de semana 3; null si no hay asignación; la de `start_date` más reciente gana en solapamiento.
+- **Verification**: `dotnet build` (0 errores; OutputPath temporal si procesos dev bloquean bins).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-75 — Snapshot: contenido de nutrición y rutina en `todayTasks[].content`
+
+- **Phase**: P1.5
+- **Depends on**: T-74
+- **Objective**: Extender `TodayTaskContentDto` (o el contenido del snapshot) para que las tareas `nut`/`ejercicio` expongan el plan/rutina resueltos (nombre del plan, `nutritionPlanDayNumber` disponible) cuando hay asignación activa; null + flag `contentUnavailable` cuando no (AC-13). El contenido de `podcast` (MediaItem) no cambia.
+- **Affected paths**:
+  - `src/CoppAddresd.Application/DTOs/ProgramProgress/ProgramProgressDtos.cs`
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`GetSnapshotAsync`)
+- **Implementation notes**: Mantener el shape del contrato móvil (§7.1): `content` puede ser null o el objeto resuelto; no romper `TodayTaskContentDto` existente (agregar campos, no renombrar).
+- **Acceptance criteria**: Snapshot de Brian en semana 1 muestra el plan xyz en la tarea `nut`; sin asignación → `content: null` y `contentUnavailable: true`.
+- **Verification**: `dotnet build` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-76 — Completación: resolver y persistir content FKs + verificación §4.2
+
+- **Phase**: P1.5
+- **Depends on**: T-74
+- **Objective**: En el flujo de completación, resolver `nutrition_plan_id`, `nutrition_plan_day_number` y `exercise_routine_id` ANTES de persistir `TaskCompletion`; si el plan no tiene día para el weekday, los FKs quedan null y la XP se otorga igual (AC-13); sin rutina asignada → `exercise_routine_id = null` (SPEC §4.3).
+- **Affected paths**:
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`CompleteTaskAsync` / `CompleteTaskCoreAsync`)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/CompleteTask/CompleteTaskCommandHandler.cs` (si el resolver se inyecta en el handler) o el wiring de `CompleteTaskInput`
+- **Implementation notes**: El resolver corre dentro de la transacción FOR UPDATE existente (lectura consistente con el lock del enrollment). El `content_fingerprint` (si el cliente lo envía) debe computarse contra el contenido resuelto (SPEC §6.2).
+- **Acceptance criteria**: AC-13 reproducible: `nut` con plan sin día → fila con `nutrition_plan_id = NULL`; XP otorgada (default MVP); `ejercicio` sin rutina → `exercise_routine_id = NULL`.
+- **Verification**: `dotnet build` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-77 — Endpoints del configurador: `GET/PUT /program/enrollments/{id}/content`
+
+- **Phase**: P1.5
+- **Depends on**: T-74
+- **Objective**: Endpoints para que el ERP configure el contenido por semana sin hacer matemática de fechas:
+  - `GET /api/v1/program/enrollments/{id}/content` → timeline `semana × plan × rutina` (ventanas computadas desde `start_local_date`; cada semana muestra la asignación vigente o null).
+  - `PUT /api/v1/program/enrollments/{id}/content/week/{weekNumber}` → upsert de las asignaciones Wellness subyacentes para la ventana de esa semana (crea/actualiza `nutrition_plan_assignments`/`routine_assignments` con `status = Active`; `null` en plan/rutina desasigna la semana).
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Queries/GetProgramContent/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/SetWeekContent/` (nuevo)
+  - `src/CoppAddresd.Application/DTOs/ProgramProgress/ProgramProgressDtos.cs`
+  - `src/CoppAddresd.Api/Controllers/ProgramController.cs`
+- **Implementation notes**: Permisos: `Program.View` (GET) / `Program.Edit` (PUT). Anti-IDOR: el clínico solo sobre pacientes asignados (`app.patient_professionals`, mismo patrón que enrollments); 404 en lectura cruzada. `created_by` = actor del JWT (auditoría existente de Wellness). Sin migración: las tablas ya existen.
+- **Acceptance criteria**: GET devuelve la semana N con su ventana correcta y el plan/rutina vigentes; PUT de la semana 1 con plan xyz crea la asignación con `start_date` = lunes de semana 1 y `end_date` = domingo de semana 1; re-PUT reemplaza sin duplicar.
+- **Verification**: `dotnet build` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-78 — SPEC §7.8 + AC + README delta
+
+- **Phase**: P1.5
+- **Depends on**: T-77
+- **Objective**: Agregar el contrato del configurador a `SPEC.md` (sección nueva §7.8 con los 2 endpoints + AC nuevos) y actualizar `README.md` (flujo "Configuración de contenido desde el ERP": semana × plan × rutina sobre asignaciones Wellness).
+- **Affected paths**:
+  - `coppAddresdBack/docs/modules/program-progress/SPEC.md`
+  - `coppAddresdBack/docs/modules/program-progress/README.md`
+- **Acceptance criteria**: SPEC/TASKS/README consistentes; el contrato §7.8 documenta permisos, anti-IDOR y la regla de desasignación.
+- **Verification**: revisión manual (docs).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-79 — ERP: botón "Inscribir" en Inscripciones del programa
+
+- **Phase**: P1.5 (ERP)
+- **Depends on**: —
+- **Objective**: Cerrar el gap de la pantalla de inscripciones: dialog de inscripción con picker de paciente, plantilla, timezone y fecha de inicio (opcional), que llama `enroll()` del hook existente (`POST /program/enrollments`, permiso `Program.Enroll`).
+- **Affected paths**:
+  - `coppaddresd-front/features/program/components/program-enrollments-page.tsx`
+  - `coppaddresd-front/features/program/components/program-enroll-dialog.tsx` (nuevo, si no existe)
+- **Implementation notes**: Reutilizar `enrollPatient`/`EnrollPatientInput` ya existentes; picker de paciente y plantilla como en otros módulos (pacientes, templates). `timezone` default `America/Bogota`.
+- **Acceptance criteria**: Un clínico con `Program.Enroll` inscribe a Brian; la lista refresca con la nueva inscripción; sin permiso, el botón no aparece.
+- **Verification**: `yarn build` + `yarn lint` + `tsc --noEmit` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-80 — ERP: pantalla "Contenido del programa" (timeline semana × plan × rutina)
+
+- **Phase**: P1.5 (ERP)
+- **Depends on**: T-79, T-77 (backend)
+- **Objective**: Nueva página en `features/program` que, para un paciente inscrito, renderiza el timeline de semanas (1..N) con el plan de nutrición y la rutina asignados por semana (GET content), permite asignar/cambiar/desasignar con pickers de Wellness (`fetchNutritionPlansForPicker`, `fetchRoutinesForPicker`) y guarda por semana (PUT content/week/n). Badges: asignado / sin asignar. Item de navegación "Programa".
+- **Affected paths**:
+  - `coppaddresd-front/features/program/types/index.ts` (tipos del content)
+  - `coppaddresd-front/features/program/services/program-content-service.ts` (nuevo)
+  - `coppaddresd-front/features/program/hooks/use-program-content.ts` (nuevo)
+  - `coppaddresd-front/features/program/components/program-content-page.tsx` (nuevo)
+  - `coppaddresd-front/app/(dashboard)/program/content/page.tsx` (nuevo) + nav
+- **Implementation notes**: No romper los 14 cambios previos del ERP; seguir el patrón de las páginas `features/program` existentes (SectionHeader, Table, skeletons, empty states, locale es-CO). La semana N del timeline = ventana `[start_local_date + 7*(N-1), +6]` que devuelve el backend (el ERP no calcula fechas).
+- **Acceptance criteria**: Para Brian: semana 1 = plan xyz + rutina jkl; semana 3 = plan abc; se guarda, recarga y persiste; semana sin asignar muestra "Sin asignar" y no rompe.
+- **Verification**: `yarn build` + `yarn lint` + `tsc --noEmit` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+## Batch B18 — Follow-ups del configurador de contenido (P1.5, aplazados)
+
+> Pendientes detectados en la implementación de B17. El usuario decidió aplazarlos
+> (probando el flujo primero). No bloquean el uso manual.
+
+### T-81 — Scoping de clínico (patient_professionals) en endpoints del módulo
+
+- **Phase**: P1.5 (follow-up)
+- **Depends on**: B17
+- **Objective**: Aplicar el scoping de SPEC §6.14 ("clínicos solo sobre pacientes asignados vía `app.patient_professionals`") a los endpoints de clínico del módulo: `GET/PUT /program/enrollments/{id}/content` y los existentes de enrollments (list/pause/resume/withdraw). Sin scoping, un clínico con `Program.View`/`Program.Edit` a nivel org/clinic puede leer/modificar cualquier inscripción por UUID.
+- **Acceptance criteria**: Clínico sin asignación al paciente → `404`; con asignación → 200. Anti-IDOR entre clínicos.
+
+### T-82 — Transacción en SetWeekContent (atomicidad)
+
+- **Phase**: P1.5 (follow-up)
+- **Depends on**: T-77
+- **Objective**: Envolver el trim de asignaciones superpuestas + upsert en `CreateExecutionStrategy().ExecuteAsync(...)` (convención SPEC §6.13); hoy cada `Update/AddPlanAssignmentAsync` persiste por separado y un PUT concurrente a la misma semana podría duplicar.
+- **Acceptance criteria**: Dos PUTs concurrentes a la misma semana terminan con una única asignación activa.
+
+### T-83 — Optimizar GET content (una sola carga de asignaciones)
+
+- **Phase**: P1.5 (follow-up)
+- **Depends on**: T-77
+- **Objective**: `GetProgramContentHandler` llama al resolver 83 veces (una por semana, recargando asignaciones del paciente). Optimizar a carga única de asignaciones + slice por ventana por semana (o un `ResolveRangeAsync`).
+- **Acceptance criteria**: GET content ≤ N queries (independiente de totalWeeks).
+
+> Nota de producto (B17): `NutritionPlan`/`ExerciseRoutine` no tienen columna `Code`; el DTO de contenido usa `Name` para `code` y `name`. Si se requieren códigos reales, agregar columna `code` (migración futura). Las asignaciones superpuestas se marcan `Completed` + recorte de `end_date` (no existe `Superseded` en el enum de Wellness).
+
+---
+
 ## Gate G3 — Final verification
 
 | Gate | Owner | Trigger | Exit |
@@ -1545,6 +1721,7 @@ T-04 (Auth perms) ─▶ T-05 (seeder) ─────────────�
 
 P3: T-28, T-29, T-30, T-31 (after P1+G2 stable)
 G3: T-32, T-33, T-34 (after P1+P2 stable)
+B17 (content config ERP, P1.5): T-74 (resolver) ─▶ T-75 (snapshot content) ─▶ T-76 (completion FKs) ─▶ T-77 (endpoints content) ─▶ T-78 (SPEC/README) · T-79 (ERP enroll) ─▶ T-80 (ERP content page, dep T-77)
 ```
 
 ---
