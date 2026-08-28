@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Features.Patients;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Infrastructure.Cache;
 using NSubstitute;
 
 namespace CoppAddresd.UnitTests.Features.Patients;
@@ -7,7 +8,8 @@ namespace CoppAddresd.UnitTests.Features.Patients;
 /// <summary>
 /// Pruebas del query de estadísticas del directorio: el handler delega al
 /// repositorio con la misma frontera de datos que el listado (clínica activa
-/// + alcance propio) y calcula el inicio del mes actual en UTC.
+/// + alcance propio) y calcula el inicio del mes actual en UTC. Con
+/// NoCacheService (Provider=None) el factory corre en cada llamada.
 /// </summary>
 public class PatientStatsTests
 {
@@ -19,7 +21,7 @@ public class PatientStatsTests
         var clinicId = Guid.NewGuid();
         var professionalId = Guid.NewGuid();
 
-        var handler = new GetPatientsStatsQueryHandler(_repository);
+        var handler = new GetPatientsStatsQueryHandler(_repository, new NoCacheService());
 
         await handler.Handle(
             new GetPatientsStatsQuery(ClinicId: clinicId, OwnProfessionalId: professionalId),
@@ -47,7 +49,7 @@ public class PatientStatsTests
     {
         var clinicId = Guid.NewGuid();
 
-        var handler = new GetPatientsStatsQueryHandler(_repository);
+        var handler = new GetPatientsStatsQueryHandler(_repository, new NoCacheService());
 
         await handler.Handle(new GetPatientsStatsQuery(ClinicId: clinicId), CancellationToken.None);
 
@@ -80,7 +82,7 @@ public class PatientStatsTests
             )
             .Returns(expected);
 
-        var handler = new GetPatientsStatsQueryHandler(_repository);
+        var handler = new GetPatientsStatsQueryHandler(_repository, new NoCacheService());
 
         var result = await handler.Handle(new GetPatientsStatsQuery(), CancellationToken.None);
 

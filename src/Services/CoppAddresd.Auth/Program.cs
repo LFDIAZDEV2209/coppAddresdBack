@@ -56,6 +56,11 @@ builder.Services.AddAuthIdentity();
 builder.Services.AddAuthJwt(builder.Configuration);
 builder.Services.AddAuthCors(builder.Configuration);
 
+// Caché distribuida (Valkey) para catálogos de autorización: provider por
+// Cache:Provider (Valkey|Memory|None), fail-open por operación. Ver
+// docs/modules/cache/README.md.
+builder.Services.AddAuthCache(builder.Configuration);
+
 builder.Services.Configure<AuthSettings>(
     builder.Configuration.GetSection(AuthSettings.SectionName)
 );

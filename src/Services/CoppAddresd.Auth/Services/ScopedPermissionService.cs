@@ -3,23 +3,30 @@ using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
 using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
+using CoppAddresd.Auth.Services.Cache;
 using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Auth.Services;
 
 /// <summary>
 /// Evaluación de permisos por contexto sobre el modelo scoped (ver
-/// <see cref="IScopedPermissionService"/>). Lecturas directas por request:
-/// los resultados los cachea el llamador (ERP) keyed por security stamp, así
-/// que aquí no hay caché.
+/// <see cref="IScopedPermissionService"/>). Solo se cachea lo catalogable y
+/// no por-usuario: el mapeo código→id (inmutable en runtime) y los códigos de
+/// permisos por rol (invalidados en las mutaciones de RolePermissions). Las
+/// consultas por USUARIO (asignaciones, overrides, globales) van siempre a
+/// PostgreSQL: la revocación debe ser inmediata. Los resultados agregados de
+/// introspección además se cachean en los llamadores (ERP/Tele) keyed por
+/// security stamp. Ver docs/modules/cache/README.md.
 /// </summary>
-public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissionService
+public class ScopedPermissionService(AuthDbContext dbContext, ICacheService cache)
+    : IScopedPermissionService
 {
     public async Task<bool> AuthorizeAsync(
         Guid userId,
         string permissionCode,
         IReadOnlyList<ScopeEntry> scopeChain,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         // Transición dual-check simétrico: una petición con un código del rename
         // (nuevo Appointments.* o legado Telemedicine.*) se autoriza si existe un
@@ -52,10 +59,13 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         string primaryCode,
         string twinCode,
         IReadOnlyList<ScopeEntry> scopeChain,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        if (await HasScopedDenyAsync(userId, primaryCode, scopeChain, ct)
-            || await HasScopedDenyAsync(userId, twinCode, scopeChain, ct))
+        if (
+            await HasScopedDenyAsync(userId, primaryCode, scopeChain, ct)
+            || await HasScopedDenyAsync(userId, twinCode, scopeChain, ct)
+        )
         {
             return false;
         }
@@ -68,12 +78,10 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         Guid userId,
         string permissionCode,
         IReadOnlyList<ScopeEntry> scopeChain,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var permissionId = await dbContext.Permissions
-            .Where(p => p.Code == permissionCode)
-            .Select(p => (Guid?)p.Id)
-            .FirstOrDefaultAsync(ct);
+        var permissionId = await GetPermissionIdAsync(permissionCode, ct);
 
         if (permissionId is null)
         {
@@ -89,11 +97,13 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         // 2. Overrides Grant/Deny: el override del scope más específico gana.
         foreach (var scope in scopeChain)
         {
-            var effect = await dbContext.ScopedPermissionAssignments
-                .Where(a => a.UserId == userId
+            var effect = await dbContext
+                .ScopedPermissionAssignments.Where(a =>
+                    a.UserId == userId
                     && a.PermissionId == permissionId.Value
                     && a.ScopeType == scope.ScopeType
-                    && a.ScopeId == scope.ScopeId)
+                    && a.ScopeId == scope.ScopeId
+                )
                 .Select(a => a.Effect)
                 .FirstOrDefaultAsync(ct);
 
@@ -103,13 +113,17 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
             }
         }
 
-        // 3. Roles asignados en el scope o en un ancestro que tengan el permiso.
+        // 3. Roles asignados en el scope o en un ancestro que tengan el permiso
+        //    (códigos por rol cacheados; equivalente al join por PermissionId
+        //    porque el mapeo código↔id es único).
         foreach (var scope in scopeChain)
         {
-            var roleIds = await dbContext.ScopedRoleAssignments
-                .Where(a => a.UserId == userId
+            var roleIds = await dbContext
+                .ScopedRoleAssignments.Where(a =>
+                    a.UserId == userId
                     && a.ScopeType == scope.ScopeType
-                    && a.ScopeId == scope.ScopeId)
+                    && a.ScopeId == scope.ScopeId
+                )
                 .Select(a => a.RoleId)
                 .ToListAsync(ct);
 
@@ -118,12 +132,13 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
                 continue;
             }
 
-            var hasViaRole = await dbContext.RolePermissions
-                .AnyAsync(rp => roleIds.Contains(rp.RoleId) && rp.PermissionId == permissionId.Value, ct);
-
-            if (hasViaRole)
+            foreach (var roleId in roleIds)
             {
-                return true;
+                var codes = await GetRolePermissionCodesAsync(roleId, ct);
+                if (codes.Contains(permissionCode))
+                {
+                    return true;
+                }
             }
         }
 
@@ -140,12 +155,10 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         Guid userId,
         string permissionCode,
         IReadOnlyList<ScopeEntry> scopeChain,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var permissionId = await dbContext.Permissions
-            .Where(p => p.Code == permissionCode)
-            .Select(p => (Guid?)p.Id)
-            .FirstOrDefaultAsync(ct);
+        var permissionId = await GetPermissionIdAsync(permissionCode, ct);
 
         if (permissionId is null)
         {
@@ -154,11 +167,13 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
 
         foreach (var scope in scopeChain)
         {
-            var effect = await dbContext.ScopedPermissionAssignments
-                .Where(a => a.UserId == userId
+            var effect = await dbContext
+                .ScopedPermissionAssignments.Where(a =>
+                    a.UserId == userId
                     && a.PermissionId == permissionId.Value
                     && a.ScopeType == scope.ScopeType
-                    && a.ScopeId == scope.ScopeId)
+                    && a.ScopeId == scope.ScopeId
+                )
                 .Select(a => a.Effect)
                 .FirstOrDefaultAsync(ct);
 
@@ -174,35 +189,38 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
     public async Task<IReadOnlyList<string>> GetEffectivePermissionsAsync(
         Guid userId,
         IReadOnlyList<ScopeEntry> scopeChain,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         // Permisos globales: directos + vía roles.
         var allowed = new HashSet<string>(
-            await dbContext.UserPermissions
-                .Where(up => up.UserId == userId)
+            await dbContext
+                .UserPermissions.Where(up => up.UserId == userId)
                 .Select(up => up.Permission.Code)
-                .ToListAsync(ct));
+                .ToListAsync(ct)
+        );
 
-        var globalViaRoles = await dbContext.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .Join(dbContext.RolePermissions,
+        var globalViaRoles = await dbContext
+            .UserRoles.Where(ur => ur.UserId == userId)
+            .Join(
+                dbContext.RolePermissions,
                 ur => ur.RoleId,
                 rp => rp.RoleId,
-                (ur, rp) => rp.PermissionId)
-            .Join(dbContext.Permissions,
-                pid => pid,
-                p => p.Id,
-                (_, p) => p.Code)
+                (ur, rp) => rp.PermissionId
+            )
+            .Join(dbContext.Permissions, pid => pid, p => p.Id, (_, p) => p.Code)
             .ToListAsync(ct);
         allowed.UnionWith(globalViaRoles);
 
         // Roles scoped en cada nivel de la cadena.
         foreach (var scope in scopeChain)
         {
-            var roleIds = await dbContext.ScopedRoleAssignments
-                .Where(a => a.UserId == userId
+            var roleIds = await dbContext
+                .ScopedRoleAssignments.Where(a =>
+                    a.UserId == userId
                     && a.ScopeType == scope.ScopeType
-                    && a.ScopeId == scope.ScopeId)
+                    && a.ScopeId == scope.ScopeId
+                )
                 .Select(a => a.RoleId)
                 .ToListAsync(ct);
 
@@ -211,11 +229,10 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
                 continue;
             }
 
-            var codes = await dbContext.RolePermissions
-                .Where(rp => roleIds.Contains(rp.RoleId))
-                .Select(rp => rp.Permission.Code)
-                .ToListAsync(ct);
-            allowed.UnionWith(codes);
+            foreach (var roleId in roleIds)
+            {
+                allowed.UnionWith(await GetRolePermissionCodesAsync(roleId, ct));
+            }
         }
 
         // Overrides: el del scope más específico gana por permiso.
@@ -223,10 +240,12 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         for (var i = 0; i < scopeChain.Count; i++)
         {
             var scope = scopeChain[i];
-            var rows = await dbContext.ScopedPermissionAssignments
-                .Where(a => a.UserId == userId
+            var rows = await dbContext
+                .ScopedPermissionAssignments.Where(a =>
+                    a.UserId == userId
                     && a.ScopeType == scope.ScopeType
-                    && a.ScopeId == scope.ScopeId)
+                    && a.ScopeId == scope.ScopeId
+                )
                 .Select(a => new { a.Permission.Code, a.Effect })
                 .ToListAsync(ct);
 
@@ -256,23 +275,91 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
     /// Permiso global (directo o vía rol sin scope). Es la fuente de los
     /// claims JWT: si existe aquí, el token lo lleva y aplica en todo contexto.
     /// </summary>
-    private async Task<bool> HasGlobalPermissionAsync(Guid userId, Guid permissionId, CancellationToken ct)
+    private async Task<bool> HasGlobalPermissionAsync(
+        Guid userId,
+        Guid permissionId,
+        CancellationToken ct
+    )
     {
-        var hasDirect = await dbContext.UserPermissions
-            .AnyAsync(up => up.UserId == userId && up.PermissionId == permissionId, ct);
+        var hasDirect = await dbContext.UserPermissions.AnyAsync(
+            up => up.UserId == userId && up.PermissionId == permissionId,
+            ct
+        );
 
         if (hasDirect)
         {
             return true;
         }
 
-        return await dbContext.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .Join(dbContext.RolePermissions,
+        return await dbContext
+            .UserRoles.Where(ur => ur.UserId == userId)
+            .Join(
+                dbContext.RolePermissions,
                 ur => ur.RoleId,
                 rp => rp.RoleId,
-                (ur, rp) => rp.PermissionId)
+                (ur, rp) => rp.PermissionId
+            )
             .AnyAsync(id => id == permissionId, ct);
+    }
+
+    /// <summary>
+    /// Mapeo código→id cacheado (auth:permits:code:{código}:v1, TTL 24h): el
+    /// catálogo de permisos es inmutable en runtime (solo seeders), así que la
+    /// clave no requiere invalidación activa. Fail-open: con el caché caído
+    /// consulta PostgreSQL igual que antes.
+    /// </summary>
+    private async Task<Guid?> GetPermissionIdAsync(string permissionCode, CancellationToken ct)
+    {
+        var cached = await cache.GetAsync<string>(AuthCacheKeys.PermissionId(permissionCode), ct);
+        if (cached is not null && Guid.TryParse(cached, out var parsed))
+        {
+            return parsed;
+        }
+
+        var permissionId = await dbContext
+            .Permissions.Where(p => p.Code == permissionCode)
+            .Select(p => (Guid?)p.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (permissionId is { } id)
+        {
+            await cache.SetAsync(
+                AuthCacheKeys.PermissionId(permissionCode),
+                id.ToString(),
+                AuthCacheKeys.PermissionIdTtl,
+                ct
+            );
+        }
+
+        return permissionId;
+    }
+
+    /// <summary>
+    /// Códigos de permisos de un rol, cacheados (auth:roles:{roleId}:codes:v1,
+    /// TTL 15 min alineado con la vida del access token + invalidación activa
+    /// en AssignToRole/RemoveFromRole del PermissionService).
+    /// </summary>
+    private async Task<IReadOnlyList<string>> GetRolePermissionCodesAsync(
+        Guid roleId,
+        CancellationToken ct
+    )
+    {
+        return await cache.GetOrCreateAsync(
+            AuthCacheKeys.RoleCodes(roleId),
+            AuthCacheKeys.RoleCodesTtl,
+            async token =>
+                (IReadOnlyList<string>)
+                    await dbContext
+                        .RolePermissions.Where(rp => rp.RoleId == roleId)
+                        .Join(
+                            dbContext.Permissions,
+                            rp => rp.PermissionId,
+                            p => p.Id,
+                            (rp, p) => p.Code
+                        )
+                        .ToListAsync(token),
+            ct
+        );
     }
 
     public async Task<(bool Success, string? Error)> AssignRoleAsync(
@@ -281,7 +368,8 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         string scopeType,
         Guid? scopeId,
         Guid? grantedBy,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (!await dbContext.Users.AnyAsync(u => u.Id == userId, ct))
             return (false, "Usuario no encontrado");
@@ -292,25 +380,30 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         if (!ValidateScope(scopeType))
             return (false, $"Scope inválido: '{scopeType}'");
 
-        var already = await dbContext.ScopedRoleAssignments
-            .AnyAsync(a => a.UserId == userId
+        var already = await dbContext.ScopedRoleAssignments.AnyAsync(
+            a =>
+                a.UserId == userId
                 && a.RoleId == roleId
                 && a.ScopeType == scopeType
-                && a.ScopeId == scopeId, ct);
+                && a.ScopeId == scopeId,
+            ct
+        );
 
         if (already)
             return (false, "El usuario ya tiene este rol en el scope indicado");
 
-        dbContext.ScopedRoleAssignments.Add(new Entities.ScopedRoleAssignment
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            RoleId = roleId,
-            ScopeType = scopeType,
-            ScopeId = scopeId,
-            GrantedBy = grantedBy,
-            CreatedAt = DateTime.UtcNow,
-        });
+        dbContext.ScopedRoleAssignments.Add(
+            new Entities.ScopedRoleAssignment
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                RoleId = roleId,
+                ScopeType = scopeType,
+                ScopeId = scopeId,
+                GrantedBy = grantedBy,
+                CreatedAt = DateTime.UtcNow,
+            }
+        );
         await dbContext.SaveChangesAsync(ct);
 
         return (true, null);
@@ -321,13 +414,16 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         Guid roleId,
         string scopeType,
         Guid? scopeId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var deleted = await dbContext.ScopedRoleAssignments
-            .Where(a => a.UserId == userId
+        var deleted = await dbContext
+            .ScopedRoleAssignments.Where(a =>
+                a.UserId == userId
                 && a.RoleId == roleId
                 && a.ScopeType == scopeType
-                && a.ScopeId == scopeId)
+                && a.ScopeId == scopeId
+            )
             .ExecuteDeleteAsync(ct);
 
         return deleted > 0
@@ -342,7 +438,8 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         Guid? scopeId,
         string effect,
         Guid? grantedBy,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (!await dbContext.Users.AnyAsync(u => u.Id == userId, ct))
             return (false, "Usuario no encontrado");
@@ -353,30 +450,37 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         if (!ValidateScope(scopeType))
             return (false, $"Scope inválido: '{scopeType}'");
 
-        if (!effect.Equals("Grant", StringComparison.OrdinalIgnoreCase)
-            && !effect.Equals("Deny", StringComparison.OrdinalIgnoreCase))
+        if (
+            !effect.Equals("Grant", StringComparison.OrdinalIgnoreCase)
+            && !effect.Equals("Deny", StringComparison.OrdinalIgnoreCase)
+        )
             return (false, $"Efecto inválido: '{effect}'. Use Grant o Deny.");
 
-        var already = await dbContext.ScopedPermissionAssignments
-            .AnyAsync(a => a.UserId == userId
+        var already = await dbContext.ScopedPermissionAssignments.AnyAsync(
+            a =>
+                a.UserId == userId
                 && a.PermissionId == permissionId
                 && a.ScopeType == scopeType
-                && a.ScopeId == scopeId, ct);
+                && a.ScopeId == scopeId,
+            ct
+        );
 
         if (already)
             return (false, "El usuario ya tiene este override en el scope indicado");
 
-        dbContext.ScopedPermissionAssignments.Add(new Entities.ScopedPermissionAssignment
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            PermissionId = permissionId,
-            ScopeType = scopeType,
-            ScopeId = scopeId,
-            Effect = effect,
-            GrantedBy = grantedBy,
-            CreatedAt = DateTime.UtcNow,
-        });
+        dbContext.ScopedPermissionAssignments.Add(
+            new Entities.ScopedPermissionAssignment
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                PermissionId = permissionId,
+                ScopeType = scopeType,
+                ScopeId = scopeId,
+                Effect = effect,
+                GrantedBy = grantedBy,
+                CreatedAt = DateTime.UtcNow,
+            }
+        );
         await dbContext.SaveChangesAsync(ct);
 
         return (true, null);
@@ -387,13 +491,16 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         Guid permissionId,
         string scopeType,
         Guid? scopeId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var deleted = await dbContext.ScopedPermissionAssignments
-            .Where(a => a.UserId == userId
+        var deleted = await dbContext
+            .ScopedPermissionAssignments.Where(a =>
+                a.UserId == userId
                 && a.PermissionId == permissionId
                 && a.ScopeType == scopeType
-                && a.ScopeId == scopeId)
+                && a.ScopeId == scopeId
+            )
             .ExecuteDeleteAsync(ct);
 
         return deleted > 0
@@ -401,22 +508,27 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
             : (false, "El usuario no tiene este override en el scope indicado");
     }
 
-    private static bool ValidateScope(string scopeType)
-        => ScopeTypes.IsValid(scopeType);
+    private static bool ValidateScope(string scopeType) => ScopeTypes.IsValid(scopeType);
 
     public async Task<ScopedAssignmentsSnapshot> GetAssignmentsAsync(
         Guid userId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var roles = await dbContext.ScopedRoleAssignments
-            .Where(a => a.UserId == userId)
+        var roles = await dbContext
+            .ScopedRoleAssignments.Where(a => a.UserId == userId)
             .Select(a => new ScopedRoleView(a.RoleId, a.Role.Name, a.ScopeType, a.ScopeId))
             .ToListAsync(ct);
 
-        var permissions = await dbContext.ScopedPermissionAssignments
-            .Where(a => a.UserId == userId)
+        var permissions = await dbContext
+            .ScopedPermissionAssignments.Where(a => a.UserId == userId)
             .Select(a => new ScopedPermissionView(
-                a.PermissionId, a.Permission.Code, a.ScopeType, a.ScopeId, a.Effect))
+                a.PermissionId,
+                a.Permission.Code,
+                a.ScopeType,
+                a.ScopeId,
+                a.Effect
+            ))
             .ToListAsync(ct);
 
         return new ScopedAssignmentsSnapshot(roles, permissions);
@@ -427,7 +539,8 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
         IReadOnlyList<ScopedRoleInput> roles,
         IReadOnlyList<ScopedPermissionInput> permissions,
         Guid? grantedBy,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (!await dbContext.Users.AnyAsync(u => u.Id == userId, ct))
             return (false, "Usuario no encontrado");
@@ -447,22 +560,23 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
                 return (false, $"Permiso no encontrado: {permission.PermissionId}");
             if (!ValidateScope(permission.ScopeType))
                 return (false, $"Scope inválido: '{permission.ScopeType}'");
-            if (!permission.Effect.Equals("Grant", StringComparison.OrdinalIgnoreCase)
-                && !permission.Effect.Equals("Deny", StringComparison.OrdinalIgnoreCase))
+            if (
+                !permission.Effect.Equals("Grant", StringComparison.OrdinalIgnoreCase)
+                && !permission.Effect.Equals("Deny", StringComparison.OrdinalIgnoreCase)
+            )
                 return (false, $"Efecto inválido: '{permission.Effect}'. Use Grant o Deny.");
         }
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
 
-        var wantedRoles = roles
-            .Select(r => (r.RoleId, r.ScopeType, r.ScopeId))
-            .ToHashSet();
-        var currentRoles = await dbContext.ScopedRoleAssignments
-            .Where(a => a.UserId == userId)
+        var wantedRoles = roles.Select(r => (r.RoleId, r.ScopeType, r.ScopeId)).ToHashSet();
+        var currentRoles = await dbContext
+            .ScopedRoleAssignments.Where(a => a.UserId == userId)
             .ToListAsync(ct);
 
         dbContext.ScopedRoleAssignments.RemoveRange(
-            currentRoles.Where(a => !wantedRoles.Contains((a.RoleId, a.ScopeType, a.ScopeId))));
+            currentRoles.Where(a => !wantedRoles.Contains((a.RoleId, a.ScopeType, a.ScopeId)))
+        );
 
         var existingRoleKeys = currentRoles
             .Select(a => (a.RoleId, a.ScopeType, a.ScopeId))
@@ -472,47 +586,58 @@ public class ScopedPermissionService(AuthDbContext dbContext) : IScopedPermissio
             if (existingRoleKeys.Contains((role.RoleId, role.ScopeType, role.ScopeId)))
                 continue;
 
-            dbContext.ScopedRoleAssignments.Add(new Entities.ScopedRoleAssignment
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                RoleId = role.RoleId,
-                ScopeType = role.ScopeType,
-                ScopeId = role.ScopeId,
-                GrantedBy = grantedBy,
-                CreatedAt = DateTime.UtcNow,
-            });
+            dbContext.ScopedRoleAssignments.Add(
+                new Entities.ScopedRoleAssignment
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    RoleId = role.RoleId,
+                    ScopeType = role.ScopeType,
+                    ScopeId = role.ScopeId,
+                    GrantedBy = grantedBy,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
 
         var wantedPermissions = permissions
             .Select(p => (p.PermissionId, p.ScopeType, p.ScopeId))
             .ToHashSet();
-        var currentPermissions = await dbContext.ScopedPermissionAssignments
-            .Where(a => a.UserId == userId)
+        var currentPermissions = await dbContext
+            .ScopedPermissionAssignments.Where(a => a.UserId == userId)
             .ToListAsync(ct);
 
         dbContext.ScopedPermissionAssignments.RemoveRange(
-            currentPermissions.Where(a => !wantedPermissions.Contains((a.PermissionId, a.ScopeType, a.ScopeId))));
+            currentPermissions.Where(a =>
+                !wantedPermissions.Contains((a.PermissionId, a.ScopeType, a.ScopeId))
+            )
+        );
 
         var existingPermissionKeys = currentPermissions
             .Select(a => (a.PermissionId, a.ScopeType, a.ScopeId))
             .ToHashSet();
         foreach (var permission in permissions)
         {
-            if (existingPermissionKeys.Contains((permission.PermissionId, permission.ScopeType, permission.ScopeId)))
+            if (
+                existingPermissionKeys.Contains(
+                    (permission.PermissionId, permission.ScopeType, permission.ScopeId)
+                )
+            )
                 continue;
 
-            dbContext.ScopedPermissionAssignments.Add(new Entities.ScopedPermissionAssignment
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                PermissionId = permission.PermissionId,
-                ScopeType = permission.ScopeType,
-                ScopeId = permission.ScopeId,
-                Effect = permission.Effect,
-                GrantedBy = grantedBy,
-                CreatedAt = DateTime.UtcNow,
-            });
+            dbContext.ScopedPermissionAssignments.Add(
+                new Entities.ScopedPermissionAssignment
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    PermissionId = permission.PermissionId,
+                    ScopeType = permission.ScopeType,
+                    ScopeId = permission.ScopeId,
+                    Effect = permission.Effect,
+                    GrantedBy = grantedBy,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
 
         await dbContext.SaveChangesAsync(ct);
