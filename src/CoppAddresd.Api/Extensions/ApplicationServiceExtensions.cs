@@ -6,6 +6,7 @@ using CoppAddresd.Api.Handlers;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Common.Behaviors;
+using CoppAddresd.Application.Features.FoodAi;
 using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Infrastructure.Extensions;
@@ -57,6 +58,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<IImageStorage, LocalImageStorage>();
         services.AddScoped<CoppAddresd.Application.Features.FoodAi.ImageFileValidator>();
         services.AddScoped<INutritionProvider, DatabaseNutritionProvider>();
+        services.AddScoped<INutritionCalculator, NutritionCalculator>();
 
         services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
         {

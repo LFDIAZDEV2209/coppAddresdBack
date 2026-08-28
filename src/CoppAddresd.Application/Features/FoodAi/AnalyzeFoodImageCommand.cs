@@ -5,8 +5,7 @@ namespace CoppAddresd.Application.Features.FoodAi;
 
 /// <summary>
 /// Ingesta de una imagen de comida: validación → almacenamiento → detección
-/// en el Food AI Service. Respuesta con alimentos detectados (clase +
-/// confidence + bounding box en píxeles).
+/// en el Food AI Service → nutrición (por alimento + totales).
 /// </summary>
 public record AnalyzeFoodImageCommand(
     Stream ImageStream,
@@ -22,4 +21,6 @@ public record AnalyzeFoodImageResult(
     string SegModelVersion,
     string ClassifierVersion,
     int InferenceTimeMs,
-    IReadOnlyList<DetectedFoodDto> Foods);
+    IReadOnlyList<DetectedFoodDto> Foods,
+    NutritionValueDto? Summary = null,
+    NutritionRangeDto? SummaryRange = null);
