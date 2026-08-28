@@ -1,6 +1,9 @@
+using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Community.Entities;
 using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.Persistence;
+using CoppAddresd.Community.Security;
+using CoppAddresd.Community.Storage;
 using HotChocolate;
 using HotChocolate.Authorization;
 using HotChocolate.Subscriptions;
@@ -16,18 +19,72 @@ public sealed class CommunityMutation
 
     public async Task<Profile> UpdateProfile(
         string displayName,
-        string? bio,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
+        string? bio,
+        string? avatarKey,
+        string? coverKey,
         CancellationToken ct)
     {
         var profile = await RequireProfileAsync(db, http, ct);
 
+        if (!string.IsNullOrWhiteSpace(avatarKey) && !PostStorageEndpoints.IsAvatarKey(avatarKey))
+            throw new GraphQLException("La foto de perfil no es válida.");
+        if (!string.IsNullOrWhiteSpace(coverKey) && !PostStorageEndpoints.IsCoverKey(coverKey))
+            throw new GraphQLException("La portada no es válida.");
+
         profile.DisplayName = displayName;
         profile.Bio = bio;
+        profile.AvatarKey = string.IsNullOrWhiteSpace(avatarKey) ? null : avatarKey;
+        profile.CoverKey = string.IsNullOrWhiteSpace(coverKey) ? null : coverKey;
         profile.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return profile;
+    }
+
+    /// <summary>
+    /// Crea la información de subida de la foto de perfil o de portada:
+    /// clave, URL de subida y URL de lectura firmada (S3 presigned o proxy local).
+    /// </summary>
+    public async Task<PostImageUploadInfo> CreateProfileImageUploadInfo(
+        string kind,
+        string fileName,
+        string contentType,
+        [Service] IObjectStorageService storage,
+        [Service] IConfiguration config,
+        [Service] StorageSignatureService signer,
+        CancellationToken ct)
+    {
+        var isCover = kind?.Equals("COVER", StringComparison.OrdinalIgnoreCase) == true;
+        var prefix = isCover ? PostStorageEndpoints.CoverPrefix : PostStorageEndpoints.AvatarPrefix;
+
+        var normalizedContentType = contentType.Split(';')[0].Trim().ToLowerInvariant();
+        if (!PostStorageEndpoints.IsAllowedImageContentType(normalizedContentType)
+            || normalizedContentType.StartsWith("video/"))
+            throw new GraphQLException("La foto de perfil/portada debe ser una imagen (JPG, PNG, WEBP, GIF, HEIC).");
+
+        var extension = System.IO.Path.GetExtension(fileName).ToLowerInvariant();
+        if (!PostStorageEndpoints.IsAllowedImageExtension(extension)
+            || extension is ".mp4" or ".webm")
+            throw new GraphQLException("Formato no permitido para la foto.");
+
+        var key = $"{prefix}{Guid.NewGuid():N}{extension}";
+        var publicBase = config["Storage:PublicBaseUrl"] ?? string.Empty;
+
+        if (storage.IsCloudStorage)
+        {
+            var cloudUploadUrl = await storage.GetPreSignedUploadUrlAsync(
+                key, normalizedContentType, TimeSpan.FromMinutes(15), publicBase, ct);
+            var cloudReadUrl = await storage.GetPreSignedUrlAsync(key, TimeSpan.FromHours(1), ct);
+            return new PostImageUploadInfo(key, cloudUploadUrl, cloudReadUrl);
+        }
+
+        var localUploadUrl = $"{publicBase}/storage/{key}";
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var localReadUrl =
+            $"{publicBase}/storage/{key}?sig={signer.Sign(key, expiresAt)}&exp={expiresAt.ToUnixTimeSeconds()}";
+
+        return new PostImageUploadInfo(key, localUploadUrl, localReadUrl);
     }
 
     // --- Publicaciones ---
@@ -37,21 +94,181 @@ public async Task<Post> CreatePost(
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
         [Service] ITopicEventSender sender,
+        string? imageKey,
         CancellationToken ct)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+
+        // La clave de imagen es opcional; si llega, debe ser una clave válida
+        // del prefijo reservado para publicaciones (la subió este servicio).
+        if (!string.IsNullOrWhiteSpace(imageKey) && !PostStorageEndpoints.IsValidPostImageKey(imageKey))
+            throw new GraphQLException("La imagen adjunta no es válida.");
+
         var post = new Post
         {
             Id = Guid.NewGuid(),
             ProfileId = profile.Id,
             Body = body,
+            ImageKey = string.IsNullOrWhiteSpace(imageKey) ? null : imageKey,
             CreatedAt = DateTime.UtcNow,
         };
         db.Posts.Add(post);
         await db.SaveChangesAsync(ct);
         await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
         await sender.SendAsync("post_added", post);
+
         return post;
+    }
+
+    // --- Encuestas (poll posts) ---
+
+    /// <summary>
+    /// Crea una publicación de encuesta: el body del post es la pregunta y las
+    /// opciones se guardan en la tabla de poll_options (2 a 4, únicas y no vacías).
+    /// Publica el evento post_added para que el feed de la comunidad se entere.
+    /// </summary>
+    public async Task<Post> CreatePollPost(
+        string question,
+        List<string> options,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        question = question.Trim();
+        if (question.Length < 3 || question.Length > 300)
+            throw new GraphQLException("La pregunta debe tener entre 3 y 300 caracteres.");
+
+        var normalized = (options ?? [])
+            .Select(o => o.Trim())
+            .Where(o => o.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (normalized.Count is < 2 or > 4)
+            throw new GraphQLException("La encuesta necesita entre 2 y 4 opciones.");
+        if (normalized.Any(o => o.Length > 100))
+            throw new GraphQLException("Cada opción debe tener máximo 100 caracteres.");
+
+        var post = new Post
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            Body = question,
+            CreatedAt = DateTime.UtcNow,
+        };
+        var poll = new Poll
+        {
+            Id = Guid.NewGuid(),
+            PostId = post.Id,
+            CreatedAt = DateTime.UtcNow,
+        };
+        post.Poll = poll;
+        for (var i = 0; i < normalized.Count; i++)
+        {
+            poll.Options.Add(new PollOption
+            {
+                Id = Guid.NewGuid(),
+                PollId = poll.Id,
+                Text = normalized[i],
+                Position = i,
+            });
+        }
+
+        db.Posts.Add(post);
+        await db.SaveChangesAsync(ct);
+        await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
+        await sender.SendAsync("post_added", post);
+
+        return post;
+    }
+
+    /// <summary>
+    /// Registra el voto del perfil actual a una opción (un voto por encuesta).
+    /// Devuelve el post completo (con la encuesta y sus votos) para que el
+    /// cliente pueda pintar los resultados al instante.
+    /// </summary>
+    public async Task<Post> VotePoll(
+        Guid optionId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+        var option = await db.PollOptions
+            .Include(o => o.Poll)
+            .FirstOrDefaultAsync(o => o.Id == optionId, ct)
+            ?? throw new GraphQLException("No se encontró la opción de la encuesta.");
+
+        var alreadyVoted = await db.PollVotes.AnyAsync(v =>
+            v.OptionId == option.Id && v.ProfileId == profile.Id, ct);
+        if (alreadyVoted)
+            throw new GraphQLException("Ya votaste esta encuesta.");
+
+        db.PollVotes.Add(new PollVote
+        {
+            Id = Guid.NewGuid(),
+            OptionId = option.Id,
+            ProfileId = profile.Id,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync(ct);
+
+        var post = await db.Posts
+            .Include(p => p.Profile)
+            .Include(p => p.Likes)
+            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
+            .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .FirstOrDefaultAsync(
+                p => p.Poll!.Options.Any(o => o.Id == optionId) && p.DeletedAt == null, ct)
+            ?? throw new GraphQLException("No se encontró la encuesta.");
+
+        return post;
+    }
+
+    /// <summary>
+    /// Crea la información de subida de la imagen de una publicación:
+    /// clave de almacenamiento, URL de subida y URL de lectura. El cliente hace
+    /// un PUT binario a <c>uploadUrl</c> (con el token si el proveedor es Local;
+    /// con S3 la URL ya es una presigned PUT). Devuelve <see cref="PostImageUploadInfo"/>.
+    /// </summary>
+    public async Task<PostImageUploadInfo> CreatePostImageUploadInfo(
+        string fileName,
+        string contentType,
+        [Service] IObjectStorageService storage,
+        [Service] IConfiguration config,
+        [Service] StorageSignatureService signer,
+        CancellationToken ct)
+    {
+        var normalizedContentType = contentType.Split(';')[0].Trim().ToLowerInvariant();
+        if (!PostStorageEndpoints.IsAllowedImageContentType(normalizedContentType))
+            throw new GraphQLException($"Tipo de adjunto no permitido: '{contentType}'.");
+
+        var extension = System.IO.Path.GetExtension(fileName).ToLowerInvariant();
+        if (!PostStorageEndpoints.IsAllowedImageExtension(extension))
+            throw new GraphQLException("El adjunto debe ser una imagen (JPG, PNG, WEBP, GIF, HEIC) o un video (MP4, WEBM).");
+
+        var key = $"{PostStorageEndpoints.KeyPrefix}{Guid.NewGuid():N}{extension}";
+        var publicBase = config["Storage:PublicBaseUrl"] ?? string.Empty;
+
+        if (storage.IsCloudStorage)
+        {
+            var cloudUploadUrl = await storage.GetPreSignedUploadUrlAsync(
+                key, normalizedContentType, TimeSpan.FromMinutes(15), publicBase, ct);
+            var cloudReadUrl = await storage.GetPreSignedUrlAsync(key, TimeSpan.FromHours(1), ct);
+            return new PostImageUploadInfo(key, cloudUploadUrl, cloudReadUrl);
+        }
+
+        // Proveedor Local: el proxy del propio servicio (con Bearer en la subida
+        // y URL firmada en la lectura, para que el <img> no requiera headers).
+        var localUploadUrl = $"{publicBase}/storage/{key}";
+        var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+        var localReadUrl =
+            $"{publicBase}/storage/{key}?sig={signer.Sign(key, expiresAt)}&exp={expiresAt.ToUnixTimeSeconds()}";
+
+        return new PostImageUploadInfo(key, localUploadUrl, localReadUrl);
     }
 
     public async Task<Post?> DeletePost(

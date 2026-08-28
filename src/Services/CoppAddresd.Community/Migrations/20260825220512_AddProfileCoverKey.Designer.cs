@@ -3,6 +3,7 @@ using System;
 using CoppAddresd.Community.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Community.Migrations
 {
     [DbContext(typeof(CommunityDbContext))]
-    partial class CommunityDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825220512_AddProfileCoverKey")]
+    partial class AddProfileCoverKey
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -254,98 +257,6 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("messages", "community");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Community.Entities.Poll", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<Guid>("PostId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("post_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PostId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_polls_post_id");
-
-                    b.ToTable("polls", "community");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.PollOption", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<Guid>("PollId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("poll_id");
-
-                    b.Property<int>("Position")
-                        .HasColumnType("integer")
-                        .HasColumnName("position");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PollId", "Position")
-                        .IsUnique()
-                        .HasDatabaseName("ux_poll_options_poll_position");
-
-                    b.ToTable("poll_options", "community");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.PollVote", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<Guid>("OptionId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("option_id");
-
-                    b.Property<Guid>("ProfileId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("profile_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProfileId")
-                        .HasDatabaseName("ix_poll_votes_profile_id");
-
-                    b.HasIndex("OptionId", "ProfileId")
-                        .IsUnique()
-                        .HasDatabaseName("ux_poll_votes_option_profile");
-
-                    b.ToTable("poll_votes", "community");
-                });
-
             modelBuilder.Entity("CoppAddresd.Community.Entities.Post", b =>
                 {
                     b.Property<Guid>("Id")
@@ -583,39 +494,6 @@ namespace CoppAddresd.Community.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("CoppAddresd.Community.Entities.Poll", b =>
-                {
-                    b.HasOne("CoppAddresd.Community.Entities.Post", "Post")
-                        .WithOne("Poll")
-                        .HasForeignKey("CoppAddresd.Community.Entities.Poll", "PostId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Post");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.PollOption", b =>
-                {
-                    b.HasOne("CoppAddresd.Community.Entities.Poll", "Poll")
-                        .WithMany("Options")
-                        .HasForeignKey("PollId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Poll");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.PollVote", b =>
-                {
-                    b.HasOne("CoppAddresd.Community.Entities.PollOption", "Option")
-                        .WithMany("Votes")
-                        .HasForeignKey("OptionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Option");
-                });
-
             modelBuilder.Entity("CoppAddresd.Community.Entities.Post", b =>
                 {
                     b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
@@ -641,23 +519,11 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Replies");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Community.Entities.Poll", b =>
-                {
-                    b.Navigation("Options");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.PollOption", b =>
-                {
-                    b.Navigation("Votes");
-                });
-
             modelBuilder.Entity("CoppAddresd.Community.Entities.Post", b =>
                 {
                     b.Navigation("Comments");
 
                     b.Navigation("Likes");
-
-                    b.Navigation("Poll");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.Profile", b =>

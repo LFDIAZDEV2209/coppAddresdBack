@@ -91,6 +91,7 @@ var profile = await db.Profiles
         var query = db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
@@ -131,6 +132,7 @@ var profile = await db.Profiles
 => db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .ThenInclude(c => c.Replies)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
@@ -180,6 +182,7 @@ var profile = await db.Profiles
         return await db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)

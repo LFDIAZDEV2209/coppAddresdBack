@@ -22,6 +22,9 @@ public sealed class Profile
     /// <summary>Clave del avatar en el storage (text-only por ahora: NULL).</summary>
     public string? AvatarKey { get; set; }
 
+    /// <summary>Clave de la foto de portada en el storage (NULL si aún no hay portada).</summary>
+    public string? CoverKey { get; set; }
+
     public ProfileStatus Status { get; set; } = ProfileStatus.Active;
 
     public Guid? BannedBy { get; set; }
