@@ -45,6 +45,10 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
         public Task<string> SaveImageAsync(
             Guid analysisId, string fileName, Stream content, CancellationToken ct = default)
             => Task.FromResult($"foodai/{analysisId:N}.png");
+
+        public Task<string> SaveMaskAsync(
+            Guid analysisId, int itemIndex, Stream pngContent, CancellationToken ct = default)
+            => Task.FromResult($"foodai/masks/{analysisId:N}/{itemIndex}.png");
     }
 
     private static readonly byte[] Png1x1 = Convert.FromBase64String(

@@ -27,4 +27,14 @@ public sealed class LocalImageStorage : IImageStorage
         var key = $"foodai/{analysisId:N}{extension}";
         return await _storage.PutObjectAsync(key, content, contentType: null, ct);
     }
+
+    public async Task<string> SaveMaskAsync(
+        Guid analysisId,
+        int itemIndex,
+        Stream pngContent,
+        CancellationToken ct = default)
+    {
+        var key = $"foodai/masks/{analysisId:N}/{itemIndex}.png";
+        return await _storage.PutObjectAsync(key, pngContent, contentType: "image/png", ct);
+    }
 }

@@ -10,6 +10,7 @@ using CoppAddresd.Application.Features.FoodAi;
 using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Infrastructure.Extensions;
+using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -59,6 +60,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<CoppAddresd.Application.Features.FoodAi.ImageFileValidator>();
         services.AddScoped<INutritionProvider, DatabaseNutritionProvider>();
         services.AddScoped<INutritionCalculator, NutritionCalculator>();
+        services.AddScoped<IFoodAnalysisRepository, FoodAnalysisRepository>();
 
         services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
         {
