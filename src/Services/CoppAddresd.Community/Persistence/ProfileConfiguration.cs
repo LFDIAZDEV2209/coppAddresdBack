@@ -1,11 +1,22 @@
 using CoppAddresd.Community.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace CoppAddresd.Community.Persistence;
 
 public sealed class ProfileConfiguration : IEntityTypeConfiguration<Profile>
 {
+    private static readonly ValueConverter<ProfileRegion?, string?> SafeRegionConverter = new(
+        v => v.HasValue ? v.Value.ToString() : null,
+        v => SafeParseRegion(v));
+
+    private static ProfileRegion? SafeParseRegion(string? v)
+    {
+        if (v == null) return null;
+        return Enum.TryParse<ProfileRegion>(v, ignoreCase: true, out var result) ? result : null;
+    }
+
     public void Configure(EntityTypeBuilder<Profile> builder)
     {
         builder.ToTable("profiles", "community");
@@ -23,7 +34,7 @@ public sealed class ProfileConfiguration : IEntityTypeConfiguration<Profile>
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz").HasDefaultValueSql("now()").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamptz");
 
-        builder.Property(x => x.Region).HasColumnName("region").HasConversion<string>().HasMaxLength(30);
+        builder.Property(x => x.Region).HasColumnName("region").HasMaxLength(30).HasConversion(SafeRegionConverter);
         builder.Property(x => x.Diagnosis).HasColumnName("diagnosis").HasConversion<string>().HasMaxLength(30);
         builder.Property(x => x.Week).HasColumnName("week");
         builder.Property(x => x.LastPostAt).HasColumnName("last_post_at").HasColumnType("timestamptz");
