@@ -89,9 +89,19 @@ public static class DevPatientSeeder
         // crudo (sin migración ni cambios al modelo de AuthDbContext). Proyectamos
         // a un registro con columna nombrada "Id" (el query raw escalar de EF
         // compone SELECT s."Value" y falla con columna real).
+        // Buscamos por user_id o document_number (sin excluir soft-deleted) para
+        // evitar violar el índice único ix_patient_profiles_user_id si ya existe
+        // un perfil asignado a este usuario.
         var patientRow = await dbContext.Database
             .SqlQueryRaw<PatientIdRow>(
-                "SELECT \"id\" AS \"Id\" FROM app.patient_profiles WHERE \"document_number\" = {0} AND \"deleted_at\" IS NULL LIMIT 1",
+                """
+                SELECT "id" AS "Id"
+                FROM app.patient_profiles
+                WHERE "user_id" = {0} OR "document_number" = {1}
+                ORDER BY (CASE WHEN "user_id" = {0} THEN 0 ELSE 1 END)
+                LIMIT 1
+                """,
+                devUser.Id,
                 settings.DocumentNumber)
             .FirstOrDefaultAsync(ct);
 
@@ -100,9 +110,19 @@ public static class DevPatientSeeder
         if (patientId != Guid.Empty)
         {
             await dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $"UPDATE app.patient_profiles SET \"user_id\" = {devUser.Id}, \"email\" = COALESCE(\"email\", {settings.Email}) WHERE \"id\" = {patientId}",
+                $"""
+                UPDATE app.patient_profiles
+                SET "user_id" = {devUser.Id},
+                    "document_number" = COALESCE("document_number", {settings.DocumentNumber}),
+                    "email" = COALESCE("email", {settings.Email}),
+                    "first_name" = COALESCE("first_name", {settings.FirstName}),
+                    "last_name" = COALESCE("last_name", {settings.LastName}),
+                    "status" = 'Activo',
+                    "deleted_at" = NULL
+                WHERE "id" = {patientId}
+                """,
                 ct);
-            logger.LogInformation("Linked existing patient profile {PatientId} to dev user {Email}",
+            logger.LogInformation("Linked/updated existing patient profile {PatientId} for dev user {Email}",
                 patientId, settings.Email);
         }
         else

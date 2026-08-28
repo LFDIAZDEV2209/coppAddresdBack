@@ -372,6 +372,9 @@ public static class RoleSeeder
                 PermissionCodes.ClinicalRecordsView,
                 PermissionCodes.ClinicalRecordsCreate,
                 PermissionCodes.ClinicalRecordsUpdate,
+                PermissionCodes.HealthTestsViewOwn,
+                PermissionCodes.HealthTestsAssign,
+                PermissionCodes.HealthTestsReview,
                 .. PrescriberPermissions,
                 .. ProfessionalTelemedicinePermissions,
             ]

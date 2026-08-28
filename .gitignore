@@ -92,6 +92,13 @@ Desktop.ini
 $RECYCLE.BIN/
 
 
+# --- Herramientas locales de desarrollo ---
+.atl/
+.codegraph/
+.engram/
+openspec/
+scripts/*.sql
+
 # appsettings.Example.json SI se versiona: referencia de configuracion para otros desarrolladores
 !appsettings.Example.json
 

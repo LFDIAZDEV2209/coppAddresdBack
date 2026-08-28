@@ -1,10 +1,10 @@
 using System.Threading.RateLimiting;
 using CoppAddresd.Auth.Authorization;
 using CoppAddresd.Auth.Configuration;
-using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
 using CoppAddresd.Auth.Extensions;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Middleware;
 using CoppAddresd.Auth.Security;
 using CoppAddresd.Auth.Seeders;
@@ -21,27 +21,34 @@ var builder = WebApplication.CreateBuilder(args);
 ValidateConfiguration(builder.Configuration);
 
 builder.Services.AddControllers();
+
 // IP del cliente para el motor de protección OTP (misma fuente que el rate
 // limiter global: HttpContext.Connection.RemoteIpAddress).
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Title = "CoppAddresd Auth API",
-        Version = "v1",
-        Description = "Microservicio de autenticación y autorización"
-    });
+    options.SwaggerDoc(
+        "v1",
+        new OpenApiInfo
+        {
+            Title = "CoppAddresd Auth API",
+            Version = "v1",
+            Description = "Microservicio de autenticación y autorización",
+        }
+    );
 
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.Http,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Ingrese el token JWT"
-    });
+    options.AddSecurityDefinition(
+        "Bearer",
+        new OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            Type = SecuritySchemeType.Http,
+            Scheme = "Bearer",
+            BearerFormat = "JWT",
+            In = ParameterLocation.Header,
+            Description = "Ingrese el token JWT",
+        }
+    );
 });
 
 builder.Services.AddAuthDatabase(builder.Configuration);
@@ -49,11 +56,26 @@ builder.Services.AddAuthIdentity();
 builder.Services.AddAuthJwt(builder.Configuration);
 builder.Services.AddAuthCors(builder.Configuration);
 
-builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
-builder.Services.Configure<DevPatientSettings>(builder.Configuration.GetSection(DevPatientSettings.SectionName));
-builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
-builder.Services.Configure<TwilioSettings>(builder.Configuration.GetSection(TwilioSettings.SectionName));
-builder.Services.Configure<OtpSecuritySettings>(builder.Configuration.GetSection(OtpSecuritySettings.SectionName));
+// Caché distribuida (Valkey) para catálogos de autorización: provider por
+// Cache:Provider (Valkey|Memory|None), fail-open por operación. Ver
+// docs/modules/cache/README.md.
+builder.Services.AddAuthCache(builder.Configuration);
+
+builder.Services.Configure<AuthSettings>(
+    builder.Configuration.GetSection(AuthSettings.SectionName)
+);
+builder.Services.Configure<DevPatientSettings>(
+    builder.Configuration.GetSection(DevPatientSettings.SectionName)
+);
+builder.Services.Configure<EmailSettings>(
+    builder.Configuration.GetSection(EmailSettings.SectionName)
+);
+builder.Services.Configure<TwilioSettings>(
+    builder.Configuration.GetSection(TwilioSettings.SectionName)
+);
+builder.Services.Configure<OtpSecuritySettings>(
+    builder.Configuration.GetSection(OtpSecuritySettings.SectionName)
+);
 
 // Cliente Twilio (Singleton, stateless-safe). Autenticación por API Key
 // (ApiKeySid + ApiKeySecret, Basic Auth sobre el SDK) — nunca el Auth Token
@@ -68,7 +90,8 @@ builder.Services.AddSingleton<Twilio.Clients.ITwilioRestClient>(serviceProvider 
         twilio.AccountSid,
         region: null,
         httpClient: new Twilio.Http.SystemNetHttpClient(new HttpClient()),
-        edge: null);
+        edge: null
+    );
 });
 
 builder.Services.AddScoped<ITwilioOtpService, TwilioOtpService>();
@@ -89,8 +112,12 @@ builder.Services.AddScoped<IScopedPermissionService, ScopedPermissionService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<ITokenInvalidationService, TokenInvalidationService>();
+
 // Cualificado: existe Microsoft.AspNetCore.Identity.SecurityStampValidator con el mismo nombre.
-builder.Services.AddScoped<CoppAddresd.Auth.Security.ISecurityStampValidator, CoppAddresd.Auth.Security.SecurityStampValidator>();
+builder.Services.AddScoped<
+    CoppAddresd.Auth.Security.ISecurityStampValidator,
+    CoppAddresd.Auth.Security.SecurityStampValidator
+>();
 
 // Correos transaccionales: "Log" en dev (imprime en el logger), "Smtp" en prod.
 var emailProvider = builder.Configuration["Email:Provider"] ?? "Log";
@@ -111,32 +138,40 @@ builder.Services.AddScoped<IAuthorizationHandler, ErpAudienceHandler>();
 // exigen aud == "erp". Un token "app" (sin stamp check) no puede invocarlos.
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy(ErpAudienceRequirement.PolicyName, policy =>
-        policy.AddRequirements(new ErpAudienceRequirement()));
+    options.AddPolicy(
+        ErpAudienceRequirement.PolicyName,
+        policy => policy.AddRequirements(new ErpAudienceRequirement())
+    );
 });
 
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 100,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 10
-            }));
+    options.AddPolicy(
+        "auth",
+        httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 100,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 10,
+                }
+            )
+    );
 
     options.OnRejected = async (context, cancellationToken) =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         await context.HttpContext.Response.WriteAsync(
             "{\"message\":\"Demasiadas peticiones. Intenta más tarde.\"}",
-            cancellationToken);
+            cancellationToken
+        );
     };
 });
 
-builder.Services.AddHealthChecks()
+builder
+    .Services.AddHealthChecks()
     .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!, name: "postgresql");
 
 var app = builder.Build();
@@ -156,10 +191,23 @@ using (var scope = app.Services.CreateScope())
 
     await PermissionSeeder.SeedAsync(dbContext, logger);
 
+    // Permisos del módulo Program Progress (Program.*). Debe correr ANTES de
+    // AdminSeeder para que el rol Admin reciba los 5 códigos por convención
+    // (AdminSeeder asigna todos los permisos existentes al rol Admin).
+    await ProgramProgressPermissionsSeeder.SeedAsync(dbContext, logger);
+
+    // Permisos del módulo Tests de Salud (HealthTests.*). Idem: antes de
+    // AdminSeeder para que el rol Admin reciba los códigos por convención.
+    await HealthTestsPermissionsSeeder.SeedAsync(dbContext, logger);
+
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
-    var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;
-    var devPatientSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DevPatientSettings>>().Value;
+    var authSettings = services
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>()
+        .Value;
+    var devPatientSettings = services
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<DevPatientSettings>>()
+        .Value;
 
     await AdminSeeder.SeedAsync(dbContext, userManager, roleManager, authSettings, logger);
     await ApplicationSeeder.SeedAsync(dbContext, userManager, authSettings.AdminEmail, logger);
@@ -211,17 +259,22 @@ static void ValidateConfiguration(IConfiguration configuration)
     if (twilio.IsEnabled)
     {
         var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(twilio.AccountSid)) missing.Add("AccountSid");
-        if (string.IsNullOrWhiteSpace(twilio.ApiKeySid)) missing.Add("ApiKeySid");
-        if (string.IsNullOrWhiteSpace(twilio.ApiKeySecret)) missing.Add("ApiKeySecret");
-        if (string.IsNullOrWhiteSpace(twilio.VerifyServiceSid)) missing.Add("VerifyServiceSid");
+        if (string.IsNullOrWhiteSpace(twilio.AccountSid))
+            missing.Add("AccountSid");
+        if (string.IsNullOrWhiteSpace(twilio.ApiKeySid))
+            missing.Add("ApiKeySid");
+        if (string.IsNullOrWhiteSpace(twilio.ApiKeySecret))
+            missing.Add("ApiKeySecret");
+        if (string.IsNullOrWhiteSpace(twilio.VerifyServiceSid))
+            missing.Add("VerifyServiceSid");
 
         if (missing.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Twilio está habilitado (Twilio:IsEnabled) pero faltan las credenciales: " +
-                $"{string.Join(", ", missing)}. Configúralas (appsettings o variables de " +
-                "entorno TWILIO__*) o deshabilita Twilio.");
+                $"Twilio está habilitado (Twilio:IsEnabled) pero faltan las credenciales: "
+                    + $"{string.Join(", ", missing)}. Configúralas (appsettings o variables de "
+                    + "entorno TWILIO__*) o deshabilita Twilio."
+            );
         }
     }
 
@@ -233,23 +286,51 @@ static void ValidateConfiguration(IConfiguration configuration)
 
     RequirePositive(otpSecurity.SendPerIpPerMinute, nameof(OtpSecuritySettings.SendPerIpPerMinute));
     RequirePositive(otpSecurity.SendPerIpPerHour, nameof(OtpSecuritySettings.SendPerIpPerHour));
-    RequirePositive(otpSecurity.SendPerPhonePerMinute, nameof(OtpSecuritySettings.SendPerPhonePerMinute));
-    RequirePositive(otpSecurity.SendPerPhonePerHour, nameof(OtpSecuritySettings.SendPerPhonePerHour));
+    RequirePositive(
+        otpSecurity.SendPerPhonePerMinute,
+        nameof(OtpSecuritySettings.SendPerPhonePerMinute)
+    );
+    RequirePositive(
+        otpSecurity.SendPerPhonePerHour,
+        nameof(OtpSecuritySettings.SendPerPhonePerHour)
+    );
     RequirePositive(otpSecurity.SendPerPhonePerDay, nameof(OtpSecuritySettings.SendPerPhonePerDay));
-    RequireNonNegative(otpSecurity.SendPhoneCooldownSeconds, nameof(OtpSecuritySettings.SendPhoneCooldownSeconds));
-    RequirePositive(otpSecurity.SendPerDocumentPerHour, nameof(OtpSecuritySettings.SendPerDocumentPerHour));
-    RequirePositive(otpSecurity.VerifyPerIpPerMinute, nameof(OtpSecuritySettings.VerifyPerIpPerMinute));
-    RequirePositive(otpSecurity.VerifyPerPhoneWindowMinutes, nameof(OtpSecuritySettings.VerifyPerPhoneWindowMinutes));
-    RequirePositive(otpSecurity.VerifyPerPhoneLimit, nameof(OtpSecuritySettings.VerifyPerPhoneLimit));
-    RequirePositive(otpSecurity.VerifyPhoneMaxFailedAttempts, nameof(OtpSecuritySettings.VerifyPhoneMaxFailedAttempts));
-    RequireNonNegative(otpSecurity.VerifyPhoneLockoutSeconds, nameof(OtpSecuritySettings.VerifyPhoneLockoutSeconds));
+    RequireNonNegative(
+        otpSecurity.SendPhoneCooldownSeconds,
+        nameof(OtpSecuritySettings.SendPhoneCooldownSeconds)
+    );
+    RequirePositive(
+        otpSecurity.SendPerDocumentPerHour,
+        nameof(OtpSecuritySettings.SendPerDocumentPerHour)
+    );
+    RequirePositive(
+        otpSecurity.VerifyPerIpPerMinute,
+        nameof(OtpSecuritySettings.VerifyPerIpPerMinute)
+    );
+    RequirePositive(
+        otpSecurity.VerifyPerPhoneWindowMinutes,
+        nameof(OtpSecuritySettings.VerifyPerPhoneWindowMinutes)
+    );
+    RequirePositive(
+        otpSecurity.VerifyPerPhoneLimit,
+        nameof(OtpSecuritySettings.VerifyPerPhoneLimit)
+    );
+    RequirePositive(
+        otpSecurity.VerifyPhoneMaxFailedAttempts,
+        nameof(OtpSecuritySettings.VerifyPhoneMaxFailedAttempts)
+    );
+    RequireNonNegative(
+        otpSecurity.VerifyPhoneLockoutSeconds,
+        nameof(OtpSecuritySettings.VerifyPhoneLockoutSeconds)
+    );
 
     static void RequirePositive(int value, string propertyName)
     {
         if (value <= 0)
         {
             throw new InvalidOperationException(
-                $"OtpSecurity:{propertyName} debe ser mayor que 0 (valor actual: {value}).");
+                $"OtpSecurity:{propertyName} debe ser mayor que 0 (valor actual: {value})."
+            );
         }
     }
 
@@ -258,7 +339,8 @@ static void ValidateConfiguration(IConfiguration configuration)
         if (value < 0)
         {
             throw new InvalidOperationException(
-                $"OtpSecurity:{propertyName} no puede ser negativo (valor actual: {value}).");
+                $"OtpSecurity:{propertyName} no puede ser negativo (valor actual: {value})."
+            );
         }
     }
 }
