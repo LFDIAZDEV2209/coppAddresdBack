@@ -30,9 +30,12 @@ public sealed class DatabaseNutritionProvider : INutritionProvider
         }
 
         // Alias primero (nombre del modelo de visión); fallback al nombre canónico.
+        // Normalización: el canonical de CLIP usa guiones bajos (hot_dog) pero
+        // los aliases de la DB pueden usar espacios ("hot dog") — se prueban ambos.
+        var normalizedKeySpaces = normalizedKey.Replace('_', ' ');
         var nutrition = await (
             from alias in _db.FoodAliases
-            where alias.Alias == normalizedKey
+            where alias.Alias == normalizedKey || alias.Alias == normalizedKeySpaces
             join food in _db.Foods on alias.FoodId equals food.Id
             where food.IsActive
             join entry in _db.FoodNutritionEntries on food.Id equals entry.FoodId
@@ -59,7 +62,8 @@ public sealed class DatabaseNutritionProvider : INutritionProvider
 
         return await (
             from food in _db.Foods
-            where food.IsActive && food.Name.ToLower() == normalizedKey
+            where food.IsActive
+                && (food.Name.ToLower() == normalizedKey || food.Name.ToLower() == normalizedKeySpaces)
             join entry in _db.FoodNutritionEntries on food.Id equals entry.FoodId
             orderby entry.ImportedAt descending
             select new FoodNutritionDto(
