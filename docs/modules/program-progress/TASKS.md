@@ -13,7 +13,7 @@
 | Phase | Batches | Exit criteria |
 |-------|---------|---------------|
 | **P0 — Plan** | (this file + SPEC + PLAN) | Reviewer sign-off (Gate G1) |
-| **P1 — MVP** | B1 Foundations · B2 Seeder · B3 Repository · B4 Application · B5 API · B5-S Health & Transformation Score engine · B5-R XP Rules catalog · B5-C Clinical XP · B5-M Streak multiplier (P1.5) · B5-T Streak threshold & essentials (P1.5) · B5-N Granular nutrition XP (P1.5) · B6 Mobile Slice 1+2 · B7 ERP Phase-1 | All P1 acceptance scenarios AC-01..AC-15 pass; P1.5 acceptance scenarios AC-19..AC-22 pass; XP rules acceptance AC-23/AC-24 pass (manual, B5-R); clinical XP acceptance AC-25..AC-27 pass (manual, B5-C); streak multiplier acceptance AC-28..AC-30 pass (manual, B5-M); streak threshold & essentials acceptance AC-31/AC-32 pass (manual, B5-T); granular nutrition acceptance AC-33..AC-36 pass (manual, B5-N); Gate G2 review before apply |
+| **P1 — MVP** | B1 Foundations · B2 Seeder · B3 Repository · B4 Application · B5 API · B5-S Health & Transformation Score engine · B5-R XP Rules catalog · B5-C Clinical XP · B5-M Streak multiplier (P1.5) · B5-T Streak threshold & essentials (P1.5) · B5-N Granular nutrition XP (P1.5) · B5-NB Nutriobiótico streak (P1.5) · B5-NOT Gamified notifications (P1.5) · B5-WK Weakness detection (P1.5) · B5-IV Interventions & tele XP (P1.5) · B6 Mobile Slice 1+2 · B7 ERP Phase-1 | All P1 acceptance scenarios AC-01..AC-15 pass; P1.5 acceptance scenarios AC-19..AC-22 pass; XP rules acceptance AC-23/AC-24 pass (manual, B5-R); clinical XP acceptance AC-25..AC-27 pass (manual, B5-C); streak multiplier acceptance AC-28..AC-30 pass (manual, B5-M); streak threshold & essentials acceptance AC-31/AC-32 pass (manual, B5-T); granular nutrition acceptance AC-33..AC-36 pass (manual, B5-N); nutribiótico streak acceptance AC-37..AC-39 pass (manual, B5-NB); gamified notifications acceptance AC-40..AC-42 pass (manual, B5-NOT); weakness detection acceptance AC-43..AC-45 pass (manual, B5-WK); intervention acceptance AC-46..AC-49 pass (manual, B5-IV); Gate G2 review before apply |
 | **P2 — Adaptation** | B8 Mobile Slice 3+4 · B9 Adaptation engine · B10 ERP Adaptation queue · B11 Media rotation | AC-16/AC-17 pass; clinician can approve and the next week reflects new content |
 | **P3 — Enhancements** | B12 Streak rescue audit · B13 Bulk enrollment · B14 CSV export · B15 i18n | All P2 acceptance scenarios pass; locale parity in EN/ES |
 | **Gate G3 — Final verification** | B16 Verification & observability | All SPEC §10.2 acceptance scenarios pass; mobile demo continuity proven |
@@ -886,6 +886,321 @@
 
 ---
 
+## Batch B5-NB — Nutriobiótico streak (P1.5, "Paso 7a")
+
+> Racha propia de la tarea `nutribiotico` (SPEC §19, decisión 25): la tarea
+> mantiene su PROPIA racha consecutiva en `app.streak_states`
+> (`nb_current_streak`/`nb_longest_streak`/`nb_last_completed_date`),
+> independiente de la racha general y de los congelamientos (un día perdido la
+> rompe — AC-38). Los hitos de corrida (7/14/30/60/90 → `NB_STREAK_*`,
+> 50/100/250/500/1000 XP, categoría `nutriobiotic`) se otorgan en el camino de
+> completación de la tarea (solo primera escritura) con el multiplicador del
+> paciente y el dedupe `('nb_milestone', task_completions.id, reason)` — cada
+> corrida nueva re-otorga su hito (AC-39); tope 1/semana. **Tests OPTIONALES /
+> manuales per el workflow actual** (sin `dotnet test` automático; gate = build
+> verde + migración generada sin aplicar).
+
+### T-62 — Schema: entidad `StreakState` + enums `XpReason`/`XpRuleCodes` + configuración EF + migración `AddProgramProgressNbStreak`
+
+- **Phase**: P1.5
+- **Depends on**: T-50 (multiplicador/`multiplier_*` en `streak_states`), T-02 (EF conventions), T-03 (migration flow)
+- **Objective**: 3 columnas de racha propia del nutribiótico en `app.streak_states` (`nb_current_streak` SMALLINT NOT NULL default 0, `nb_longest_streak` SMALLINT NOT NULL default 0, `nb_last_completed_date` DATE NULL) + 5 miembros `NB_STREAK_*` en `XpReason` (16..20) y 5 constantes homónimas en `XpRuleCodes` + configuración EF + migración aditiva y reversible `AddProgramProgressNbStreak`.
+- **Affected paths**:
+  - `src/CoppAddresd.Domain/Entities/ProgramProgress/StreakState.cs` (3 propiedades `Nb*`)
+  - `src/CoppAddresd.Domain/Enums/ProgramProgress/XpReason.cs` + `XpRuleCodes.cs` (5 miembros/constantes `NB_STREAK_*`)
+  - `src/CoppAddresd.Infrastructure/Configurations/ProgramProgress/StreakStateConfiguration.cs` (3 columnas: `smallint` default 0 + `date` nullable)
+  - `src/CoppAddresd.Infrastructure/Migrations/<timestamp>_AddProgramProgressNbStreak.cs` (nueva, aditiva y reversible)
+- **Implementation notes**: Convenciones de `streak_states` (PK = `enrollment_id`, snake_case, defaults en migración). `short` → `smallint` (Npgsql, precedente `ProgramTemplate.StreakMinTasks`). Sin tablas nuevas ni índices (una fila por inscripción, lecturas por PK). Sin cambios en `AppDbContext` (el `DbSet<StreakState>` ya existe).
+- **Acceptance criteria**: Domain + Infrastructure compilan (0 errores); `AddProgramProgressNbStreak` es aditiva y reversible (3 `AddColumn`/3 `DropColumn`); `\d app.streak_states` muestra las 3 columnas con sus defaults.
+- **Verification**: `dotnet build src/CoppAddresd.Domain src/CoppAddresd.Infrastructure` (temp OutputPath si un proceso de dev bloquea el bin); migración generada (NO aplicada).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-63 — Seeder (5 reglas `NB_STREAK_*`, categoría `nutriobiotic`)
+
+- **Phase**: P1.5
+- **Depends on**: T-62 (enums), T-45 (patrón del seeder `SeedXpRulesAsync`)
+- **Objective**: Seed idempotente de las 5 reglas de la racha del nutribiótico (SPEC §19.2): `NB_STREAK_7` (50), `NB_STREAK_14` (100), `NB_STREAK_30` (250), `NB_STREAK_60` (500), `NB_STREAK_90` (1000), categoría `nutriobiotic`, topes `max_per_day = 1`/`max_per_week = 1`.
+- **Affected paths**:
+  - `src/CoppAddresd.Api/Seeders/ProgramProgressSeeder.cs` (`SeedXpRulesAsync` + 5 reglas; comentarios de cabecera: 19 → 24 reglas)
+- **Implementation notes**: `ON CONFLICT (code) DO NOTHING` (regla existente nunca se pisa). Los nombres coinciden con los miembros de `XpReason` (dedupe por `reason`, precedente `CLINICAL_*`/`NUTRITION_*`).
+- **Acceptance criteria**: Tras el restart, `SELECT COUNT(*) FROM app.xp_rules WHERE category = 'nutriobiotic'` = 5; re-correr el seeder no duplica ni pisa. Docs consistentes (`NB_STREAK_7`, `B5-NB`, `AC-39`, `AddProgramProgressNbStreak`).
+- **Verification**: `dotnet build src/CoppAddresd.Api` (temp OutputPath si un proceso de dev bloquea el bin); docs cross-check.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-64 — Motor de la racha del nutribiótico + hitos en el camino de completación
+
+- **Phase**: P1.5
+- **Depends on**: T-62 (schema), T-43 (`ResolveXpAwardAsync`), T-51 (patrón del motor de hitos)
+- **Objective**: `ProgramRepository.UpdateNbStreakAsync` + hook en `CompleteTaskCoreAsync` (solo primera escritura de `task_code = 'nutribiotico'`, dentro de la transacción FOR UPDATE): nuevo conteo (ayer → `+1`; cualquier otro caso → `1`), actualización vía `ExecuteUpdate` (`nb_current_streak`, `nb_longest_streak = MAX`, `nb_last_completed_date = hoy`) y, si el conteo cae exactamente en un hito (7/14/30/60/90), otorgamiento por el camino del catálogo (`rule_code = NB_STREAK_{days}`, `source_ref_type = 'nb_milestone'`, `source_ref_id = task_completions.id`, `reason = 'NB_STREAK_{days}'`) con el multiplicador del paciente. Topes 1/día y 1/semana: un tope alcanzado omite el hito (nunca rompe la completación). NO toca la racha general, el día perfecto ni `TASK_NUTRIBIOTICO`.
+- **Affected paths**:
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`UpdateNbStreakAsync`, `NbMilestones`, `FindNbMilestone`, `FindNextNbMilestone`, hook en `CompleteTaskCoreAsync`)
+- **Implementation notes**: El dedupe parcial usa `source_ref_id = task_completions.id` (la completación que dispara el hito, única por corrida) para que cada corrida nueva RE-OTORGUE su hito (AC-39) sin colisionar con la corrida anterior (a diferencia de los hitos generales, SPEC §16, una vez por inscripción). `ResolveXpAwardAsync` puede lanzar `BusinessRuleViolationException` (XP_DAILY_LIMIT_REACHED/XP_WEEKLY_LIMIT_REACHED): se captura SOLO esa excepción y se omite el hito.
+- **Acceptance criteria**: Infrastructure compila (0 errores); AC-37/AC-38/AC-39 reproducibles manualmente (día 7 → `NB_STREAK_7` +50 con `source_ref_id = task_completions.id`; día perdido → reinicio a 1 sin consumir congelamiento; corrida nueva → re-otorgamiento; misma semana → tope 1/semana omite sin error).
+- **Verification**: `dotnet build src/CoppAddresd.Infrastructure` (temp OutputPath si un proceso de dev bloquea el bin); manual per el workflow actual.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-65 — Snapshot (bloque `streak` aditivo) + docs (SPEC §19, PLAN, TASKS)
+
+- **Phase**: P1.5
+- **Depends on**: T-62 (schema), T-64 (motor)
+- **Objective**: Exponer en `GET /api/v1/program/me/snapshot` (bloque `streak`, aditivo — los campos existentes no cambian) `nbStreak` (actual), `nbLongestStreak` y `nbNextMilestone` (`{ days, xp, daysRemaining } | null`; próximo hito de la tabla 7/14/30/60/90 por encima de la racha actual; null si ya ≥ 90). Mantener PLAN/SPEC/TASKS consistentes con el "Paso 7a".
+- **Affected paths**:
+  - `src/CoppAddresd.Application/DTOs/ProgramProgress/ProgramProgressDtos.cs` (`StreakInfoDto` + 3 campos aditivos con default; `NbNextMilestoneDto` nuevo)
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`GetSnapshotAsync`: proyección + cómputo de `nbNextMilestone` + construcción de `StreakInfoDto`)
+  - `coppAddresdBack/docs/modules/program-progress/SPEC.md` (§19 + decisión 25 + AC-37..AC-39 + §8.4/§14.2)
+  - `coppAddresdBack/docs/modules/program-progress/PLAN.md` (decisión 21 + phasing + milestone + riesgo)
+  - `coppAddresdBack/docs/modules/program-progress/TASKS.md` (este batch)
+- **Implementation notes**: Campos con default (`NbStreak = 0`, `NbLongestStreak = 0`, `NbNextMilestone = null`) para no romper los call sites existentes (precedente: `StreakInfoDto` en tests). La lectura nunca escribe (mismo patrón que el multiplicador, SPEC §16, D).
+- **Acceptance criteria**: Application + Infrastructure + tests compilan (0 errores — los constructores existentes de `StreakInfoDto` siguen válidos por los defaults); el snapshot expone los 3 campos nuevos sin alterar los previos; docs consistentes (`nbStreak`, `NB_STREAK_90`, `B5-NB`, `T-62..T-65`, `AC-39`, `AddProgramProgressNbStreak`).
+- **Verification**: `dotnet build src/CoppAddresd.Application src/CoppAddresd.Infrastructure tests/CoppAddresd.UnitTests` (temp OutputPath si un proceso de dev bloquea el bin); docs cross-check.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+---
+
+## Batch B5-NOT — Gamified notifications (P1.5, "Paso 7b")
+
+> Notificaciones gamificadas (SPEC §20, decisión 26): log `app.notifications` +
+> push FCM **best-effort** disparado transaccionalmente dentro de los flujos de
+> otorgamiento (hito de racha, hito del nutribiótico, subida de nivel y día
+> perfecto — SOLO primera concesión), reutilizando el camino FCM EXISTENTE
+> (`app.device_tokens` + `IFcmClient`, READ-ONLY: no se toca FcmClient/
+> DeviceTokenRepository/NotificationsController). Anti-spam (máx. 2 por tipo por
+> día + 6 totales por día, config `Program:Notifications`) y horario de
+> silencio 22:00–07:00 local (critical lo ignora). Lo que necesita timing
+> (`multiplier_expiring`, racha en riesgo, evaluación semanal) queda
+> documentado como FUTURO (requiere scheduler, §20.4). **Tests OPTIONALES /
+> manuales per el workflow actual** (sin `dotnet test` automático; gate = build
+> verde + migración generada sin aplicar).
+
+### T-66 — Schema: entidad `AppNotification` + configuración EF + `DbSet` + migración `AddProgramProgressNotifications`
+
+- **Phase**: P1.5
+- **Depends on**: T-02 (EF conventions), T-03 (migration flow)
+- **Objective**: Entidad `AppNotification` + `AppNotificationConfiguration` (schema `app`, `notifications`: `id` uuid PK default `gen_random_uuid()`, `patient_id` FK `patient_profiles` RESTRICT, `type` varchar(60), `title` varchar(120), `message` text, `priority` varchar(20) default `'normal'`, `channel` varchar(20) default `'push'`, `sent_at` timestamptz default `now()`, `read_at` timestamptz NULL, índice `ix_notifications_patient_sent_at` (`patient_id`, `sent_at` DESC)) + `DbSet<AppNotification>` + la migración aditiva y reversible que crea la tabla con auditoría trigger-based (sin PHI, precedente `habit_checks`) y GRANTs a `app_user`.
+- **Affected paths**:
+  - `src/CoppAddresd.Domain/Entities/ProgramProgress/AppNotification.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/Configurations/ProgramProgress/AppNotificationConfiguration.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/Persistence/AppDbContext.cs` (`DbSet<AppNotification>`)
+  - `src/CoppAddresd.Infrastructure/Migrations/<timestamp>_AddProgramProgressNotifications.cs` (nueva, aditiva)
+- **Implementation notes**: Convenciones del módulo (§3): snake_case, defaults en migración, FK RESTRICT, auditoría `audit.attach_table_audit('app', 'notifications', 'id', ...)` + `GRANT ... TO app_user` (patrón `AddProgramProgressNutritionXp`).
+- **Acceptance criteria**: Domain + Infrastructure compilan (0 errores); `AddProgramProgressNotifications` es aditiva y reversible; `\d app.notifications` muestra el índice `(patient_id, sent_at DESC)`, los defaults y el trigger de auditoría.
+- **Verification**: `dotnet build src/CoppAddresd.Domain src/CoppAddresd.Infrastructure` (temp OutputPath si un proceso de dev bloquea el bin); migración generada (NO aplicada).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-67 — Servicio `IGamifiedNotificationService` + repositorio del log + anti-spam
+
+- **Phase**: P1.5
+- **Depends on**: T-66 (tabla), T-42 (patrón DI de repositorios)
+- **Objective**: Servicio best-effort (Application, `Services/ProgramProgress/`) que inserta el log y envía el push FCM por el camino EXISTENTE (`IDeviceTokenRepository` fan-out + `IFcmClient`; token obsoleto `UNREGISTERED` → se elimina). Anti-spam configurable (`Program:Notifications`: `MaxPerTypePerDay` = 2, `MaxPerDay` = 6, `QuietHoursStart` = 22, `QuietHoursEnd` = 7): límite alcanzado → omisión silenciosa (log debug, AC-41); horario de silencio en hora local del paciente (critical lo ignora). **Nunca lanza** (AC-42: el flujo de XP continúa intacto). Repositorio `INotificationLogRepository` (Application) + `NotificationLogRepository` (Infrastructure): contexto del paciente (userId + timezone), conteos por día, inserción, listado paginado y marcar leída. DI en `Infrastructure/DependencyInjection.cs`.
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Services/ProgramProgress/IGamifiedNotificationService.cs` (nuevo)
+  - `src/CoppAddresd.Application/Services/ProgramProgress/GamifiedNotificationService.cs` (nuevo)
+  - `src/CoppAddresd.Application/Interfaces/INotificationLogRepository.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/Repositories/NotificationLogRepository.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/DependencyInjection.cs` (registro del servicio + repositorio)
+  - `src/CoppAddresd.Application/CoppAddresd.Application.csproj` (`Microsoft.Extensions.Configuration.Abstractions` 10.0.10 — `IConfiguration` del servicio)
+- **Implementation notes**: El log se persiste con la MISMA unidad de trabajo del flujo de otorgamiento (mismo `AppDbContext` scoped): queda atómico con la XP. El cuerpo completo del servicio captura excepciones (best-effort, AC-42). El día/ventana del anti-spam se calcula en hora local del paciente (fecha local → rango UTC, DST-aware, precedente `LocalDateToUtcStart`).
+- **Acceptance criteria**: Application + Infrastructure compilan (0 errores); AC-41/AC-42 reproducibles manualmente (límite alcanzado → sin fila ni push, solo log debug; FCM caído → log persistido + XP intacta).
+- **Verification**: `dotnet build src/CoppAddresd.Application src/CoppAddresd.Infrastructure`; manual per el workflow actual.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-68 — Disparadores transaccionales en `ProgramRepository` (hitos, nivel, día perfecto)
+
+- **Phase**: P1.5
+- **Depends on**: T-67 (servicio), T-51 (motor de hitos), T-64 (racha nutribiótico)
+- **Objective**: Hooks de notificación en los flujos de otorgamiento de `CompleteTaskCoreAsync` (constructor con parámetro opcional `IGamifiedNotificationService?` — null → omitir, patrón de los calculadores): hito de racha (`milestone_reached` high, "🏆 ¡X días! +N XP", x2 plegado en 11/22/50), hito del nutribiótico (`nb_milestone` high, "💊 ¡X días tomando tu Nutriobiótico!"), subida de nivel (`level_up` high, comparando el nivel antes/después de TODOS los otorgamientos del día, tras el flush), día perfecto (`day_complete` normal, "✅ Día perfecto · +N XP"). Solo primera concesión (el replay nunca llega; las guardias de hitos protegen también la notificación).
+- **Affected paths**:
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (hooks en `CompleteTaskCoreAsync`, `AwardStreakMilestoneIfReachedAsync` + parámetro `patientId`, `UpdateNbStreakAsync` + parámetro `patientId`)
+- **Implementation notes**: La notificación corre DESPUÉS de la escritura de la XP y NUNCA la revierte (best-effort, AC-42). `multiplier_expiring` es FUTURO (necesita scheduler) — no se implementa (§20.4).
+- **Acceptance criteria**: Infrastructure compila (0 errores); AC-40 reproducible manualmente (cada evento de primera concesión → 1 fila `app.notifications` con su tipo; replay → 0 filas; XP intacta ante cualquier fallo).
+- **Verification**: `dotnet build src/CoppAddresd.Infrastructure` (temp OutputPath si un proceso de dev bloquea el bin); manual per el workflow actual.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-69 — Endpoints del centro de notificaciones + docs (SPEC §20, PLAN, TASKS)
+
+- **Phase**: P1.5
+- **Depends on**: T-66, T-67
+- **Objective**: `GET /api/v1/program/notifications` (paginado, `readAt` + `unreadCount`, `Program.View`, paciente del JWT — anti-IDOR 404) y `POST /api/v1/program/notifications/{id:guid}/read` (marca leída; 404 si no es del paciente). Mantener PLAN/SPEC/TASKS consistentes con el "Paso 7b".
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Queries/ListNotifications/ListNotificationsQuery.cs` (nuevo; query + handler)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/MarkNotificationRead/MarkNotificationReadCommand.cs` (nuevo; command + validator + handler)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/DTOs/Notifications/NotificationDtos.cs` (nuevo; `NotificationDto`, `PaginatedNotificationsResult`)
+  - `src/CoppAddresd.Api/Controllers/ProgramController.cs` (dos acciones)
+  - `coppAddresdBack/docs/modules/program-progress/SPEC.md` (§20 + decisión 26 + AC-40..AC-42 + §1/§8.5/§10.2/§11)
+  - `coppAddresdBack/docs/modules/program-progress/PLAN.md` (decisión 22 + phasing + riesgo)
+  - `coppAddresdBack/docs/modules/program-progress/TASKS.md` (este batch)
+- **Implementation notes**: Mismo patrón de `GetScores`/`LogNutrition` (resolución del paciente vía `IProgramActorContext`, nunca del body). pageSize clamp 1..100 (convención del módulo).
+- **Acceptance criteria**: Api compila (0 errores); `GET /notifications` con JWT de paciente devuelve el shape de SPEC §20.5; `POST .../{id}/read` de una notificación ajena → 404 (anti-IDOR). Docs consistentes (`notifications`, `B5-NOT`, `T-66..T-69`, `AC-42`, `AddProgramProgressNotifications`).
+- **Verification**: `dotnet build src/CoppAddresd.Api` (temp OutputPath si un proceso de dev bloquea el bin); docs cross-check (grep de `app.notifications`, `B5-NOT`, `AddProgramProgressNotifications`).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+---
+
+## Batch B5-WK — Weakness detection (P1.5, "Paso 7c")
+
+> Detección determinista de debilidades del paciente (SPEC §21, decisión 27): el
+> motor de reglas (ADRED-inspired, sin ML) convierte la MISMA data de los
+> puntajes (SPEC §13/§18) en hallazgos accionables, disparado SOLO en
+> `POST /scores/calculate` (una vez por recálculo, idempotente por el dedupe de
+> estado abierto AC-43). Cola clínica + transiciones con guardia clínica AC-22
+> (AC-44); vista del paciente (AC-45). La narrativa semanal LLM queda
+> DOCUMENTADA como contrato FUTURO (SPEC §21.5, P3: requiere endpoint nuevo en
+> el ai-service + scheduler o disparo manual) — NO se implementa en este paso.
+> **Tests OPTIONALES / manuales per el workflow actual** (sin `dotnet test`
+> automático; gate = build verde + migración generada sin aplicar).
+
+### T-70 — Schema: entidad `Weakness` + enums + configuración EF + `DbSet` + migración `AddProgramProgressWeaknesses`
+
+- **Phase**: P1.5
+- **Depends on**: T-02 (EF conventions), T-03 (migration flow), T-35 (FK `measurement_metrics` disponible)
+- **Objective**: Entidad `Weakness` + 4 enums string-backed (`WeaknessCategory`/`WeaknessSeverity`/`WeaknessStatus`/`WeaknessSource`) + códigos `WeaknessCodes` (`WK_*`) + `WeaknessConfiguration` + `DbSet<Weakness>` + la migración aditiva y reversible que crea `app.weaknesses` (CHECKs de valores, índices `(patient_id, status)` y `(status)`, FK SQL a `auth.users` para `assigned_to` con ON DELETE SET NULL, GRANTs a `app_user`; **sin trigger de auditoría** — `description` puede contener contexto clínico, exclusión por diseño §21.1/§8.5).
+- **Affected paths**:
+  - `src/CoppAddresd.Domain/Entities/ProgramProgress/Weakness.cs` (nuevo)
+  - `src/CoppAddresd.Domain/Enums/ProgramProgress/WeaknessCategory.cs` + `WeaknessSeverity.cs` + `WeaknessStatus.cs` + `WeaknessSource.cs` + `WeaknessCodes.cs` (nuevos)
+  - `src/CoppAddresd.Infrastructure/Configurations/ProgramProgress/WeaknessConfiguration.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/Persistence/AppDbContext.cs` (`DbSet<Weakness>`)
+  - `src/CoppAddresd.Infrastructure/Migrations/<timestamp>_AddProgramProgressWeaknesses.cs` (nueva, aditiva)
+- **Implementation notes**: Convenciones del módulo (§3): snake_case, defaults en migración (`severity='low'`, `source='ai'`, `status='open'`, `detected_at now()`), FK RESTRICT a `patient_profiles`/`measurement_metrics`. Migración con `table.CheckConstraint` para los 4 CHECKs (patrón `AddProgramProgressClinicalXp`).
+- **Acceptance criteria**: Domain + Infrastructure compilan (0 errores); `AddProgramProgressWeaknesses` es aditiva y reversible; `\d app.weaknesses` muestra las columnas con defaults + CHECKs, los 2 índices y la FK a `auth."Users"` (assigned_to); sin trigger de auditoría sobre la tabla.
+- **Verification**: `dotnet build src/CoppAddresd.Domain src/CoppAddresd.Infrastructure` (temp OutputPath si un proceso de dev bloquea el bin); migración generada (NO aplicada).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-71 — Motor de reglas `WeaknessRulesEngine` + `PatientWeeklyData` + servicio de detección
+
+- **Phase**: P1.5
+- **Depends on**: T-70 (schema), T-37 (`BuildHealthScoreInputAsync`/`GetNutritionLogAsync`/helpers de período)
+- **Objective**: `WeaknessRulesEngine` (función pura, 10 reglas `WK_*` con umbrales documentados — clínicos marcados `REQUIRES_CLINICAL_VALIDATION`) + `PatientWeeklyData` (paquete semanal: adherencia nutricional = misma fuente §18; glucosa/% grasa desde líneas base + mediciones; motivación = proxy `mood × 2` del último registro emocional; estrés/sueño LATENTES; adherencia semanal desde `health_scores`; nutribiótico 7d y ejercicio desde `task_completions`) + `IWeaknessDetectionService`/`WeaknessDetectionService` (orquesta: repositorio → motor → persistencia con dedupe AC-43).
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Services/ProgramProgress/PatientWeeklyData.cs` (nuevo)
+  - `src/CoppAddresd.Application/Services/ProgramProgress/WeaknessDescriptor.cs` (nuevo)
+  - `src/CoppAddresd.Application/Services/ProgramProgress/WeaknessRulesEngine.cs` (nuevo)
+  - `src/CoppAddresd.Application/Services/ProgramProgress/IWeaknessDetectionService.cs` + `WeaknessDetectionService.cs` (nuevos)
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`BuildPatientWeeklyDataAsync`, `PersistDetectedWeaknessesAsync`; queries set-based sin N+1)
+  - `src/CoppAddresd.Application/Interfaces/IProgramRepository.cs` (extender)
+  - `src/CoppAddresd.Infrastructure/DependencyInjection.cs` (registro del servicio)
+- **Implementation notes**: Indicador `null` → la regla NO dispara (nunca penaliza por ausencia de datos). El dedupe lee los códigos `open`/`acknowledged`/`in_intervention` del paciente en una query set y omite los descriptores repetidos. El servicio loguea sin PHI (`Program.WeaknessesDetected`).
+- **Acceptance criteria**: Application + Infrastructure compilan (0 errores); AC-43 reproducible manualmente (2 reglas disparan → 2 filas; re-correr `/calculate` no duplica).
+- **Verification**: `dotnet build src/CoppAddresd.Application src/CoppAddresd.Infrastructure`; manual per el workflow actual.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-72 — Trigger en `POST /scores/calculate` + endpoints (cola clínica, vista paciente, transiciones)
+
+- **Phase**: P1.5
+- **Depends on**: T-71 (motor + servicio), T-38 (handler de `/calculate`), T-48 (guardia clínica AC-22)
+- **Objective**: Hook de detección en `CalculateScoresCommandHandler` (una vez por recálculo, tras XP clínica + nutrición; `GET /scores` nunca detecta — AC-45) + 3 endpoints: `GET /api/v1/program/weaknesses` (`Program.View`, paciente del JWT, anti-IDOR 404), `GET /api/v1/program/weaknesses/open` (`Program.Adapt`, cola FIFO de `open`), `POST /api/v1/program/weaknesses/{id:guid}/status` (`Program.Adapt` + rol clínico AC-22 → paciente 403, AC-44; transición idempotente, `resolved` fija `resolved_at`, `open` rechazado).
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/CalculateScores/CalculateScoresCommand.cs` (hook + log sin PHI)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Queries/ListWeaknesses/ListWeaknessesQuery.cs` (nuevo; query + handler)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Queries/ListOpenWeaknesses/ListOpenWeaknessesQuery.cs` (nuevo; query + handler)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/UpdateWeaknessStatus/UpdateWeaknessStatusCommand.cs` (nuevo; command + validator + handler)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/DTOs/Weaknesses/WeaknessDtos.cs` (nuevo; `WeaknessDto`, `PaginatedWeaknessesResult`, `UpdateWeaknessStatusRequest`)
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`ListWeaknessesAsync`, `ListOpenWeaknessesAsync`, `UpdateWeaknessStatusAsync`)
+  - `src/CoppAddresd.Api/Controllers/ProgramController.cs` (3 acciones)
+  - `tests/CoppAddresd.UnitTests/ProgramProgress/Handlers/FakeProgramRepository.cs` (fix de compilación: 5 miembros nuevos del contrato, patrón del fake)
+- **Implementation notes**: La transición usa `CreateExecutionStrategy` (una transacción: estado + `resolved_at`); guardia AC-22 con `ClinicianRoles` compartido. Validator: `weaknessId` requerido y estado en los 4 transicionables (`open` → error de validación). Logs sin PHI.
+- **Acceptance criteria**: Api compila (0 errores); AC-44/AC-45 reproducibles manualmente (clínico transiciona; paciente → 403; detección solo en `/calculate`).
+- **Verification**: `dotnet build src/CoppAddresd.Api` (temp OutputPath si un proceso de dev bloquea el bin); manual per el workflow actual.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-73 — Docs (SPEC §21, PLAN, TASKS) + contrato FUTURO de la evaluación semanal
+
+- **Phase**: P1.5
+- **Depends on**: T-70, T-72
+- **Objective**: Mantener PLAN/SPEC/TASKS consistentes con el "Paso 7c" y documentar el contrato FUTURO de la evaluación semanal LLM (SPEC §21.5): `WeeklyAssessmentContext` (scores + dimensiones + debilidades + resumen de adherencia) → endpoint NUEVO del ai-service → narrativa ADRED (`summary`/`strengths`/`weaknesses_text`/`recommendations`/`next_actions`). NO implementar la llamada IA (el endpoint no existe).
+- **Affected paths**:
+  - `coppAddresdBack/docs/modules/program-progress/SPEC.md` (§21 + decisión 27 + AC-43..AC-45 + §1/§8.5/§10.2)
+  - `coppAddresdBack/docs/modules/program-progress/PLAN.md` (decisión 23 + phasing + riesgo + milestone)
+  - `coppAddresdBack/docs/modules/program-progress/TASKS.md` (este batch)
+- **Implementation notes**: Los umbrales clínicos (glucosa 125 mg/dL, delta % grasa 0.3) llevan la marca `REQUIRES_CLINICAL_VALIDATION`; estrés/sueño documentados como reglas LATENTES (sin fuente física aún). La tabla `weaknesses` documentada como NO auditada (PHI en `description`).
+- **Acceptance criteria**: Docs consistentes (`weaknesses`, `WK_NUT_LOW_ADHERENCE`, `B5-WK`, `T-70..T-73`, `AC-45`, `AddProgramProgressWeaknesses`, `WeaknessRulesEngine`).
+- **Verification**: docs cross-check (grep de `weaknesses`, `B5-WK`, `AddProgramProgressWeaknesses`, `REQUIRES_CLINICAL_VALIDATION`).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+---
+
+## Batch B5-IV — Interventions & tele XP (P1.5, "Paso 7d")
+
+> Intervenciones derivadas de debilidades + hooks de telemedicina (SPEC §22,
+> decisión 28): la tabla `app.interventions` con máquina de estados, 7 reglas
+> XP de categoría `intervention` (una por evento del ciclo de vida), creación
+> automática desde debilidades (AC-46), aceptación del paciente (AC-47),
+> completación clínica con validación (AC-48) y hooks de telemedicina
+> (AC-49). El contrato cross-service con el servicio de Telemedicina queda
+> DOCUMENTADO (sin código cross-repo). **Tests OPTIONALES / manuales per el
+> workflow actual** (sin `dotnet test` automático; gate = build verde +
+> migración generada sin aplicar).
+
+### T-74 — Schema: entidad `Intervention` + enums `InterventionType`/`InterventionStatus` + configuración EF + `DbSet` + migración `AddProgramProgressInterventions`
+
+- **Phase**: P1.5
+- **Depends on**: T-70 (weaknesses schema + entity pattern), T-02 (EF conventions), T-03 (migration flow)
+- **Objective**: Entidad `Intervention` + 2 enums string-backed (`InterventionType`/`InterventionStatus`) + `InterventionConfiguration` + `DbSet<Intervention>` + la migración aditiva y reversible que crea `app.interventions` con CHECKs, índices `(patient_id, status)` y `(status)`, FK SQL a `auth.users` para `assigned_to` con ON DELETE SET NULL, FK a `weaknesses` con ON DELETE SET NULL, trigger de auditoría (sin PHI, precedente `notifications`) y GRANTs a `app_user`.
+- **Affected paths**:
+  - `src/CoppAddresd.Domain/Entities/ProgramProgress/Intervention.cs` (nuevo)
+  - `src/CoppAddresd.Domain/Enums/ProgramProgress/InterventionType.cs` (nuevo)
+  - `src/CoppAddresd.Domain/Enums/ProgramProgress/InterventionStatus.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/Configurations/ProgramProgress/InterventionConfiguration.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/Persistence/AppDbContext.cs` (`DbSet<Intervention>`)
+  - `src/CoppAddresd.Infrastructure/Migrations/<timestamp>_AddProgramProgressInterventions.cs` (nueva, aditiva)
+- **Implementation notes**: Convenciones del módulo (§3): snake_case, defaults en migración (`severity='medium'`, `status='detected'`, `xp_awarded_total=0`), FK RESTRICT a `patient_profiles`, SET NULL a `weaknesses`. La FK a `auth.users` para `assigned_to` se crea por SQL en la migración (patrón `weaknesses.assigned_to`). 8 tipos de intervención cubren todas las acciones del motor de debilidades (§22.4). 7 estados cubren la máquina de vida (§22.2).
+- **Acceptance criteria**: Domain + Infrastructure compilan (0 errores); `AddProgramProgressInterventions` es aditiva y reversible; `\d app.interventions` muestra las columnas con defaults + CHECKs, los 2 índices, las FKs y el trigger de auditoría.
+- **Verification**: `dotnet build src/CoppAddresd.Domain src/CoppAddresd.Infrastructure` (temp OutputPath si un proceso de dev bloquea el bin); migración generada (NO aplicada).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-75 — Seeder (7 reglas `intervention`) + enums en `XpReason`/`XpRuleCodes`
+
+- **Phase**: P1.5
+- **Depends on**: T-74 (entity/enums), T-45 (patrón del seeder `SeedXpRulesAsync`)
+- **Objective**: Seed idempotente de las 7 reglas de intervenciones (SPEC §22.3): `WEAKNESS_ASSESS` (20), `INTERV_ACCEPT` (15), `TELE_SCHEDULE` (50), `TELE_ATTEND` (100, requires_validation), `TELE_COMPLY` (50), `INTERV_COMPLETE` (200, requires_validation), `RECOVERY_MISSION` (50), categoría `intervention`. Agregar 7 miembros `WEAKNESS_ASSESS`/`INTERV_ACCEPT`/`TELE_SCHEDULE`/`TELE_ATTEND`/`TELE_COMPLY`/`INTERV_COMPLETE`/`RECOVERY_MISSION` a `XpReason` (21..27) y 7 constantes homónimas a `XpRuleCodes`.
+- **Affected paths**:
+  - `src/CoppAddresd.Domain/Enums/ProgramProgress/XpReason.cs` (7 miembros nuevos)
+  - `src/CoppAddresd.Domain/Enums/ProgramProgress/XpRuleCodes.cs` (7 constantes nuevas)
+  - `src/CoppAddresd.Api/Seeders/ProgramProgressSeeder.cs` (`SeedXpRulesAsync` + 7 reglas; actualizar docstring de 24→31)
+- **Implementation notes**: `ON CONFLICT (code) DO NOTHING` (regla existente nunca se pisa). Los nombres coinciden con los miembros de `XpReason` (dedupe por reason, precedente `CLINICAL_*`/`NUTRITION_*`/`NB_STREAK_*`). `TELE_ATTEND` e `INTERV_COMPLETE` son las únicas con `RequiresValidation = true` (se validan por un clínico). Logs sin PHI.
+- **Acceptance criteria**: Tras el restart, `SELECT COUNT(*) FROM app.xp_rules WHERE category = 'intervention'` = 7; re-correr el seeder no duplica ni pisa. Domain compila (0 errores).
+- **Verification**: `dotnet build src/CoppAddresd.Domain`; docs cross-check.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-76 — Creación de intervenciones desde debilidades + máquina de estados + XP awards
+
+- **Phase**: P1.5
+- **Depends on**: T-74 (schema), T-75 (enums + seeder), T-71 (motor de reglas de debilidades), T-43 (`ResolveXpAwardAsync`)
+- **Objective**: Extender `IProgramRepository` + `ProgramRepository` con 8 métodos de intervención (`EnsureInterventionFromWeaknessAsync`, `ListInterventionsAsync`, `ListOpenInterventionsAsync`, `AcceptInterventionAsync`, `UpdateInterventionStatusAsync`, `MarkTeleScheduledAsync`, `MarkTeleAttendedAsync`, `MarkTeleComplyAsync`) + `AwardInterventionXpAsync` (helper privado, camino del catálogo con dedupe parcial `'intervention'`). Extender `WeaknessDetectionService` con `MapActionToInterventionType` (§22.4) y creación automática post-persistencia. Actualizar `PersistDetectedWeaknessesAsync` para devolver las debilidades nuevas (con IDs) en lugar de solo el conteo.
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Interfaces/IProgramRepository.cs` (8 métodos nuevos + `PersistDetectedWeaknessesAsync` retorno cambiado a `IReadOnlyList<Weakness>`)
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (8 implementaciones + helper + `ToInterventionDto` + `IsValidInterventionTransition` + `GetEnrollmentIdForPatientAsync`)
+  - `src/CoppAddresd.Application/Services/ProgramProgress/WeaknessDetectionService.cs` (extender con `MapActionToInterventionType` y loop de creación de intervenciones post-persistencia, best-effort)
+  - `tests/CoppAddresd.UnitTests/ProgramProgress/Handlers/FakeProgramRepository.cs` (fix de compilación: 8 miembros nuevos del contrato)
+- **Implementation notes**: La creación de intervención corre DESPUÉS de persistir las debilidades (ya en la misma transacción de `/calculate`). `EnsureInterventionFromWeaknessAsync` verifica que no exista ya una intervención para la debilidad (AC-46: una por debilidad) y transiciona la debilidad a `in_intervention`. Cada XP award usa `AwardInterventionXpAsync` con el dedupe parcial `('intervention', intervention.id, reason)`. Las transiciones inválidas lanzan `BusinessRuleViolationException` → 409. `completed` requiere resultado. La debilidad se marca `resolved` al completar (AC-48). Los hooks de telemedicina (`MarkTele*`) no requieren guardia clínica explícita (la API los protege con `Program.Adapt`).
+- **Acceptance criteria**: Application + Infrastructure compilan (0 errores); AC-46/AC-47/AC-48/AC-49 reproducibles manualmente (creación automática desde debilidad; aceptación; completación con resultado; hooks de tele XP).
+- **Verification**: `dotnet build src/CoppAddresd.Application src/CoppAddresd.Infrastructure`; manual per el workflow actual.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-77 — Endpoints + controller + DTOs + docs (SPEC §22, PLAN, TASKS)
+
+- **Phase**: P1.5
+- **Depends on**: T-74, T-75, T-76
+- **Objective**: 7 acciones en `ProgramController` + 6 MediatR commands/queries (`ListInterventionsQuery`, `ListOpenInterventionsQuery`, `AcceptInterventionCommand`, `UpdateInterventionStatusCommand`, `MarkTeleScheduledCommand`, `MarkTeleAttendedCommand`, `MarkTeleComplyCommand`) + DTOs (`InterventionDto`, `PaginatedInterventionsResult`, `UpdateInterventionStatusRequest`). Mantener PLAN/SPEC/TASKS consistentes con el "Paso 7d".
+- **Affected paths**:
+  - `src/CoppAddresd.Api/Controllers/ProgramController.cs` (7 acciones + requests)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Queries/ListInterventions/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Queries/ListOpenInterventions/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/AcceptIntervention/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/UpdateInterventionStatus/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/MarkTeleScheduled/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/MarkTeleAttended/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/MarkTeleComply/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/DTOs/Interventions/` (nuevo)
+  - `coppAddresdBack/docs/modules/program-progress/SPEC.md` (§22 + decisión 28 + AC-46..AC-49 + §0 + §10.2)
+  - `coppAddresdBack/docs/modules/program-progress/PLAN.md` (decisión 28 + phasing + riesgo)
+  - `coppAddresdBack/docs/modules/program-progress/TASKS.md` (este batch)
+- **Implementation notes**: Mismo patrón de debilidades (queries con `IProgramActorContext`, anti-IDOR, paginación default 20/max 100). Los hooks de telemedicina (`tele-scheduled`, `tele-attended`, `tele-comply`) son `POST` sin body relevante (el ID de la intervención viene de la ruta). `AcceptIntervention` requiere `Program.View` (paciente propio); los demás requieren `Program.Adapt`. Los validators de `UpdateInterventionStatus` exigen `result` cuando `status = completed`.
+- **Acceptance criteria**: Api compila (0 errores); AC-46..AC-49 reproducibles manualmente; docs consistentes (`interventions`, `B5-IV`, `T-74..T-77`, `AC-49`, `AddProgramProgressInterventions`).
+- **Verification**: `dotnet build src/CoppAddresd.Api` (temp OutputPath si un proceso de dev bloquea el bin); docs cross-check.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+---
+
 ## Batch B6 — Mobile Slice 1+2 (P1)
 
 > These tasks live in the `antares-paciente` repo. The backend is the dependency.
@@ -1211,9 +1526,15 @@ T-04 (Auth perms) ─▶ T-05 (seeder) ─────────────�
                                                                                                 │
                                                                                                 ├─▶ T-54 (streak config schema+migration) ──▶ T-55 (threshold maintenance) ──▶ T-56 (essential-only freeze + snapshot) ──▶ T-57 (seeder + docs)
                                                                                                 │
-                                                                                                ├─▶ T-58 (habit schema+migration + fake fix) ──▶ T-59 (POST nutrition/log) ──▶ T-60 (weekly awards on /calculate) ──▶ T-61 (seeder + docs)
+├─▶ T-58 (habit schema+migration + fake fix) ──▶ T-59 (POST nutrition/log) ──▶ T-60 (weekly awards on /calculate) ──▶ T-61 (seeder + docs)
                                                                                                 │
-                                                                                               ├─▶ T-16 (mobile client) ──▶ T-17 (snapshot) ──▶ T-18 (complete)
+                                                                                                ├─▶ T-62 (nb-streak schema+migration) ──▶ T-63 (nb seeder) ──▶ T-64 (nb streak engine + milestones) ──▶ T-65 (nb snapshot + docs)
+                                                                                                │
+                                                                                                ├─▶ T-66 (notifications schema+migration) ──▶ T-67 (service + anti-spam) ──▶ T-68 (trigger wiring) ──▶ T-69 (endpoints + docs)
+                                                                                                │
+                                                                                                ├─▶ T-70 (weaknesses schema+migration) ──▶ T-71 (rules engine + detection service) ──▶ T-72 (trigger en /calculate + endpoints) ──▶ T-73 (docs + contrato AI weekly)
+                                                                                                │
+                                                                                                ├─▶ T-16 (mobile client) ──▶ T-17 (snapshot) ──▶ T-18 (complete)
                                                                                                │                                              │
                                                                                                │                                              ├─▶ T-21 (calendar)
                                                                                                │                                              └─▶ T-22 (path)
@@ -1234,7 +1555,7 @@ G3: T-32, T-33, T-34 (after P1+P2 stable)
 |------|------|---------|
 | `cheap-gate` | 0 | T-06, single mechanical checks |
 | `sdd-explore` | 1 | (rare) investigate weird Postgres errors, fuzzy reverse-engineering |
-| `sdd-apply` | 2 | All implementation tasks T-01..T-34 |
+| `sdd-apply` | 2 | All implementation tasks T-01..T-73 |
 | `sdd-verify` | 2 | Could be combined with `sdd-apply` for T-08, T-12, T-14, T-15, T-32, T-33 |
 | Reviewer (human / Tier 3) | 3 | G1, G2, G3 gates |
 
