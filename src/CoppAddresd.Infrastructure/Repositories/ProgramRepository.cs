@@ -288,7 +288,10 @@ public sealed class ProgramRepository(
                 e.CompletedAt,
                 e.PausedAt,
                 e.WithdrawnAt,
-                e.CreatedAt))
+                e.CreatedAt,
+                e.Patient != null ? (e.Patient.FirstName + " " + e.Patient.LastName).Trim() : null,
+                e.Patient != null ? (e.Patient.DocumentNumber ?? e.Patient.MedicalRecordNumber) : null,
+                e.Template != null ? e.Template.Name : null))
             .FirstOrDefaultAsync(ct);
 
     public async Task<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)> ListEnrollmentsAsync(
@@ -334,7 +337,10 @@ public sealed class ProgramRepository(
                 e.CompletedAt,
                 e.PausedAt,
                 e.WithdrawnAt,
-                e.CreatedAt))
+                e.CreatedAt,
+                e.Patient != null ? (e.Patient.FirstName + " " + e.Patient.LastName).Trim() : null,
+                e.Patient != null ? (e.Patient.DocumentNumber ?? e.Patient.MedicalRecordNumber) : null,
+                e.Template != null ? e.Template.Name : null))
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
             .ToListAsync(ct);

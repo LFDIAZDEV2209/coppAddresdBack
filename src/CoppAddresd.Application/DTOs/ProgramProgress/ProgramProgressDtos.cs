@@ -399,7 +399,10 @@ public sealed record ProgramEnrollmentDto(
     DateTime? CompletedAt,
     DateTime? PausedAt,
     DateTime? WithdrawnAt,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? PatientFullName = null,
+    string? PatientDocumentNumber = null,
+    string? TemplateName = null);
 
 /// <summary>Resultado paginado del listado de inscripciones (SPEC §7.5).</summary>
 public sealed record PaginatedEnrollmentsResult(
