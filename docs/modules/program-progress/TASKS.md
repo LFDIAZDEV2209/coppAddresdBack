@@ -48,8 +48,9 @@
   - [x] Enrollments page (`/program/enrollments`) with patient enrollment modal.
   - [x] Program content page (`/program/content`): Weekly nutrition plan & exercise routine assignment table with clean Select labels (`textValue`).
   - [x] `WeekTasksDialog`: Hybrid 7-day Read Mode (panorama completo de toda la semana) + Tabbed Day Edit Mode con selectores por día (`routineId`), puntos XP, eliminación/adición de tareas y botones de copia rápida (Lun-Vie, toda la semana).
-- [ ] **P2: Adaptation Engine & Mobile Live Sync**
-  - [ ] **B8**: Mobile `antares-paciente` live API integration (Slices 3+4).
+- [ ] **P2: Adaptation Engine & Mobile Live Sync** (see [`MOBILE-INTEGRATION.md`](./MOBILE-INTEGRATION.md) for full mobile integration plan)
+  - [ ] **B6 (Mobile Slice 1+2)**: T-16 `apiClient.ts` + service layer, **T-16b TanStack Query setup + hooks**, T-17 view wiring, T-18 `completeStep` mutation.
+  - [ ] **B8 (Mobile Slice 3+4)**: T-21 calendar integration, T-22 path/sendero integration.
   - [ ] **B9**: Automated recommendation engine triggers.
   - [ ] **B10**: ERP Adaptation queue UI panel.
   - [ ] **AI Weekly Assessment**: LLM-driven narrative generation in `ai-service` (SPEC §21.5).
@@ -1251,47 +1252,78 @@
 - **Phase**: P1
 - **Depends on**: T-13 (backend snapshot/complete endpoints live)
 - **Objective**: Add a typed API client and the TypeScript types matching SPEC §7.
-- **Affected paths**:
-  - `antares-paciente/src/api/program.ts` (new)
-  - `antares-paciente/src/types/program.ts` (new, exported)
-  - `antares-paciente/src/api/http.ts` (extend existing HTTP wrapper with `getJson<T>` / `postJson<T>` if not present)
-- **Implementation notes**: Use the same auth header + base URL as other API calls in `antares-paciente`. Generate `clientRequestId = ulid()` on each `completeStep`. Cache snapshots in `AppContext` for stale-while-revalidate.
-- **Acceptance criteria**: `api/program.ts` exports `getSnapshot`, `completeTask`, `getCalendar`, `getPath`. Types match SPEC §7.1 JSON keys.
+- **Affected paths** (UPDATED — see [`MOBILE-INTEGRATION.md`](./MOBILE-INTEGRATION.md) §4 for rationale):
+  - `antares-paciente/src/utils/apiClient.ts` (new — mirrors ERP's `apiFetch` pattern from `coppaddresd-front/lib/api/http.ts`)
+  - `antares-paciente/src/services/program/types.ts` (new — TS interfaces matching SPEC §7 DTOs)
+  - `antares-paciente/src/services/program/program-service.ts` (new — snapshot, path, calendar, enrollment)
+  - `antares-paciente/src/services/program/tasks-service.ts` (new — completeTask)
+  - `antares-paciente/src/services/program/scores-service.ts` (new — Health & Transform scores)
+  - `antares-paciente/src/services/program/nutrition-service.ts` (new — meal/hydration logging)
+- **Implementation notes**: `apiClient.ts` wraps `fetch` with Bearer token from `sessionStorage` (// TODO: migrate to Capacitor Secure Storage), refresh on 401 (single-flight, same logic as ERP), timeout with `AbortController` (15s default), and `ApiError` typed mapping compatible with RFC 7807. Generate `clientRequestId = crypto.randomUUID()` on each `completeTask` call.
+- **Acceptance criteria**: `services/program/program-service.ts` exports `fetchSnapshot`, `fetchCalendar`, `fetchPath`, `autoEnroll`. `tasks-service.ts` exports `completeTask`. Types match SPEC §7.1 JSON keys. `apiClient.ts` handles 401 refresh transparently.
 - **Verification**: `npm run build` passes; `npm run lint` passes; new file imports compile.
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
-### T-17 — Wire `AppContext` to snapshot
+### T-16b — TanStack Query setup
 
 - **Phase**: P1
 - **Depends on**: T-16
-- **Objective**: Replace `src/data/program.ts` static constants with live data where applicable.
+- **Objective**: Install and configure `@tanstack/react-query` as the cache/sync layer for the mobile app.
 - **Affected paths**:
-  - `antares-paciente/src/context/AppContext.tsx` (add `programSnapshot` state + reducer actions)
-  - `antares-paciente/src/pages/ProgramPage.tsx` (replace hardcoded `PROGRAM_TASKS`, `PROGRAM_POINTS_MAX`, `DAY_BONUS_PTS` with snapshot-derived values; fall back to mock if fetch fails)
-- **Implementation notes**: Keep the mobile UI shapes intact. Mock fallback guarantees demo continuity. Add a thin `lastSyncFailed` badge state.
+  - `antares-paciente/package.json` (add `@tanstack/react-query`)
+  - `antares-paciente/src/App.tsx` or entry point (wrap with `QueryClientProvider`)
+  - `antares-paciente/src/hooks/useProgram.ts` (new — `useQuery` for `/me/snapshot`)
+  - `antares-paciente/src/hooks/useProgramPath.ts` (new — `useQuery` for `/path`)
+  - `antares-paciente/src/hooks/useCompleteTask.ts` (new — `useMutation` with optimistic XP update)
+  - `antares-paciente/src/hooks/useProgramCalendar.ts` (new — `useQuery` for `/calendar`)
+  - `antares-paciente/src/hooks/useProgramScores.ts` (new — `useQuery` for `/scores`)
+  - `antares-paciente/src/hooks/useNutritionLog.ts` (new — `useMutation` for meal logging)
+- **Implementation notes**: Justified divergence from ERP (which uses custom hooks with `useEffect`): the mobile app needs offline-first patterns, background refetch, and optimistic mutation updates for XP/streak that TanStack Query handles natively. Defaults: `staleTime: 5min`, `retry: 2`, `refetchOnWindowFocus: true`. Each hook falls back to mock data from `data/program.ts` when the query errors (// TODO: Remove mock fallback).
+- **Acceptance criteria**: `QueryClientProvider` wraps the app. `useProgram()` returns snapshot data or mock fallback. `useCompleteTask()` performs optimistic XP update and rolls back on error.
+- **Verification**: `npm run build` passes; `npm run dev` renders ProgramPage with QueryClientProvider active.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-17 — Wire views to snapshot via hooks
+
+- **Phase**: P1
+- **Depends on**: T-16b
+- **Objective**: Replace `src/data/program.ts` static constants with live data via TanStack Query hooks.
+- **Affected paths**:
+  - `antares-paciente/src/pages/ProgramPage.tsx` (consume `useProgram()` hook; replace hardcoded `PROGRAM_TASKS`, `PROGRAM_POINTS_MAX`, `DAY_BONUS_PTS` with snapshot-derived values)
+  - `antares-paciente/src/pages/program/TodayView.tsx` (consume `useProgramPath()`)
+  - `antares-paciente/src/pages/program/StreakView.tsx` (consume `useProgram()` for streak + `useProgramCalendar()` for consistency map)
+  - `antares-paciente/src/pages/program/EvolutionView.tsx` (consume `useProgramScores()`)
+  - `antares-paciente/src/data/program.ts` (KEEP as mock fallback — add `// TODO: Remove mock fallback` markers)
+- **Implementation notes**: Each view consumes its TanStack Query hook. On error/loading, falls back to mock data from `data/program.ts`. Auto-enrollment: on first `ProgramPage` mount, if `useProgram()` returns 404/not-found, trigger `POST /enrollments/me` (idempotent) then refetch. The `AppContext` program-related fields (`program`, `programWeek`, `streak`, `weekCheckins`, `pointsToday`, `pointsTotal`) remain as legacy with `// TODO: Remove after full migration` — views read from hooks first.
 - **Acceptance criteria**:
-  - App boot triggers `getSnapshot()`; failure → mock fallback, no error to the user.
-  - XP gauge, level badge, task cards, and calendar render from snapshot data.
-  - AC-18 is reproducible: backend off → mobile still renders.
+  - App boot triggers `useProgram()` → `fetchSnapshot()`; failure → mock fallback, no error to the user.
+  - XP gauge, level badge, task cards, streak, and calendar render from snapshot data when backend is up.
+  - AC-18 is reproducible: backend off → mobile still renders with mock data.
+  - Auto-enrollment fires transparently on first visit.
 - **Verification**:
   - `npm run dev` and open in the browser.
   - Toggle backend off; reload app; UI still renders.
+  - With backend on: verify data comes from API (check Network tab).
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
 ### T-18 — Wire `completeStep` to `POST /tasks/complete`
 
 - **Phase**: P1
 - **Depends on**: T-17
-- **Objective**: Optimistic UI + idempotent retry + reconcile on response.
+- **Objective**: Optimistic UI via `useMutation` + idempotent retry + reconcile on response.
 - **Affected paths**:
-  - `antares-paciente/src/context/AppContext.tsx` (`completeStep` reducer → `api/completeTask`)
-  - `antares-paciente/src/pages/ProgramPage.tsx` (`finish` helper uses the new reducer)
-- **Implementation notes**: Persist queued writes to `localStorage` keyed by `clientRequestId`. On reconnect, replay the queue in order. Replay must NOT award XP twice (server enforces; client just trusts the response).
+  - `antares-paciente/src/hooks/useCompleteTask.ts` (implement `useMutation` with optimistic XP/streak update)
+  - `antares-paciente/src/pages/program/Lessons.tsx` (each lesson's "complete" action calls `useCompleteTask().mutate()`)
+  - `antares-paciente/src/pages/program/TodayView.tsx` (node tap triggers lesson → completion → path refetch)
+  - `antares-paciente/src/context/AppContext.tsx` (`completeStep` becomes a thin wrapper that calls the mutation — `// TODO: Remove AppContext.completeStep after full migration`)
+- **Implementation notes**: `useMutation` with `onMutate` for optimistic update (increment XP, mark task done in query cache), `onError` for rollback, `onSettled` for refetch of snapshot + path. Persist failed writes to `localStorage` keyed by `clientRequestId` for offline queue. On reconnect, replay queue (server enforces idempotency — client trusts response). Confetti/XP popup animations fire on `onMutate` (optimistic), not on `onSuccess`.
 - **Acceptance criteria**:
   - AC-01..AC-04 reproducible against the dev backend.
   - Toggling network mid-write does not double-award XP on next sync.
+  - Confetti animation fires immediately (optimistic), not after server response.
 - **Verification**:
   - `npm run dev`; complete a task; kill network; complete again; restore network; refresh — XP is correct.
+  - Check localStorage for queued writes when offline.
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
 ---
