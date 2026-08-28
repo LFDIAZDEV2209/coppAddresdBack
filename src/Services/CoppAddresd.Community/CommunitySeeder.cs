@@ -88,25 +88,9 @@ public static class CommunitySeeder
 
         if (await db.Profiles.AnyAsync(p => !p.IsSystem, ct))
         {
-            // En desarrollo: si hay perfiles con regiones obsoletas (null tras cambio de enum),
-            // limpiar todo y re-sembrar con las ciudades actuales.
-            var hasStaleRegions = await db.Profiles.AnyAsync(p => !p.IsSystem && p.Region == null, ct);
-            if (!hasStaleRegions)
-                return;
-
-            // Borrar TODOS los datos demo en orden FK seguro y re-sembrar
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.feed_events", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.likes", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.comments", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.post_reports", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.xp_entries", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.recognitions", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.messages", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.follows", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.chat_group_members", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.chat_groups", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.posts", ct);
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM community.profiles WHERE NOT is_system", ct);
+            // Ya hay datos demo (o reales): no tocar nada al reiniciar el servicio.
+            // Para re-sembrar desde cero, truncar manualmente las tablas en desarrollo.
+            return;
         }
 
         var now = DateTime.UtcNow;
