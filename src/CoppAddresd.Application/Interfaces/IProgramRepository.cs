@@ -149,6 +149,14 @@ public interface IProgramRepository
         Guid? actorId = null,
         CancellationToken ct = default);
 
+    /// <summary>Reemplazo en bloque del TasksSnapshot de una semana específica en la inscripción del paciente.</summary>
+    Task<EnrollmentWeekDetailDto> ReplaceEnrollmentWeekTasksAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        IReadOnlyList<WeeklyDayTemplate> tasks,
+        Guid? actorId = null,
+        CancellationToken ct = default);
+
     // --- Adaptaciones (ERP) ---
 
     Task<(IReadOnlyList<AdaptationRecommendation> Items, int Total)> ListAdaptationsAsync(
@@ -565,5 +573,34 @@ public interface IProgramRepository
     /// </summary>
     Task<InterventionDto> MarkTeleComplyAsync(
         Guid interventionId,
+        CancellationToken ct = default);
+
+    // --- T-77: Helpers para el configurador de contenido ---
+
+    /// <summary>
+    /// Nombre y código de un plan de alimentación por ID (T-77). Devuelve null
+    /// si el plan no existe. Usado por el handler de GetProgramContent para
+    /// armar las referencias de las semanas.
+    /// </summary>
+    Task<(string Code, string Name)?> GetPlanNameAsync(Guid planId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Nombre y código de una rutina de ejercicio por ID (T-77). Devuelve null
+    /// si la rutina no existe. Usado por el handler de GetProgramContent.
+    /// </summary>
+    Task<(string Code, string Name)?> GetRoutineNameAsync(Guid routineId, CancellationToken ct = default);
+
+    // --- Detalle de semana (GET /enrollments/{id}/week/{weekNumber}) ---
+
+    /// <summary>
+    /// Detalle de una semana específica de una inscripción: tareas del snapshot,
+    /// completaciones reales, rollup diario y verificación de scoping clínico.
+    /// Devuelve null si la inscripción no existe, la semana no existe o el
+    /// profesional no tiene asignación activa con el paciente.
+    /// </summary>
+    Task<EnrollmentWeekDetailDto?> GetEnrollmentWeekDetailAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        Guid clinicianUserId,
         CancellationToken ct = default);
 }

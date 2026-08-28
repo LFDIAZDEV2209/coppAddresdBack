@@ -4,6 +4,7 @@ using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
+using CoppAddresd.Infrastructure.Services.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,6 +76,12 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         // CalculateScoresCommandHandler.
         services.AddScoped<IWeaknessDetectionService, WeaknessDetectionService>();
 
+        // Resolvedor de contenido del programa (SPEC §4.2/§4.3/§6.10 — T-74):
+        // servicio de solo lectura que determina el plan de alimentación activo y
+        // la rutina de ejercicio activa para un paciente en una fecha local.
+        // Consume IWellnessRepository (ya registrado arriba).
+        services.AddScoped<IProgramContentResolver, ProgramContentResolver>();
+
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).
         services.AddScoped<IClinicalMeasurementRepository, ClinicalMeasurementRepository>();
@@ -96,8 +103,33 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IPostalCodeLookupService, ZippopotamPostalCodeLookup>();
 
         AddObjectStorage(services, configuration);
+        AddEmailServices(services, configuration);
 
         return services;
+    }
+
+    /// <summary>
+    /// Registra la implementación de <see cref="IEmailService"/> según <c>Email:Provider</c>
+    /// (por defecto, <c>Log</c> para desarrollo sin credenciales).
+    /// </summary>
+    private static void AddEmailServices(
+        IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.Configure<EmailOptions>(
+            configuration.GetSection(EmailOptions.SectionName));
+
+        var provider = configuration["Email:Provider"] ?? "Log";
+
+        if (provider.Equals("Smtp", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IEmailService, SmtpEmailService>();
+        }
+        else
+        {
+            // Default: Log (seguro para desarrollo sin credenciales)
+            services.AddScoped<IEmailService, LogEmailService>();
+        }
     }
 
     /// <summary>

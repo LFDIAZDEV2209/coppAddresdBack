@@ -12,8 +12,10 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.LogNutrition;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkNotificationRead;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PauseEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PublishTemplate;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceWeekdayTasks;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ResumeEnrollment;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.SetWeekContent;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateXpRule;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.WithdrawEnrollment;
@@ -36,6 +38,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenIntervent
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetAdaptation;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetCalendar;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetPath;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetScores;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetSnapshot;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetTemplate;
@@ -45,6 +48,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.ListEnrollments;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListNotifications;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListTemplates;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListXpRules;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetEnrollmentWeek;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using MediatR;
@@ -267,6 +271,88 @@ public sealed class ProgramController(
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default)
         => Ok(await mediator.Send(new ListEnrollmentsQuery(patientId, status, page, pageSize), ct));
+
+    // ===================== CLÍNICO/ERP: contenido por semana (T-77) =====================
+
+    /// <summary>
+    /// Contenido de nutrición y ejercicio configurado por semana para una
+    /// inscripción (T-77). Devuelve todas las semanas con su plan/rutina activo
+    /// para la ventana de 7 días. Requiere <c>Program.View</c>.
+    /// </summary>
+    [HttpGet("enrollments/{id:guid}/content")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<ProgramContentResponse>> GetProgramContent(
+        Guid id,
+        CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetProgramContentQuery(id), ct);
+        if (result is null)
+        {
+            return NotFound(new { message = "Inscripción no encontrada" });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Configura el contenido de nutrición y/o ejercicio para una semana
+    /// específica de la inscripción (T-77). Body: <c>{ nutritionPlanId?, exerciseRoutineId? }</c>;
+    /// null o ausente = desasignar esa dimensión para la semana. Requiere
+    /// <c>Program.Edit</c>.
+    /// </summary>
+    [HttpPut("enrollments/{id:guid}/content/week/{weekNumber:int}")]
+    [RequirePermission("Program.Edit")]
+    public async Task<ActionResult<ProgramContentWeekDto>> SetWeekContent(
+        Guid id,
+        int weekNumber,
+        [FromBody] SetWeekContentRequest request,
+        CancellationToken ct)
+        => Ok(await mediator.Send(new SetWeekContentCommand(
+            id, weekNumber, request.NutritionPlanId, request.ExerciseRoutineId,
+            actorContext.UserId), ct));
+
+    /// <summary>
+    /// Detalle de una semana específica de una inscripción (tareas programadas,
+    /// completaciones, puntos y contenido activo). Requiere <c>Program.View</c>
+    /// con alcance clínico: 404 si la inscripción no existe o el paciente no
+    /// está asignado al profesional autenticado.
+    /// </summary>
+    [HttpGet("enrollments/{id:guid}/week/{weekNumber:int}")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<EnrollmentWeekDetailDto>> GetEnrollmentWeek(
+        Guid id,
+        int weekNumber,
+        CancellationToken ct)
+    {
+        var userId = actorContext.UserId;
+        if (userId is null)
+        {
+            return NotFound(new { message = "Usuario no identificado." });
+        }
+
+        var result = await mediator.Send(
+            new GetEnrollmentWeekQuery(id, weekNumber, userId.Value), ct);
+
+        if (result is null)
+        {
+            return NotFound(new { message = "Inscripción o semana no encontrada" });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Reemplaza las tareas programadas (TasksSnapshot) de una semana específica de una inscripción.
+    /// Requiere <c>Program.Edit</c>.
+    /// </summary>
+    [HttpPut("enrollments/{id:guid}/week/{weekNumber:int}/tasks")]
+    [RequirePermission("Program.Edit")]
+    public async Task<ActionResult<EnrollmentWeekDetailDto>> ReplaceEnrollmentWeekTasks(
+        Guid id,
+        int weekNumber,
+        [FromBody] IReadOnlyList<WeeklyDayTemplateRequest> tasks,
+        CancellationToken ct)
+        => Ok(await mediator.Send(new ReplaceEnrollmentWeekTasksCommand(id, weekNumber, tasks, actorContext.UserId), ct));
 
     // ===================== CLÍNICO/ERP: plantillas =====================
 

@@ -766,4 +766,25 @@ internal sealed class FakeProgramRepository : IProgramRepository
         i.Description, i.Status.ToString(), i.Severity, i.AssignedTo,
         i.RecommendedAt, i.AcceptedAt, i.CompletedAt, i.PatientAction,
         i.Result, i.XpAwardedTotal, i.CreatedAt, i.UpdatedAt);
+
+    // --- T-77: Helpers para el configurador de contenido ---
+
+    public Task<(string Code, string Name)?> GetPlanNameAsync(Guid planId, CancellationToken ct = default)
+        => Task.FromResult<(string Code, string Name)?>(("plan-code", "Plan Name"));
+
+    public Task<(string Code, string Name)?> GetRoutineNameAsync(Guid routineId, CancellationToken ct = default)
+        => Task.FromResult<(string Code, string Name)?>(("routine-code", "Routine Name"));
+
+    // --- Detalle de semana ---
+
+    public Task<EnrollmentWeekDetailDto?> GetEnrollmentWeekDetailAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        Guid clinicianUserId,
+        CancellationToken ct = default)
+        => Task.FromResult<EnrollmentWeekDetailDto?>(null);
+
+    public Task<EnrollmentWeekDetailDto> ReplaceEnrollmentWeekTasksAsync(
+        Guid enrollmentId, int weekNumber, IReadOnlyList<WeeklyDayTemplate> tasks, Guid? actorId = null, CancellationToken ct = default)
+        => Task.FromResult(new EnrollmentWeekDetailDto(weekNumber, DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), null, null, []));
 }

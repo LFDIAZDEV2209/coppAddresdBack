@@ -5,6 +5,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.PublishTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ResumeEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.WithdrawEnrollment;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Domain.Enums.ProgramProgress;
 
 namespace CoppAddresd.UnitTests.ProgramProgress.Handlers;
 
@@ -94,5 +95,42 @@ public class ProgramCommandValidatorsTests
         var validator = new ArchiveTemplateCommandValidator();
 
         Assert.False(validator.Validate(new ArchiveTemplateCommand(Guid.Empty)).IsValid);
+    }
+
+    [Fact]
+    public void ReplaceEnrollmentWeekTasks_Validations_Work()
+    {
+        var validator = new CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks.ReplaceEnrollmentWeekTasksCommandValidator();
+
+        // 1. EnrollmentId vacío -> Inválido
+        var emptyId = new CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks.ReplaceEnrollmentWeekTasksCommand(
+            Guid.Empty, 1, [new WeeklyDayTemplateRequest(1, TaskCode.podcast, 80, 1)]);
+        Assert.False(validator.Validate(emptyId).IsValid);
+
+        // 2. WeekNumber < 1 -> Inválido
+        var invalidWeek = new CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks.ReplaceEnrollmentWeekTasksCommand(
+            Guid.NewGuid(), 0, [new WeeklyDayTemplateRequest(1, TaskCode.podcast, 80, 1)]);
+        Assert.False(validator.Validate(invalidWeek).IsValid);
+
+        // 3. Tareas nulas o vacías -> Inválido
+        var emptyTasks = new CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks.ReplaceEnrollmentWeekTasksCommand(
+            Guid.NewGuid(), 1, []);
+        Assert.False(validator.Validate(emptyTasks).IsValid);
+
+        // 4. Tareas duplicadas en mismo día -> Inválido
+        var duplicateTasks = new CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks.ReplaceEnrollmentWeekTasksCommand(
+            Guid.NewGuid(), 1, [
+                new WeeklyDayTemplateRequest(1, TaskCode.podcast, 80, 1),
+                new WeeklyDayTemplateRequest(1, TaskCode.podcast, 80, 2)
+            ]);
+        Assert.False(validator.Validate(duplicateTasks).IsValid);
+
+        // 5. Tareas válidas -> Válido
+        var valid = new CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks.ReplaceEnrollmentWeekTasksCommand(
+            Guid.NewGuid(), 1, [
+                new WeeklyDayTemplateRequest(1, TaskCode.podcast, 80, 1),
+                new WeeklyDayTemplateRequest(1, TaskCode.vitals, 120, 2)
+            ]);
+        Assert.True(validator.Validate(valid).IsValid);
     }
 }

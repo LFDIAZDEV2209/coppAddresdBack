@@ -32,6 +32,12 @@ public sealed class WeeklyDayTemplate
     /// </summary>
     public Guid? MediaId { get; set; }
 
+    /// <summary>Rutina de ejercicio específica para este día (opcional).</summary>
+    public Guid? RoutineId { get; set; }
+
+    /// <summary>Plan nutricional específico para este día (opcional).</summary>
+    public Guid? NutritionPlanId { get; set; }
+
     /// <summary>Usuario de <c>auth.users</c> que creó la fila (auditoría, sin navegación EF).</summary>
     public Guid? CreatedBy { get; set; }
 

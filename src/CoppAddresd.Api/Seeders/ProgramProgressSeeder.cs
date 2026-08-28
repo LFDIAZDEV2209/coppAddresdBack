@@ -96,9 +96,45 @@ public sealed class ProgramProgressSeeder(
             var dayCount = await WithContext(
                 db => db.WeeklyDayTemplates.CountAsync(x => x.TemplateId == templateId, ct), ct);
 
+            if (dayCount > 0)
+            {
+                logger.LogInformation(
+                    "Plantilla {Code} ya existe: {DayCount} filas en weekly_day_templates (seed omitido)",
+                    _defaultTemplateCode, dayCount);
+                return;
+            }
+
+            // Plantilla creada por una versión anterior sin DayTemplates:
+            // sembrar las 42 filas faltantes (7 días × 6 tareas).
+            await WithContext(async db =>
+            {
+                var template = await db.ProgramTemplates
+                    .Include(t => t.DayTemplates)
+                    .FirstAsync(t => t.Id == templateId, ct);
+
+                for (short weekday = 1; weekday <= 7; weekday++)
+                {
+                    for (var i = 0; i < TaskSeeds.Count; i++)
+                    {
+                        template.DayTemplates.Add(new WeeklyDayTemplate
+                        {
+                            TemplateId = templateId.Value,
+                            Weekday = weekday,
+                            TaskCode = TaskSeeds[i].Code,
+                            Points = TaskSeeds[i].Points,
+                            SortOrder = i + 1,
+                            MediaId = null,
+                        });
+                    }
+                }
+
+                await db.SaveChangesAsync(ct);
+                return true;
+            }, ct);
+
             logger.LogInformation(
-                "Plantilla {Code} ya existe: {DayCount} filas en weekly_day_templates (seed omitido)",
-                _defaultTemplateCode, dayCount);
+                "Plantilla {Code}: {DayCount} filas faltantes sembradas",
+                _defaultTemplateCode, 7 * TaskSeeds.Count);
             return;
         }
 

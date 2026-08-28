@@ -48,6 +48,9 @@ builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
 // Seed de la plantilla por defecto del programa de 83 semanas (default-83w).
 builder.Services.AddHostedService<ProgramProgressSeeder>();
 
+// Seed de rutinas de ejercicio base para el configurador de contenido del ERP.
+builder.Services.AddHostedService<ExerciseRoutineSeeder>();
+
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
 // (no incluido en el shared framework de .NET 10), así que se usa un check
