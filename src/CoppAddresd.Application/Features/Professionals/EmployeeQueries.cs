@@ -99,11 +99,27 @@ public record EmployeeStatsDto(
 public record GetEmployeesStatsQuery(Guid? OrganizationId, Guid? ClinicId)
     : IRequest<EmployeeStatsDto>;
 
-public sealed class GetEmployeesStatsQueryHandler(IEmployeeRepository repository)
-    : IRequestHandler<GetEmployeesStatsQuery, EmployeeStatsDto>
+/// <summary>
+/// Cache-aside con TTL 30-60s (jitter anti-stampede), hash de alcance en la
+/// clave: organización/clínica distintos nunca comparten key. Staleness
+/// máximo = TTL (tolerado por diseño para dashboards).
+/// </summary>
+public sealed class GetEmployeesStatsQueryHandler(
+    IEmployeeRepository repository,
+    ICacheService cache
+) : IRequestHandler<GetEmployeesStatsQuery, EmployeeStatsDto>
 {
-    public async Task<EmployeeStatsDto> Handle(
-        GetEmployeesStatsQuery request,
-        CancellationToken ct
-    ) => await repository.GetStatsAsync(request.OrganizationId, request.ClinicId, ct);
+    public async Task<EmployeeStatsDto> Handle(GetEmployeesStatsQuery request, CancellationToken ct)
+    {
+        var scopeHash = CacheKeys.HashScope(
+            request.OrganizationId?.ToString(),
+            request.ClinicId?.ToString()
+        );
+        return await cache.GetOrCreateAsync(
+            CacheKeys.Stats("employees", scopeHash),
+            CacheKeys.StatsTtl(),
+            token => repository.GetStatsAsync(request.OrganizationId, request.ClinicId, token),
+            ct
+        );
+    }
 }

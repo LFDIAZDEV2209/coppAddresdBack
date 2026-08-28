@@ -2,6 +2,7 @@ using CoppAddresd.Application.Features.Professionals;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Exceptions;
+using CoppAddresd.Infrastructure.Cache;
 using NSubstitute;
 
 namespace CoppAddresd.UnitTests.Features.Professionals;
@@ -131,7 +132,7 @@ public class GetEmployeesStatsQueryHandlerTests
         var expected = new EmployeeStatsDto(5, 3, 1, 1, []);
         repository.GetStatsAsync(orgId, clinicId, Arg.Any<CancellationToken>()).Returns(expected);
 
-        var handler = new GetEmployeesStatsQueryHandler(repository);
+        var handler = new GetEmployeesStatsQueryHandler(repository, new NoCacheService());
         var result = await handler.Handle(
             new GetEmployeesStatsQuery(orgId, clinicId),
             CancellationToken.None
@@ -162,7 +163,7 @@ public class ProfessionalCatalogCommandsTests
             .ProfessionalTypeCodeExistsAsync("FONOAUDIOLOGO", Arg.Any<CancellationToken>())
             .Returns(true);
 
-        var handler = new CreateProfessionalTypeCommandHandler(_repository);
+        var handler = new CreateProfessionalTypeCommandHandler(_repository, new NoCacheService());
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(
@@ -179,7 +180,7 @@ public class ProfessionalCatalogCommandsTests
             .AddProfessionalTypeAsync(Arg.Any<ProfessionalType>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.Arg<ProfessionalType>());
 
-        var handler = new CreateProfessionalTypeCommandHandler(_repository);
+        var handler = new CreateProfessionalTypeCommandHandler(_repository, new NoCacheService());
         var created = await handler.Handle(
             new CreateProfessionalTypeCommand("fonoaudiologo", "Fonoaudiologo", null, 10),
             CancellationToken.None
@@ -195,7 +196,7 @@ public class ProfessionalCatalogCommandsTests
     [Fact]
     public async Task CreateType_CodigoConCaracteresInvalidos_Lanza()
     {
-        var handler = new CreateProfessionalTypeCommandHandler(_repository);
+        var handler = new CreateProfessionalTypeCommandHandler(_repository, new NoCacheService());
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(
@@ -219,7 +220,7 @@ public class ProfessionalCatalogCommandsTests
             .GetProfessionalTypeByIdAsync(existing.Id, Arg.Any<CancellationToken>())
             .Returns(existing);
 
-        var handler = new UpdateProfessionalTypeCommandHandler(_repository);
+        var handler = new UpdateProfessionalTypeCommandHandler(_repository, new NoCacheService());
         var updated = await handler.Handle(
             new UpdateProfessionalTypeCommand(existing.Id, "Medico", null, null, false),
             CancellationToken.None
@@ -238,7 +239,7 @@ public class ProfessionalCatalogCommandsTests
             .GetProfessionalTypeByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns((ProfessionalType?)null);
 
-        var handler = new UpdateProfessionalTypeCommandHandler(_repository);
+        var handler = new UpdateProfessionalTypeCommandHandler(_repository, new NoCacheService());
         var result = await handler.Handle(
             new UpdateProfessionalTypeCommand(Guid.NewGuid(), "X", null, null, null),
             CancellationToken.None
@@ -254,7 +255,7 @@ public class ProfessionalCatalogCommandsTests
             .SpecialtyCodeExistsAsync("FONOAUDIOLOGIA", Arg.Any<CancellationToken>())
             .Returns(true);
 
-        var handler = new CreateSpecialtyCommandHandler(_repository);
+        var handler = new CreateSpecialtyCommandHandler(_repository, new NoCacheService());
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(
@@ -279,7 +280,7 @@ public class ProfessionalCatalogCommandsTests
             .GetSpecialtyByIdAsync(existing.Id, Arg.Any<CancellationToken>())
             .Returns(existing);
 
-        var handler = new UpdateSpecialtyCommandHandler(_repository);
+        var handler = new UpdateSpecialtyCommandHandler(_repository, new NoCacheService());
         var updated = await handler.Handle(
             new UpdateSpecialtyCommand(existing.Id, "Nutrición Clínica", null, null, null, false),
             CancellationToken.None

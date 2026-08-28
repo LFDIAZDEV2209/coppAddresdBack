@@ -42,8 +42,10 @@ public record CreateProfessionalTypeCommand(
     int SortOrder
 ) : IRequest<ProfessionalTypeDto>;
 
-public sealed class CreateProfessionalTypeCommandHandler(IOrganizationRepository repository)
-    : IRequestHandler<CreateProfessionalTypeCommand, ProfessionalTypeDto>
+public sealed class CreateProfessionalTypeCommandHandler(
+    IOrganizationRepository repository,
+    ICacheService cache
+) : IRequestHandler<CreateProfessionalTypeCommand, ProfessionalTypeDto>
 {
     public async Task<ProfessionalTypeDto> Handle(
         CreateProfessionalTypeCommand request,
@@ -72,6 +74,9 @@ public sealed class CreateProfessionalTypeCommandHandler(IOrganizationRepository
         };
 
         var created = await repository.AddProfessionalTypeAsync(entity, ct);
+        // Invalidación del catálogo cacheado en el mismo flujo de escritura
+        // (la siguiente lectura reconstruye con el cambio visible).
+        await cache.RemoveAsync(CacheKeys.Catalog("professional-types"), ct);
         return ProfessionalTypeDto.FromEntity(created);
     }
 }
@@ -88,8 +93,10 @@ public record UpdateProfessionalTypeCommand(
     bool? IsActive
 ) : IRequest<ProfessionalTypeDto?>;
 
-public sealed class UpdateProfessionalTypeCommandHandler(IOrganizationRepository repository)
-    : IRequestHandler<UpdateProfessionalTypeCommand, ProfessionalTypeDto?>
+public sealed class UpdateProfessionalTypeCommandHandler(
+    IOrganizationRepository repository,
+    ICacheService cache
+) : IRequestHandler<UpdateProfessionalTypeCommand, ProfessionalTypeDto?>
 {
     public async Task<ProfessionalTypeDto?> Handle(
         UpdateProfessionalTypeCommand request,
@@ -114,6 +121,7 @@ public sealed class UpdateProfessionalTypeCommandHandler(IOrganizationRepository
             entity.IsActive = request.IsActive.Value;
 
         await repository.UpdateProfessionalTypeAsync(entity, ct);
+        await cache.RemoveAsync(CacheKeys.Catalog("professional-types"), ct);
         return ProfessionalTypeDto.FromEntity(entity);
     }
 }
@@ -127,8 +135,10 @@ public record CreateSpecialtyCommand(
     int SortOrder
 ) : IRequest<SpecialtyDto>;
 
-public sealed class CreateSpecialtyCommandHandler(IOrganizationRepository repository)
-    : IRequestHandler<CreateSpecialtyCommand, SpecialtyDto>
+public sealed class CreateSpecialtyCommandHandler(
+    IOrganizationRepository repository,
+    ICacheService cache
+) : IRequestHandler<CreateSpecialtyCommand, SpecialtyDto>
 {
     public async Task<SpecialtyDto> Handle(CreateSpecialtyCommand request, CancellationToken ct)
     {
@@ -155,6 +165,7 @@ public sealed class CreateSpecialtyCommandHandler(IOrganizationRepository reposi
         };
 
         var created = await repository.AddSpecialtyAsync(entity, ct);
+        await cache.RemoveAsync(CacheKeys.Catalog("specialties"), ct);
         return SpecialtyDto.FromEntity(created);
     }
 }
@@ -172,8 +183,10 @@ public record UpdateSpecialtyCommand(
     bool? IsActive
 ) : IRequest<SpecialtyDto?>;
 
-public sealed class UpdateSpecialtyCommandHandler(IOrganizationRepository repository)
-    : IRequestHandler<UpdateSpecialtyCommand, SpecialtyDto?>
+public sealed class UpdateSpecialtyCommandHandler(
+    IOrganizationRepository repository,
+    ICacheService cache
+) : IRequestHandler<UpdateSpecialtyCommand, SpecialtyDto?>
 {
     public async Task<SpecialtyDto?> Handle(UpdateSpecialtyCommand request, CancellationToken ct)
     {
@@ -197,6 +210,7 @@ public sealed class UpdateSpecialtyCommandHandler(IOrganizationRepository reposi
             entity.IsActive = request.IsActive.Value;
 
         await repository.UpdateSpecialtyAsync(entity, ct);
+        await cache.RemoveAsync(CacheKeys.Catalog("specialties"), ct);
         return SpecialtyDto.FromEntity(entity);
     }
 }
