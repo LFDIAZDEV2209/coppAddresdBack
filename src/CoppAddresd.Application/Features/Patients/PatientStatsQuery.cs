@@ -14,18 +14,37 @@ namespace CoppAddresd.Application.Features.Patients;
 public record GetPatientsStatsQuery(Guid? ClinicId = null, Guid? OwnProfessionalId = null)
     : IRequest<PatientStatsDto>;
 
-public sealed class GetPatientsStatsQueryHandler(IPatientRepository repository)
+/// <summary>
+/// Cache-aside con TTL 30-60s (jitter anti-stampede) y hash de alcance en la
+/// clave: un admin global y un profesional con alcance "propio" nunca
+/// comparten key. Staleness máximo = TTL, tolerado por diseño para el
+/// dashboard (el listado siempre lee datos frescos).
+/// </summary>
+public sealed class GetPatientsStatsQueryHandler(IPatientRepository repository, ICacheService cache)
     : IRequestHandler<GetPatientsStatsQuery, PatientStatsDto>
 {
     public async Task<PatientStatsDto> Handle(GetPatientsStatsQuery request, CancellationToken ct)
     {
-        var now = DateTime.UtcNow;
-        var monthStartUtc = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var scopeHash = CacheKeys.HashScope(
+            request.ClinicId?.ToString(),
+            request.OwnProfessionalId?.ToString()
+        );
 
-        return await repository.GetStatsAsync(
-            request.ClinicId,
-            request.OwnProfessionalId,
-            monthStartUtc,
+        return await cache.GetOrCreateAsync(
+            CacheKeys.Stats("patients", scopeHash),
+            CacheKeys.StatsTtl(),
+            async token =>
+            {
+                var now = DateTime.UtcNow;
+                var monthStartUtc = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+                return await repository.GetStatsAsync(
+                    request.ClinicId,
+                    request.OwnProfessionalId,
+                    monthStartUtc,
+                    token
+                );
+            },
             ct
         );
     }

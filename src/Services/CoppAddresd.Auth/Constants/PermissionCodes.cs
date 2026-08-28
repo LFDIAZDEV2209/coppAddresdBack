@@ -132,6 +132,13 @@ public static class PermissionCodes
     // Reportes: lectura de reportes/analítica del ERP.
     public const string ReportsView = "Reports.View";
 
+    // Tests de Salud: catálogo + asignación + revisión + lectura (global/own).
+    public const string HealthTestsView = "HealthTests.View";
+    public const string HealthTestsViewOwn = "HealthTests.ViewOwn";
+    public const string HealthTestsManage = "HealthTests.Manage";
+    public const string HealthTestsAssign = "HealthTests.Assign";
+    public const string HealthTestsReview = "HealthTests.Review";
+
     public static IEnumerable<string> GetAll()
     {
         yield return UsersView;
@@ -219,6 +226,11 @@ public static class PermissionCodes
         yield return FinanceView;
         yield return FinanceManage;
         yield return ReportsView;
+        yield return HealthTestsView;
+        yield return HealthTestsViewOwn;
+        yield return HealthTestsManage;
+        yield return HealthTestsAssign;
+        yield return HealthTestsReview;
     }
 
     public static string GetModule(string permissionCode)

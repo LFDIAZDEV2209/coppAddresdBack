@@ -33,6 +33,10 @@ public static class ApplicationServiceExtensions
             configuration.GetSection(AiServiceSettings.SectionName)
         );
 
+        // Configuración de Firebase Cloud Messaging (pushes a dispositivos).
+        services.Configure<FcmSettings>(
+            configuration.GetSection(FcmSettings.SectionName));
+
         // Clave interna compartida con el microservicio de Telemedicina
         // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).
         services.Configure<TelemedicineServiceSettings>(
@@ -51,6 +55,12 @@ public static class ApplicationServiceExtensions
 
         services
             .AddHttpClient<IAiServiceClient, AiServiceClient>()
+            .AddResiliencePolicy()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
+// FCM: mismo patrón que AiServiceClient (HttpClient tipado). El
+        // cliente degrada a "disabled" sin credenciales, nunca lanza.
+        services.AddHttpClient<IFcmClient, FcmClient>()
             .AddResiliencePolicy()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
@@ -129,6 +139,11 @@ public static class ApplicationServiceExtensions
             .AddResiliencePolicy();
 
         services.AddScoped<ICurrentContext, CurrentContext>();
+
+        // Resolución del actor del módulo Progreso del Programa (SPEC §6.14 y
+        // PLAN OQ-1): paciente derivado del JWT (claim patient_id o lookup por
+        // app.patient_profiles.user_id), memoizado por request.
+        services.AddScoped<IProgramActorContext, ProgramActorContext>();
 
         return services;
     }

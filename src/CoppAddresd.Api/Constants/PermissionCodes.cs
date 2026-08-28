@@ -36,14 +36,56 @@ public static class PermissionCodes
     public const string PatientsUpdate = "Patients.Update";
     public const string PatientsDelete = "Patients.Delete";
 
+    // Progreso del Programa (T-04): códigos sembrados en el Auth Service.
+    public const string ProgramView = "Program.View";
+    public const string ProgramEdit = "Program.Edit";
+    public const string ProgramEnroll = "Program.Enroll";
+    public const string ProgramAdapt = "Program.Adapt";
+    public const string ProgramForceComplete = "Program.ForceComplete";
+
+    // Tests de Salud (módulo HealthTests).
+    public const string HealthTestsView = "HealthTests.View";
+    public const string HealthTestsViewOwn = "HealthTests.ViewOwn";
+    public const string HealthTestsManage = "HealthTests.Manage";
+    public const string HealthTestsAssign = "HealthTests.Assign";
+    public const string HealthTestsReview = "HealthTests.Review";
+
     /// <summary>Nombres conocidos (para el policy provider que resuelve políticas por código).</summary>
     public static IReadOnlyList<string> All { get; } =
     [
-        OrganizationsView, OrganizationsCreate, OrganizationsUpdate, OrganizationsDelete,
-        ClinicsView, ClinicsCreate, ClinicsUpdate, ClinicsDelete,
-        LocationsView, LocationsCreate, LocationsUpdate, LocationsDelete,
-        EmployeesView, EmployeesCreate, EmployeesUpdate, EmployeesDelete,
-        ProfessionalsView, ProfessionalsCreate, ProfessionalsUpdate, ProfessionalsDelete,
-        PatientsView, PatientsCreate, PatientsUpdate, PatientsDelete,
+        OrganizationsView,
+        OrganizationsCreate,
+        OrganizationsUpdate,
+        OrganizationsDelete,
+        ClinicsView,
+        ClinicsCreate,
+        ClinicsUpdate,
+        ClinicsDelete,
+        LocationsView,
+        LocationsCreate,
+        LocationsUpdate,
+        LocationsDelete,
+        EmployeesView,
+        EmployeesCreate,
+        EmployeesUpdate,
+        EmployeesDelete,
+        ProfessionalsView,
+        ProfessionalsCreate,
+        ProfessionalsUpdate,
+        ProfessionalsDelete,
+        PatientsView,
+        PatientsCreate,
+        PatientsUpdate,
+        PatientsDelete,
+        ProgramView,
+        ProgramEdit,
+        ProgramEnroll,
+        ProgramAdapt,
+        ProgramForceComplete,
+        HealthTestsView,
+        HealthTestsViewOwn,
+        HealthTestsManage,
+        HealthTestsAssign,
+        HealthTestsReview,
     ];
 }

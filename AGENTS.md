@@ -38,7 +38,11 @@ Schema auth:    16 tablas (Users, Roles, Permissions, Applications, UserApplicat
 Schema app:     11 tablas (patient_profiles → auth.users, patient_professionals
                 (asignación paciente↔profesional, base del alcance "propios"),
                 insurers, allergens, icd10_codes, medications, patient_diagnoses,
-                patient_medications, patient_allergies, vital_signs)
+                patient_medications, patient_allergies, vital_signs) + 16 tablas
+                del módulo Tests de Salud (health_test_*: instrumentos/versiones/
+                preguntas/opciones/rangos, baterías + ítems + asignaciones,
+                evaluaciones/respuestas/resultados, indicadores, reglas de alerta,
+                alertas, comentarios). Doc: docs/modules/health-tests/README.md
 Schema erp:     12 tablas (organizations → clinics → locations; employees como
                 núcleo HR con extensión clínica 1:0..1 professionals; catálogos
                 professional_types/specialties + puentes N:N + professional_licenses).
@@ -47,8 +51,8 @@ Schema audit:   1 tabla (activity_logs)
 Schema tele:   10 tablas (telemedicine_requests, appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
 
 # Historial de migraciones por microservicio (NO compartir public):
-#   - Backend (AppDbContext): public.__EFMigrationsHistory (24 migraciones)
-#   - Auth (AuthDbContext):   auth.__ef_migrations_history (9 migraciones, aislada)
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (40 migraciones)
+#   - Auth (AuthDbContext):   auth.__ef_migrations_history (10 migraciones, aislada)
 #   - Telemedicina:           tele.__ef_migrations_history (7 migraciones, aislada)
 #   - Community:              community.__ef_migrations_history (5 migraciones, aislada)
 # EF no namespacia las IDs por contexto: compartir la tabla public mezclaba las
@@ -197,10 +201,11 @@ versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de 
 ## Gotchas
 
 - **`appsettings.json` / `appsettings.*.json` están gitignoreados** (`src/CoppAddresd.Api`, `src/Services/CoppAddresd.Auth` y `src/Services/CoppAddresd.Telemedicine`). Deben crearse localmente antes de correr. Hay `appsettings.Example.json` solo en Auth.
+- **Caché distribuida (Valkey)**: `Cache:Provider` elige `Valkey` (default; local 127.0.0.1:6379 AUTH del compose, prod ElastiCache), `Memory` (tests) o `None` (rollback sin redeploy). Contrato **fail-open por operación**: un fallo de caché nunca rompe la request (log Warning + fuente de datos); `/health` reporta el componente `valkey` como Degraded (HTTP 200), no Unhealthy. Claves namespaced por servicio (`erp:`/`auth:`/`tele:`) + sufijo de versión (`:v1`) — agregar un caso = `GetOrCreateAsync` en el handler (nunca en controllers) + `RemoveAsync` en la mutación. Los tres servicios llevan su propia copia de la abstracción (standalone). Usar `127.0.0.1` (no `localhost`: resuelve primero a IPv6 y falla). Detalle completo: `docs/modules/cache/README.md`.
 - **Storage de objetos**: `Storage:Provider` elige `Local` (filesystem, dev) o `S3` (AWS, prod). Con S3 el `upload-intent`/`download` devuelven presigned URLs reales del bucket `cooppadresd-storage-prod` (región `us-east-2`); las credenciales salen de la cadena por defecto del SDK (IAM role), nunca de Access Keys. Config en `appsettings` + fallback a variables `AWS_REGION`/`AWS_S3_*`. Detalle en `docs/modules/storage/README.md`. Si `Storage:Provider=S3` sin credenciales AWS configuradas, la primera operación de storage fallará con error de credenciales del SDK (fail fast en uso).
 - **JWT debe ser idéntico** entre API y Auth Service (mismo Secret, Issuer, Audience) para que los tokens funcionen.
 - **Auth Service corre migraciones + seeders automáticamente** al iniciar (Program.cs).
-- **Telemedicine NO corre migraciones al iniciar** (a diferencia de Auth): aplicar con `dotnet ef database update --project src/Services/CoppAddresd.Telemedicine --startup-project src/Services/CoppAddresd.Telemedicine`. Para nuevas migraciones usar siempre `--output-dir Infrastructure/Migrations` (`MigrationsDirectory` del csproj no se honra). Gotchas: la exclusión GiST requiere extensión `btree_gist` (la crea la migración); `TwilioClient.Init(apiKeySid, apiKeySecret, accountSid)` — el orden es (username, password, accountSid); NO usar `SetRegion` con Twilio Video. Detalle completo: `docs/modules/telemedicine/README.md`.
+- **Telemedicine NO corre migraciones al iniciar** (a diferencia de Auth): localmente aplicar con `dotnet ef database update --project src/Services/CoppAddresd.Telemedicine --startup-project src/Services/CoppAddresd.Telemedicine`; en el servidor las aplica el job `migrate` del pipeline (`deploy-backend.yml`) vía el modo `--migrate` del `Program.cs` (one-off task ECS en la VPC; la API principal usa el mismo mecanismo con su historial `public.__EFMigrationsHistory`). Para nuevas migraciones usar siempre `--output-dir Infrastructure/Migrations` (`MigrationsDirectory` del csproj no se honra). Gotchas: la exclusión GiST requiere extensión `btree_gist` (la crea la migración); `TwilioClient.Init(apiKeySid, apiKeySecret, accountSid)` — el orden es (username, password, accountSid); NO usar `SetRegion` con Twilio Video. Detalle completo: `docs/modules/telemedicine/README.md`.
 - **`HttpAuditActorContext`** actualmente retorna `ActorType=System`, `UserId=null` — no hay integración con Identity todavía.
 - **Tests de integración** requieren PostgreSQL real (no InMemory). Configurar variable `COP_TEST_DB_CONNECTION`.
 - **`OtpProtectionService` es en memoria** (Singleton): contadores se reinician al reiniciar el Auth Service y no se comparten entre réplicas — si se escala horizontalmente, migrar a Redis/`IDistributedCache`.
