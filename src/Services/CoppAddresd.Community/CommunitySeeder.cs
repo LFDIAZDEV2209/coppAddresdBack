@@ -336,6 +336,89 @@ public static class CommunitySeeder
             }
         }
 
+        // ─── GRUPOS Y CHATS DEMO (si vacío) ─────────────────────────────
+        if (!await db.ChatGroups.AnyAsync(ct))
+        {
+            var groupDefs = new (string Name, int MemberCount, (int Sender, int HoursAgo, string Body)[] Messages)[]
+            {
+                ("Comunidad ADRED", 0, new (int, int, string)[]
+                {
+                    (0, 55, "¡Bienvenidos a la comunidad ADRED! 💙"),
+                    (1, 48, "Feliz de estar aquí, un saludo a todos."),
+                    (2, 40, "Recuerden compartir sus avances de la semana."),
+                    (3, 30, "¿Alguien tiene recomendaciones para empezar con el nutriobiótico?"),
+                    (4, 20, "Yo empecé hace un mes y me he sentido increíble."),
+                    (5, 8, "No se pierdan el en vivo de mañana 👀"),
+                }),
+                ("Chat ANTARES general", 0, new (int, int, string)[]
+                {
+                    (6, 52, "Buenos días a toda la comunidad ANTARES ☀️"),
+                    (7, 44, "¿Ya vieron el nuevo reto de la app?"),
+                    (8, 33, "Yo voy por el día 12 de mi racha 🔥"),
+                    (9, 21, "Vamos que se puede, un día a la vez."),
+                    (10, 10, "Nos vemos en el en vivo de hoy."),
+                }),
+                ("Reto caminata 30 días", 12, new (int, int, string)[]
+                {
+                    (0, 47, "Día 5 completado ✅ ¿Cómo van?"),
+                    (1, 36, "Yo ya llevo 8 km hoy."),
+                    (2, 25, "El calor está fuerte, pero no me rindo."),
+                    (3, 12, "Medio camino, se siente increíble."),
+                }),
+                ("Apoyo emocional", 12, new (int, int, string)[]
+                {
+                    (4, 43, "Recuerden que no están solos en este proceso 💙"),
+                    (5, 28, "Hoy fue un día difícil, pero gracias por el espacio."),
+                    (6, 15, "La constancia también se construye con descanso."),
+                }),
+                ("Cocina saludable", 12, new (int, int, string)[]
+                {
+                    (7, 39, "Comparto mi receta de avena overnight sin azúcar 🥣"),
+                    (8, 26, "¿Sustitutos del pan que recomienden?"),
+                    (9, 14, "Probé la ensalada de la semana pasada, ¡espectacular!"),
+                }),
+            };
+
+            foreach (var (name, memberCount, messages) in groupDefs)
+            {
+                var group = new ChatGroup
+                {
+                    Id = Guid.NewGuid(),
+                    Name = name,
+                    CreatedByProfileId = profiles[0].Id,
+                    CreatedAt = now.AddDays(-45),
+                };
+                db.ChatGroups.Add(group);
+
+                // 0 = todos los perfiles; si no, los primeros N perfiles.
+                var members = memberCount == 0
+                    ? profiles
+                    : profiles.Take(memberCount).ToList();
+                foreach (var p in members)
+                {
+                    db.ChatGroupMembers.Add(new ChatGroupMember
+                    {
+                        GroupId = group.Id,
+                        ProfileId = p.Id,
+                        JoinedAt = group.CreatedAt,
+                    });
+                }
+
+                foreach (var (sender, hoursAgo, body) in messages)
+                {
+                    db.Messages.Add(new Message
+                    {
+                        Id = Guid.NewGuid(),
+                        SenderProfileId = members[sender % members.Count].Id,
+                        RecipientProfileId = null,
+                        ConversationId = group.Id,
+                        Body = body,
+                        CreatedAt = now.AddHours(-hoursAgo),
+                    });
+                }
+            }
+        }
+
         await db.SaveChangesAsync(ct);
     }
 
