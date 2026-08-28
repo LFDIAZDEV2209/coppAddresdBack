@@ -16,6 +16,8 @@ public sealed class FoodConfiguration : IEntityTypeConfiguration<Food>
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
         builder.Property(x => x.DisplayName).HasColumnName("display_name").HasMaxLength(200).IsRequired();
         builder.Property(x => x.Category).HasColumnName("category").HasMaxLength(100).IsRequired();
+        builder.Property(x => x.MappingStatus).HasColumnName("mapping_status").HasMaxLength(30);
+        builder.Property(x => x.MappingConfidence).HasColumnName("mapping_confidence").HasPrecision(4, 3);
         builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz").HasDefaultValueSql("now()");
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamptz");

@@ -25,6 +25,7 @@ public sealed class FoodNutritionConfiguration : IEntityTypeConfiguration<FoodNu
 
         builder.Property(x => x.Source).HasColumnName("source").HasMaxLength(200).IsRequired();
         builder.Property(x => x.SourceVersion).HasColumnName("source_version").HasMaxLength(100).IsRequired();
+        builder.Property(x => x.SourceId).HasColumnName("source_id").HasMaxLength(50);
         builder.Property(x => x.ImportedAt).HasColumnName("imported_at").HasColumnType("timestamptz").HasDefaultValueSql("now()");
 
         builder.HasOne(x => x.Food)

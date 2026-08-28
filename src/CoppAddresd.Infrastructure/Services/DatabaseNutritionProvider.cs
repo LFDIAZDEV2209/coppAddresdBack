@@ -48,7 +48,8 @@ public sealed class DatabaseNutritionProvider : INutritionProvider
                 entry.Sugar,
                 entry.Sodium,
                 entry.Source,
-                entry.SourceVersion)
+                entry.SourceVersion,
+                entry.SourceId)
         ).FirstOrDefaultAsync(ct);
 
         if (nutrition is not null)
