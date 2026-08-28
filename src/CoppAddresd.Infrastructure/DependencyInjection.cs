@@ -16,26 +16,32 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
+        var connectionString =
+            configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException(
-                "ConnectionStrings:DefaultConnection no configurada.");
+                "ConnectionStrings:DefaultConnection no configurada."
+            );
 
         services.AddScoped<AuditTriggerInterceptor>();
 
-        services.AddDbContext<AppDbContext>((serviceProvider, options) =>
-            options
-                .UseNpgsql(
-                    connectionString,
-                    npgsql => npgsql.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null))
-                .AddInterceptors(serviceProvider.GetRequiredService<AuditTriggerInterceptor>()));
+        services.AddDbContext<AppDbContext>(
+            (serviceProvider, options) =>
+                options
+                    .UseNpgsql(
+                        connectionString,
+                        npgsql => npgsql.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null)
+                    )
+                    .AddInterceptors(serviceProvider.GetRequiredService<AuditTriggerInterceptor>())
+        );
 
         services.AddHttpContextAccessor();
         services.AddScoped<IAuditActorContext, HttpAuditActorContext>();
 
         services.AddScoped<IMediaItemRepository, MediaItemRepository>();
-services.AddScoped<IDocumentRepository, DocumentRepository>();
+        services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IPatientRepository, PatientRepository>();
         services.AddScoped<ICatalogRepository, CatalogRepository>();
         services.AddScoped<IAgentCatalogRepository, AgentCatalogRepository>();
@@ -82,6 +88,11 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         // Consume IWellnessRepository (ya registrado arriba).
         services.AddScoped<IProgramContentResolver, ProgramContentResolver>();
 
+        // Motor de reglas de adaptación (SPEC §6.8, T-23): funciones puras y
+        // deterministas evaluadas por ProgramRepository tras cada completación
+        // (dentro de la misma transacción). Sin estado: Scoped por consistencia.
+        services.AddScoped<IProgramAdaptationEngine, ProgramAdaptationEngine>();
+
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).
         services.AddScoped<IClinicalMeasurementRepository, ClinicalMeasurementRepository>();
@@ -91,15 +102,20 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
 
         services.AddMemoryCache();
         services.Configure<PostalCodeLookupOptions>(
-            configuration.GetSection(PostalCodeLookupOptions.SectionName));
-        services.AddHttpClient("Zippopotam", (serviceProvider, client) =>
-        {
-            var lookupOptions = serviceProvider
-                .GetRequiredService<IOptions<PostalCodeLookupOptions>>().Value;
-            client.BaseAddress = new Uri(lookupOptions.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(lookupOptions.TimeoutSeconds);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("CoppAddresd/1.0");
-        });
+            configuration.GetSection(PostalCodeLookupOptions.SectionName)
+        );
+        services.AddHttpClient(
+            "Zippopotam",
+            (serviceProvider, client) =>
+            {
+                var lookupOptions = serviceProvider
+                    .GetRequiredService<IOptions<PostalCodeLookupOptions>>()
+                    .Value;
+                client.BaseAddress = new Uri(lookupOptions.BaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(lookupOptions.TimeoutSeconds);
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("CoppAddresd/1.0");
+            }
+        );
         services.AddScoped<IPostalCodeLookupService, ZippopotamPostalCodeLookup>();
 
         AddObjectStorage(services, configuration);
@@ -112,12 +128,9 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
     /// Registra la implementación de <see cref="IEmailService"/> según <c>Email:Provider</c>
     /// (por defecto, <c>Log</c> para desarrollo sin credenciales).
     /// </summary>
-    private static void AddEmailServices(
-        IServiceCollection services,
-        IConfiguration configuration)
+    private static void AddEmailServices(IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<EmailOptions>(
-            configuration.GetSection(EmailOptions.SectionName));
+        services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
 
         var provider = configuration["Email:Provider"] ?? "Log";
 
@@ -136,16 +149,15 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
     /// Registra la implementación de <see cref="IObjectStorageService"/> según
     /// <c>Storage:Provider</c> (por defecto, <c>Local</c>).
     /// </summary>
-    private static void AddObjectStorage(
-        IServiceCollection services,
-        IConfiguration configuration)
+    private static void AddObjectStorage(IServiceCollection services, IConfiguration configuration)
     {
         var provider = configuration["Storage:Provider"] ?? "Local";
 
         if (provider.Equals("Local", StringComparison.OrdinalIgnoreCase))
         {
             services.Configure<LocalStorageOptions>(
-                configuration.GetSection(LocalStorageOptions.SectionName));
+                configuration.GetSection(LocalStorageOptions.SectionName)
+            );
 
             // Singleton: LocalObjectStorageService es stateless-safe (raíz inmutable,
             // operaciones de archivo por llamada, sin estado compartido).
@@ -156,7 +168,8 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         if (provider.Equals("S3", StringComparison.OrdinalIgnoreCase))
         {
             services.Configure<S3StorageOptions>(
-                configuration.GetSection(S3StorageOptions.SectionName));
+                configuration.GetSection(S3StorageOptions.SectionName)
+            );
 
             // Singleton: el AmazonS3Client es thread-safe y está diseñado para
             // reutilizarse. Las credenciales se resuelven por la cadena por defecto
@@ -166,7 +179,8 @@ services.AddScoped<IDocumentRepository, DocumentRepository>();
         }
 
         throw new InvalidOperationException(
-            $"Proveedor de almacenamiento desconocido: '{provider}'. " +
-            "Valores soportados: 'Local', 'S3'.");
+            $"Proveedor de almacenamiento desconocido: '{provider}'. "
+                + "Valores soportados: 'Local', 'S3'."
+        );
     }
 }
