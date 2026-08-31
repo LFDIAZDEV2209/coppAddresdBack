@@ -119,6 +119,13 @@ public static class PermissionCodes
     /// <summary>Configuraciones administrativas del módulo Sistema (IA, integraciones, etc.).</summary>
     public const string SystemAdminSettings = "System.AdminSettings";
 
+    // Wellness
+    public const string WellnessView = "Wellness.View";
+    public const string WellnessManage = "Wellness.Manage";
+
+    // Store
+    public const string StoreManage = "Store.Manage";
+
     // Community
     public const string CommunityView = "Community.View";
     public const string CommunityModerate = "Community.Moderate";
@@ -220,6 +227,7 @@ public static class PermissionCodes
         yield return AppointmentsAdminView;
         yield return InventoryView;
         yield return StoreView;
+        yield return StoreManage;
         yield return MediaView;
         yield return AuditView;
         yield return SystemAdminSettings;
@@ -227,6 +235,8 @@ public static class PermissionCodes
         yield return CommunityModerate;
         yield return CommunityProfiles;
         yield return CommunityManage;
+        yield return WellnessView;
+        yield return WellnessManage;
         yield return LegalDocumentsView;
         yield return LegalDocumentsManage;
         yield return FinanceView;
