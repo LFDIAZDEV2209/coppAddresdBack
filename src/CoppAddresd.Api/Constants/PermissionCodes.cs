@@ -54,6 +54,14 @@ public static class PermissionCodes
     public const string LegalDocumentsView = "LegalDocuments.View";
     public const string LegalDocumentsManage = "LegalDocuments.Manage";
 
+    // Store
+    public const string StoreView = "Store.View";
+    public const string StoreManage = "Store.Manage";
+
+    // Wellness
+    public const string WellnessView = "Wellness.View";
+    public const string WellnessManage = "Wellness.Manage";
+
     /// <summary>Nombres conocidos (para el policy provider que resuelve políticas por código).</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -93,5 +101,9 @@ public static class PermissionCodes
         HealthTestsReview,
         LegalDocumentsView,
         LegalDocumentsManage,
+        StoreView,
+        StoreManage,
+        WellnessView,
+        WellnessManage,
     ];
 }
