@@ -109,13 +109,21 @@ public sealed class CommunityMutation
             throw new GraphQLException("La imagen adjunta no es válida.");
 
         var now = DateTime.UtcNow;
+
+        // Derive post type: explicit type wins; otherwise infer from imageKey extension.
+        var effectiveType = type ?? (!string.IsNullOrWhiteSpace(imageKey)
+            ? System.IO.Path.GetExtension(imageKey).ToLowerInvariant() is ".mp4" or ".webm"
+                ? PostType.Video
+                : PostType.Imagen
+            : PostType.Texto);
+
         var post = new Post
         {
             Id = Guid.NewGuid(),
             ProfileId = profile.Id,
             Body = body,
             ImageKey = string.IsNullOrWhiteSpace(imageKey) ? null : imageKey,
-            Type = type ?? PostType.Texto,
+            Type = effectiveType,
             Destination = destination ?? PostDestination.TodasLasComunidades,
             Pinned = pinned,
             CreatedAt = now,
@@ -232,18 +240,22 @@ public sealed class CommunityMutation
         if (normalized.Any(o => o.Length > 100))
             throw new GraphQLException("Cada opción debe tener máximo 100 caracteres.");
 
+        var now = DateTime.UtcNow;
         var post = new Post
         {
             Id = Guid.NewGuid(),
             ProfileId = profile.Id,
             Body = question,
-            CreatedAt = DateTime.UtcNow,
+            Type = PostType.Encuesta,
+            Destination = PostDestination.TodasLasComunidades,
+            Pinned = false,
+            CreatedAt = now,
         };
         var poll = new Poll
         {
             Id = Guid.NewGuid(),
             PostId = post.Id,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = now,
         };
         post.Poll = poll;
         for (var i = 0; i < normalized.Count; i++)
@@ -258,9 +270,22 @@ public sealed class CommunityMutation
         }
 
         db.Posts.Add(post);
+
+        // Emitir evento de feed coherente con el tipo de publicación (Encuesta).
+        var feedEvent = new FeedEvent
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profile.Id,
+            Kind = FeedEventKind.Publicacion,
+            Body = question.Length > 500 ? question[..500] : question,
+            CreatedAt = now,
+        };
+        db.FeedEvents.Add(feedEvent);
+
         await db.SaveChangesAsync(ct);
         await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
         await sender.SendAsync("post_added", post);
+        await sender.SendAsync("feed_event_added", feedEvent);
 
         return post;
     }
