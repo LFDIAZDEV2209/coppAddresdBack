@@ -27,18 +27,30 @@ var profile = await db.Profiles
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Likes)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Reposts)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Likes)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.UserId == userId, ct);
         if (profile is not null) return profile;
 
         // Auto-provisión: primer acceso crea un perfil activo (sin revisión previa).
+        // El DisplayName se toma del claim Name del JWT (Auth emite "FirstName LastName");
+        // si no viene, se usa el nombre del identity o un valor por defecto.
         var created = new Profile
         {
             Id = Guid.NewGuid(),
             UserId = userId.Value,
-            DisplayName = "Miembro ANTARES",
+            DisplayName = DisplayNameFromClaims(http) ?? "Miembro ANTARES",
             Status = ProfileStatus.Active,
             CreatedAt = DateTime.UtcNow,
         };
@@ -57,9 +69,19 @@ var profile = await db.Profiles
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Likes)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Reposts)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Likes)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
         return profile;
     }
@@ -76,6 +98,7 @@ var profile = await db.Profiles
     /// <param name="to">Incluye publicaciones creadas hasta el final de este día (inclusive).</param>
     /// <param name="take">Cantidad máxima de resultados a devolver.</param>
     /// <param name="skip">Cantidad de resultados a omitir (paginación).</param>
+    /// <param name="sortBy">Ordenamiento secundario: "recent" (default), "likes", "comments", "reposts".</param>
     /// <param name="ct">Token de cancelación.</param>
     [Authorize]
     public async Task<IReadOnlyList<Post>> Feed(
@@ -86,14 +109,24 @@ var profile = await db.Profiles
         DateTime? to = null,
         int take = 20,
         int skip = 0,
+        string? sortBy = null,
         CancellationToken ct = default)
     {
         var query = db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Reposts)
+            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
+.Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Likes)
             .Where(p => p.DeletedAt == null);
 
         // Filtro por autor: coincidencia parcial e insensible a acentos (ILike + Unaccent),
@@ -115,8 +148,20 @@ var profile = await db.Profiles
         if (to is not null)
             query = query.Where(p => p.CreatedAt < to.Value.AddDays(1));
 
-        return await query
+        IOrderedQueryable<Post> ordered = query
             .OrderByDescending(p => p.Pinned)
+            .ThenBy(p => p.PinnedOrder);
+
+        if (sortBy == "likes")
+            ordered = ordered.ThenByDescending(p => p.Likes.Count);
+        else if (sortBy == "comments")
+            ordered = ordered.ThenByDescending(p => p.Comments.Count);
+        else if (sortBy == "reposts")
+            ordered = ordered.ThenByDescending(p => p.Reposts.Count);
+        else
+            ordered = ordered.ThenByDescending(p => p.CreatedAt);
+
+        return await ordered
             .ThenByDescending(p => p.CreatedAt)
             .Skip(skip)
             .Take(take)
@@ -131,10 +176,20 @@ var profile = await db.Profiles
 => db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Reposts)
+            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .ThenInclude(c => c.Replies)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
+.Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Likes)
             .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null, ct);
 
     /// <summary>Lista de perfiles con filtros opcionales por estado y búsqueda (moderador).</summary>
@@ -143,11 +198,15 @@ var profile = await db.Profiles
         ProfileStatus? status,
         string? search,
         [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
         CancellationToken ct,
         int take = 50,
         int skip = 0)
     {
+        var currentUserId = CurrentUserId(http);
         var query = db.Profiles.AsQueryable();
+        // El ERP no lista al perfil sistema (Equipo ANTARES) ni al propio admin.
+        query = query.Where(p => !p.IsSystem && (currentUserId == null || p.UserId != currentUserId));
         if (status is not null) query = query.Where(p => p.Status == status);
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(p => EF.Functions.ILike(EF.Functions.Unaccent(p.DisplayName), EF.Functions.Unaccent($"%{search}%")));
@@ -156,6 +215,152 @@ var profile = await db.Profiles
             .Skip(skip)
             .Take(take)
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Publicaciones reportadas con sus reportes asociados. Solo moderadores.
+    /// Consultas secuenciales (EF Core no permite operaciones concurrentes sobre un mismo DbContext).
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<List<ReportedPost>> ReportedPosts(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 20,
+        int skip = 0)
+    {
+        // 1. Obtener los PostIds únicos con reportes, ordenados por el reporte más reciente.
+        var reportedPostIds = await db.PostReports
+            .GroupBy(r => r.PostId)
+            .Select(g => new { PostId = g.Key, LatestReportAt = g.Max(r => r.CreatedAt) })
+            .OrderByDescending(x => x.LatestReportAt)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => x.PostId)
+            .ToListAsync(ct);
+
+        if (reportedPostIds.Count == 0) return [];
+
+        // 2. Cargar las publicaciones activas (no eliminadas) correspondientes.
+        var posts = await db.Posts
+            .Where(p => reportedPostIds.Contains(p.Id) && p.DeletedAt == null)
+            .Include(p => p.Profile)
+            .Include(p => p.Likes)
+            .ToListAsync(ct);
+        var postById = posts.ToDictionary(p => p.Id);
+
+        // 3. Cargar los reportes de esas publicaciones.
+        var reports = await db.PostReports
+            .Where(r => reportedPostIds.Contains(r.PostId))
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+        // 4. Cargar perfiles de reportadores.
+        var reporterIds = reports.Select(r => r.ReportedByProfileId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        var reporters = await db.Profiles.Where(p => reporterIds.Contains(p.Id)).ToListAsync(ct);
+        var reporterById = reporters.ToDictionary(p => p.Id);
+
+        // 5. Agrupar y construir DTOs en el orden original.
+        var reportsByPostId = reports.GroupBy(r => r.PostId).ToDictionary(g => g.Key, g => g.ToList());
+
+        return reportedPostIds
+            .Where(id => postById.ContainsKey(id))
+            .Select(id =>
+            {
+                var post = postById[id];
+                var postReports = reportsByPostId.GetValueOrDefault(id, []);
+                return new ReportedPost
+                {
+                    PostId = id,
+                    Post = post,
+                    ReportCount = postReports.Count,
+                    Reports = postReports.Select(r => new ReportDto
+                    {
+                        Id = r.Id,
+                        PostId = r.PostId,
+                        Reason = r.Reason,
+                        Details = r.Details,
+                        CreatedAt = r.CreatedAt,
+                        ReportedBy = r.ReportedByProfileId.HasValue && reporterById.TryGetValue(r.ReportedByProfileId.Value, out var reporter)
+                            ? new ReportedByProfile { Id = reporter.Id, DisplayName = reporter.DisplayName }
+                            : null,
+                    }).ToList(),
+                };
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Comentarios reportados con sus reportes asociados. Solo moderadores.
+    /// Consultas secuenciales (EF Core no permite operaciones concurrentes sobre un mismo DbContext).
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<List<ReportedComment>> ReportedComments(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 20,
+        int skip = 0)
+    {
+        // 1. Obtener los CommentIds únicos con reportes, ordenados por el reporte más reciente.
+        var reportedCommentIds = await db.CommentReports
+            .GroupBy(r => r.CommentId)
+            .Select(g => new { CommentId = g.Key, LatestReportAt = g.Max(r => r.CreatedAt) })
+            .OrderByDescending(x => x.LatestReportAt)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => x.CommentId)
+            .ToListAsync(ct);
+
+        if (reportedCommentIds.Count == 0) return [];
+
+        // 2. Cargar los comentarios activos (no eliminados) correspondientes, con su Post padre.
+        var comments = await db.Comments
+            .Where(c => reportedCommentIds.Contains(c.Id) && c.DeletedAt == null)
+            .Include(c => c.Profile)
+            .Include(c => c.Likes)
+            .Include(c => c.Post)
+            .ToListAsync(ct);
+        var commentById = comments.ToDictionary(c => c.Id);
+
+        // 3. Cargar los reportes de esos comentarios.
+        var reports = await db.CommentReports
+            .Where(r => reportedCommentIds.Contains(r.CommentId))
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+        // 4. Cargar perfiles de reportadores.
+        var reporterIds = reports.Select(r => r.ReportedByProfileId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        var reporters = await db.Profiles.Where(p => reporterIds.Contains(p.Id)).ToListAsync(ct);
+        var reporterById = reporters.ToDictionary(p => p.Id);
+
+        // 5. Agrupar y construir DTOs en el orden original.
+        var reportsByCommentId = reports.GroupBy(r => r.CommentId).ToDictionary(g => g.Key, g => g.ToList());
+
+        return reportedCommentIds
+            .Where(id => commentById.ContainsKey(id))
+            .Select(id =>
+            {
+                var comment = commentById[id];
+                var commentReports = reportsByCommentId.GetValueOrDefault(id, []);
+                return new ReportedComment
+                {
+                    CommentId = id,
+                    Comment = comment,
+                    Post = comment.Post,
+                    ReportCount = commentReports.Count,
+                    Reports = commentReports.Select(r => new CommentReportDto
+                    {
+                        Id = r.Id,
+                        CommentId = r.CommentId,
+                        Reason = r.Reason,
+                        Details = r.Details,
+                        CreatedAt = r.CreatedAt,
+                        ReportedBy = r.ReportedByProfileId.HasValue && reporterById.TryGetValue(r.ReportedByProfileId.Value, out var reporter)
+                            ? new ReportedByProfile { Id = reporter.Id, DisplayName = reporter.DisplayName }
+                            : null,
+                    }).ToList(),
+                };
+            })
+            .ToList();
     }
 
     /// <summary>Feed de publicaciones de los perfiles que sigo (sin incluir las propias).</summary>
@@ -180,15 +385,46 @@ var profile = await db.Profiles
         return await db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Reposts)
+            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
+.Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Likes)
             .Where(p => p.DeletedAt == null && followingIds.Contains(p.ProfileId))
             .OrderByDescending(p => p.Pinned)
+            .ThenBy(p => p.PinnedOrder)
             .ThenByDescending(p => p.CreatedAt)
             .Skip(skip)
             .Take(take)
             .ToListAsync(ct);
+    }
+
+    /// <summary>Perfiles que repostearon una publicación (orden por fecha de repost, más reciente primero).</summary>
+    [Authorize]
+    public async Task<List<Profile>> PostReposts(
+        Guid postId,
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var ids = await db.Reposts
+            .Where(r => r.PostId == postId)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => r.ProfileId)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+        var loaded = await db.Profiles.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+        var byId = loaded.ToDictionary(p => p.Id);
+        return ids.Select(id => byId[id]).ToList();
     }
 
     /// <summary>Catálogo de perfiles activos con indicadores de relación respecto al usuario actual.</summary>
@@ -363,6 +599,199 @@ var profile = await db.Profiles
         return ids.Select(id => byId[id]).ToList();
     }
 
+    /// <summary>
+    /// Estadísticas agregadas del dashboard de la comunidad: KPIs, series temporales,
+    /// distribuciones y tendencias. Consultas encadenadas secuenciales (EF Core no permite
+    /// operaciones concurrentes sobre un mismo DbContext).
+    /// </summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<DashboardStats> DashboardStats(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+
+        // Carga secuencial de datos (sin operaciones concurrentes en el mismo DbContext).
+        var profiles = await db.Profiles.Where(p => !p.IsSystem).ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        var comments = await db.Comments.ToListAsync(ct);
+        var likes = await db.Likes.ToListAsync(ct);
+        var reposts = await db.Reposts.ToListAsync(ct);
+        var feedEvents = await db.FeedEvents.ToListAsync(ct);
+
+        return DashboardAggregator.Compute(profiles, posts, comments, likes, reposts, feedEvents, now);
+    }
+
+    // ─── Analytics (nuevas consultas) ──────────────────────────────────
+
+    /// <summary>Estadísticas por región: miembros activos no-sistema y posts por semana.</summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<IReadOnlyList<RegionStat>> RegionStats(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles
+            .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem && p.Region != null)
+            .ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        return AnalyticsAggregator.ComputeRegionStats(profiles, posts, now);
+    }
+
+    /// <summary>Estadísticas por diagnóstico: miembros, posts/semana, promedio racha/XP, adherencia.</summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<IReadOnlyList<DiagnosticStat>> DiagnosticStats(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles
+            .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem && p.Diagnosis != null)
+            .ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        return AnalyticsAggregator.ComputeDiagnosticStats(profiles, posts, now);
+    }
+
+    /// <summary>Analytics completo del dashboard: feed hoy, overview rachas, inactividad, series XP.</summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<CommunityAnalytics> CommunityAnalytics(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var posts = await db.Posts.ToListAsync(ct);
+        var comments = await db.Comments.ToListAsync(ct);
+        var likes = await db.Likes.ToListAsync(ct);
+        var feedEvents = await db.FeedEvents.ToListAsync(ct);
+        var xpEntries = await db.XpEntries.ToListAsync(ct);
+
+        return new CommunityAnalytics
+        {
+            FeedToday = AnalyticsAggregator.ComputeFeedToday(profiles, posts, comments, likes, xpEntries, now),
+            StreakOverview = AnalyticsAggregator.ComputeStreakOverview(profiles, feedEvents, now),
+            InactivityDistribution = AnalyticsAggregator.ComputeInactivityDistribution(profiles, now),
+            XpDeliveredSeries = AnalyticsAggregator.ComputeXpDeliveredSeries(xpEntries, now),
+        };
+    }
+
+    /// <summary>Lista de reconocimientos con perfil (ordenados por CreatedAt descendente).</summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<IReadOnlyList<RecognitionDto>> Recognitions(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var recognitions = await db.Recognitions
+            .OrderByDescending(r => r.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+        var profileIds = recognitions.Select(r => r.ProfileId).Distinct().ToList();
+        var profiles = await db.Profiles.Where(p => profileIds.Contains(p.Id)).ToListAsync(ct);
+        var profileById = profiles.ToDictionary(p => p.Id);
+
+        return recognitions.Select(r =>
+        {
+            profileById.TryGetValue(r.ProfileId, out var profile);
+            return new RecognitionDto
+            {
+                Id = r.Id,
+                ProfileId = r.ProfileId,
+                TypeLabel = r.TypeLabel,
+                Xp = r.Xp,
+                Status = r.Status.ToString(),
+                CreatedAt = r.CreatedAt,
+                Profile = profile is not null
+                    ? new RecognitionProfile
+                    {
+                        Id = profile.Id,
+                        DisplayName = profile.DisplayName,
+                        IsSystem = profile.IsSystem,
+                    }
+                    : null,
+            };
+        }).ToList();
+    }
+
+    /// <summary>Canales de red social con puntos de crecimiento (ordenados por SortOrder).</summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<IReadOnlyList<NetworkChannel>> Networks(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        return await db.NetworkChannels
+            .Include(c => c.GrowthPoints)
+            .OrderBy(c => c.SortOrder)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Todos los grupos de chat: id, name, memberCount, messageCount, lastActivityAt.
+    /// Ordenados por messageCount descendente, luego nombre.
+    /// </summary>
+    [Authorize]
+    public async Task<IReadOnlyList<GroupSummary>> CommunityGroups(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var groups = await db.ChatGroups.ToListAsync(ct);
+        var groupIds = groups.Select(g => g.Id).ToList();
+
+        // memberCount por grupo
+        var memberCounts = await db.ChatGroupMembers
+            .Where(m => groupIds.Contains(m.GroupId))
+            .GroupBy(m => m.GroupId)
+            .Select(g => new { GroupId = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var memberCountById = memberCounts.ToDictionary(x => x.GroupId, x => x.Count);
+
+        // messageCount y lastActivityAt por grupo
+        var messageStats = await db.Messages
+            .Where(m => m.ConversationId != null && groupIds.Contains(m.ConversationId.Value))
+            .GroupBy(m => m.ConversationId!.Value)
+            .Select(g => new { GroupId = g.Key, Count = g.Count(), LastAt = g.Max(m => m.CreatedAt) })
+            .ToListAsync(ct);
+        var messageStatsById = messageStats.ToDictionary(x => x.GroupId, x => x);
+
+        return groups
+            .Select(g =>
+            {
+                messageStatsById.TryGetValue(g.Id, out var stats);
+                return new GroupSummary
+                {
+                    Id = g.Id,
+                    Name = g.Name,
+                    MemberCount = memberCountById.GetValueOrDefault(g.Id, 0),
+                    MessageCount = stats?.Count ?? 0,
+                    LastActivityAt = stats?.LastAt ?? new DateTimeOffset(g.CreatedAt, TimeSpan.Zero),
+                };
+            })
+            .OrderByDescending(g => g.MessageCount)
+            .ThenBy(g => g.Name)
+            .Skip(skip)
+            .Take(take)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Alcance de mensajes del sistema: TODOS, INACTIVOS, ACTIVOS7 con totales y alcanzados.
+    /// </summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<IReadOnlyList<MessageReach>> MessageReach(
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var messages = await db.Messages.ToListAsync(ct);
+        return AnalyticsAggregator.ComputeMessageReach(profiles, messages, now);
+    }
+
     /// <summary>Resumen de conversaciones del usuario (último mensaje por interlocutor).</summary>
     [Authorize]
     public async Task<List<Conversation>> Conversations(
@@ -377,12 +806,12 @@ var profile = await db.Profiles
         // "Último mensaje por par" en el propio servidor (DISTINCT ON en PostgreSQL):
         // evita cargar todo el historial del usuario en memoria para agruparlo.
         var sql = """
-            SELECT y.id, y.sender_profile_id, y.recipient_profile_id, y.conversation_id, y.body, y.created_at
+            SELECT y.id, y.sender_profile_id, y.recipient_profile_id, y.conversation_id, y.body, y.created_at, y.triggered_by_profile_id
             FROM (
                 SELECT DISTINCT ON (x.peer_id) x.id, x.sender_profile_id, x.recipient_profile_id,
-                       x.conversation_id, x.body, x.created_at
+                       x.conversation_id, x.body, x.created_at, x.triggered_by_profile_id
                 FROM (
-                    SELECT m.id, m.sender_profile_id, m.recipient_profile_id, m.conversation_id, m.body, m.created_at,
+                    SELECT m.id, m.sender_profile_id, m.recipient_profile_id, m.conversation_id, m.body, m.created_at, m.triggered_by_profile_id,
                            CASE WHEN m.sender_profile_id = {0}
                                 THEN m.recipient_profile_id ELSE m.sender_profile_id END AS peer_id
                     FROM community.messages m
@@ -461,7 +890,7 @@ var profile = await db.Profiles
         // Último mensaje por grupo con DISTINCT ON (una sola consulta).
         var lastSql = """
             SELECT DISTINCT ON (m.conversation_id) m.id, m.sender_profile_id, m.recipient_profile_id,
-                   m.conversation_id, m.body, m.created_at
+                   m.conversation_id, m.body, m.created_at, m.triggered_by_profile_id
             FROM community.messages m
             WHERE m.conversation_id = ANY({0})
             ORDER BY m.conversation_id, m.created_at DESC
@@ -547,6 +976,38 @@ var profile = await db.Profiles
         return group;
     }
 
+    /// <summary>
+    /// Eventos del feed en vivo ordenados por fecha de creación descendente.
+    /// </summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<IReadOnlyList<FeedEvent>> FeedEvents(
+        [Service] CommunityDbContext db,
+        int take = 20,
+        int skip = 0,
+        CancellationToken ct = default)
+        => await db.FeedEvents
+            .Include(f => f.Profile)
+            .OrderByDescending(f => f.CreatedAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// Ranking de perfiles por racha actual (descendente) y XP total (descendente).
+    /// Usado por el tablero de rachas del frontend.
+    /// </summary>
+    [Authorize(Policy = "Community.View")]
+    public async Task<List<Profile>> TopStreaks(
+        [Service] CommunityDbContext db,
+        int take = 20,
+        CancellationToken ct = default)
+        => await db.Profiles
+            .Where(p => p.Status == ProfileStatus.Active && !p.IsSystem)
+            .OrderByDescending(p => p.CurrentStreak)
+            .ThenByDescending(p => p.XpTotal)
+            .Take(take)
+            .ToListAsync(ct);
+
     private static async Task<Profile> RequireMyProfileAsync(
         CommunityDbContext db, IHttpContextAccessor http, CancellationToken ct)
         => await db.Profiles.FirstOrDefaultAsync(p => p.UserId == CurrentUserId(http), ct)
@@ -556,5 +1017,25 @@ var profile = await db.Profiles
         => Guid.TryParse(http.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
             ? id
             : null;
+
+    /// <summary>
+    /// Nombre para mostrar a partir de los claims del JWT. El Auth Service emite
+    /// <see cref="ClaimTypes.Name"/> como "FirstName LastName"; si no está presente
+    /// se intenta con GivenName/Surname y finalmente con el Name del identity.
+    /// </summary>
+    internal static string? DisplayNameFromClaims(IHttpContextAccessor http)
+    {
+        var user = http.HttpContext?.User;
+        if (user is null) return null;
+        var name = user.FindFirstValue(ClaimTypes.Name)
+                   ?? user.FindFirstValue("name")
+                   ?? user.Identity?.Name;
+        if (!string.IsNullOrWhiteSpace(name)) return name.Trim();
+        var given = user.FindFirstValue(ClaimTypes.GivenName);
+        var surname = user.FindFirstValue(ClaimTypes.Surname);
+        if (!string.IsNullOrWhiteSpace(given) || !string.IsNullOrWhiteSpace(surname))
+            return $"{given} {surname}".Trim();
+        return null;
+    }
 }
 
