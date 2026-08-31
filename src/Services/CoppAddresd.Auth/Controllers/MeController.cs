@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -15,7 +15,11 @@ public class MeController : ControllerBase
     private readonly IPermissionService _permissionService;
     private readonly IUserPreferenceService _userPreferenceService;
 
-    public MeController(IUserService userService, IPermissionService permissionService, IUserPreferenceService userPreferenceService)
+    public MeController(
+        IUserService userService,
+        IPermissionService permissionService,
+        IUserPreferenceService userPreferenceService
+    )
     {
         _userService = userService;
         _permissionService = permissionService;
@@ -39,13 +43,16 @@ public class MeController : ControllerBase
 
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(userId, ct);
 
-        return Ok(new CurrentUserResponse(
-            user.Id,
-            user.Email,
-            user.FirstName,
-            user.LastName,
-            user.Roles,
-            permissions.ToArray()));
+        return Ok(
+            new CurrentUserResponse(
+                user.Id,
+                user.Email,
+                user.FirstName,
+                user.LastName,
+                user.Roles,
+                permissions.ToArray()
+            )
+        );
     }
 
     private Guid GetUserId()
@@ -60,16 +67,31 @@ public class MeController : ControllerBase
     public async Task<ActionResult<UserPreferenceResponse>> GetPreferences(CancellationToken ct)
     {
         var prefs = await _userPreferenceService.GetByUserIdAsync(GetUserId(), ct);
-        return Ok(new UserPreferenceResponse(prefs?.Lang));
+        return Ok(new UserPreferenceResponse(prefs?.Lang, prefs?.AccentColor));
     }
 
     [HttpPut("preferences")]
-    public async Task<IActionResult> UpdatePreferences([FromBody] UpdateUserPreferenceRequest request, CancellationToken ct)
+    public async Task<IActionResult> UpdatePreferences(
+        [FromBody] UpdateUserPreferenceRequest request,
+        CancellationToken ct
+    )
     {
-        if (request.Lang != "es" && request.Lang != "en")
-            return BadRequest(new { message = "Lang must be 'es' or 'en'" });
+        var lang = request.Lang;
+        var accentColor = request.AccentColor;
 
-        await _userPreferenceService.UpsertAsync(GetUserId(), request.Lang, ct);
+        if (lang is not null && lang != "es" && lang != "en")
+            return BadRequest(new { message = "Lang must be 'es' or 'en'" });
+        if (
+            accentColor is not null
+            && !System.Text.RegularExpressions.Regex.IsMatch(accentColor, "^#[0-9a-fA-F]{6}$")
+        )
+            return BadRequest(new { message = "AccentColor must be a valid hex color (#RRGGBB)" });
+        if (lang is null && accentColor is null)
+            return BadRequest(
+                new { message = "At least one preference (lang, accentColor) is required" }
+            );
+
+        await _userPreferenceService.UpsertAsync(GetUserId(), lang, accentColor, ct);
         return Ok(new { message = "Preferences updated" });
     }
 }
@@ -80,4 +102,5 @@ public record CurrentUserResponse(
     string FirstName,
     string LastName,
     string[] Roles,
-    string[] Permissions);
+    string[] Permissions
+);

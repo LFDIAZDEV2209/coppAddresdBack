@@ -34,25 +34,29 @@ Flujo de dependencias hacia adentro, enforceado solo por referencias csproj:
 
 ```sql
 Schema public:  __EFMigrationsHistory (solo)
-Schema auth:    16 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, ScopedRoleAssignments, ScopedPermissionAssignments, etc.)
-Schema app:     11 tablas (patient_profiles → auth.users, patient_professionals
-                (asignación paciente↔profesional, base del alcance "propios"),
-                insurers, allergens, icd10_codes, medications, patient_diagnoses,
-                patient_medications, patient_allergies, vital_signs) + 16 tablas
-                del módulo Tests de Salud (health_test_*: instrumentos/versiones/
-                preguntas/opciones/rangos, baterías + ítems + asignaciones,
-                evaluaciones/respuestas/resultados, indicadores, reglas de alerta,
-                alertas, comentarios). Doc: docs/modules/health-tests/README.md
-Schema erp:     12 tablas (organizations → clinics → locations; employees como
+Schema auth:    20 tablas (Users, Roles, Permissions, Applications, UserApplications, RefreshTokens, ScopedRoleAssignments, ScopedPermissionAssignments, Invitations, OtpCodes, etc.)
+Schema app:     ~69 tablas: núcleo de pacientes (patient_profiles → auth.users, patient_professionals
+                = asignación paciente↔profesional, base del alcance "propios"), catálogos clínicos
+                (allergens, icd10_codes, medications, insurers, unit_of_measures, measurement_metrics,
+                measurement_reference_ranges), diagnósticos/medicamentos/alergias/signos vitales,
+                documentos + media, wellness (nutrition_plans, exercise_routines, assignments,
+                plan_safety_rules), program progress (program_*, xp_*, streak_*, daily_checkins,
+                device_tokens), encounters (canónico) + clinical_measurements y 16 tablas del módulo
+                Tests de Salud (health_test_*: instrumentos/versiones/preguntas/opciones/rangos,
+                baterías + ítems + asignaciones, evaluaciones/respuestas/resultados, indicadores,
+                reglas de alerta, alertas, comentarios). Docs: docs/modules/health-tests/README.md,
+                docs/modules/program-progress/README.md, docs/modules/clinical-measurements/README.md
+Schema erp:     21 tablas (organizations → clinics → locations; employees como
                 núcleo HR con extensión clínica 1:0..1 professionals; catálogos
-                professional_types/specialties + puentes N:N + professional_licenses).
+                professional_types/specialties + puentes N:N + professional_licenses;
+                inventory_*/products/store_items; legal_documents*).
                 Plan de evolución del módulo: docs/modules/patients/PLAN.md
 Schema audit:   1 tabla (activity_logs)
 Schema tele:   10 tablas (telemedicine_requests, appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
 
 # Historial de migraciones por microservicio (NO compartir public):
-#   - Backend (AppDbContext): public.__EFMigrationsHistory (40 migraciones)
-#   - Auth (AuthDbContext):   auth.__ef_migrations_history (10 migraciones, aislada)
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (44 migraciones)
+#   - Auth (AuthDbContext):   auth.__ef_migrations_history (11 migraciones, aislada)
 #   - Telemedicina:           tele.__ef_migrations_history (7 migraciones, aislada)
 #   - Community:              community.__ef_migrations_history (5 migraciones, aislada)
 # EF no namespacia las IDs por contexto: compartir la tabla public mezclaba las
