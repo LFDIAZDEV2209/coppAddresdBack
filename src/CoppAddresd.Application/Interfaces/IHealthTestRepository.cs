@@ -164,6 +164,21 @@ public interface IHealthTestRepository
         Guid patientId,
         CancellationToken ct = default
     );
+    Task<(IReadOnlyList<HealthTestEvaluation> Items, int Total)> ListEvaluationsByPatientPageAsync(
+        Guid patientId,
+        string? status,
+        DateTime? from,
+        DateTime? to,
+        string? category,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    );
+    Task<IReadOnlyList<HealthTestEvaluation>> ListEvaluationsByInstrumentAsync(
+        Guid patientId,
+        Guid instrumentId,
+        CancellationToken ct = default
+    );
     Task<HealthTestEvaluation> AddEvaluationAsync(
         HealthTestEvaluation evaluation,
         CancellationToken ct = default
@@ -271,6 +286,10 @@ public interface IHealthTestRepository
         CancellationToken ct = default
     );
     Task AddCommentAsync(HealthTestComment comment, CancellationToken ct = default);
+    Task<IReadOnlyList<HealthTestComment>> ListCommentsByEvaluationAsync(
+        Guid evaluationId,
+        CancellationToken ct = default
+    );
 
     // --- Transacción multi-paso (submit) ---
     Task<int> SaveChangesAsync(CancellationToken ct = default);

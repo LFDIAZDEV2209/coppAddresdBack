@@ -365,3 +365,112 @@ public record PaginatedHealthTestsResult<T>(
     int PageSize,
     int TotalPages
 );
+
+// --- Detalle de evaluación (hub del paciente / ERP) ---
+
+/// <summary>Respuesta registrada de una evaluación con el texto de la pregunta y la opción elegida.</summary>
+public record HealthTestResponseDetailDto(
+    Guid QuestionId,
+    string QuestionCode,
+    string? Section,
+    string QuestionText,
+    HealthTestQuestionType QuestionType,
+    Guid? AnswerOptionId,
+    string? AnswerOptionText,
+    decimal? AnswerOptionScore,
+    string? ValueText
+)
+{
+    public static HealthTestResponseDetailDto FromEntity(HealthTestResponse r) =>
+        new(
+            r.QuestionId,
+            r.Question?.Code ?? string.Empty,
+            r.Question?.Section,
+            r.Question?.Text ?? string.Empty,
+            r.Question?.Type ?? HealthTestQuestionType.open,
+            r.AnswerOptionId,
+            r.AnswerOption?.Text,
+            r.AnswerOption?.ScoreValue,
+            r.ValueText
+        );
+}
+
+/// <summary>Comentario de un profesional sobre una evaluación (autor del JWT del Auth Service).</summary>
+public record HealthTestCommentDto(Guid Id, Guid AuthorId, string Body, DateTime CreatedAt)
+{
+    public static HealthTestCommentDto FromEntity(HealthTestComment c) =>
+        new(c.Id, c.AuthorId, c.Body, c.CreatedAt);
+}
+
+/// <summary>Intento del mismo test: evaluación previa/actual del paciente sobre el mismo instrumento.</summary>
+public record HealthTestAttemptDto(
+    Guid Id,
+    HealthTestEvaluationStatus Status,
+    DateTime StartedAt,
+    DateTime? CompletedAt,
+    decimal? Score,
+    decimal? ScorePercentage
+)
+{
+    public static HealthTestAttemptDto FromEntity(HealthTestEvaluation e) =>
+        new(e.Id, e.Status, e.StartedAt, e.CompletedAt, e.Score, e.ScorePercentage);
+}
+
+/// <summary>
+/// Detalle completo de una evaluación para el ERP: test, versión snapshot,
+/// fechas, intento, score/porcentaje, resultados persistidos, respuestas por
+/// pregunta y comentarios. Incluye los intentos del mismo test para la
+/// comparativa histórica.
+/// </summary>
+public record HealthTestEvaluationDetailDto(
+    Guid Id,
+    Guid AssignmentId,
+    Guid PatientId,
+    Guid VersionId,
+    int VersionNumber,
+    string? VersionName,
+    HealthTestScoringStrategy ScoringStrategy,
+    string? TestName,
+    string? TestCode,
+    string? TestCategory,
+    HealthTestEvaluationStatus Status,
+    DateTime StartedAt,
+    DateTime? CompletedAt,
+    int Attempt,
+    decimal? Score,
+    decimal? ScorePercentage,
+    IReadOnlyList<HealthTestResultDto> Results,
+    IReadOnlyList<HealthTestResponseDetailDto> Responses,
+    IReadOnlyList<HealthTestCommentDto> Comments,
+    IReadOnlyList<HealthTestAttemptDto> Attempts
+)
+{
+    public static HealthTestEvaluationDetailDto FromEntity(
+        HealthTestEvaluation e,
+        int attempt,
+        IReadOnlyList<HealthTestComment> comments,
+        IReadOnlyList<HealthTestAttemptDto> attempts
+    ) =>
+        new(
+            e.Id,
+            e.AssignmentId,
+            e.PatientId,
+            e.VersionId,
+            e.Version?.VersionNumber ?? 0,
+            e.Version?.Name,
+            e.Version?.ScoringStrategy ?? HealthTestScoringStrategy.sum,
+            e.Version?.Instrument?.Name ?? e.Version?.Name,
+            e.Version?.Instrument?.Code,
+            e.Version?.Instrument?.Category,
+            e.Status,
+            e.StartedAt,
+            e.CompletedAt,
+            attempt,
+            e.Score,
+            e.ScorePercentage,
+            e.Results.OrderBy(r => r.Code).Select(HealthTestResultDto.FromEntity).ToList(),
+            e.Responses.Select(HealthTestResponseDetailDto.FromEntity).ToList(),
+            comments.Select(HealthTestCommentDto.FromEntity).ToList(),
+            attempts
+        );
+}
