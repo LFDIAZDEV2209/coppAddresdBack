@@ -23,6 +23,9 @@ public sealed class Post
 
     public bool Pinned { get; set; }
 
+    /// <summary>Sort order among pinned posts (0 = default; higher = further down).</summary>
+    public int PinnedOrder { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedAt { get; set; }

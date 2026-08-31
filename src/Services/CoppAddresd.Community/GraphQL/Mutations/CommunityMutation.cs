@@ -117,6 +117,16 @@ public sealed class CommunityMutation
                 : PostType.Imagen
             : PostType.Texto);
 
+        int pinnedOrder = 0;
+        if (pinned)
+        {
+            var maxOrder = await db.Posts
+                .Where(p => p.Pinned)
+                .Select(p => (int?)p.PinnedOrder)
+                .MaxAsync(ct) ?? 0;
+            pinnedOrder = maxOrder + 1;
+        }
+
         var post = new Post
         {
             Id = Guid.NewGuid(),
@@ -126,6 +136,7 @@ public sealed class CommunityMutation
             Type = effectiveType,
             Destination = destination ?? PostDestination.TodasLasComunidades,
             Pinned = pinned,
+            PinnedOrder = pinnedOrder,
             CreatedAt = now,
         };
         db.Posts.Add(post);
@@ -169,6 +180,17 @@ public sealed class CommunityMutation
         if (body.Length == 0) throw new GraphQLException("Escribe el contenido de la publicación.");
         var systemProfile = await GetSystemProfileAsync(db, ct);
         var now = DateTime.UtcNow;
+
+        int pinnedOrder = 0;
+        if (pinned)
+        {
+            var maxOrder = await db.Posts
+                .Where(p => p.Pinned)
+                .Select(p => (int?)p.PinnedOrder)
+                .MaxAsync(ct) ?? 0;
+            pinnedOrder = maxOrder + 1;
+        }
+
         var post = new Post
         {
             Id = Guid.NewGuid(),
@@ -177,6 +199,7 @@ public sealed class CommunityMutation
             Type = type ?? PostType.Texto,
             Destination = destination ?? PostDestination.TodasLasComunidades,
             Pinned = pinned,
+            PinnedOrder = pinnedOrder,
             CreatedAt = now,
         };
         db.Posts.Add(post);
@@ -617,8 +640,51 @@ public sealed class CommunityMutation
         var post = await db.Posts.FirstOrDefaultAsync(p => p.Id == id, ct)
             ?? throw new GraphQLException("No se encontró la publicación.");
         post.Pinned = pinned;
+        if (pinned && post.PinnedOrder == 0)
+        {
+            // Place newly pinned post at the end (max order + 1).
+            var maxOrder = await db.Posts
+                .Where(p => p.Pinned && p.Id != id)
+                .Select(p => (int?)p.PinnedOrder)
+                .MaxAsync(ct) ?? 0;
+            post.PinnedOrder = maxOrder + 1;
+        }
         await db.SaveChangesAsync(ct);
         return post;
+    }
+
+    /// <summary>
+    /// Reorders pinned posts by assigning PinnedOrder values (0..n-1)
+    /// matching the order of the provided IDs. All IDs must belong to
+    /// currently pinned posts. Returns the reordered posts.
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<List<Post>> ReorderPinnedPosts(
+        List<Guid> orderedIds,
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        if (orderedIds == null || orderedIds.Count == 0)
+            throw new GraphQLException("Se requiere al menos una publicación.");
+
+        var pinnedPosts = await db.Posts
+            .Where(p => p.Pinned && !p.DeletedAt.HasValue)
+            .ToListAsync(ct);
+
+        var pinnedDict = pinnedPosts.ToDictionary(p => p.Id);
+
+        for (var i = 0; i < orderedIds.Count; i++)
+        {
+            if (!pinnedDict.TryGetValue(orderedIds[i], out var post))
+                throw new GraphQLException(
+                    $"El post {orderedIds[i]} no está fijado o no existe.");
+            post.PinnedOrder = i;
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        // Return pinned posts in the new order.
+        return orderedIds.Select(id => pinnedDict[id]).ToList();
     }
 
     [Authorize(Policy = "CommunityModerator")]
