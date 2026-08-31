@@ -1,3 +1,3 @@
 namespace CoppAddresd.Auth.Models;
 
-public record UserPreferenceResponse(string? Lang);
+public record UserPreferenceResponse(string? Lang, string? AccentColor);

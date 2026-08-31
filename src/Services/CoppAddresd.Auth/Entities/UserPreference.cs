@@ -6,6 +6,9 @@ public class UserPreference
 
     public string? Lang { get; set; }
 
+    /// <summary>Color de acento (hex #RRGGBB) elegido por el usuario; null = default de la marca.</summary>
+    public string? AccentColor { get; set; }
+
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public virtual ApplicationUser User { get; set; } = null!;

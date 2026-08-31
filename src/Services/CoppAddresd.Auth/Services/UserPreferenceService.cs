@@ -15,27 +15,42 @@ public class UserPreferenceService : IUserPreferenceService
         _dbContext = dbContext;
     }
 
-    public async Task<UserPreferenceResponse?> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
+    public async Task<UserPreferenceResponse?> GetByUserIdAsync(
+        Guid userId,
+        CancellationToken ct = default
+    )
     {
         var pref = await _dbContext.UserPreferences.FindAsync([userId], ct);
-        return pref is null ? null : new UserPreferenceResponse(pref.Lang);
+        return pref is null ? null : new UserPreferenceResponse(pref.Lang, pref.AccentColor);
     }
 
-    public async Task UpsertAsync(Guid userId, string lang, CancellationToken ct = default)
+    public async Task UpsertAsync(
+        Guid userId,
+        string? lang,
+        string? accentColor,
+        CancellationToken ct = default
+    )
     {
         var existing = await _dbContext.UserPreferences.FindAsync([userId], ct);
         if (existing is null)
         {
-            _dbContext.UserPreferences.Add(new UserPreference
-            {
-                UserId = userId,
-                Lang = lang,
-                UpdatedAt = DateTime.UtcNow
-            });
+            _dbContext.UserPreferences.Add(
+                new UserPreference
+                {
+                    UserId = userId,
+                    Lang = lang,
+                    AccentColor = accentColor,
+                    UpdatedAt = DateTime.UtcNow,
+                }
+            );
         }
         else
         {
-            existing.Lang = lang;
+            // Actualización parcial: solo los campos presentes cambian.
+            if (lang is not null)
+                existing.Lang = lang;
+            if (accentColor is not null)
+                existing.AccentColor = accentColor;
             existing.UpdatedAt = DateTime.UtcNow;
         }
 

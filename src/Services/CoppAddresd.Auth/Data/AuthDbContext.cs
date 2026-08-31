@@ -256,7 +256,11 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
             b.ToTable("UserPreferences", "auth");
             b.HasKey(u => u.UserId);
             b.Property(u => u.Lang).HasMaxLength(2);
-            b.HasOne(u => u.User).WithMany().HasForeignKey(u => u.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.Property(u => u.AccentColor).HasMaxLength(16);
+            b.HasOne(u => u.User)
+                .WithMany()
+                .HasForeignKey(u => u.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
