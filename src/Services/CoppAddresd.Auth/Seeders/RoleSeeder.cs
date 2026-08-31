@@ -33,6 +33,7 @@ public static class RoleSeeder
     [
         PermissionCodes.InventoryView,
         PermissionCodes.StoreView,
+        PermissionCodes.StoreManage,
         PermissionCodes.MediaView,
         PermissionCodes.AuditView,
         PermissionCodes.SystemAdminSettings,
@@ -315,6 +316,8 @@ public static class RoleSeeder
                 PermissionCodes.CommunityManage,
                 PermissionCodes.LegalDocumentsView,
                 PermissionCodes.LegalDocumentsManage,
+                PermissionCodes.WellnessView,
+                PermissionCodes.WellnessManage,
             ]
         ),
         (
@@ -348,6 +351,8 @@ public static class RoleSeeder
                 PermissionCodes.CommunityManage,
                 PermissionCodes.LegalDocumentsView,
                 PermissionCodes.LegalDocumentsManage,
+                PermissionCodes.WellnessView,
+                PermissionCodes.WellnessManage,
             ]
         ),
         (
@@ -367,6 +372,8 @@ public static class RoleSeeder
                 .. ModuleAdminPermissions,
                 .. PrescriberPermissions,
                 PermissionCodes.LegalDocumentsView,
+                PermissionCodes.WellnessView,
+                PermissionCodes.WellnessManage,
             ]
         ),
         (
@@ -435,6 +442,7 @@ public static class RoleSeeder
                 .. ViewerTelemedicinePermissions,
                 .. ModuleAdminPermissions,
                 PermissionCodes.LegalDocumentsView,
+                PermissionCodes.WellnessView,
             ]
         ),
         (
@@ -449,6 +457,7 @@ public static class RoleSeeder
                 .. ViewerTelemedicinePermissions,
                 .. ModuleAdminPermissions,
                 PermissionCodes.LegalDocumentsView,
+                PermissionCodes.WellnessView,
             ]
         ),
         (
