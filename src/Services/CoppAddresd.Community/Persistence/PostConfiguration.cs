@@ -18,6 +18,7 @@ public sealed class PostConfiguration : IEntityTypeConfiguration<Post>
         builder.Property(x => x.Destination).HasColumnName("destination").HasConversion<string>().HasMaxLength(30);
         builder.Property(x => x.ViewCount).HasColumnName("view_count").IsRequired();
         builder.Property(x => x.Pinned).HasColumnName("pinned").IsRequired();
+        builder.Property(x => x.PinnedOrder).HasColumnName("pinned_order").IsRequired();
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz").HasDefaultValueSql("now()").IsRequired();
         builder.Property(x => x.UpdatedAt).HasColumnName("updated_at").HasColumnType("timestamptz");
         builder.Property(x => x.DeletedAt).HasColumnName("deleted_at").HasColumnType("timestamptz");

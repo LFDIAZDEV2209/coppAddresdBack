@@ -123,6 +123,7 @@ var profile = await db.Profiles
 
         return await query
             .OrderByDescending(p => p.Pinned)
+            .ThenBy(p => p.PinnedOrder)
             .ThenByDescending(p => p.CreatedAt)
             .Skip(skip)
             .Take(take)
@@ -276,6 +277,7 @@ var profile = await db.Profiles
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
             .Where(p => p.DeletedAt == null && followingIds.Contains(p.ProfileId))
             .OrderByDescending(p => p.Pinned)
+            .ThenBy(p => p.PinnedOrder)
             .ThenByDescending(p => p.CreatedAt)
             .Skip(skip)
             .Take(take)
