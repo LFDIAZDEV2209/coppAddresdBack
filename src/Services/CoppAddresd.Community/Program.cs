@@ -54,6 +54,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy("Community.View", policy =>
+        policy.RequireClaim("permission", "Community.View"));
     options.AddPolicy("CommunityModerator", policy =>
         policy.RequireClaim("permission", "Community.Moderate"));
     options.AddPolicy("Community.Manage", policy =>

@@ -459,7 +459,7 @@ var profile = await db.Profiles
     /// distribuciones y tendencias. Consultas encadenadas secuenciales (EF Core no permite
     /// operaciones concurrentes sobre un mismo DbContext).
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<DashboardStats> DashboardStats(
         [Service] CommunityDbContext db,
         CancellationToken ct)
@@ -479,7 +479,7 @@ var profile = await db.Profiles
     // ─── Analytics (nuevas consultas) ──────────────────────────────────
 
     /// <summary>Estadísticas por región: miembros activos no-sistema y posts por semana.</summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<IReadOnlyList<RegionStat>> RegionStats(
         [Service] CommunityDbContext db,
         CancellationToken ct)
@@ -493,7 +493,7 @@ var profile = await db.Profiles
     }
 
     /// <summary>Estadísticas por diagnóstico: miembros, posts/semana, promedio racha/XP, adherencia.</summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<IReadOnlyList<DiagnosticStat>> DiagnosticStats(
         [Service] CommunityDbContext db,
         CancellationToken ct)
@@ -507,7 +507,7 @@ var profile = await db.Profiles
     }
 
     /// <summary>Analytics completo del dashboard: feed hoy, overview rachas, inactividad, series XP.</summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<CommunityAnalytics> CommunityAnalytics(
         [Service] CommunityDbContext db,
         CancellationToken ct)
@@ -530,7 +530,7 @@ var profile = await db.Profiles
     }
 
     /// <summary>Lista de reconocimientos con perfil (ordenados por CreatedAt descendente).</summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<IReadOnlyList<RecognitionDto>> Recognitions(
         [Service] CommunityDbContext db,
         CancellationToken ct,
@@ -571,7 +571,7 @@ var profile = await db.Profiles
     }
 
     /// <summary>Canales de red social con puntos de crecimiento (ordenados por SortOrder).</summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<IReadOnlyList<NetworkChannel>> Networks(
         [Service] CommunityDbContext db,
         CancellationToken ct)
@@ -635,7 +635,7 @@ var profile = await db.Profiles
     /// <summary>
     /// Alcance de mensajes del sistema: TODOS, INACTIVOS, ACTIVOS7 con totales y alcanzados.
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<IReadOnlyList<MessageReach>> MessageReach(
         [Service] CommunityDbContext db,
         CancellationToken ct)
@@ -833,7 +833,7 @@ var profile = await db.Profiles
     /// <summary>
     /// Eventos del feed en vivo ordenados por fecha de creación descendente.
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<IReadOnlyList<FeedEvent>> FeedEvents(
         [Service] CommunityDbContext db,
         int take = 20,
@@ -850,7 +850,7 @@ var profile = await db.Profiles
     /// Ranking de perfiles por racha actual (descendente) y XP total (descendente).
     /// Usado por el tablero de rachas del frontend.
     /// </summary>
-    [Authorize]
+    [Authorize(Policy = "Community.View")]
     public async Task<List<Profile>> TopStreaks(
         [Service] CommunityDbContext db,
         int take = 20,
