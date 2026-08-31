@@ -9,6 +9,16 @@ public enum FeedScope
     Following,
 }
 
+/// <summary>Alcance de envío de mensajes masivos desde el sistema.</summary>
+public enum MessageScope
+{
+    /// <summary>Perfiles activos con más de 7 días sin actividad (inactivos).</summary>
+    Inactive,
+
+    /// <summary>Todos los perfiles activos (excluye perfiles del sistema).</summary>
+    AllActive,
+}
+
 /// <summary>Un perfil de la comunidad enriquecido con la relación respecto al usuario actual.</summary>
 public sealed class Person
 {

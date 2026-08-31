@@ -13,6 +13,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\CoppAddresd.Infrastructure\CoppAddresd.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="HotChocolate.AspNetCore" Version="16.6.1" />
     <PackageReference Include="HotChocolate.AspNetCore.Authorization" Version="16.6.1" />
     <PackageReference Include="HotChocolate.Data" Version="16.6.1" />

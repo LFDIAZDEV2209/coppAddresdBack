@@ -22,4 +22,5 @@ public sealed class Comment
     public Profile? Profile { get; set; }
     public ICollection<Comment> Replies { get; set; } = [];
     public ICollection<Like> Likes { get; set; } = [];
+    public ICollection<CommentReport> Reports { get; set; } = [];
 }
