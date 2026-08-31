@@ -284,8 +284,53 @@ public class HealthTestsController(
     // ===================== EVALUACIONES / RESULTADOS =====================
 
     [HttpGet("patients/{patientId:guid}/evaluations")]
-    public async Task<ActionResult<IReadOnlyList<HealthTestEvaluationDto>>> ListPatientEvaluations(
+    public async Task<
+        ActionResult<PaginatedHealthTestsResult<HealthTestEvaluationDto>>
+    > ListPatientEvaluations(
         Guid patientId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null,
+        [FromQuery] string? category = null,
+        CancellationToken ct = default
+    )
+    {
+        var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
+        if (!allowed)
+        {
+            return Forbid();
+        }
+
+        if (
+            ownProfessionalId is { } ownId
+            && !await repository.PatientBelongsToProfessionalAsync(patientId, ownId, ct)
+        )
+        {
+            return NotFound(new { message = "Paciente no encontrado" });
+        }
+
+        return Ok(
+            await mediator.Send(
+                new ListEvaluationsByPatientQuery(
+                    patientId,
+                    page,
+                    pageSize,
+                    status,
+                    from,
+                    to,
+                    category
+                ),
+                ct
+            )
+        );
+    }
+
+    [HttpGet("patients/{patientId:guid}/evaluations/{evaluationId:guid}")]
+    public async Task<ActionResult<HealthTestEvaluationDetailDto>> GetPatientEvaluation(
+        Guid patientId,
+        Guid evaluationId,
         CancellationToken ct
     )
     {
@@ -303,7 +348,32 @@ public class HealthTestsController(
             return NotFound(new { message = "Paciente no encontrado" });
         }
 
-        return Ok(await mediator.Send(new ListEvaluationsByPatientQuery(patientId), ct));
+        var detail = await mediator.Send(new GetEvaluationDetailQuery(patientId, evaluationId), ct);
+        return detail is null ? NotFound(new { message = "Evaluación no encontrada" }) : Ok(detail);
+    }
+
+    [HttpGet("patients/{patientId:guid}/evaluations/{evaluationId:guid}/comments")]
+    public async Task<ActionResult<IReadOnlyList<HealthTestCommentDto>>> ListEvaluationComments(
+        Guid patientId,
+        Guid evaluationId,
+        CancellationToken ct
+    )
+    {
+        var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
+        if (!allowed)
+        {
+            return Forbid();
+        }
+
+        if (
+            ownProfessionalId is { } ownId
+            && !await repository.PatientBelongsToProfessionalAsync(patientId, ownId, ct)
+        )
+        {
+            return NotFound(new { message = "Paciente no encontrado" });
+        }
+
+        return Ok(await mediator.Send(new GetEvaluationCommentsQuery(patientId, evaluationId), ct));
     }
 
     [HttpGet("patients/{patientId:guid}/results")]

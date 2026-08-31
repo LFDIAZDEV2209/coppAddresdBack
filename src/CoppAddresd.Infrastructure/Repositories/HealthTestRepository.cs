@@ -489,7 +489,12 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .Include(x => x.Version)
                 .ThenInclude(v => v!.Questions.OrderBy(q => q.SortOrder))
                     .ThenInclude(q => q.Options)
+            .Include(x => x.Version)
+                .ThenInclude(v => v!.ScoreRanges)
             .Include(x => x.Responses)
+                .ThenInclude(r => r.Question)
+            .Include(x => x.Responses)
+                .ThenInclude(r => r.AnswerOption)
             .Include(x => x.Results)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
@@ -588,15 +593,86 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         Guid patientId,
         CancellationToken ct = default
     ) =>
+        await (
+            from r in dbContext.HealthTestResults.AsNoTracking()
+            join e in dbContext.HealthTestEvaluations on r.EvaluationId equals e.Id
+            where e.PatientId == patientId
+            orderby e.CompletedAt descending, r.Code
+            select r
+        ).ToListAsync(ct);
+
+    public async Task<(
+        IReadOnlyList<HealthTestEvaluation> Items,
+        int Total
+    )> ListEvaluationsByPatientPageAsync(
+        Guid patientId,
+        string? status,
+        DateTime? from,
+        DateTime? to,
+        string? category,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
+    {
+        var query = dbContext
+            .HealthTestEvaluations.AsNoTracking()
+            .Where(x => x.PatientId == patientId)
+            .AsQueryable();
+
+        if (
+            !string.IsNullOrWhiteSpace(status)
+            && Enum.TryParse(status, ignoreCase: true, out HealthTestEvaluationStatus statusEnum)
+        )
+            query = query.Where(x => x.Status == statusEnum);
+
+        if (from.HasValue)
+            query = query.Where(x => x.CompletedAt >= from.Value);
+
+        if (to.HasValue)
+            query = query.Where(x => x.CompletedAt <= to.Value);
+
+        if (!string.IsNullOrWhiteSpace(category))
+            query = query.Where(x => x.Version!.Instrument!.Category == category);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .Include(x => x.Version)
+                .ThenInclude(v => v!.Instrument)
+            .Include(x => x.Results)
+            .OrderByDescending(x => x.CompletedAt ?? x.StartedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
+    /// <summary>
+    /// Evaluaciones del paciente para un mismo instrumento (intentos del test),
+    /// ordenadas por inicio (y id como desempate) para calcular el número de
+    /// intento y la comparativa histórica.
+    /// </summary>
+    public async Task<IReadOnlyList<HealthTestEvaluation>> ListEvaluationsByInstrumentAsync(
+        Guid patientId,
+        Guid instrumentId,
+        CancellationToken ct = default
+    ) =>
         await dbContext
-            .HealthTestResults.AsNoTracking()
-            .Where(x =>
-                x.EvaluationId
-                == dbContext
-                    .HealthTestEvaluations.Where(e => e.PatientId == patientId)
-                    .Select(e => e.Id)
-                    .First()
-            )
+            .HealthTestEvaluations.AsNoTracking()
+            .Where(x => x.PatientId == patientId && x.Version!.InstrumentId == instrumentId)
+            .OrderBy(x => x.StartedAt)
+            .ThenBy(x => x.Id)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<HealthTestComment>> ListCommentsByEvaluationAsync(
+        Guid evaluationId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .HealthTestComments.AsNoTracking()
+            .Where(x => x.EvaluationId == evaluationId)
+            .OrderBy(x => x.CreatedAt)
             .ToListAsync(ct);
 
     public async Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsByBatteryAssignmentAsync(

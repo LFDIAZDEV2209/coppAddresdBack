@@ -159,8 +159,10 @@ GET    /health-tests/assignments?patientId&status&page          View/ViewOwn (sc
 POST   /health-tests/assignments                                Assign
 POST   /health-tests/batteries/{id}/assign                      Assign        (masiva)
 POST   /health-tests/assignments/{id}/cancel                    Assign
-GET    /health-tests/patients/{id}/evaluations                  View/ViewOwn (scoped)
-GET    /health-tests/patients/{id}/results                      View/ViewOwn (scoped)
+GET    /health-tests/patients/{id}/evaluations?page&pageSize&status&from&to&category   View/ViewOwn (scoped, paginado)
+GET    /health-tests/patients/{id}/evaluations/{evaluationId}   View/ViewOwn (scoped)
+GET    /health-tests/patients/{id}/evaluations/{evaluationId}/comments   View/ViewOwn (scoped)
+GET    /health-tests/patients/{id}/results                      View/ViewOwn (scoped; TODAS las evaluaciones, orden desc)
 GET    /health-tests/indicators                                 View
 GET    /health-tests/alerts?patientId&status&severity&page      View/ViewOwn (scoped)
 POST   /health-tests/alerts/{id}/review|resolve|close           Review
@@ -182,6 +184,23 @@ GET  /me/history        historial de evaluaciones (evolución)
 
 Los shapes `/me/*` replican los de `antares-paciente` (`TestMeta`, `ScaleQ`, respuestas por opción,
 resumen con 6 scores), de modo que la UX mobile no cambia al conectar el backend.
+
+### Detalle de evaluación (hub del paciente ERP)
+
+`GET /health-tests/patients/{id}/evaluations/{evaluationId}` devuelve el detalle completo de una
+evaluación: test (nombre/código/categoría), versión snapshot (número, nombre, estrategia de scoring),
+estado, fechas, **número de intento** (orden cronológico entre evaluaciones del mismo test del
+paciente), score/porcentaje, resultados persistidos (score/subescala/indicador con severidad),
+respuestas por pregunta (texto de pregunta, sección, opción elegida con su texto y valor, o texto
+libre), comentarios de la evaluación e **intentos del mismo test** (`attempts`) para la comparativa
+histórica. 404 si la evaluación no existe o pertenece a otro paciente.
+
+`GET /health-tests/patients/{id}/evaluations` está paginado (`page`/`pageSize`, default 20, máx 100)
+y acepta filtros opcionales `status`, `from`/`to` (rango de `completed_at`) y `category`.
+
+`GET /health-tests/patients/{id}/results` devuelve los resultados de **todas** las evaluaciones del
+paciente ordenados por fecha de finalización desc (fix del bug que solo devolvía el primer intento y
+respondía 500 sin evaluaciones).
 
 ## Seed del catálogo ANTARES
 

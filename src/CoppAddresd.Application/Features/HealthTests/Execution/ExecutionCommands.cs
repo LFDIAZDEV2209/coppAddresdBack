@@ -387,19 +387,45 @@ public sealed class AbandonEvaluationCommandHandler(IHealthTestRepository reposi
 
 // --- Consultas de resultados por paciente e indicadores poblacionales ---
 
-public record ListEvaluationsByPatientQuery(Guid PatientId)
-    : IRequest<IReadOnlyList<HealthTestEvaluationDto>>;
+public record ListEvaluationsByPatientQuery(
+    Guid PatientId,
+    int Page = 1,
+    int PageSize = 20,
+    string? Status = null,
+    DateTime? From = null,
+    DateTime? To = null,
+    string? Category = null
+) : IRequest<PaginatedHealthTestsResult<HealthTestEvaluationDto>>;
 
 public sealed class ListEvaluationsByPatientQueryHandler(IHealthTestRepository repository)
-    : IRequestHandler<ListEvaluationsByPatientQuery, IReadOnlyList<HealthTestEvaluationDto>>
+    : IRequestHandler<
+        ListEvaluationsByPatientQuery,
+        PaginatedHealthTestsResult<HealthTestEvaluationDto>
+    >
 {
-    public async Task<IReadOnlyList<HealthTestEvaluationDto>> Handle(
+    public async Task<PaginatedHealthTestsResult<HealthTestEvaluationDto>> Handle(
         ListEvaluationsByPatientQuery request,
         CancellationToken ct
     )
     {
-        var evaluations = await repository.ListEvaluationsByPatientAsync(request.PatientId, ct);
-        return evaluations.Select(HealthTestEvaluationDto.FromEntity).ToList();
+        var (items, total) = await repository.ListEvaluationsByPatientPageAsync(
+            request.PatientId,
+            request.Status,
+            request.From,
+            request.To,
+            request.Category,
+            request.Page,
+            request.PageSize,
+            ct
+        );
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+        return new PaginatedHealthTestsResult<HealthTestEvaluationDto>(
+            items.Select(HealthTestEvaluationDto.FromEntity).ToList(),
+            total,
+            Math.Max(1, request.Page),
+            pageSize,
+            (int)Math.Ceiling(total / (double)pageSize)
+        );
     }
 }
 
@@ -416,5 +442,73 @@ public sealed class ListResultsByPatientQueryHandler(IHealthTestRepository repos
     {
         var results = await repository.ListResultsByPatientAsync(request.PatientId, ct);
         return results.Select(HealthTestResultDto.FromEntity).ToList();
+    }
+}
+
+// --- Detalle de evaluación y comentarios (hub del paciente / ERP) ---
+
+public record GetEvaluationDetailQuery(Guid PatientId, Guid EvaluationId)
+    : IRequest<HealthTestEvaluationDetailDto?>;
+
+public sealed class GetEvaluationDetailQueryHandler(IHealthTestRepository repository)
+    : IRequestHandler<GetEvaluationDetailQuery, HealthTestEvaluationDetailDto?>
+{
+    public async Task<HealthTestEvaluationDetailDto?> Handle(
+        GetEvaluationDetailQuery request,
+        CancellationToken ct
+    )
+    {
+        var evaluation = await repository.GetEvaluationWithDetailsAsync(request.EvaluationId, ct);
+        if (evaluation is null || evaluation.PatientId != request.PatientId)
+        {
+            return null;
+        }
+
+        var instrumentId = evaluation.Version?.InstrumentId;
+        var attempts = instrumentId is null
+            ? []
+            : (
+                await repository.ListEvaluationsByInstrumentAsync(
+                    request.PatientId,
+                    instrumentId.Value,
+                    ct
+                )
+            )
+                .Select(HealthTestAttemptDto.FromEntity)
+                .ToList();
+
+        var attemptNumber = attempts.Select(a => a.Id).ToList().IndexOf(evaluation.Id) + 1;
+
+        var comments = await repository.ListCommentsByEvaluationAsync(evaluation.Id, ct);
+
+        return HealthTestEvaluationDetailDto.FromEntity(
+            evaluation,
+            attemptNumber,
+            comments,
+            attempts
+        );
+    }
+}
+
+public record GetEvaluationCommentsQuery(Guid PatientId, Guid EvaluationId)
+    : IRequest<IReadOnlyList<HealthTestCommentDto>>;
+
+public sealed class GetEvaluationCommentsQueryHandler(IHealthTestRepository repository)
+    : IRequestHandler<GetEvaluationCommentsQuery, IReadOnlyList<HealthTestCommentDto>>
+{
+    public async Task<IReadOnlyList<HealthTestCommentDto>> Handle(
+        GetEvaluationCommentsQuery request,
+        CancellationToken ct
+    )
+    {
+        var evaluation = await repository.GetEvaluationByIdAsync(request.EvaluationId, ct);
+        if (evaluation is null || evaluation.PatientId != request.PatientId)
+        {
+            return [];
+        }
+
+        return (await repository.ListCommentsByEvaluationAsync(request.EvaluationId, ct))
+            .Select(HealthTestCommentDto.FromEntity)
+            .ToList();
     }
 }
