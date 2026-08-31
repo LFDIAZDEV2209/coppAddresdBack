@@ -27,6 +27,8 @@ var profile = await db.Profiles
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Likes)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Reposts)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
@@ -58,6 +60,8 @@ var profile = await db.Profiles
         var profile = await db.Profiles
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Likes)
+            .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
+                .ThenInclude(x => x.Reposts)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
@@ -93,6 +97,7 @@ var profile = await db.Profiles
         var query = db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Reposts)
             .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
@@ -142,6 +147,7 @@ var profile = await db.Profiles
 => db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Reposts)
             .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .ThenInclude(c => c.Replies)
@@ -350,6 +356,7 @@ var profile = await db.Profiles
         return await db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Reposts)
             .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
@@ -368,6 +375,27 @@ var profile = await db.Profiles
             .Skip(skip)
             .Take(take)
             .ToListAsync(ct);
+    }
+
+    /// <summary>Perfiles que repostearon una publicación (orden por fecha de repost, más reciente primero).</summary>
+    [Authorize]
+    public async Task<List<Profile>> PostReposts(
+        Guid postId,
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        var ids = await db.Reposts
+            .Where(r => r.PostId == postId)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => r.ProfileId)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+        var loaded = await db.Profiles.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+        var byId = loaded.ToDictionary(p => p.Id);
+        return ids.Select(id => byId[id]).ToList();
     }
 
     /// <summary>Catálogo de perfiles activos con indicadores de relación respecto al usuario actual.</summary>
