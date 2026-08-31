@@ -125,6 +125,10 @@ public static class PermissionCodes
     public const string CommunityProfiles = "Community.Profiles";
     public const string CommunityManage = "Community.Manage";
 
+    // Documentos Legales
+    public const string LegalDocumentsView = "LegalDocuments.View";
+    public const string LegalDocumentsManage = "LegalDocuments.Manage";
+
     // Financiero: acceso a información financiera sin acceso clínico.
     public const string FinanceView = "Finance.View";
     public const string FinanceManage = "Finance.Manage";
@@ -223,6 +227,8 @@ public static class PermissionCodes
         yield return CommunityModerate;
         yield return CommunityProfiles;
         yield return CommunityManage;
+        yield return LegalDocumentsView;
+        yield return LegalDocumentsManage;
         yield return FinanceView;
         yield return FinanceManage;
         yield return ReportsView;
