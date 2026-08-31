@@ -347,6 +347,7 @@ public sealed class CommunityMutation
         var post = await db.Posts
             .Include(p => p.Profile)
             .Include(p => p.Likes)
+            .Include(p => p.Reposts)
             .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Likes)
@@ -498,6 +499,60 @@ public sealed class CommunityMutation
             .Include(c => c.Profile)
             .Include(c => c.Likes)
             .FirstOrDefaultAsync(c => c.Id == commentId, ct);
+    }
+
+    // --- Reposts ---
+
+    /// <summary>
+    /// Repostea una publicación. Un usuario no puede repostear la misma publicación dos veces.
+    /// </summary>
+    public async Task<Post?> RepostPost(
+        Guid postId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        var post = await db.Posts.FirstOrDefaultAsync(p => p.Id == postId && p.DeletedAt == null, ct)
+            ?? throw new GraphQLException("No se encontró la publicación.");
+
+        var exists = await db.Reposts.AnyAsync(r => r.PostId == postId && r.ProfileId == profile.Id, ct);
+        if (exists)
+            throw new GraphQLException("Ya reposteaste esta publicación.");
+
+        db.Reposts.Add(new Repost
+        {
+            Id = Guid.NewGuid(),
+            PostId = postId,
+            ProfileId = profile.Id,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await db.SaveChangesAsync(ct);
+
+        return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
+    }
+
+    /// <summary>
+    /// Elimina un repost previo del usuario actual sobre una publicación.
+    /// </summary>
+    public async Task<Post?> UnrepostPost(
+        Guid postId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        var repost = await db.Reposts.FirstOrDefaultAsync(
+            r => r.PostId == postId && r.ProfileId == profile.Id, ct);
+        if (repost is null)
+            throw new GraphQLException("No reposteaste esta publicación.");
+
+        db.Reposts.Remove(repost);
+        await db.SaveChangesAsync(ct);
+
+        return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
     }
 
     // --- Reportes (comentarios) ---
