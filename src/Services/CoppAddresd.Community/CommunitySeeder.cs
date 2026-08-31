@@ -7,10 +7,11 @@ namespace CoppAddresd.Community;
 
 /// <summary>
 /// Siembra datos de demostración de la comunidad ERP solo en desarrollo (si la tabla
-/// de perfiles está vacía). Genera ~40 perfiles con región/diagnóstico/semana y señales
+/// de perfiles está vacía). Genera ~60 perfiles con región/diagnóstico/semana y señales
 /// de actividad variadas (para que el riesgo varíe), entradas de XP, publicaciones en
 /// todos los tipos/destinos y eventos de feed coherentes. Las publicaciones se extienden
-/// por los últimos 30 días con horas variadas, y se incluyen comentarios y likes.
+/// por los últimos 30 días con horas variadas, y se incluyen comentarios (con respuestas),
+/// likes de publicación y comentarios, seguimientos, reportes y perfiles baneados.
 /// </summary>
 public static class CommunitySeeder
 {
@@ -26,6 +27,12 @@ public static class CommunitySeeder
         "Jimena Córdoba", "Bruno Lara", "Alba Navarro", "Gael Herrera",
         "Noa Villalobos", "Iker Salazar", "Vega Montoya", "Dario Céspedes",
         "Catalina Quintero", "Adrián Beltrán", "Esperanza Cano", "Facundo Ríos",
+        // --- 20 nuevos nombres (60 total) ---
+        "Santiago Vega", "Valeria Ortiz", "Emilia Rojas", "Felipe Mora",
+        "Ana Beltrán", "Jorge Medina", "Luciano Ferrer", "Paula Herrera",
+        "Cristian Salas", "Diana Ponce", "Hugo Campos", "Marta Ibarra",
+        "Rodrigo León", "Silvia Marín", "Óscar Vidal", "Claudia Solís",
+        "Mario Duarte", "Teresa Aguilar", "Iván Molina", "Lorena Figueroa",
     ];
 
     private static readonly ProfileRegion[] Regions =
@@ -58,6 +65,10 @@ public static class CommunitySeeder
         "Genial aporte, lo voy a intentar esta semana.",
         "Esto es justo lo que necesitaba leer hoy.",
         "¡Gran reto! Yo también estoy participando.",
+        "¡Qué inspirador! Gracias por motivarnos.",
+        "Voy a probar eso, gracias por el consejo.",
+        "Me pasó igual, ánimo que se puede.",
+        "Excelente, ya voy por el día 15.",
     ];
 
     public static async Task SeedAsync(CommunityDbContext db, IConfiguration? configuration = null, CancellationToken ct = default)
@@ -98,7 +109,7 @@ public static class CommunitySeeder
         var profiles = new List<Profile>();
         var allPosts = new List<Post>(); // Posts creados, para asignar comentarios/likes
 
-        // ─── PERFILES ────────────────────────────────────────────────────
+        // ─── PERFILES (~60) ──────────────────────────────────────────────
         for (var i = 0; i < Names.Length; i++)
         {
             // Señal de actividad variable (0..29 días) para que el riesgo varíe.
@@ -133,16 +144,14 @@ public static class CommunitySeeder
             profiles.Add(profile);
         }
 
-        // ─── PUBLICACIONES (spread 30 días) ──────────────────────────────
-        // ~27 posts distribuidos entre 27 perfiles, repartidos en
-        // los últimos 30 días con horas variadas para que el dashboard muestre
-        // datos interesantes.
-        var postOwners = profiles.Take(27).ToList();
-        var postDates = new DateTime[27];
-        for (var k = 0; k < 27; k++)
+        // ─── PUBLICACIONES (~50 posts, spread 30 días) ────────────────────
+        const int postCount = 50;
+        var postOwners = profiles.Take(postCount).ToList();
+        var postDates = new DateTime[postCount];
+        for (var k = 0; k < postCount; k++)
         {
-            // Distribuir en 30 días: día = k*30/27, hora variada (8..22)
-            var dayOffset = (int)(k * 30L / 27);
+            // Distribuir en 30 días: día = k*30/50, hora variada (8..22)
+            var dayOffset = (int)(k * 30L / postCount);
             var hourOffset = 8 + (k * 7) % 15; // 8..22
             postDates[k] = now.AddDays(-dayOffset).AddHours(-hourOffset).AddMinutes(-(k * 13) % 60);
         }
@@ -160,7 +169,15 @@ public static class CommunitySeeder
             "community/posts/ab779f9dd4ca4aac9e49b1b1eeb6f149.png",
         };
 
-        // Textos realistas por tipo de publicación.
+        // Video keys (archivos de referencia; se crearán en otro paso).
+        var videoKeys = new[]
+        {
+            "community/posts/sample1.mp4",
+            "community/posts/sample2.mp4",
+            "community/posts/sample3.mp4",
+        };
+
+        // Textos realistas por tipo de publicación (~13 Texto bodies).
         var textoBodies = new[]
         {
             "Hoy completé mi caminata matutina de 30 minutos. Al principio costaba, pero ahora es lo que más espero del día. ¡Pequeños pasos grandes resultados!",
@@ -187,11 +204,20 @@ public static class CommunitySeeder
             "Resultado de mis análisis de sangre después de 3 meses en el programa. ¡Los números hablan solos!",
         };
 
+        var videoBodies = new[]
+        {
+            "Mi rutina de ejercicio de hoy — 20 min de cardio en casa. ¡Vamos con todo! 🎬",
+            "Tutorial de estiramientos para principiantes. Solo necesitan 10 minutos y una esterilla. 🏋️",
+            "Así preparé mi batido verde antiinflamatorio. Super fácil y delicioso. 🥤",
+        };
+
         var encuestaBodies = new[]
         {
             "¿Qué tema te gustaría para el próximo taller de la comunidad?",
             "¿Cuál es tu mayor reto para mantener una alimentación saludable?",
             "¿Qué actividad física disfrutas más?",
+            "¿Con qué frecuencia haces ejercicio?",
+            "¿Qué te motiva más?",
         };
 
         var logroBodies = new[]
@@ -201,6 +227,9 @@ public static class CommunitySeeder
             "¡Bienvenidos a la Comunidad ANTARES! Este espacio es de todos: comparte tus avances, dudas y recetas.",
             "Hoy cumplí 100 días de racha. Empecé con una caminata de 10 minutos y ahora hago 45. ¡Sigan adelante!",
             "Mi meta del mes: reducir 2 cm de cintura. ¡Logrado en 22 días con caminata y alimentación consciente!",
+            "Completé el reto de 30 días de caminata. De 0 a 100 km recorridos este mes. ¡No me lo creo!",
+            "Hoy me pesé y bajé 3 kg en las últimas 4 semanas. El combo caminata + comida saludable funciona.",
+            "Mi primer mes sin refrescos. La verdad: al principio fue difícil pero ahora no los extraño para nada.",
         };
 
         var encuestaPollData = new (string Question, string[] Options)[]
@@ -211,15 +240,21 @@ public static class CommunitySeeder
                 ["Falta de tiempo para cocinar", "Antojos nocturnos", "No saber qué comer", "Costo de los alimentos saludables"]),
             ("¿Qué actividad física disfrutas más?",
                 ["Caminar al aire libre", "Ejercicios en casa", "Yoga o estiramientos", "Natación"]),
+            ("¿Con qué frecuencia haces ejercicio?",
+                ["Todos los días", "3-4 veces/semana", "1-2 veces/semana", "Casi nunca"]),
+            ("¿Qué te motiva más?",
+                ["Sentirme mejor", "Bajar de peso", "Mi familia", "Mi salud"]),
         };
 
         var imageIdx = 0;
+        var videoIdx = 0;
         var textoIdx = 0;
         var imagenIdx = 0;
         var encuestaIdx = 0;
         var logroIdx = 0;
+        var pinnedOrder = 1;
 
-        for (var k = 0; k < 27; k++)
+        for (var k = 0; k < postCount; k++)
         {
             var owner = postOwners[k];
             var type = AllPostTypes[k % AllPostTypes.Length];
@@ -228,6 +263,9 @@ public static class CommunitySeeder
 
             string body;
             string? imageKey = null;
+
+            // Pin los primeros 3 posts para demo.
+            var isPinned = k < 3;
 
             switch (type)
             {
@@ -242,8 +280,9 @@ public static class CommunitySeeder
                     imagenIdx++;
                     break;
                 case PostType.Video:
-                    // Sin archivos de video disponibles; chip muestra Video sin media.
-                    body = $"{owner.DisplayName} compartió un video de su rutina de ejercicio. ¡Motivación pura! 🎬";
+                    body = videoBodies[videoIdx % videoBodies.Length];
+                    imageKey = videoKeys[videoIdx % videoKeys.Length]; // ImageKey almacena la clave del video
+                    videoIdx++;
                     break;
                 case PostType.Encuesta:
                     body = encuestaBodies[encuestaIdx % encuestaBodies.Length];
@@ -266,6 +305,8 @@ public static class CommunitySeeder
                 ImageKey = imageKey,
                 Type = type,
                 Destination = destination,
+                Pinned = isPinned,
+                PinnedOrder = isPinned ? pinnedOrder++ : 0,
                 CreatedAt = created,
             };
             db.Posts.Add(post);
@@ -294,8 +335,8 @@ public static class CommunitySeeder
                     };
                     poll.Options.Add(option);
 
-                    // Asignar votos aleatorios a cada opción (2-6 votos por opción).
-                    var voteCount = 2 + rnd.Next(5); // 2..6
+                    // Asignar votos aleatorios a cada opción (3-8 votos por opción).
+                    var voteCount = 3 + rnd.Next(6); // 3..8
                     for (var vi = 0; vi < voteCount; vi++)
                     {
                         var voterIdx = rnd.Next(profiles.Count);
@@ -336,9 +377,9 @@ public static class CommunitySeeder
             profile.BestStreak = CommunityStats.BestStreak(dates);
         }
 
-        // ─── COMENTARIOS (~2-3 por algunos posts) ────────────────────────
-        // Los 10 primeros posts reciben 2-3 comentarios cada uno.
-        var commentTargets = allPosts.Take(10).ToList();
+        // ─── COMENTARIOS (~40-60 sobre ~20-25 posts, con respuestas) ─────
+        // Los primeros 25 posts reciben 2-3 comentarios cada uno.
+        var commentTargets = allPosts.Take(25).ToList();
         var comments = new List<Comment>();
         for (var ci = 0; ci < commentTargets.Count; ci++)
         {
@@ -371,17 +412,55 @@ public static class CommunitySeeder
                     Body = comment.Body.Length > 500 ? comment.Body[..500] : comment.Body,
                     CreatedAt = createdAt,
                 });
+
+                // ~30% de los comentarios reciben 1-2 respuestas.
+                if (ci % 10 < 3 && cj == 0)
+                {
+                    var replyCount = 1 + rnd.Next(2); // 1 o 2 respuestas
+                    for (var ri = 0; ri < replyCount; ri++)
+                    {
+                        var replierIdx = (ci * 5 + ri + 22) % profiles.Count;
+                        var replier = profiles[replierIdx];
+                        var replyCreatedAt = createdAt.AddHours(1 + (ri * 3) % 24);
+
+                        var reply = new Comment
+                        {
+                            Id = Guid.NewGuid(),
+                            PostId = targetPost.Id,
+                            ProfileId = replier.Id,
+                            ParentCommentId = comment.Id,
+                            Body = CommentBodies[(ci + cj + ri + 4) % CommentBodies.Length],
+                            CreatedAt = replyCreatedAt,
+                        };
+                        db.Comments.Add(reply);
+                        comments.Add(reply);
+
+                        db.FeedEvents.Add(new FeedEvent
+                        {
+                            Id = Guid.NewGuid(),
+                            ProfileId = replier.Id,
+                            Kind = FeedEventKind.Comentario,
+                            Body = reply.Body.Length > 500 ? reply.Body[..500] : reply.Body,
+                            CreatedAt = replyCreatedAt,
+                        });
+                    }
+                }
             }
         }
 
-        // ─── LIKES (5-10 por posts variados) ─────────────────────────────
-        // Distribuir ~30 likes entre los primeros 15 posts.
-        var likeTargets = allPosts.Take(15).ToList();
-        for (var li = 0; li < 30; li++)
+        // ─── LIKES DE PUBLICACIÓN (~100-150 en ~30 posts) ─────────────────
+        // Distribuir ~120 likes entre los primeros 30 posts (8-15 por post).
+        var likeTargets = allPosts.Take(30).ToList();
+        var usedPostLikeKeys = new HashSet<(Guid PostId, Guid ProfileId)>();
+        for (var li = 0; li < 120; li++)
         {
             var targetPost = likeTargets[li % likeTargets.Count];
             var likerIdx = (li * 5 + 7) % profiles.Count;
             var liker = profiles[likerIdx];
+
+            // Evitar self-like y duplicados.
+            if (liker.Id == targetPost.ProfileId) continue;
+            if (!usedPostLikeKeys.Add((targetPost.Id, liker.Id))) continue;
 
             // Like creado entre 30 min y 72 horas después del post.
             var createdAt = targetPost.CreatedAt.AddMinutes(30 + (li * 47) % 4320);
@@ -393,6 +472,137 @@ public static class CommunitySeeder
                 PostId = targetPost.Id,
                 CreatedAt = createdAt,
             });
+        }
+
+        // ─── LIKES DE COMENTARIO (~40% de comentarios, 1-3 likes cada uno) ──
+        var usedCommentLikeKeys = new HashSet<(Guid CommentId, Guid ProfileId)>();
+        for (var cli = 0; cli < comments.Count; cli++)
+        {
+            if (cli % 10 >= 4) continue; // ~40% de los comentarios
+
+            var targetComment = comments[cli];
+            var commentLikeCount = 1 + rnd.Next(3); // 1..3
+            for (var clii = 0; clii < commentLikeCount; clii++)
+            {
+                var likerIdx = (cli * 7 + clii + 11) % profiles.Count;
+                var liker = profiles[likerIdx];
+
+                // Evitar self-like y duplicados.
+                if (liker.Id == targetComment.ProfileId) continue;
+                if (!usedCommentLikeKeys.Add((targetComment.Id, liker.Id))) continue;
+
+                var createdAt = targetComment.CreatedAt.AddMinutes(15 + rnd.Next(1200));
+
+                db.Likes.Add(new Like
+                {
+                    Id = Guid.NewGuid(),
+                    ProfileId = liker.Id,
+                    CommentId = targetComment.Id,
+                    PostId = null,
+                    CreatedAt = createdAt,
+                });
+            }
+        }
+
+        // ─── SEGUIMIENTOS (cada perfil sigue 3-5 otros, mutuos cuando sea posible) ──
+        var usedFollowKeys = new HashSet<(Guid FollowerId, Guid FollowingId)>();
+        for (var fi = 0; fi < profiles.Count; fi++)
+        {
+            var follower = profiles[fi];
+            var followCount = 3 + rnd.Next(3); // 3..5
+            var candidates = profiles
+                .Where(p => p.Id != follower.Id)
+                .OrderBy(_ => rnd.Next())
+                .Take(followCount * 2) // Tomar más candidatos para compensar dedup
+                .ToList();
+
+            var created = 0;
+            foreach (var candidate in candidates)
+            {
+                if (created >= followCount) break;
+                if (!usedFollowKeys.Add((follower.Id, candidate.Id))) continue;
+
+                db.Follows.Add(new Follow
+                {
+                    Id = Guid.NewGuid(),
+                    FollowerProfileId = follower.Id,
+                    FollowingProfileId = candidate.Id,
+                    CreatedAt = now.AddDays(-rnd.Next(30)),
+                });
+                created++;
+
+                // Crear follow mutuo a veces (~40%) para habilitar mensajes.
+                if (rnd.Next(10) < 4 && usedFollowKeys.Add((candidate.Id, follower.Id)))
+                {
+                    db.Follows.Add(new Follow
+                    {
+                        Id = Guid.NewGuid(),
+                        FollowerProfileId = candidate.Id,
+                        FollowingProfileId = follower.Id,
+                        CreatedAt = now.AddDays(-rnd.Next(30)),
+                    });
+                }
+            }
+        }
+
+        // ─── REPORTES DE PUBLICACIONES (2-3) ─────────────────────────────
+        var reportReasons = new[] { "Spam", "Contenido inapropiado", "Lenguaje ofensivo", "Información falsa" };
+        var reportDetails = new[]
+        {
+            "Este contenido no aporta a la comunidad.",
+            "Contiene información médica no verificada.",
+            "Lenguaje irrespetuoso hacia otros miembros.",
+        };
+
+        for (var rpi = 0; rpi < 3; rpi++)
+        {
+            var reporterIdx = (rpi + 33) % profiles.Count;
+            var reporter = profiles[reporterIdx];
+            var reportedPost = allPosts[rpi + 5]; // Posts diferentes a los primeros
+
+            db.PostReports.Add(new PostReport
+            {
+                Id = Guid.NewGuid(),
+                PostId = reportedPost.Id,
+                ReportedByProfileId = reporter.Id,
+                Reason = reportReasons[rpi % reportReasons.Length],
+                Details = reportDetails[rpi % reportDetails.Length],
+                CreatedAt = now.AddDays(-rnd.Next(5)),
+            });
+        }
+
+        // ─── REPORTE DE COMENTARIO (1) ───────────────────────────────────
+        if (comments.Count > 0)
+        {
+            var commentToReport = comments[rnd.Next(Math.Min(10, comments.Count))];
+            var commentReporterIdx = (rnd.Next(profiles.Count) + 44) % profiles.Count;
+            var commentReporter = profiles[commentReporterIdx];
+
+            db.CommentReports.Add(new CommentReport
+            {
+                Id = Guid.NewGuid(),
+                CommentId = commentToReport.Id,
+                ReportedByProfileId = commentReporter.Id,
+                Reason = "Contenido inapropiado",
+                Details = "El comentario contiene lenguaje ofensivo.",
+                CreatedAt = now.AddDays(-rnd.Next(5)),
+            });
+        }
+
+        // ─── PERFILES BANEADOS (1-2) ─────────────────────────────────────
+        var bannedProfile1 = profiles[41]; // "Santiago Vega" (índice nuevo)
+        bannedProfile1.Status = ProfileStatus.Banned;
+        bannedProfile1.BannedAt = now.AddDays(-2);
+        bannedProfile1.BannedBy = profiles[0].Id;
+        bannedProfile1.BanReason = "Múltiples reportes";
+
+        if (profiles.Count > 50)
+        {
+            var bannedProfile2 = profiles[50]; // "Mario Duarte" (índice nuevo)
+            bannedProfile2.Status = ProfileStatus.Banned;
+            bannedProfile2.BannedAt = now.AddDays(-3);
+            bannedProfile2.BannedBy = profiles[0].Id;
+            bannedProfile2.BanReason = "Spam recurrente";
         }
 
         // ─── RECONOCIMIENTOS (si vacío) ────────────────────────────────
