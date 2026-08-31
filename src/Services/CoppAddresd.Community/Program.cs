@@ -79,6 +79,7 @@ builder.Services
     .AddType<PostImageUrlResolver>()
     .AddType<ProfileImageUrlResolver>()
     .AddTypeExtension<ProfileResolvers>()
+    .AddTypeExtension<PollVoteResolvers>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
