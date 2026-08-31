@@ -79,9 +79,24 @@ public class AnalyzeFoodImageCommandHandler
             .Where(f => f.NutritionResult is not null && f.NutritionResult.NutritionStatus != "available")
             .Select(f => $"{f.Name}:{f.NutritionResult!.NutritionStatus}")
             .ToList();
+        // Telemetría nutricional por análisis (FASE 18): contadores por
+        // estado. Sin datos de usuario ni imágenes.
+        var statuses = foods
+            .Where(f => f.NutritionResult is not null)
+            .GroupBy(f => f.NutritionResult!.NutritionStatus)
+            .ToDictionary(g => g.Key, g => g.Count());
         _logger.LogInformation(
-            "nutrition_resumen analysis_id={AnalysisId} foods={Foods} nutricion_ok={Ok}/{Total} fallos={Failures}",
-            analysisId, foods.Count, nutritionOk, foods.Count,
+            "nutrition_resumen analysis_id={AnalysisId} foods={Foods} nutricion_ok={Ok}/{Total} "
+            + "nutrition_items_total={Total} nutrition_items_available={Available} "
+            + "nutrition_items_unavailable={Unavailable} nutrition_mapping_missing={MappingMissing} "
+            + "nutrition_mapping_ambiguous={MappingAmbiguous} nutrition_calculation_failed={CalcFailed} "
+            + "fallos={Failures}",
+            analysisId, foods.Count, nutritionOk, foods.Count, foods.Count,
+            statuses.GetValueOrDefault("available"),
+            statuses.GetValueOrDefault("portion_unavailable") + statuses.GetValueOrDefault("unavailable"),
+            statuses.GetValueOrDefault("unavailable"),
+            statuses.GetValueOrDefault("mapping_ambiguous"),
+            statuses.GetValueOrDefault("calculation_failed"),
             failures.Count == 0 ? "ninguno" : string.Join(",", failures));
 
         await PersistAsync(analysisId, request.UserId, imageKey, result, foods, summary, ct);
