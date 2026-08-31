@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.HealthTests.Execution;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
@@ -517,5 +518,384 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
         Assert.Single(a1);
         Assert.Single(a2);
         Assert.Equal(HealthTestAssignmentStatus.pending, a1[0].Status);
+    }
+
+    // --- Detalle de evaluación, historial y resultados por paciente (change patient-health-test-results) ---
+
+    /// <summary>
+    /// Bug fix: ListResultsByPatientAsync devuelve resultados de TODAS las
+    /// evaluaciones (antes solo del primer intento vía .First()) y lista vacía
+    /// cuando el paciente no tiene evaluaciones (antes 500).
+    /// </summary>
+    [Fact]
+    public async Task ResultadosPorPaciente_TodasLasEvaluaciones_OrdenadasPorCompletado()
+    {
+        var patient = await NewPatientAsync("doc-results");
+        var instrument = await NewInstrumentWithVersionAsync("it_results");
+        var version = instrument.Versions.Single();
+
+        // Sin evaluaciones → lista vacía, sin excepción.
+        var empty = await _repository.ListResultsByPatientAsync(patient.Id);
+        Assert.Empty(empty);
+
+        // Dos evaluaciones completadas del mismo test con fechas distintas.
+        var now = DateTime.UtcNow;
+        var assignmentOlder = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestAssignmentStatus.completed,
+            AssignedAt = now.AddDays(-10),
+        };
+        var assignmentNewer = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestAssignmentStatus.completed,
+            AssignedAt = now.AddDays(-1),
+        };
+        await _repository.AddAssignmentAsync(assignmentOlder);
+        await _repository.AddAssignmentAsync(assignmentNewer);
+
+        var evalOlder = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = assignmentOlder.Id,
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestEvaluationStatus.completed,
+            StartedAt = now.AddDays(-10),
+            CompletedAt = now.AddDays(-10),
+            Score = 3m,
+            ScorePercentage = 30m,
+        };
+        var evalNewer = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = assignmentNewer.Id,
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestEvaluationStatus.completed,
+            StartedAt = now.AddDays(-1),
+            CompletedAt = now.AddDays(-1),
+            Score = 9m,
+            ScorePercentage = 90m,
+        };
+        await _repository.AddEvaluationAsync(evalOlder);
+        await _repository.AddEvaluationAsync(evalNewer);
+        await _repository.AddResultsRangeAsync([
+            new HealthTestResult
+            {
+                Id = Guid.NewGuid(),
+                EvaluationId = evalOlder.Id,
+                ResultType = HealthTestResultType.score,
+                Code = "it_results",
+                Label = "Score total",
+                Value = 3m,
+                Qualifier = "bajo",
+                Severity = HealthTestSeverity.low,
+                CreatedAt = now,
+            },
+            new HealthTestResult
+            {
+                Id = Guid.NewGuid(),
+                EvaluationId = evalNewer.Id,
+                ResultType = HealthTestResultType.score,
+                Code = "it_results",
+                Label = "Score total",
+                Value = 9m,
+                Qualifier = "alto",
+                Severity = HealthTestSeverity.high,
+                CreatedAt = now,
+            },
+        ]);
+
+        var results = await _repository.ListResultsByPatientAsync(patient.Id);
+
+        Assert.Equal(2, results.Count);
+        // Orden por CompletedAt desc: primero el intento más reciente.
+        Assert.Equal(evalNewer.Id, results[0].EvaluationId);
+        Assert.Equal(evalOlder.Id, results[1].EvaluationId);
+    }
+
+    /// <summary>
+    /// Paginación y filtros del listado de evaluaciones por paciente
+    /// (status, rango de fechas, categoría) con total y orden por completado desc.
+    /// </summary>
+    [Fact]
+    public async Task EvaluacionesPorPaciente_PaginacionYFiltros()
+    {
+        var patient = await NewPatientAsync("doc-paged");
+        var instrument = await NewInstrumentWithVersionAsync("it_paged");
+        var version = instrument.Versions.Single();
+        var otherInstrument = await NewInstrumentWithVersionAsync("it_paged_otra");
+        var otherVersion = otherInstrument.Versions.Single();
+
+        var now = DateTime.UtcNow;
+        var a1 = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestAssignmentStatus.completed,
+            AssignedAt = now.AddDays(-3),
+        };
+        var a2 = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestAssignmentStatus.in_progress,
+            AssignedAt = now.AddDays(-2),
+        };
+        var a3 = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VersionId = otherVersion.Id,
+            Status = HealthTestAssignmentStatus.completed,
+            AssignedAt = now.AddDays(-1),
+        };
+        await _repository.AddAssignmentAsync(a1);
+        await _repository.AddAssignmentAsync(a2);
+        await _repository.AddAssignmentAsync(a3);
+
+        var e1 = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = a1.Id,
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestEvaluationStatus.completed,
+            StartedAt = now.AddDays(-3),
+            CompletedAt = now.AddDays(-3),
+            Score = 5m,
+        };
+        var e2 = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = a2.Id,
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestEvaluationStatus.started,
+            StartedAt = now.AddDays(-2),
+        };
+        var e3 = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = a3.Id,
+            PatientId = patient.Id,
+            VersionId = otherVersion.Id,
+            Status = HealthTestEvaluationStatus.completed,
+            StartedAt = now.AddDays(-1),
+            CompletedAt = now.AddDays(-1),
+            Score = 7m,
+        };
+        await _repository.AddEvaluationAsync(e1);
+        await _repository.AddEvaluationAsync(e2);
+        await _repository.AddEvaluationAsync(e3);
+
+        // Página 1 de 2 → 2 items, total 3.
+        var (items, total) = await _repository.ListEvaluationsByPatientPageAsync(
+            patient.Id,
+            status: null,
+            from: null,
+            to: null,
+            category: null,
+            page: 1,
+            pageSize: 2
+        );
+        Assert.Equal(3, total);
+        Assert.Equal(2, items.Count);
+        // Orden desc por completado (coalesce a StartedAt para las no completadas):
+        // e3 (ayer) primero, e2 (iniciada hace 2 días) luego, e1 (hace 3 días) último.
+        Assert.Equal(e3.Id, items[0].Id);
+        Assert.Equal(e2.Id, items[1].Id);
+
+        // Filtro por estado.
+        var (started, totalStarted) = await _repository.ListEvaluationsByPatientPageAsync(
+            patient.Id,
+            status: "started",
+            from: null,
+            to: null,
+            category: null,
+            page: 1,
+            pageSize: 20
+        );
+        Assert.Equal(1, totalStarted);
+        Assert.Equal(e2.Id, started[0].Id);
+
+        // Filtro por rango de fechas (solo e1).
+        var (inRange, totalInRange) = await _repository.ListEvaluationsByPatientPageAsync(
+            patient.Id,
+            status: null,
+            from: now.AddDays(-4),
+            to: now.AddDays(-2),
+            category: null,
+            page: 1,
+            pageSize: 20
+        );
+        Assert.Equal(1, totalInRange);
+        Assert.Equal(e1.Id, inRange[0].Id);
+
+        // Filtro por categoría del instrumento ("clinico" en el fixture).
+        var (byCategory, totalByCategory) = await _repository.ListEvaluationsByPatientPageAsync(
+            patient.Id,
+            status: null,
+            from: null,
+            to: null,
+            category: "clinico",
+            page: 1,
+            pageSize: 20
+        );
+        Assert.Equal(3, totalByCategory);
+    }
+
+    /// <summary>
+    /// Detalle de evaluación: intentos del mismo test numerados, respuestas con
+    /// texto de pregunta/opción, resultados y comentarios.
+    /// </summary>
+    [Fact]
+    public async Task DetalleEvaluacion_IntentosComentariosYRespuestas()
+    {
+        var patient = await NewPatientAsync("doc-detail");
+        var instrument = await NewInstrumentWithVersionAsync("it_detail");
+        var version = instrument.Versions.Single();
+        await AddScaleQuestionAsync(version, "q1", "Sección A", [1, 2, 3, 4, 5]);
+
+        var handler = new GetEvaluationDetailQueryHandler(_repository);
+        var now = DateTime.UtcNow;
+
+        // Dos intentos del mismo test: el primero con respuesta + resultado + comentario.
+        var assignment1 = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestAssignmentStatus.completed,
+            AssignedAt = now.AddDays(-10),
+        };
+        await _repository.AddAssignmentAsync(assignment1);
+        var eval1 = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = assignment1.Id,
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestEvaluationStatus.completed,
+            StartedAt = now.AddDays(-10),
+            CompletedAt = now.AddDays(-10),
+            Score = 2m,
+            ScorePercentage = 40m,
+        };
+        await _repository.AddEvaluationAsync(eval1);
+
+        var q1 = (await _repository.ListQuestionsByVersionAsync(version.Id))[0];
+        await _repository.AddResponsesRangeAsync([
+            new HealthTestResponse
+            {
+                Id = Guid.NewGuid(),
+                EvaluationId = eval1.Id,
+                QuestionId = q1.Id,
+                AnswerOptionId = q1.Options.ElementAt(1).Id, // 2
+                CreatedAt = now,
+            },
+        ]);
+        await _repository.AddResultsRangeAsync([
+            new HealthTestResult
+            {
+                Id = Guid.NewGuid(),
+                EvaluationId = eval1.Id,
+                ResultType = HealthTestResultType.subscale,
+                Code = "sec_a",
+                Label = "Sección A",
+                Value = 2m,
+                Qualifier = "bajo",
+                Severity = HealthTestSeverity.low,
+                CreatedAt = now,
+            },
+        ]);
+        await _repository.AddCommentAsync(
+            new HealthTestComment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patient.Id,
+                EvaluationId = eval1.Id,
+                AuthorId = Guid.NewGuid(),
+                Body = "Paciente progresa bien.",
+                CreatedAt = now.AddDays(-5),
+            }
+        );
+
+        var assignment2 = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestAssignmentStatus.completed,
+            AssignedAt = now.AddDays(-1),
+        };
+        await _repository.AddAssignmentAsync(assignment2);
+        var eval2 = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = assignment2.Id,
+            PatientId = patient.Id,
+            VersionId = version.Id,
+            Status = HealthTestEvaluationStatus.completed,
+            StartedAt = now.AddDays(-1),
+            CompletedAt = now.AddDays(-1),
+            Score = 4m,
+            ScorePercentage = 80m,
+        };
+        await _repository.AddEvaluationAsync(eval2);
+
+        // Intento 2: el más reciente.
+        var detail2 = await handler.Handle(
+            new GetEvaluationDetailQuery(patient.Id, eval2.Id),
+            default
+        );
+        Assert.NotNull(detail2);
+        Assert.Equal(2, detail2!.Attempt);
+        Assert.Equal("it_detail", detail2.TestCode);
+        Assert.Equal(2, detail2.Attempts.Count);
+        Assert.Equal(eval1.Id, detail2.Attempts[0].Id);
+        Assert.Equal(eval2.Id, detail2.Attempts[1].Id);
+        Assert.Equal(80m, detail2.ScorePercentage);
+        Assert.Empty(detail2.Responses);
+        Assert.Empty(detail2.Comments);
+
+        // Intento 1: respuestas + resultado + comentario incluidos.
+        var detail1 = await handler.Handle(
+            new GetEvaluationDetailQuery(patient.Id, eval1.Id),
+            default
+        );
+        Assert.NotNull(detail1);
+        Assert.Equal(1, detail1!.Attempt);
+        Assert.Single(detail1.Responses);
+        Assert.Equal("Pregunta q1", detail1.Responses[0].QuestionText);
+        Assert.Equal("Sección A", detail1.Responses[0].Section);
+        Assert.Equal("2", detail1.Responses[0].AnswerOptionText);
+        Assert.Single(detail1.Results);
+        Assert.Equal(HealthTestResultType.subscale, detail1.Results[0].ResultType);
+        Assert.Single(detail1.Comments);
+        Assert.Equal("Paciente progresa bien.", detail1.Comments[0].Body);
+
+        // Evaluación inexistente → null (404 en el controller).
+        var missing = await handler.Handle(
+            new GetEvaluationDetailQuery(patient.Id, Guid.NewGuid()),
+            default
+        );
+        Assert.Null(missing);
+
+        // Evaluación de otro paciente → null.
+        var otherPatient = await NewPatientAsync("doc-detail-otro");
+        var foreign = await handler.Handle(
+            new GetEvaluationDetailQuery(otherPatient.Id, eval1.Id),
+            default
+        );
+        Assert.Null(foreign);
     }
 }
