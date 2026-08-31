@@ -23,14 +23,13 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     /// </summary>
     private readonly HashSet<Guid> _loadedSessionIds = [];
 
-    public async Task<Appointment?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.Appointments.AsNoTracking()
-            .FirstOrDefaultAsync(a => a.Id == id, ct);
+    public async Task<Appointment?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        await dbContext.Appointments.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
 
     public async Task<Appointment?> GetForUpdateAsync(Guid id, CancellationToken ct = default)
     {
-        var appointment = await dbContext.Appointments
-            .Include(a => a.Cancellations)
+        var appointment = await dbContext
+            .Appointments.Include(a => a.Cancellations)
             .Include(a => a.Reschedules)
             .Include(a => a.Request)
             .Include(a => a.Room)
@@ -48,18 +47,14 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         return appointment;
     }
 
-    public async Task<Appointment> AddAsync(
-        Appointment appointment,
-        CancellationToken ct = default)
+    public async Task<Appointment> AddAsync(Appointment appointment, CancellationToken ct = default)
     {
         dbContext.Appointments.Add(appointment);
         await SaveWithConflictTranslationAsync(ct);
         return appointment;
     }
 
-    public async Task UpdateAsync(
-        Appointment appointment,
-        CancellationToken ct = default)
+    public async Task UpdateAsync(Appointment appointment, CancellationToken ct = default)
     {
         // Historial append-only (cancelaciones/reprogramaciones): los hijos ya
         // existentes cargados por GetForUpdateAsync están Unchanged; cualquier
@@ -106,34 +101,46 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         DateTimeOffset start,
         DateTimeOffset end,
         Guid? excludeAppointmentId = null,
-        CancellationToken ct = default)
-        => await dbContext.Appointments.AnyAsync(a =>
-            a.ProfessionalId == professionalId
-            // Estados que ocupan el calendario (mismo criterio que el índice parcial).
-            // Inline de la condición: EF no traduce helpers de método.
-            && (a.Status == AppointmentStatus.Requested
-                || a.Status == AppointmentStatus.Confirmed
-                || a.Status == AppointmentStatus.InProgress)
-            && a.ScheduledStart < end
-            && a.ScheduledEnd > start
-            && (excludeAppointmentId == null || a.Id != excludeAppointmentId), ct);
+        CancellationToken ct = default
+    ) =>
+        await dbContext.Appointments.AnyAsync(
+            a =>
+                a.ProfessionalId == professionalId
+                // Estados que ocupan el calendario (mismo criterio que el índice parcial).
+                // Inline de la condición: EF no traduce helpers de método.
+                && (
+                    a.Status == AppointmentStatus.Requested
+                    || a.Status == AppointmentStatus.Confirmed
+                    || a.Status == AppointmentStatus.InProgress
+                )
+                && a.ScheduledStart < end
+                && a.ScheduledEnd > start
+                && (excludeAppointmentId == null || a.Id != excludeAppointmentId),
+            ct
+        );
 
     public async Task<IReadOnlyList<Appointment>> ListByProfessionalAsync(
         Guid professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
-        => await dbContext.Appointments.AsNoTracking()
-            .Where(a => a.ProfessionalId == professionalId
-                        && a.ScheduledStart >= from
-                        && a.ScheduledStart < to)
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
+            .Where(a =>
+                a.ProfessionalId == professionalId
+                && a.ScheduledStart >= from
+                && a.ScheduledStart < to
+            )
             .OrderBy(a => a.ScheduledStart)
             .ToListAsync(ct);
 
     public async Task<IReadOnlyList<Appointment>> ListByPatientAsync(
         Guid patientId,
-        CancellationToken ct = default)
-        => await dbContext.Appointments.AsNoTracking()
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.PatientId == patientId)
             .OrderByDescending(a => a.ScheduledStart)
             .ToListAsync(ct);
@@ -148,7 +155,8 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         DateTimeOffset? to,
         int page,
         int pageSize,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var query = dbContext.Appointments.AsNoTracking();
 
@@ -188,17 +196,22 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     public async Task<int> CountInRangeAsync(
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
-        => await dbContext.Appointments
-            .CountAsync(a => a.ScheduledStart >= from && a.ScheduledStart < to, ct);
+        CancellationToken ct = default
+    ) =>
+        await dbContext.Appointments.CountAsync(
+            a => a.ScheduledStart >= from && a.ScheduledStart < to,
+            ct
+        );
 
     public async Task<int> CountInRangeAsync(
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Appointments.AsNoTracking()
+        var query = dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
 
         if (professionalId is not null)
@@ -211,8 +224,17 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
 
     public async Task<int> CountByStatusAsync(
         AppointmentStatus status,
-        CancellationToken ct = default)
-        => await dbContext.Appointments.CountAsync(a => a.Status == status, ct);
+        CancellationToken ct = default
+    ) => await dbContext.Appointments.CountAsync(a => a.Status == status, ct);
+
+    public async Task<int> CountByStatusAsync(
+        AppointmentStatus status,
+        Guid professionalId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
+            .CountAsync(a => a.Status == status && a.ProfessionalId == professionalId, ct);
 
     // --- Analytics del dashboard (agrupaciones en BD, sin traer entidades) ---
 
@@ -220,9 +242,11 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Appointments.AsNoTracking()
+        var query = dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
 
         if (professionalId is not null)
@@ -247,9 +271,11 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Appointments.AsNoTracking()
+        var query = dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
 
         if (professionalId is not null)
@@ -273,9 +299,11 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Appointments.AsNoTracking()
+        var query = dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
 
         if (professionalId is not null)
@@ -292,24 +320,33 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .ToList();
     }
 
-    public async Task<IReadOnlyList<ProfessionalAppointmentActivity>> CountGroupedByProfessionalAsync(
+    public async Task<
+        IReadOnlyList<ProfessionalAppointmentActivity>
+    > CountGroupedByProfessionalAsync(
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var rows = await dbContext.Appointments.AsNoTracking()
+        var rows = await dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to)
-            .Select(a => new { a.ProfessionalId, a.PatientId, a.Status })
+            .Select(a => new
+            {
+                a.ProfessionalId,
+                a.PatientId,
+                a.Status,
+            })
             .ToListAsync(ct);
 
-        return rows
-            .GroupBy(r => r.ProfessionalId)
+        return rows.GroupBy(r => r.ProfessionalId)
             .Select(g => new ProfessionalAppointmentActivity(
                 g.Key,
                 g.Count(),
                 g.Count(r => r.Status == AppointmentStatus.Completed),
                 g.Count(r => r.Status == AppointmentStatus.Cancelled),
-                g.Select(r => r.PatientId).Distinct().Count()))
+                g.Select(r => r.PatientId).Distinct().Count()
+            ))
             .OrderByDescending(x => x.Total)
             .ToList();
     }
@@ -318,9 +355,11 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Appointments.AsNoTracking()
+        var query = dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
 
         if (professionalId is not null)
@@ -334,8 +373,10 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     public async Task<int> CountDistinctProfessionalsAsync(
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default)
-        => await dbContext.Appointments.AsNoTracking()
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to)
             .Select(a => a.ProfessionalId)
             .Distinct()
@@ -345,20 +386,17 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         Guid? professionalId,
         DateTimeOffset from,
         int limit,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Appointments.AsNoTracking()
-            .Where(a => a.ScheduledStart >= from);
+        var query = dbContext.Appointments.AsNoTracking().Where(a => a.ScheduledStart >= from);
 
         if (professionalId is not null)
         {
             query = query.Where(a => a.ProfessionalId == professionalId);
         }
 
-        return await query
-            .OrderBy(a => a.ScheduledStart)
-            .Take(limit)
-            .ToListAsync(ct);
+        return await query.OrderBy(a => a.ScheduledStart).Take(limit).ToListAsync(ct);
     }
 
     private async Task SaveWithConflictTranslationAsync(CancellationToken ct)
@@ -370,12 +408,14 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         catch (DbUpdateConcurrencyException)
         {
             throw new BusinessRuleViolationException(
-                "La cita cambió de estado en otra operación concurrente; reintenta la operación.");
+                "La cita cambió de estado en otra operación concurrente; reintenta la operación."
+            );
         }
         catch (DbUpdateException ex) when (ex.IsExclusionViolation() || ex.IsUniqueViolation())
         {
             throw new BusinessRuleViolationException(
-                "El profesional ya tiene una cita que se solapa con el horario solicitado, o la solicitud ya fue confirmada.");
+                "El profesional ya tiene una cita que se solapa con el horario solicitado, o la solicitud ya fue confirmada."
+            );
         }
     }
 }

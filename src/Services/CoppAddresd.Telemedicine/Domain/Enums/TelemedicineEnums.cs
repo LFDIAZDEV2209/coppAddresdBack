@@ -10,7 +10,7 @@ public enum AppointmentRequestStatus
     Approved,
     Rejected,
     Cancelled,
-    Converted
+    Converted,
 }
 
 /// <summary>
@@ -26,7 +26,7 @@ public enum AppointmentStatus
     InProgress,
     Completed,
     Cancelled,
-    NoShow
+    NoShow,
 }
 
 /// <summary>Quién ejecutó una cancelación (para trazabilidad).</summary>
@@ -35,7 +35,7 @@ public enum CancelledBy
     Patient,
     Professional,
     Admin,
-    System
+    System,
 }
 
 /// <summary>Quién solicitó/ejecutó una reprogramación.</summary>
@@ -44,7 +44,7 @@ public enum RescheduleRequestedBy
     Patient,
     Professional,
     Admin,
-    System
+    System,
 }
 
 /// <summary>
@@ -58,7 +58,7 @@ public enum VirtualRoomStatus
     Active,
     Ended,
     Expired,
-    Failed
+    Failed,
 }
 
 /// <summary>
@@ -72,7 +72,7 @@ public enum TelemedicineSessionStatus
     Active,
     Ended,
     Expired,
-    Failed
+    Failed,
 }
 
 /// <summary>Estado del encuentro clínico asociado a la consulta.</summary>
@@ -80,7 +80,7 @@ public enum EncounterStatus
 {
     Draft,
     Completed,
-    Cancelled
+    Cancelled,
 }
 
 /// <summary>
@@ -91,6 +91,7 @@ public enum AlertType
 {
     NewRequest,
     RequestApproved,
+    RequestRejected,
     NewAppointment,
     UpcomingAppointment,
     AppointmentRescheduled,
@@ -100,7 +101,7 @@ public enum AlertType
     ParticipantLeft,
     SessionEnded,
     NoShow,
-    System
+    System,
 }
 
 /// <summary>Severidad de una alerta para priorizar la bandeja.</summary>
@@ -108,7 +109,7 @@ public enum AlertSeverity
 {
     Info,
     Warning,
-    Critical
+    Critical,
 }
 
 /// <summary>Destinatario de una alerta (usuario concreto o ámbito).</summary>
@@ -117,5 +118,5 @@ public enum AlertRecipientType
     User,
     Professional,
     ClinicAdmin,
-    System
+    System,
 }
