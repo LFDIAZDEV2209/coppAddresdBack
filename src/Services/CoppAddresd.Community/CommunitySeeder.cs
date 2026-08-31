@@ -589,6 +589,34 @@ public static class CommunitySeeder
             });
         }
 
+        // ─── REPOSTS (~40-60 sobre los primeros 20 posts) ────────────────
+        var repostTargets = allPosts.Take(20).ToList();
+        var usedRepostKeys = new HashSet<(Guid PostId, Guid ProfileId)>();
+        for (var rpi = 0; rpi < repostTargets.Count; rpi++)
+        {
+            var targetPost = repostTargets[rpi];
+            var repostCount = 1 + rnd.Next(5); // 1..5 reposts por post
+            var reposted = 0;
+            for (var ri = 0; ri < repostCount * 2 && reposted < repostCount; ri++)
+            {
+                var reposterIdx = (rpi * 7 + ri + 19) % profiles.Count;
+                var reposter = profiles[reposterIdx];
+
+                // Evitar self-repost y duplicados.
+                if (reposter.Id == targetPost.ProfileId) continue;
+                if (!usedRepostKeys.Add((targetPost.Id, reposter.Id))) continue;
+
+                db.Reposts.Add(new Repost
+                {
+                    Id = Guid.NewGuid(),
+                    PostId = targetPost.Id,
+                    ProfileId = reposter.Id,
+                    CreatedAt = targetPost.CreatedAt.AddHours(2 + rnd.Next(48)),
+                });
+                reposted++;
+            }
+        }
+
         // ─── PERFILES BANEADOS (1-2) ─────────────────────────────────────
         var bannedProfile1 = profiles[41]; // "Santiago Vega" (índice nuevo)
         bannedProfile1.Status = ProfileStatus.Banned;
