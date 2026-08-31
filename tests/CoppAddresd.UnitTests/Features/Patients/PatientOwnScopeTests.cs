@@ -18,8 +18,9 @@ public class PatientOwnScopeTests
     private readonly IPatientRepository _repository = Substitute.For<IPatientRepository>();
     private readonly ICatalogRepository _catalogs = Substitute.For<ICatalogRepository>();
     private readonly IEmployeeRepository _employees = Substitute.For<IEmployeeRepository>();
-    private readonly ILogger<CreatePatientCommandHandler> _logger =
-        Substitute.For<ILogger<CreatePatientCommandHandler>>();
+    private readonly ILogger<CreatePatientCommandHandler> _logger = Substitute.For<
+        ILogger<CreatePatientCommandHandler>
+    >();
 
     private static readonly CatalogValidationResult OkCatalogs = new(
         DocumentTypeExists: true,
@@ -33,10 +34,11 @@ public class PatientOwnScopeTests
         ExistingInsurerIds: new HashSet<Guid>(),
         ExistingIcd10CodeIds: new HashSet<Guid>(),
         ExistingMedicationIds: new HashSet<Guid>(),
-        ExistingAllergenIds: new HashSet<Guid>());
+        ExistingAllergenIds: new HashSet<Guid>()
+    );
 
-    private static CreatePatientCommand BuildCreateCommand(Guid? createdByProfessionalId)
-        => new(
+    private static CreatePatientCommand BuildCreateCommand(Guid? createdByProfessionalId) =>
+        new(
             MedicalRecordNumber: null,
             FirstName: "Pedro",
             MiddleName: null,
@@ -74,7 +76,8 @@ public class PatientOwnScopeTests
             Diagnoses: null,
             Medications: null,
             Allergies: null,
-            VitalSigns: null);
+            VitalSigns: null
+        );
 
     [Fact]
     public async Task Create_CreadorEsProfesional_AutoAsignaAlPaciente()
@@ -82,19 +85,31 @@ public class PatientOwnScopeTests
         var professionalId = Guid.NewGuid();
         var createdBy = Guid.NewGuid();
 
-        _catalogs.ValidateAsync(
-                Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
-                Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<Guid>>(),
-                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<Guid>>(),
-                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+        _catalogs
+            .ValidateAsync(
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(OkCatalogs);
-        _repository.GetByMedicalRecordNumberAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _repository
+            .GetByMedicalRecordNumberAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((PatientProfile?)null);
 
         PatientProfile? persisted = null;
-        _repository.AddAsync(Arg.Do<PatientProfile>(p => persisted = p), Arg.Any<CancellationToken>())
+        _repository
+            .AddAsync(Arg.Do<PatientProfile>(p => persisted = p), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.Arg<PatientProfile>());
-        _repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        _repository
+            .GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => Task.FromResult(persisted!));
 
         var handler = new CreatePatientCommandHandler(_repository, _catalogs, _logger);
@@ -103,35 +118,64 @@ public class PatientOwnScopeTests
         await handler.Handle(command, CancellationToken.None);
 
         // El paciente creado queda asignado al profesional del creador.
-        await _repository.Received(1).AssignProfessionalAsync(
-            persisted!.Id, professionalId, Arg.Any<Guid?>(), "Assigned", command.CreatedBy,
-            Arg.Any<CancellationToken>());
+        await _repository
+            .Received(1)
+            .AssignProfessionalAsync(
+                persisted!.Id,
+                professionalId,
+                Arg.Any<Guid?>(),
+                "Assigned",
+                command.CreatedBy,
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
     public async Task Create_CreadorNoEsProfesional_NoAutoAsigna()
     {
-        _catalogs.ValidateAsync(
-                Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<Guid?>(),
-                Arg.Any<Guid?>(), Arg.Any<Guid?>(), Arg.Any<IReadOnlyCollection<Guid>>(),
-                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<IReadOnlyCollection<Guid>>(),
-                Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CancellationToken>())
+        _catalogs
+            .ValidateAsync(
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<IReadOnlyCollection<Guid>>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(OkCatalogs);
-        _repository.GetByMedicalRecordNumberAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _repository
+            .GetByMedicalRecordNumberAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((PatientProfile?)null);
 
         PatientProfile? persisted = null;
-        _repository.AddAsync(Arg.Do<PatientProfile>(p => persisted = p), Arg.Any<CancellationToken>())
+        _repository
+            .AddAsync(Arg.Do<PatientProfile>(p => persisted = p), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.Arg<PatientProfile>());
-        _repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+        _repository
+            .GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => Task.FromResult(persisted!));
 
         var handler = new CreatePatientCommandHandler(_repository, _catalogs, _logger);
 
-        await handler.Handle(BuildCreateCommand(createdByProfessionalId: null), CancellationToken.None);
+        await handler.Handle(
+            BuildCreateCommand(createdByProfessionalId: null),
+            CancellationToken.None
+        );
 
-        await _repository.DidNotReceiveWithAnyArgs().AssignProfessionalAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<string>(), Arg.Any<Guid?>());
+        await _repository
+            .DidNotReceiveWithAnyArgs()
+            .AssignProfessionalAsync(
+                Arg.Any<Guid>(),
+                Arg.Any<Guid>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<string>(),
+                Arg.Any<Guid?>()
+            );
     }
 
     [Fact]
@@ -147,17 +191,43 @@ public class PatientOwnScopeTests
             Status = "Activo",
         };
 
-        _repository.ListAsync(1, 20, null, null, null, null, professionalId, Arg.Any<CancellationToken>())
+        _repository
+            .ListAsync(
+                1,
+                20,
+                null,
+                null,
+                null,
+                null,
+                professionalId,
+                null,
+                "desc",
+                Arg.Any<CancellationToken>()
+            )
             .Returns((new[] { patient }, 1));
 
         var handler = new ListPatientsQueryHandler(_repository);
 
         var result = await handler.Handle(
-            new ListPatientsQuery(OwnProfessionalId: professionalId), CancellationToken.None);
+            new ListPatientsQuery(OwnProfessionalId: professionalId),
+            CancellationToken.None
+        );
 
         Assert.Equal(1, result.Total);
-        await _repository.Received(1).ListAsync(
-            1, 20, null, null, null, null, professionalId, Arg.Any<CancellationToken>());
+        await _repository
+            .Received(1)
+            .ListAsync(
+                1,
+                20,
+                null,
+                null,
+                null,
+                null,
+                professionalId,
+                null,
+                "desc",
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -167,14 +237,18 @@ public class PatientOwnScopeTests
         var professionalId = Guid.NewGuid();
 
         _repository.ExistsAsync(patientId, Arg.Any<CancellationToken>()).Returns(true);
-        _employees.GetByProfessionalIdAsync(professionalId, Arg.Any<CancellationToken>())
+        _employees
+            .GetByProfessionalIdAsync(professionalId, Arg.Any<CancellationToken>())
             .Returns((Employee?)null);
 
         var handler = new AssignPatientProfessionalCommandHandler(_repository, _employees);
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            handler.Handle(new AssignPatientProfessionalCommand(patientId, professionalId, null, null, null),
-                CancellationToken.None));
+            handler.Handle(
+                new AssignPatientProfessionalCommand(patientId, professionalId, null, null, null),
+                CancellationToken.None
+            )
+        );
     }
 
     [Fact]
@@ -184,23 +258,46 @@ public class PatientOwnScopeTests
         var professionalId = Guid.NewGuid();
         var clinicId = Guid.NewGuid();
         var view = new PatientProfessionalAssignmentView(
-            professionalId, "Dr. Ana Ríos", "Médico", "Assigned", "Active", DateTime.UtcNow);
+            professionalId,
+            "Dr. Ana Ríos",
+            "Médico",
+            "Assigned",
+            "Active",
+            DateTime.UtcNow
+        );
 
         _repository.ExistsAsync(patientId, Arg.Any<CancellationToken>()).Returns(true);
-        _employees.GetByProfessionalIdAsync(professionalId, Arg.Any<CancellationToken>())
+        _employees
+            .GetByProfessionalIdAsync(professionalId, Arg.Any<CancellationToken>())
             .Returns(new Employee { Professional = new Professional { Id = professionalId } });
-        _repository.ListAssignmentsAsync(patientId, Arg.Any<CancellationToken>())
+        _repository
+            .ListAssignmentsAsync(patientId, Arg.Any<CancellationToken>())
             .Returns(new[] { view });
 
         var handler = new AssignPatientProfessionalCommandHandler(_repository, _employees);
 
         var result = await handler.Handle(
-            new AssignPatientProfessionalCommand(patientId, professionalId, clinicId, "Assigned", Guid.NewGuid()),
-            CancellationToken.None);
+            new AssignPatientProfessionalCommand(
+                patientId,
+                professionalId,
+                clinicId,
+                "Assigned",
+                Guid.NewGuid()
+            ),
+            CancellationToken.None
+        );
 
         Assert.Equal(professionalId, result.ProfessionalId);
-        await _repository.Received(1).AssignProfessionalAsync(
-            patientId, professionalId, clinicId, "Assigned", Arg.Any<Guid?>(), Arg.Any<CancellationToken>());
+        await _repository
+            .Received(1)
+            .AssignProfessionalAsync(
+                patientId,
+                professionalId,
+                clinicId,
+                "Assigned",
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -209,12 +306,16 @@ public class PatientOwnScopeTests
         var patientId = Guid.NewGuid();
         var professionalId = Guid.NewGuid();
 
-        _repository.IsAssignedToProfessionalAsync(patientId, professionalId, Arg.Any<CancellationToken>())
+        _repository
+            .IsAssignedToProfessionalAsync(patientId, professionalId, Arg.Any<CancellationToken>())
             .Returns(true);
 
         var handler = new PatientIsAssignedQueryHandler(_repository);
 
-        var result = await handler.Handle(new PatientIsAssignedQuery(patientId, professionalId), CancellationToken.None);
+        var result = await handler.Handle(
+            new PatientIsAssignedQuery(patientId, professionalId),
+            CancellationToken.None
+        );
 
         Assert.True(result);
     }

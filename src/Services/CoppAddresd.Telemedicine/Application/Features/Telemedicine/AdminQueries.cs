@@ -12,14 +12,16 @@ public sealed record ListAdminSessionsQuery(
     DateTimeOffset? From,
     DateTimeOffset? To,
     int Page = 1,
-    int PageSize = 20) : IRequest<PaginatedAdminSessionsResult>;
+    int PageSize = 20
+) : IRequest<PaginatedAdminSessionsResult>;
 
 public sealed record PaginatedAdminSessionsResult(
     IReadOnlyList<TelemedicineSessionDto> Items,
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 public sealed record TelemedicineSessionDto(
     Guid Id,
@@ -33,16 +35,18 @@ public sealed record TelemedicineSessionDto(
     DateTimeOffset? EndedAt,
     long? DurationSeconds,
     string? EndReason,
-    DateTime CreatedAt);
+    DateTime CreatedAt
+);
 
 public sealed class ListAdminSessionsQueryHandler(
     IRoomRepository rooms,
-    IAppointmentReferenceDataService referenceData)
-    : IRequestHandler<ListAdminSessionsQuery, PaginatedAdminSessionsResult>
+    IAppointmentReferenceDataService referenceData
+) : IRequestHandler<ListAdminSessionsQuery, PaginatedAdminSessionsResult>
 {
     public async Task<PaginatedAdminSessionsResult> Handle(
         ListAdminSessionsQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -53,7 +57,8 @@ public sealed class ListAdminSessionsQueryHandler(
             request.To?.ToUniversalTime(),
             page,
             pageSize,
-            ct);
+            ct
+        );
 
         var dtos = await SessionDtos.BuildAsync(items, referenceData, ct);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
@@ -68,7 +73,8 @@ internal static class SessionDtos
     public static async Task<IReadOnlyList<TelemedicineSessionDto>> BuildAsync(
         IReadOnlyList<TelemedicineSession> items,
         IAppointmentReferenceDataService referenceData,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientIds = items
             .Select(s => s.Appointment?.PatientId)
@@ -109,13 +115,16 @@ internal static class SessionDtos
                 s.Appointment?.PatientId,
                 s.Appointment is { } a ? patients.GetValueOrDefault(a.PatientId)?.FullName : null,
                 s.Appointment?.ProfessionalId,
-                s.Appointment is { } appt ? professionals.GetValueOrDefault(appt.ProfessionalId)?.FullName : null,
+                s.Appointment is { } appt
+                    ? professionals.GetValueOrDefault(appt.ProfessionalId)?.FullName
+                    : null,
                 s.Status,
                 s.StartedAt,
                 s.EndedAt,
                 s.DurationSeconds,
                 s.EndReason,
-                s.CreatedAt))
+                s.CreatedAt
+            ))
             .ToList();
     }
 }
@@ -127,7 +136,8 @@ public sealed record AdminSummaryDto(
     int AppointmentsCompleted,
     int RequestsPending,
     int ActiveSessions,
-    int AlertsUnread);
+    int AlertsUnread
+);
 
 /// <summary>Consulta los KPIs del dashboard admin (una sola ronda de conteos).</summary>
 public sealed record GetAdminSummaryQuery(Guid? ClinicId) : IRequest<AdminSummaryDto>;
@@ -136,8 +146,8 @@ public sealed class GetAdminSummaryQueryHandler(
     IAppointmentRepository appointments,
     IRequestRepository requests,
     IAlertRepository alerts,
-    IRoomRepository rooms)
-    : IRequestHandler<GetAdminSummaryQuery, AdminSummaryDto>
+    IRoomRepository rooms
+) : IRequestHandler<GetAdminSummaryQuery, AdminSummaryDto>
 {
     public async Task<AdminSummaryDto> Handle(GetAdminSummaryQuery request, CancellationToken ct)
     {
@@ -146,8 +156,12 @@ public sealed class GetAdminSummaryQueryHandler(
         var endOfDay = startOfDay.AddDays(1);
 
         // Conteos dirigidos (sin traer entidades): una consulta por métrica.
-        var (appointmentsToday, appointmentsPending, appointmentsCompleted) = await CountAppointmentsAsync(ct);
-        var requestsPending = await requests.CountByStatusAsync(AppointmentRequestStatus.Pending, ct);
+        var (appointmentsToday, appointmentsPending, appointmentsCompleted) =
+            await CountAppointmentsAsync(ct);
+        var requestsPending = await requests.CountByStatusAsync(
+            AppointmentRequestStatus.Pending,
+            ct
+        );
         var activeSessions = await rooms.CountActiveSessionsAsync(ct);
         var alertsUnread = await alerts.CountUnreadGlobalAsync(ct);
 
@@ -157,9 +171,12 @@ public sealed class GetAdminSummaryQueryHandler(
             appointmentsCompleted,
             requestsPending,
             activeSessions,
-            alertsUnread);
+            alertsUnread
+        );
 
-        async Task<(int Today, int Pending, int Completed)> CountAppointmentsAsync(CancellationToken c)
+        async Task<(int Today, int Pending, int Completed)> CountAppointmentsAsync(
+            CancellationToken c
+        )
         {
             var today = await appointments.CountInRangeAsync(startOfDay, endOfDay, c);
             var pending = await appointments.CountByStatusAsync(AppointmentStatus.Confirmed, c);
@@ -179,15 +196,17 @@ public sealed record GetCurrentUserContextQuery(Guid UserId) : IRequest<CurrentU
 
 public sealed record CurrentUserContextDto(
     ProfessionalRefDto? Professional,
-    PatientRefDto? Patient);
+    PatientRefDto? Patient
+);
 
 public sealed class GetCurrentUserContextQueryHandler(
-    IAppointmentReferenceDataService referenceData)
-    : IRequestHandler<GetCurrentUserContextQuery, CurrentUserContextDto>
+    IAppointmentReferenceDataService referenceData
+) : IRequestHandler<GetCurrentUserContextQuery, CurrentUserContextDto>
 {
     public async Task<CurrentUserContextDto> Handle(
         GetCurrentUserContextQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var professional = await referenceData.GetProfessionalByUserIdAsync(request.UserId, ct);
         var patient = await referenceData.GetPatientByUserIdAsync(request.UserId, ct);
@@ -205,23 +224,26 @@ public sealed record ListAdminAppointmentsQuery(
     DateTimeOffset? From,
     DateTimeOffset? To,
     int Page = 1,
-    int PageSize = 20) : IRequest<PaginatedAdminAppointmentsResult>;
+    int PageSize = 20
+) : IRequest<PaginatedAdminAppointmentsResult>;
 
 public sealed record PaginatedAdminAppointmentsResult(
     IReadOnlyList<AppointmentDto> Items,
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 public sealed class ListAdminAppointmentsQueryHandler(
     IAppointmentRepository appointments,
-    IAppointmentReferenceDataService referenceData)
-    : IRequestHandler<ListAdminAppointmentsQuery, PaginatedAdminAppointmentsResult>
+    IAppointmentReferenceDataService referenceData
+) : IRequestHandler<ListAdminAppointmentsQuery, PaginatedAdminAppointmentsResult>
 {
     public async Task<PaginatedAdminAppointmentsResult> Handle(
         ListAdminAppointmentsQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -236,7 +258,8 @@ public sealed class ListAdminAppointmentsQueryHandler(
             request.To?.ToUniversalTime(),
             page,
             pageSize,
-            ct);
+            ct
+        );
 
         var dtos = await AppointmentMapper.BuildDtosAsync(items, referenceData, ct);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
@@ -256,23 +279,26 @@ public sealed record ListAdminRequestsQuery(
     DateTimeOffset? From,
     DateTimeOffset? To,
     int Page = 1,
-    int PageSize = 20) : IRequest<PaginatedAdminRequestsResult>;
+    int PageSize = 20
+) : IRequest<PaginatedAdminRequestsResult>;
 
 public sealed record PaginatedAdminRequestsResult(
     IReadOnlyList<TelemedicineRequestDto> Items,
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 public sealed class ListAdminRequestsQueryHandler(
     IRequestRepository requests,
-    IAppointmentReferenceDataService referenceData)
-    : IRequestHandler<ListAdminRequestsQuery, PaginatedAdminRequestsResult>
+    IAppointmentReferenceDataService referenceData
+) : IRequestHandler<ListAdminRequestsQuery, PaginatedAdminRequestsResult>
 {
     public async Task<PaginatedAdminRequestsResult> Handle(
         ListAdminRequestsQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
@@ -285,7 +311,8 @@ public sealed class ListAdminRequestsQueryHandler(
             request.To?.ToUniversalTime(),
             page,
             pageSize,
-            ct);
+            ct
+        );
 
         var dtos = await RequestDtos.BuildAsync(items, referenceData, ct);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
@@ -300,7 +327,8 @@ internal static class RequestDtos
     public static async Task<IReadOnlyList<TelemedicineRequestDto>> BuildAsync(
         IReadOnlyList<TelemedicineRequest> items,
         IAppointmentReferenceDataService referenceData,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientIds = items.Select(r => r.PatientId).Distinct().ToList();
         var specialtyIds = items.Select(r => r.SpecialtyId).Distinct().ToList();
@@ -338,7 +366,9 @@ internal static class RequestDtos
                 r.PreferredStart,
                 r.Reason,
                 r.Status,
-                r.CreatedAt))
+                r.CreatedAt,
+                r.RejectionReason
+            ))
             .ToList();
     }
 }

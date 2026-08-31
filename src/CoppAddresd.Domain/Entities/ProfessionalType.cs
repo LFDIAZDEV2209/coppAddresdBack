@@ -20,6 +20,9 @@ public sealed class ProfessionalType
 
     public int SortOrder { get; set; }
 
+    /// <summary>Soft-disable administrable desde el ERP (no se borran catálogos).</summary>
+    public bool IsActive { get; set; } = true;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<Professional> Professionals { get; set; } = [];

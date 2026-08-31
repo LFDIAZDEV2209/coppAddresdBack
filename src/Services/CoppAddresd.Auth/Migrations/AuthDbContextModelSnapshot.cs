@@ -77,6 +77,11 @@ namespace CoppAddresd.Auth.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsSystem")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -419,6 +424,9 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex("UserId", "ScopeType", "ScopeId", "PermissionId")
+                        .HasDatabaseName("ix_scoped_permission_assignments_scope_lookup");
+
                     b.ToTable("ScopedPermissionAssignments", "auth");
                 });
 
@@ -488,6 +496,27 @@ namespace CoppAddresd.Auth.Migrations
                     b.HasIndex("PermissionId");
 
                     b.ToTable("UserPermissions", "auth");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.UserPreference", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccentColor")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Lang")
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("UserPreferences", "auth");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
@@ -739,6 +768,17 @@ namespace CoppAddresd.Auth.Migrations
                         .IsRequired();
 
                     b.Navigation("Permission");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.UserPreference", b =>
+                {
+                    b.HasOne("CoppAddresd.Auth.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });

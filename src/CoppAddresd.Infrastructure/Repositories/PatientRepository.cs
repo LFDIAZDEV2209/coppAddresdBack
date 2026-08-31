@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Patients;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Infrastructure.Persistence;
@@ -7,13 +8,12 @@ namespace CoppAddresd.Infrastructure.Repositories;
 
 public sealed class PatientRepository(AppDbContext dbContext) : IPatientRepository
 {
-    public async Task<PatientProfile?> GetByIdAsync(Guid id, CancellationToken ct = default)
-        => await QueryDetail()
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<PatientProfile?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
+        await QueryDetail().FirstOrDefaultAsync(x => x.Id == id, ct);
 
-    private IQueryable<PatientProfile> QueryDetail()
-        => dbContext.PatientProfiles
-            .AsNoTracking()
+    private IQueryable<PatientProfile> QueryDetail() =>
+        dbContext
+            .PatientProfiles.AsNoTracking()
             .Where(x => x.DeletedAt == null)
             .Include(x => x.Insurer)
             .Include(x => x.DocumentType)
@@ -32,15 +32,21 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
                 .ThenInclude(a => a.Allergen)
             .Include(x => x.VitalSigns);
 
-    public async Task<PatientProfile?> GetByMedicalRecordNumberAsync(string mrn, CancellationToken ct = default)
-        => await dbContext.PatientProfiles
-            .AsNoTracking()
+    public async Task<PatientProfile?> GetByMedicalRecordNumberAsync(
+        string mrn,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .PatientProfiles.AsNoTracking()
             .Where(x => x.DeletedAt == null)
             .FirstOrDefaultAsync(x => x.MedicalRecordNumber == mrn, ct);
 
-    public async Task<PatientProfile?> GetByUserIdAsync(Guid userId, CancellationToken ct = default)
-        => await dbContext.PatientProfiles
-            .AsNoTracking()
+    public async Task<PatientProfile?> GetByUserIdAsync(
+        Guid userId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .PatientProfiles.AsNoTracking()
             .Where(x => x.DeletedAt == null && x.UserId == userId)
             .FirstOrDefaultAsync(ct);
 
@@ -52,20 +58,23 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         Guid? insurerId,
         Guid? clinicId,
         Guid? professionalId,
-        CancellationToken ct = default)
+        string? sortBy,
+        string? sortDir,
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.PatientProfiles.AsNoTracking()
-            .Where(x => x.DeletedAt == null);
+        var query = dbContext.PatientProfiles.AsNoTracking().Where(x => x.DeletedAt == null);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = $"%{search}%";
             query = query.Where(x =>
-                EF.Functions.ILike(x.FirstName, pattern) ||
-                EF.Functions.ILike(x.LastName, pattern) ||
-                EF.Functions.ILike(x.MedicalRecordNumber ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.DocumentNumber ?? string.Empty, pattern) ||
-                EF.Functions.ILike(x.Email ?? string.Empty, pattern));
+                EF.Functions.ILike(x.FirstName, pattern)
+                || EF.Functions.ILike(x.LastName, pattern)
+                || EF.Functions.ILike(x.MedicalRecordNumber ?? string.Empty, pattern)
+                || EF.Functions.ILike(x.DocumentNumber ?? string.Empty, pattern)
+                || EF.Functions.ILike(x.Email ?? string.Empty, pattern)
+            );
         }
 
         if (!string.IsNullOrWhiteSpace(status))
@@ -85,16 +94,54 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         // resuelve el backend desde la identidad del JWT.
         if (professionalId is not null)
             query = query.Where(x =>
-                x.Assignments.Any(a => a.ProfessionalId == professionalId && a.Status == "Active"));
+                x.Assignments.Any(a => a.ProfessionalId == professionalId && a.Status == "Active")
+            );
 
         var total = await query.CountAsync(ct);
 
-        var items = await query
+        // Orden server-side por whitelist de campos (el handler ya valida que
+        // sortBy esté en PatientSortFields.All; null → CreatedAt desc). El
+        // orden se aplica con expressions tipadas, nunca por interpolación.
+        // Desempate estable por Id en todas las ramas (paginación estable).
+        IOrderedQueryable<PatientProfile> ordered = sortBy switch
+        {
+            PatientSortFields.FirstName => sortDir == "asc"
+                ? query
+                    .OrderBy(x => x.FirstName)
+                    .ThenBy(x => x.LastName)
+                    .ThenByDescending(x => x.Id)
+                : query
+                    .OrderByDescending(x => x.FirstName)
+                    .ThenByDescending(x => x.LastName)
+                    .ThenByDescending(x => x.Id),
+            PatientSortFields.DocumentNumber => sortDir == "asc"
+                ? query.OrderBy(x => x.DocumentNumber).ThenByDescending(x => x.Id)
+                : query.OrderByDescending(x => x.DocumentNumber).ThenByDescending(x => x.Id),
+            PatientSortFields.PhoneNumber => sortDir == "asc"
+                ? query.OrderBy(x => x.PhoneNumber).ThenByDescending(x => x.Id)
+                : query.OrderByDescending(x => x.PhoneNumber).ThenByDescending(x => x.Id),
+            PatientSortFields.InsurerName => sortDir == "asc"
+                ? query.OrderBy(x => x.Insurer!.Name).ThenByDescending(x => x.Id)
+                : query.OrderByDescending(x => x.Insurer!.Name).ThenByDescending(x => x.Id),
+            PatientSortFields.ClinicName => sortDir == "asc"
+                ? query.OrderBy(x => x.Clinic!.Name).ThenByDescending(x => x.Id)
+                : query.OrderByDescending(x => x.Clinic!.Name).ThenByDescending(x => x.Id),
+            PatientSortFields.Status => sortDir == "asc"
+                ? query.OrderBy(x => x.Status).ThenByDescending(x => x.Id)
+                : query.OrderByDescending(x => x.Status).ThenByDescending(x => x.Id),
+            _ => sortDir == "asc"
+                ? query.OrderBy(x => x.CreatedAt).ThenByDescending(x => x.Id)
+                : query.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.Id),
+        };
+
+        var items = await ordered
             .Include(x => x.Insurer)
             .Include(x => x.DocumentType)
             .Include(x => x.Clinic)
-            .OrderByDescending(x => x.CreatedAt)
-            .ThenByDescending(x => x.Id)
+            // Asignaciones de la página para la columna "Profesional": EF emite
+            // una query separada tras la paginación (split automático con
+            // Skip/Take), sin producto cartesiano.
+            .Include(x => x.Assignments)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -102,7 +149,10 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         return (items, total);
     }
 
-    public async Task<PatientProfile> AddAsync(PatientProfile patient, CancellationToken ct = default)
+    public async Task<PatientProfile> AddAsync(
+        PatientProfile patient,
+        CancellationToken ct = default
+    )
     {
         dbContext.PatientProfiles.Add(patient);
         await dbContext.SaveChangesAsync(ct);
@@ -120,18 +170,16 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
 
-            await dbContext.PatientDiagnoses
-                .Where(x => x.PatientId == patient.Id)
+            await dbContext
+                .PatientDiagnoses.Where(x => x.PatientId == patient.Id)
                 .ExecuteDeleteAsync(ct);
-            await dbContext.PatientMedications
-                .Where(x => x.PatientId == patient.Id)
+            await dbContext
+                .PatientMedications.Where(x => x.PatientId == patient.Id)
                 .ExecuteDeleteAsync(ct);
-            await dbContext.PatientAllergies
-                .Where(x => x.PatientId == patient.Id)
+            await dbContext
+                .PatientAllergies.Where(x => x.PatientId == patient.Id)
                 .ExecuteDeleteAsync(ct);
-            await dbContext.VitalSigns
-                .Where(x => x.PatientId == patient.Id)
-                .ExecuteDeleteAsync(ct);
+            await dbContext.VitalSigns.Where(x => x.PatientId == patient.Id).ExecuteDeleteAsync(ct);
 
             dbContext.Attach(patient);
             dbContext.Entry(patient).State = EntityState.Modified;
@@ -154,34 +202,74 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
     {
         // Soft delete: se marca deleted_at y se conservan las filas hijas
         // (trazabilidad PHI). Nunca se eliminan físicamente los registros.
-        await dbContext.PatientProfiles
-            .Where(x => x.Id == patient.Id)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(x => x.DeletedAt, DateTime.UtcNow)
-                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow)
-                .SetProperty(x => x.UpdatedBy, patient.UpdatedBy), ct);
+        await dbContext
+            .PatientProfiles.Where(x => x.Id == patient.Id)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.DeletedAt, DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedBy, patient.UpdatedBy),
+                ct
+            );
     }
 
-    public async Task<bool> ExistsAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.PatientProfiles.AnyAsync(x => x.Id == id, ct);
+    public async Task<bool> ExistsAsync(Guid id, CancellationToken ct = default) =>
+        await dbContext.PatientProfiles.AnyAsync(x => x.Id == id, ct);
 
-    public async Task<IReadOnlyList<Insurer>> ListInsurersAsync(CancellationToken ct = default)
-        => await dbContext.Insurers
-            .AsNoTracking()
-            .OrderBy(x => x.Name)
-            .ToListAsync(ct);
+    public async Task<IReadOnlyList<Insurer>> ListInsurersAsync(CancellationToken ct = default) =>
+        await dbContext.Insurers.AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct);
 
-    public async Task<Insurer?> GetInsurerByIdAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.Insurers
-            .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == id, ct);
+    public async Task<Insurer?> GetInsurerByIdAsync(Guid id, CancellationToken ct = default) =>
+        await dbContext.Insurers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
 
-    public async Task<bool> IsAssignedToProfessionalAsync(Guid patientId, Guid professionalId, CancellationToken ct = default)
-        => await dbContext.PatientProfessionalAssignments
-            .AsNoTracking()
-            .AnyAsync(a => a.PatientId == patientId
-                && a.ProfessionalId == professionalId
-                && a.Status == "Active", ct);
+    public async Task<PatientStatsDto> GetStatsAsync(
+        Guid? clinicId,
+        Guid? professionalId,
+        DateTime monthStartUtc,
+        CancellationToken ct = default
+    )
+    {
+        var query = dbContext.PatientProfiles.AsNoTracking().Where(x => x.DeletedAt == null);
+
+        // Misma frontera de datos que ListAsync: clínica activa + alcance
+        // "propio" (asignación activa hacia el profesional del JWT).
+        if (clinicId is not null)
+            query = query.Where(x => x.ClinicId == clinicId);
+
+        if (professionalId is not null)
+            query = query.Where(x =>
+                x.Assignments.Any(a => a.ProfessionalId == professionalId && a.Status == "Active")
+            );
+
+        // Un solo roundtrip: GROUP BY constante con agregados condicionales.
+        var stats = await query
+            .GroupBy(x => 1)
+            .Select(g => new PatientStatsDto(
+                Total: g.Count(),
+                Active: g.Count(x => x.Status == "Activo"),
+                NewThisMonth: g.Count(x => x.CreatedAt >= monthStartUtc),
+                WithoutProfessional: g.Count(x => !x.Assignments.Any(a => a.Status == "Active"))
+            ))
+            .FirstOrDefaultAsync(ct);
+
+        return stats ?? new PatientStatsDto(0, 0, 0, 0);
+    }
+
+    public async Task<bool> IsAssignedToProfessionalAsync(
+        Guid patientId,
+        Guid professionalId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .PatientProfessionalAssignments.AsNoTracking()
+            .AnyAsync(
+                a =>
+                    a.PatientId == patientId
+                    && a.ProfessionalId == professionalId
+                    && a.Status == "Active",
+                ct
+            );
 
     public async Task AssignProfessionalAsync(
         Guid patientId,
@@ -189,23 +277,28 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         Guid? clinicId,
         string relationshipType,
         Guid? createdBy,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var existing = await dbContext.PatientProfessionalAssignments
-            .FirstOrDefaultAsync(a => a.PatientId == patientId && a.ProfessionalId == professionalId, ct);
+        var existing = await dbContext.PatientProfessionalAssignments.FirstOrDefaultAsync(
+            a => a.PatientId == patientId && a.ProfessionalId == professionalId,
+            ct
+        );
 
         if (existing is null)
         {
-            dbContext.PatientProfessionalAssignments.Add(new PatientProfessionalAssignment
-            {
-                PatientId = patientId,
-                ProfessionalId = professionalId,
-                ClinicId = clinicId,
-                RelationshipType = relationshipType,
-                Status = "Active",
-                CreatedBy = createdBy,
-                CreatedAt = DateTime.UtcNow,
-            });
+            dbContext.PatientProfessionalAssignments.Add(
+                new PatientProfessionalAssignment
+                {
+                    PatientId = patientId,
+                    ProfessionalId = professionalId,
+                    ClinicId = clinicId,
+                    RelationshipType = relationshipType,
+                    Status = "Active",
+                    CreatedBy = createdBy,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
         else
         {
@@ -219,22 +312,33 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         await dbContext.SaveChangesAsync(ct);
     }
 
-    public async Task RemoveProfessionalAsync(Guid patientId, Guid professionalId, CancellationToken ct = default)
+    public async Task RemoveProfessionalAsync(
+        Guid patientId,
+        Guid professionalId,
+        CancellationToken ct = default
+    )
     {
         // Soft: conserva la trazabilidad de la asignación (historial clínico).
-        await dbContext.PatientProfessionalAssignments
-            .Where(a => a.PatientId == patientId && a.ProfessionalId == professionalId)
-            .ExecuteUpdateAsync(setters => setters
-                .SetProperty(a => a.Status, "Inactive")
-                .SetProperty(a => a.UpdatedAt, DateTime.UtcNow), ct);
+        await dbContext
+            .PatientProfessionalAssignments.Where(a =>
+                a.PatientId == patientId && a.ProfessionalId == professionalId
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(a => a.Status, "Inactive")
+                        .SetProperty(a => a.UpdatedAt, DateTime.UtcNow),
+                ct
+            );
     }
 
     public async Task<IReadOnlyList<PatientProfessionalAssignmentView>> ListAssignmentsAsync(
         Guid patientId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var assignments = await dbContext.PatientProfessionalAssignments
-            .AsNoTracking()
+        var assignments = await dbContext
+            .PatientProfessionalAssignments.AsNoTracking()
             .Where(a => a.PatientId == patientId)
             .OrderByDescending(a => a.Status == "Active")
             .ThenByDescending(a => a.CreatedAt)
@@ -249,8 +353,8 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         // asignación referencia erp.professionals. Dos consultas: sin N+1.
         var professionalIds = assignments.Select(a => a.ProfessionalId).Distinct().ToList();
 
-        var employees = await dbContext.Employees
-            .AsNoTracking()
+        var employees = await dbContext
+            .Employees.AsNoTracking()
             .Where(e => e.Professional != null && professionalIds.Contains(e.Professional!.Id))
             .Select(e => new
             {
@@ -271,7 +375,39 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
                 byId.GetValueOrDefault(a.ProfessionalId)?.TypeName,
                 a.RelationshipType,
                 a.Status,
-                a.CreatedAt))
+                a.CreatedAt
+            ))
             .ToList();
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> GetProfessionalNamesAsync(
+        IReadOnlyCollection<Guid> professionalIds,
+        CancellationToken ct = default
+    )
+    {
+        if (professionalIds.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        // Una sola consulta agrupada contra el núcleo HR (erp.employees); el
+        // nombre del profesional nunca vive en app.patient_professionals.
+        var ids = professionalIds.Distinct().ToList();
+        var employees = await dbContext
+            .Employees.AsNoTracking()
+            .Where(e => e.Professional != null && ids.Contains(e.Professional!.Id))
+            .Select(e => new
+            {
+                e.Professional!.Id,
+                FullName = string.Join(
+                    " ",
+                    new[] { e.FirstName, e.MiddleName, e.LastName }.Where(s =>
+                        !string.IsNullOrWhiteSpace(s)
+                    )
+                ),
+            })
+            .ToListAsync(ct);
+
+        return employees.ToDictionary(x => x.Id, x => x.FullName);
     }
 }

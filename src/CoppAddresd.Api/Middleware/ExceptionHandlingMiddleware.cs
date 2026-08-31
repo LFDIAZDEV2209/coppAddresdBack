@@ -67,6 +67,16 @@ public sealed class ExceptionHandlingMiddleware(
                 "Not Found",
                 ex.Message);
         }
+        catch (ForbiddenException ex)
+        {
+            logger.LogWarning(ex, "Acceso prohibido en {Method} {Path}",
+                context.Request.Method, context.Request.Path);
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                ex.Message);
+        }
         catch (BusinessRuleViolationException ex)
         {
             logger.LogWarning(ex, "Regla de negocio violada en {Method} {Path}",

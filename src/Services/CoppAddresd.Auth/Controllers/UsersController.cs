@@ -17,9 +17,7 @@ public class UsersController : ControllerBase
     private readonly IUserService _userService;
     private readonly IAuthorizationService _authorizationService;
 
-    public UsersController(
-        IUserService userService,
-        IAuthorizationService authorizationService)
+    public UsersController(IUserService userService, IAuthorizationService authorizationService)
     {
         _userService = userService;
         _authorizationService = authorizationService;
@@ -57,10 +55,11 @@ public class UsersController : ControllerBase
     [EnableRateLimiting("auth")]
     public async Task<ActionResult<UserResponse>> Create(
         [FromBody] CreateUserRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var wantsAssignments = request.RoleIds is { Length: > 0 } ||
-                               request.PermissionIds is { Length: > 0 };
+        var wantsAssignments =
+            request.RoleIds is { Length: > 0 } || request.PermissionIds is { Length: > 0 };
         if (wantsAssignments)
         {
             var authorized = await HasAssignPermissionsAsync(requireUsersCreate: true);
@@ -68,7 +67,22 @@ public class UsersController : ControllerBase
             {
                 return StatusCode(
                     StatusCodes.Status403Forbidden,
-                    new { message = "No tienes permisos para asignar roles y permisos al crear un usuario. Iniciá sesión con una cuenta con Users.Create, Roles.Assign y Permissions.Assign." });
+                    new
+                    {
+                        message = "No tienes permisos para asignar roles y permisos al crear un usuario. Iniciá sesión con una cuenta con Users.Create, Roles.Assign y Permissions.Assign.",
+                    }
+                );
+            }
+
+            if (!await HasSystemAdminSettingsAsync())
+            {
+                return StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    new
+                    {
+                        message = "Se requiere System.AdminSettings para asignar roles y permisos al crear un usuario.",
+                    }
+                );
             }
         }
 
@@ -90,7 +104,8 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> Update(
         Guid id,
         [FromBody] UpdateUserRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var wantsAssignments = request.RoleIds is not null || request.PermissionIds is not null;
         if (wantsAssignments)
@@ -100,7 +115,22 @@ public class UsersController : ControllerBase
             {
                 return StatusCode(
                     StatusCodes.Status403Forbidden,
-                    new { message = "No tienes permisos para asignar roles y permisos al actualizar el usuario. Se requiere Roles.Assign y Permissions.Assign." });
+                    new
+                    {
+                        message = "No tienes permisos para asignar roles y permisos al actualizar el usuario. Se requiere Roles.Assign y Permissions.Assign.",
+                    }
+                );
+            }
+
+            if (!await HasSystemAdminSettingsAsync())
+            {
+                return StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    new
+                    {
+                        message = "Se requiere System.AdminSettings para asignar roles y permisos al actualizar el usuario.",
+                    }
+                );
             }
         }
 
@@ -117,6 +147,12 @@ public class UsersController : ControllerBase
     [RequirePermission(PermissionCodes.UsersDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para eliminar usuarios." }
+            );
+
         var (success, error) = await _userService.DeleteAsync(id, ct);
         if (!success)
             return NotFound(new { message = error });
@@ -136,7 +172,9 @@ public class UsersController : ControllerBase
         if (requireUsersCreate)
         {
             var usersResult = await _authorizationService.AuthorizeAsync(
-                User, PermissionCodes.UsersCreate);
+                User,
+                PermissionCodes.UsersCreate
+            );
             if (!usersResult.Succeeded)
             {
                 return false;
@@ -144,14 +182,28 @@ public class UsersController : ControllerBase
         }
 
         var rolesResult = await _authorizationService.AuthorizeAsync(
-            User, PermissionCodes.RolesAssign);
+            User,
+            PermissionCodes.RolesAssign
+        );
         if (!rolesResult.Succeeded)
         {
             return false;
         }
 
         var permissionsResult = await _authorizationService.AuthorizeAsync(
-            User, PermissionCodes.PermissionsAssign);
+            User,
+            PermissionCodes.PermissionsAssign
+        );
         return permissionsResult.Succeeded;
+    }
+
+    /// <summary>¿El caller tiene System.AdminSettings (configuración crítica)?</summary>
+    private async Task<bool> HasSystemAdminSettingsAsync()
+    {
+        var result = await _authorizationService.AuthorizeAsync(
+            User,
+            PermissionCodes.SystemAdminSettings
+        );
+        return result.Succeeded;
     }
 }

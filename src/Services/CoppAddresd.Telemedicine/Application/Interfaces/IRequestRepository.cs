@@ -20,12 +20,20 @@ public interface IRequestRepository
     Task SetStatusAsync(
         Guid requestId,
         AppointmentRequestStatus status,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Rechazo dirigido: marca la solicitud <c>Rejected</c> y persiste el motivo
+    /// en un solo UPDATE (sin reescribir la entidad completa).
+    /// </summary>
+    Task SetRejectedAsync(Guid requestId, string reason, CancellationToken ct = default);
 
     /// <summary>Solicitudes de un paciente, de más reciente a más antigua.</summary>
     Task<IReadOnlyList<TelemedicineRequest>> ListByPatientAsync(
         Guid patientId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Solicitudes de una organización (bandeja administrativa), paginadas y con filtro de estado.</summary>
     Task<(IReadOnlyList<TelemedicineRequest> Items, int Total)> ListByOrganizationAsync(
@@ -33,7 +41,8 @@ public interface IRequestRepository
         AppointmentRequestStatus? status,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Listado administrativo global de solicitudes con filtros opcionales
@@ -49,10 +58,19 @@ public interface IRequestRepository
         DateTimeOffset? to,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Cuenta las solicitudes en un estado concreto (KPIs del dashboard admin).</summary>
+    Task<int> CountByStatusAsync(AppointmentRequestStatus status, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cuenta las solicitudes de un profesional en un estado concreto (KPIs del
+    /// dashboard "Mis citas" del profesional, alcance por identidad del JWT).
+    /// </summary>
     Task<int> CountByStatusAsync(
         AppointmentRequestStatus status,
-        CancellationToken ct = default);
+        Guid professionalId,
+        CancellationToken ct = default
+    );
 }

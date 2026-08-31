@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Patients;
 using CoppAddresd.Domain.Entities;
 
 namespace CoppAddresd.Application.Interfaces;
@@ -17,7 +18,7 @@ public interface IPatientRepository
     /// <summary>Paciente por usuario de Auth (contexto del JWT). Excluye eliminados (soft delete).</summary>
     Task<PatientProfile?> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
 
-    /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4) y <paramref name="professionalId"/> restringe al alcance "propio" del profesional (solo pacientes asignados activos).</summary>
+    /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4) y <paramref name="professionalId"/> restringe al alcance "propio" del profesional (solo pacientes asignados activos). <paramref name="sortBy"/> viene de la whitelist de campos y <paramref name="sortDir"/> es asc/desc; null → CreatedAt desc.</summary>
     Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
         int page,
         int pageSize,
@@ -26,7 +27,10 @@ public interface IPatientRepository
         Guid? insurerId,
         Guid? clinicId,
         Guid? professionalId,
-        CancellationToken ct = default);
+        string? sortBy,
+        string? sortDir,
+        CancellationToken ct = default
+    );
 
     Task<PatientProfile> AddAsync(PatientProfile patient, CancellationToken ct = default);
 
@@ -42,7 +46,24 @@ public interface IPatientRepository
     Task<Insurer?> GetInsurerByIdAsync(Guid id, CancellationToken ct = default);
 
     /// <summary>¿El paciente tiene una asignación activa con el profesional? (alcance de datos "propios").</summary>
-    Task<bool> IsAssignedToProfessionalAsync(Guid patientId, Guid professionalId, CancellationToken ct = default);
+    Task<bool> IsAssignedToProfessionalAsync(
+        Guid patientId,
+        Guid professionalId,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Estadísticas del directorio con el mismo alcance que <see cref="ListAsync"/>
+    /// (clínica activa + alcance propio): total, activos, nuevos desde
+    /// <paramref name="monthStartUtc"/> y sin asignación activa. Un solo
+    /// roundtrip agregado (sin counts independientes).
+    /// </summary>
+    Task<PatientStatsDto> GetStatsAsync(
+        Guid? clinicId,
+        Guid? professionalId,
+        DateTime monthStartUtc,
+        CancellationToken ct = default
+    );
 
     /// <summary>Asigna un profesional a un paciente (idempotente: reactiva la asignación existente).</summary>
     Task AssignProfessionalAsync(
@@ -51,13 +72,31 @@ public interface IPatientRepository
         Guid? clinicId,
         string relationshipType,
         Guid? createdBy,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Desasigna un profesional de un paciente (soft: marca Inactive).</summary>
-    Task RemoveProfessionalAsync(Guid patientId, Guid professionalId, CancellationToken ct = default);
+    Task RemoveProfessionalAsync(
+        Guid patientId,
+        Guid professionalId,
+        CancellationToken ct = default
+    );
 
     /// <summary>Asignaciones de un paciente con datos del profesional (nombre y tipo), activas e inactivas.</summary>
-    Task<IReadOnlyList<PatientProfessionalAssignmentView>> ListAssignmentsAsync(Guid patientId, CancellationToken ct = default);
+    Task<IReadOnlyList<PatientProfessionalAssignmentView>> ListAssignmentsAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Nombres de profesionales clínicos por id (índice id → nombre completo),
+    /// para poblar el listado del directorio en una sola consulta agrupada
+    /// contra el núcleo HR (erp.employees). Sin ids → diccionario vacío.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, string>> GetProfessionalNamesAsync(
+        IReadOnlyCollection<Guid> professionalIds,
+        CancellationToken ct = default
+    );
 }
 
 /// <summary>Vista de una asignación paciente ↔ profesional (para la UI del detalle).</summary>
@@ -67,4 +106,5 @@ public sealed record PatientProfessionalAssignmentView(
     string? ProfessionalTypeName,
     string RelationshipType,
     string Status,
-    DateTime CreatedAt);
+    DateTime CreatedAt
+);
