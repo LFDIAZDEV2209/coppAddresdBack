@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.Constants;
 using CoppAddresd.Application.Features.LegalDocuments;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -10,14 +12,17 @@ namespace CoppAddresd.Api.Controllers;
 [Authorize]
 public sealed class LegalDocumentsController(IMediator mediator) : ControllerBase
 {
+    [RequirePermission(PermissionCodes.LegalDocumentsView)]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<LegalDocumentSummaryDto>>> List(CancellationToken ct)
         => Ok(await mediator.Send(new ListLegalDocumentsQuery(), ct));
 
+    [RequirePermission(PermissionCodes.LegalDocumentsView)]
     [HttpGet("all-versions")]
     public async Task<ActionResult<IReadOnlyList<LegalDocumentVersionListDto>>> AllVersions(CancellationToken ct)
         => Ok(await mediator.Send(new ListAllLegalDocumentVersionsQuery(), ct));
 
+    [RequirePermission(PermissionCodes.LegalDocumentsView)]
     [HttpGet("{code}")]
     public async Task<ActionResult<LegalDocumentDetailDto>> Get(string code, CancellationToken ct)
     {
@@ -42,16 +47,19 @@ public sealed class LegalDocumentsController(IMediator mediator) : ControllerBas
             result.UpdatedAt ?? DateTime.UtcNow));
     }
 
+    [RequirePermission(PermissionCodes.LegalDocumentsView)]
     [HttpGet("{code}/versions")]
     public async Task<ActionResult<IReadOnlyList<LegalDocumentVersionDto>>> Versions(
         string code, CancellationToken ct)
         => Ok(await mediator.Send(new ListLegalDocumentVersionsQuery(code), ct));
 
+    [RequirePermission(PermissionCodes.LegalDocumentsManage)]
     [HttpPost("{code}/drafts")]
     public async Task<ActionResult<LegalDocumentDetailDto>> SaveDraft(
         string code, [FromBody] SaveDraftRequest request, CancellationToken ct)
         => Ok(await mediator.Send(new SaveDraftCommand(code, request), ct));
 
+    [RequirePermission(PermissionCodes.LegalDocumentsManage)]
     [HttpPost("{code}/publish")]
     public async Task<ActionResult<LegalDocumentDetailDto>> Publish(
         string code, [FromBody] PublishRequest request, CancellationToken ct)

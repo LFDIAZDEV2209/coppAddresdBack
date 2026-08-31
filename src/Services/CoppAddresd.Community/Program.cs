@@ -1,9 +1,13 @@
 using System.Text;
+using CoppAddresd.Community;
 using CoppAddresd.Community.GraphQL;
 using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
+using CoppAddresd.Community.GraphQL.Resolvers;
 using CoppAddresd.Community.GraphQL.Subscriptions;
 using CoppAddresd.Community.Persistence;
+using CoppAddresd.Community.Seeders;
+using CoppAddresd.Community.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -14,10 +18,17 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection no configurada.");
 
 builder.Services.AddDbContext<CommunityDbContext>(options =>
+{
     options.UseNpgsql(connectionString, npgsql =>
-        npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community")));
+        npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community"));
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 builder.Services.AddHttpContextAccessor();
+
+// Almacenamiento de objetos (imágenes de publicaciones). Proveedor según
+// Storage:Provider (Local por defecto; S3/MinIO con Storage:S3).
+builder.Services.AddCommunityStorage(builder.Configuration);
 
 var jwt = builder.Configuration.GetSection("Jwt");
 var secret = jwt["Secret"]!;
@@ -43,8 +54,12 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 builder.Services.AddAuthorization(options =>
 {
+    options.AddPolicy("Community.View", policy =>
+        policy.RequireClaim("permission", "Community.View"));
     options.AddPolicy("CommunityModerator", policy =>
         policy.RequireClaim("permission", "Community.Moderate"));
+    options.AddPolicy("Community.Manage", policy =>
+        policy.RequireClaim("permission", "Community.Manage"));
 });
 
 var origins = builder.Configuration["Cors:Origins"]
@@ -61,6 +76,10 @@ builder.Services
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
     .AddSubscriptionType<CommunitySubscription>()
+    .AddType<PostImageUrlResolver>()
+    .AddType<ProfileImageUrlResolver>()
+    .AddTypeExtension<ProfileResolvers>()
+    .AddTypeExtension<PollVoteResolvers>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
@@ -73,6 +92,22 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CommunityDbContext>();
     await db.Database.MigrateAsync();
+
+    if (app.Environment.IsDevelopment())
+        await CommunitySeeder.SeedAsync(db, builder.Configuration);
+
+    // Contenido demo adicional (polls/imágenes) — idempotente. No-op si
+    // CommunityDemo no está configurado con Enabled=true (producción).
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var demo = builder.Configuration.GetSection(CommunityDemoSettings.SectionName).Get<CommunityDemoSettings>();
+    if (demo is { Enabled: true })
+    {
+        await CommunityContentSeeder.SeedAsync(db, logger, CancellationToken.None);
+    }
+    else
+    {
+        logger.LogInformation("CommunityDemo not configured, skipping content seed");
+    }
 }
 
 app.UseCors("CommunityCors");
@@ -83,5 +118,6 @@ app.UseWebSockets();
 app.MapGraphQL("/api/v1/community/graphql").WithOptions(o => o.Tool.Enable = false);
 app.MapHealthChecks("/health");
 app.MapGraphQLWebSocket("/api/v1/community/subscriptions");
+app.MapPostStorageEndpoints();
 
 app.Run();
