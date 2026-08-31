@@ -283,6 +283,20 @@ public class HealthTestsController(
 
     // ===================== EVALUACIONES / RESULTADOS =====================
 
+    [HttpGet("master")]
+    public async Task<ActionResult<IReadOnlyList<MasterPatientRowDto>>> GetMasterRows(
+        CancellationToken ct
+    )
+    {
+        var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
+        if (!allowed)
+        {
+            return Forbid();
+        }
+
+        return Ok(await mediator.Send(new GetMasterRowsQuery(ownProfessionalId), ct));
+    }
+
     [HttpGet("patients/{patientId:guid}/evaluations")]
     public async Task<
         ActionResult<PaginatedHealthTestsResult<HealthTestEvaluationDto>>

@@ -675,6 +675,97 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .OrderBy(x => x.CreatedAt)
             .ToListAsync(ct);
 
+    /// <summary>
+    /// Asignaciones con paciente, versión/instrumento, evaluaciones y resultados
+    /// (tabla maestra del ERP, una sola consulta). Con <c>professionalId</c> filtra
+    /// por el alcance del profesional (patient_professionals).
+    /// </summary>
+    public async Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsWithPatientDataAsync(
+        Guid? professionalId,
+        CancellationToken ct = default
+    )
+    {
+        var query = dbContext
+            .HealthTestAssignments.AsNoTracking()
+            .Include(a => a.Patient)
+            .Include(a => a.Version!)
+                .ThenInclude(v => v.Instrument)
+            .Include(a => a.Evaluations)
+                .ThenInclude(e => e.Results)
+            .AsQueryable();
+
+        if (professionalId.HasValue)
+        {
+            query = query.Where(a =>
+                dbContext.PatientProfessionalAssignments.Any(pp =>
+                    pp.PatientId == a.PatientId && pp.ProfessionalId == professionalId.Value
+                )
+            );
+        }
+
+        return await query.ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, int>> ListActiveAlertCountsByPatientAsync(
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .HealthTestAlerts.AsNoTracking()
+            .Where(a =>
+                a.Status == HealthTestAlertStatus.active
+                || a.Status == HealthTestAlertStatus.reviewing
+            )
+            .GroupBy(a => a.PatientId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+
+    public async Task<IReadOnlyDictionary<Guid, string>> ListProfessionalNamesByPatientAsync(
+        CancellationToken ct = default
+    ) =>
+        await (
+            from pp in dbContext.PatientProfessionalAssignments.AsNoTracking()
+            join pr in dbContext.Professionals on pp.ProfessionalId equals pr.Id
+            join e in dbContext.Employees on pr.EmployeeId equals e.Id
+            where e.Status == "Active"
+            select new { pp.PatientId, Name = (e.FirstName + " " + e.LastName).Trim() }
+        )
+            .Distinct()
+            .ToDictionaryAsync(x => x.PatientId, x => x.Name, ct);
+
+    public async Task<IReadOnlyDictionary<Guid, string>> ListClinicNamesByIdsAsync(
+        IEnumerable<Guid> clinicIds,
+        CancellationToken ct = default
+    )
+    {
+        var ids = clinicIds.ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        return await dbContext
+            .Clinics.AsNoTracking()
+            .Where(c => ids.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.Name, ct);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, string>> ListInsurerNamesByIdsAsync(
+        IEnumerable<Guid> insurerIds,
+        CancellationToken ct = default
+    )
+    {
+        var ids = insurerIds.ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        return await dbContext
+            .Insurers.AsNoTracking()
+            .Where(i => ids.Contains(i.Id))
+            .ToDictionaryAsync(i => i.Id, i => i.Name, ct);
+    }
+
     public async Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsByBatteryAssignmentAsync(
         Guid batteryAssignmentId,
         CancellationToken ct = default

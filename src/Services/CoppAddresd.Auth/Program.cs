@@ -1,4 +1,4 @@
-using System.Threading.RateLimiting;
+﻿using System.Threading.RateLimiting;
 using CoppAddresd.Auth.Authorization;
 using CoppAddresd.Auth.Configuration;
 using CoppAddresd.Auth.Data;
@@ -22,7 +22,7 @@ ValidateConfiguration(builder.Configuration);
 
 builder.Services.AddControllers();
 
-// IP del cliente para el motor de protección OTP (misma fuente que el rate
+// IP del cliente para el motor de protecciÃ³n OTP (misma fuente que el rate
 // limiter global: HttpContext.Connection.RemoteIpAddress).
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSwaggerGen(options =>
@@ -33,7 +33,7 @@ builder.Services.AddSwaggerGen(options =>
         {
             Title = "CoppAddresd Auth API",
             Version = "v1",
-            Description = "Microservicio de autenticación y autorización",
+            Description = "Microservicio de autenticaciÃ³n y autorizaciÃ³n",
         }
     );
 
@@ -56,8 +56,8 @@ builder.Services.AddAuthIdentity();
 builder.Services.AddAuthJwt(builder.Configuration);
 builder.Services.AddAuthCors(builder.Configuration);
 
-// Caché distribuida (Valkey) para catálogos de autorización: provider por
-// Cache:Provider (Valkey|Memory|None), fail-open por operación. Ver
+// CachÃ© distribuida (Valkey) para catÃ¡logos de autorizaciÃ³n: provider por
+// Cache:Provider (Valkey|Memory|None), fail-open por operaciÃ³n. Ver
 // docs/modules/cache/README.md.
 builder.Services.AddAuthCache(builder.Configuration);
 
@@ -77,10 +77,10 @@ builder.Services.Configure<OtpSecuritySettings>(
     builder.Configuration.GetSection(OtpSecuritySettings.SectionName)
 );
 
-// Cliente Twilio (Singleton, stateless-safe). Autenticación por API Key
-// (ApiKeySid + ApiKeySecret, Basic Auth sobre el SDK) — nunca el Auth Token
-// maestro. Las llamadas reales solo ocurren si IsEnabled y siempre vía
-// TwilioOtpService (que valida configuración antes de contactar al proveedor).
+// Cliente Twilio (Singleton, stateless-safe). AutenticaciÃ³n por API Key
+// (ApiKeySid + ApiKeySecret, Basic Auth sobre el SDK) â€” nunca el Auth Token
+// maestro. Las llamadas reales solo ocurren si IsEnabled y siempre vÃ­a
+// TwilioOtpService (que valida configuraciÃ³n antes de contactar al proveedor).
 builder.Services.AddSingleton<Twilio.Clients.ITwilioRestClient>(serviceProvider =>
 {
     var twilio = serviceProvider.GetRequiredService<IOptions<TwilioSettings>>().Value;
@@ -96,9 +96,9 @@ builder.Services.AddSingleton<Twilio.Clients.ITwilioRestClient>(serviceProvider 
 
 builder.Services.AddScoped<ITwilioOtpService, TwilioOtpService>();
 
-// Motor de protección OTP en memoria: Singleton porque mantiene contadores y
+// Motor de protecciÃ³n OTP en memoria: Singleton porque mantiene contadores y
 // estado compartidos entre solicitudes dentro de la misma instancia (Scoped
-// daría a cada request su propio estado, inútil para rate limiting).
+// darÃ­a a cada request su propio estado, inÃºtil para rate limiting).
 builder.Services.AddSingleton<IOtpProtectionService, OtpProtectionService>();
 
 builder.Services.AddScoped<ITokenService, TokenService>();
@@ -110,6 +110,7 @@ builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<IScopedPermissionService, ScopedPermissionService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
+builder.Services.AddScoped<IDemoPatientSeedService, DemoPatientSeedService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
 builder.Services.AddScoped<ITokenInvalidationService, TokenInvalidationService>();
 
@@ -134,7 +135,7 @@ builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProv
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 builder.Services.AddScoped<IAuthorizationHandler, ErpAudienceHandler>();
 
-// REQ-AUDIT-03: los endpoints de administración ERP (Users/Roles/Permissions)
+// REQ-AUDIT-03: los endpoints de administraciÃ³n ERP (Users/Roles/Permissions)
 // exigen aud == "erp". Un token "app" (sin stamp check) no puede invocarlos.
 builder.Services.AddAuthorization(options =>
 {
@@ -164,7 +165,7 @@ builder.Services.AddRateLimiter(options =>
     {
         context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         await context.HttpContext.Response.WriteAsync(
-            "{\"message\":\"Demasiadas peticiones. Intenta más tarde.\"}",
+            "{\"message\":\"Demasiadas peticiones. Intenta mÃ¡s tarde.\"}",
             cancellationToken
         );
     };
@@ -191,13 +192,13 @@ using (var scope = app.Services.CreateScope())
 
     await PermissionSeeder.SeedAsync(dbContext, logger);
 
-    // Permisos del módulo Program Progress (Program.*). Debe correr ANTES de
-    // AdminSeeder para que el rol Admin reciba los 5 códigos por convención
+    // Permisos del mÃ³dulo Program Progress (Program.*). Debe correr ANTES de
+    // AdminSeeder para que el rol Admin reciba los 5 cÃ³digos por convenciÃ³n
     // (AdminSeeder asigna todos los permisos existentes al rol Admin).
     await ProgramProgressPermissionsSeeder.SeedAsync(dbContext, logger);
 
-    // Permisos del módulo Tests de Salud (HealthTests.*). Idem: antes de
-    // AdminSeeder para que el rol Admin reciba los códigos por convención.
+    // Permisos del mÃ³dulo Tests de Salud (HealthTests.*). Idem: antes de
+    // AdminSeeder para que el rol Admin reciba los cÃ³digos por convenciÃ³n.
     await HealthTestsPermissionsSeeder.SeedAsync(dbContext, logger);
 
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
@@ -249,10 +250,10 @@ static void ValidateConfiguration(IConfiguration configuration)
         throw new InvalidOperationException("ConnectionStrings:DefaultConnection is required");
     }
 
-    // Twilio solo es obligatorio cuando está habilitado: Development puede
+    // Twilio solo es obligatorio cuando estÃ¡ habilitado: Development puede
     // arrancar sin credenciales (IsEnabled = false en appsettings). Cuando se
     // habilita, las cuatro propiedades son obligatorias para no llegar a
-    // runtime con configuración incompleta.
+    // runtime con configuraciÃ³n incompleta.
     var twilio = new TwilioSettings();
     configuration.GetSection(TwilioSettings.SectionName).Bind(twilio);
 
@@ -271,16 +272,16 @@ static void ValidateConfiguration(IConfiguration configuration)
         if (missing.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Twilio está habilitado (Twilio:IsEnabled) pero faltan las credenciales: "
-                    + $"{string.Join(", ", missing)}. Configúralas (appsettings o variables de "
+                $"Twilio estÃ¡ habilitado (Twilio:IsEnabled) pero faltan las credenciales: "
+                    + $"{string.Join(", ", missing)}. ConfigÃºralas (appsettings o variables de "
                     + "entorno TWILIO__*) o deshabilita Twilio."
             );
         }
     }
 
-    // Validación básica de los límites de seguridad del flujo OTP. Solo se
+    // ValidaciÃ³n bÃ¡sica de los lÃ­mites de seguridad del flujo OTP. Solo se
     // comprueban invariantes estructurales (mayor que cero / no negativo); el
-    // mecanismo de protección aún no está implementado.
+    // mecanismo de protecciÃ³n aÃºn no estÃ¡ implementado.
     var otpSecurity = new OtpSecuritySettings();
     configuration.GetSection(OtpSecuritySettings.SectionName).Bind(otpSecurity);
 

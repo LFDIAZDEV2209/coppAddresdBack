@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using CoppAddresd.Telemedicine.Application.Constants;
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 using CoppAddresd.Telemedicine.Authorization;
@@ -5,7 +6,6 @@ using CoppAddresd.Telemedicine.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace CoppAddresd.Telemedicine.Controllers;
 
@@ -24,7 +24,8 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<AppointmentDto>> Schedule(
         [FromBody] ScheduleAppointmentDto request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var command = new ScheduleAppointmentCommand(
             request.PatientId,
@@ -35,7 +36,8 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
             request.LocationId,
             request.ScheduledStart,
             request.DurationMinutes,
-            CurrentUserId());
+            CurrentUserId()
+        );
 
         var result = await mediator.Send(command, ct);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
@@ -44,8 +46,30 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     [HttpGet("{id:guid}")]
     [RequirePermission(AppointmentPermissionCodes.AppointmentsView)]
     [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<AppointmentDto>> GetById(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new GetAppointmentQuery(id), ct));
+    public async Task<ActionResult<AppointmentDto>> GetById(Guid id, CancellationToken ct) =>
+        Ok(await mediator.Send(new GetAppointmentQuery(id), ct));
+
+    /// <summary>
+    /// Citas del paciente autenticado (app móvil), por identidad del JWT.
+    /// Sin permiso ERP: la autorización la resuelve el handler.
+    /// </summary>
+    [HttpGet("mine")]
+    [ProducesResponseType(typeof(PaginatedAdminAppointmentsResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<PaginatedAdminAppointmentsResult>> Mine(
+        [FromQuery] AppointmentStatus? status = null,
+        [FromQuery] DateTimeOffset? from = null,
+        [FromQuery] DateTimeOffset? to = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default
+    ) =>
+        Ok(
+            await mediator.Send(
+                new GetMyAppointmentsQuery(CurrentUserId(), status, from, to, page, pageSize),
+                ct
+            )
+        );
 
     /// <summary>Agenda del profesional en un rango (dashboard "Mi agenda" / calendario).</summary>
     [HttpGet("agenda")]
@@ -55,22 +79,29 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
         [FromQuery] Guid professionalId,
         [FromQuery] DateTimeOffset from,
         [FromQuery] DateTimeOffset to,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new GetProfessionalAgendaQuery(professionalId, from, to), ct));
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new GetProfessionalAgendaQuery(professionalId, from, to), ct));
 
     [HttpPost("{id:guid}/cancel")]
-    [RequirePermission(AppointmentPermissionCodes.AppointmentsCancel)]
     [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AppointmentDto>> Cancel(
         Guid id,
         [FromBody] CancelAppointmentDto request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
+        // Alcance dual: con el permiso ERP el actor sale del body (comportamiento
+        // actual); sin permiso, el llamador es el paciente de la cita (identidad
+        // del JWT) y el handler valida propiedad/estado.
+        var erpMode = User.HasClaim("permission", AppointmentPermissionCodes.AppointmentsCancel);
         var command = new CancelAppointmentCommand(
             id,
             request.Reason,
             request.CancelledBy,
-            CurrentUserId());
+            CurrentUserId(),
+            erpMode ? null : CurrentUserId()
+        );
         return Ok(await mediator.Send(command, ct));
     }
 
@@ -80,7 +111,8 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<AppointmentDto>> Reschedule(
         Guid id,
         [FromBody] RescheduleAppointmentDto request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var command = new RescheduleAppointmentCommand(
             id,
@@ -88,7 +120,8 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
             request.DurationMinutes,
             request.Reason,
             request.RequestedBy,
-            CurrentUserId());
+            CurrentUserId()
+        );
         return Ok(await mediator.Send(command, ct));
     }
 
@@ -107,14 +140,14 @@ public sealed record ScheduleAppointmentDto(
     Guid? ClinicId,
     Guid? LocationId,
     DateTimeOffset ScheduledStart,
-    int? DurationMinutes);
+    int? DurationMinutes
+);
 
-public sealed record CancelAppointmentDto(
-    string Reason,
-    CancelledBy CancelledBy);
+public sealed record CancelAppointmentDto(string Reason, CancelledBy CancelledBy);
 
 public sealed record RescheduleAppointmentDto(
     DateTimeOffset NewStart,
     int? DurationMinutes,
     string? Reason,
-    RescheduleRequestedBy RequestedBy);
+    RescheduleRequestedBy RequestedBy
+);

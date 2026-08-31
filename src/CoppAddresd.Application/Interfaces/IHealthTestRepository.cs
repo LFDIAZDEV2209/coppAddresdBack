@@ -290,6 +290,24 @@ public interface IHealthTestRepository
         Guid evaluationId,
         CancellationToken ct = default
     );
+    Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsWithPatientDataAsync(
+        Guid? professionalId,
+        CancellationToken ct = default
+    );
+    Task<IReadOnlyDictionary<Guid, int>> ListActiveAlertCountsByPatientAsync(
+        CancellationToken ct = default
+    );
+    Task<IReadOnlyDictionary<Guid, string>> ListProfessionalNamesByPatientAsync(
+        CancellationToken ct = default
+    );
+    Task<IReadOnlyDictionary<Guid, string>> ListClinicNamesByIdsAsync(
+        IEnumerable<Guid> clinicIds,
+        CancellationToken ct = default
+    );
+    Task<IReadOnlyDictionary<Guid, string>> ListInsurerNamesByIdsAsync(
+        IEnumerable<Guid> insurerIds,
+        CancellationToken ct = default
+    );
 
     // --- Transacción multi-paso (submit) ---
     Task<int> SaveChangesAsync(CancellationToken ct = default);
