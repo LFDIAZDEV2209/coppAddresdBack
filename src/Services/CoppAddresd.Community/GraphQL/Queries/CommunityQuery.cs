@@ -82,6 +82,7 @@ var profile = await db.Profiles
     /// <param name="to">Incluye publicaciones creadas hasta el final de este día (inclusive).</param>
     /// <param name="take">Cantidad máxima de resultados a devolver.</param>
     /// <param name="skip">Cantidad de resultados a omitir (paginación).</param>
+    /// <param name="sortBy">Ordenamiento secundario: "recent" (default), "likes", "comments", "reposts".</param>
     /// <param name="ct">Token de cancelación.</param>
     [Authorize]
     public async Task<IReadOnlyList<Post>> Feed(
@@ -92,6 +93,7 @@ var profile = await db.Profiles
         DateTime? to = null,
         int take = 20,
         int skip = 0,
+        string? sortBy = null,
         CancellationToken ct = default)
     {
         var query = db.Posts
@@ -130,9 +132,20 @@ var profile = await db.Profiles
         if (to is not null)
             query = query.Where(p => p.CreatedAt < to.Value.AddDays(1));
 
-        return await query
+        IOrderedQueryable<Post> ordered = query
             .OrderByDescending(p => p.Pinned)
-            .ThenBy(p => p.PinnedOrder)
+            .ThenBy(p => p.PinnedOrder);
+
+        if (sortBy == "likes")
+            ordered = ordered.ThenByDescending(p => p.Likes.Count);
+        else if (sortBy == "comments")
+            ordered = ordered.ThenByDescending(p => p.Comments.Count);
+        else if (sortBy == "reposts")
+            ordered = ordered.ThenByDescending(p => p.Reposts.Count);
+        else
+            ordered = ordered.ThenByDescending(p => p.CreatedAt);
+
+        return await ordered
             .ThenByDescending(p => p.CreatedAt)
             .Skip(skip)
             .Take(take)
@@ -587,9 +600,10 @@ var profile = await db.Profiles
         var posts = await db.Posts.ToListAsync(ct);
         var comments = await db.Comments.ToListAsync(ct);
         var likes = await db.Likes.ToListAsync(ct);
+        var reposts = await db.Reposts.ToListAsync(ct);
         var feedEvents = await db.FeedEvents.ToListAsync(ct);
 
-        return DashboardAggregator.Compute(profiles, posts, comments, likes, feedEvents, now);
+        return DashboardAggregator.Compute(profiles, posts, comments, likes, reposts, feedEvents, now);
     }
 
     // ─── Analytics (nuevas consultas) ──────────────────────────────────
