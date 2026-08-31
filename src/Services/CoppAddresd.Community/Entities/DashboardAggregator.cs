@@ -17,6 +17,7 @@ public static class DashboardAggregator
     /// <param name="posts">Publicaciones activas (DeletedAt == null, o todas; el aggregator filtra).</param>
     /// <param name="comments">Comentarios (el aggregator filtra DeletedAt == null).</param>
     /// <param name="likes">Todos los likes.</param>
+    /// <param name="reposts">Todos los reposts.</param>
     /// <param name="feedEvents">Todos los eventos del feed.</param>
     /// <param now>Instante de referencia (DateTime.UtcNow del caller).</param>
     public static DashboardStats Compute(
@@ -24,6 +25,7 @@ public static class DashboardAggregator
         IReadOnlyCollection<Post> posts,
         IReadOnlyCollection<Comment> comments,
         IReadOnlyCollection<Like> likes,
+        IReadOnlyCollection<Repost> reposts,
         IReadOnlyCollection<FeedEvent> feedEvents,
         DateTime now)
     {
@@ -46,7 +48,7 @@ public static class DashboardAggregator
         // --- Participación semanal (last 7d): perfiles con al menos 1 actividad ---
         var window7d = utcNow.AddDays(-7);
         var weeklyActiveIds = ComputeActiveProfileIdsInWindow(
-            activeProfiles, posts, comments, likes, feedEvents, window7d, utcNow);
+            activeProfiles, posts, comments, likes, reposts, feedEvents, window7d, utcNow);
         var weeklyActiveCount = weeklyActiveIds.Count;
         var participationRate = activeCount > 0
             ? Math.Round(weeklyActiveCount * 100.0 / activeCount, 1)
@@ -56,7 +58,7 @@ public static class DashboardAggregator
         var windowPrev7dStart = utcNow.AddDays(-14);
         var windowPrev7dEnd = utcNow.AddDays(-7);
         var prevWeeklyActiveIds = ComputeActiveProfileIdsInWindow(
-            activeProfiles, posts, comments, likes, feedEvents, windowPrev7dStart, windowPrev7dEnd);
+            activeProfiles, posts, comments, likes, reposts, feedEvents, windowPrev7dStart, windowPrev7dEnd);
         var prevParticipationRate = activeCount > 0
             ? Math.Round(prevWeeklyActiveIds.Count * 100.0 / activeCount, 1)
             : 0.0;
@@ -92,17 +94,17 @@ public static class DashboardAggregator
         };
 
         // --- Activity Series: últimos 30 días (now-29d..now) ---
-        var activitySeries = BuildActivitySeries(activePosts, comments, likes, today);
+        var activitySeries = BuildActivitySeries(activePosts, comments, likes, reposts, today);
 
         // --- Post Types: distribución por tipo este mes ---
         var postTypes = BuildPostTypeDistribution(activePosts, currentMonthStart);
 
         // --- Peak Hours: actividad (posts+comments+likes) por hora en últimos 30 días ---
-        var peakHours = BuildPeakHours(activePosts, comments, likes, utcNow.AddDays(-30));
+        var peakHours = BuildPeakHours(activePosts, comments, likes, reposts, utcNow.AddDays(-30));
 
         // --- Diagnosis Participation ---
         var diagnosisParticipation = BuildDiagnosisParticipation(
-            activeProfiles, posts, comments, likes, feedEvents, utcNow);
+            activeProfiles, posts, comments, likes, reposts, feedEvents, utcNow);
 
         return new DashboardStats
         {
@@ -161,6 +163,7 @@ public static class DashboardAggregator
         IReadOnlyCollection<Post> posts,
         IReadOnlyCollection<Comment> comments,
         IReadOnlyCollection<Like> likes,
+        IReadOnlyCollection<Repost> reposts,
         IReadOnlyCollection<FeedEvent> feedEvents,
         DateTime from,
         DateTime to)
@@ -176,6 +179,9 @@ public static class DashboardAggregator
 
         foreach (var l in likes.Where(l => activeIds.Contains(l.ProfileId) && l.CreatedAt >= from && l.CreatedAt < to))
             result.Add(l.ProfileId);
+
+        foreach (var r in reposts.Where(r => activeIds.Contains(r.ProfileId) && r.CreatedAt >= from && r.CreatedAt < to))
+            result.Add(r.ProfileId);
 
         foreach (var f in feedEvents)
         {
@@ -194,6 +200,7 @@ public static class DashboardAggregator
         IReadOnlyCollection<Post> posts,
         IReadOnlyCollection<Comment> comments,
         IReadOnlyCollection<Like> likes,
+        IReadOnlyCollection<Repost> reposts,
         DateTime today)
     {
         var from = today.AddDays(-29);
@@ -214,16 +221,22 @@ public static class DashboardAggregator
             .GroupBy(l => l.CreatedAt.Date)
             .ToDictionary(g => g.Key, g => g.Count());
 
+        var repostsByDay = reposts
+            .Where(r => r.CreatedAt >= from)
+            .GroupBy(r => r.CreatedAt.Date)
+            .ToDictionary(g => g.Key, g => g.Count());
+
         var result = new List<ActivityDay>(30);
         for (var i = 0; i < 30; i++)
         {
             var day = from.AddDays(i);
+            var dayKey = day.Date;
             result.Add(new ActivityDay
             {
                 Dia = day.Day,
-                Posts = postsByDay.GetValueOrDefault(day.Date, 0),
-                Comentarios = commentsByDay.GetValueOrDefault(day.Date, 0),
-                Reacciones = likesByDay.GetValueOrDefault(day.Date, 0),
+                Posts = postsByDay.GetValueOrDefault(dayKey, 0),
+                Comentarios = commentsByDay.GetValueOrDefault(dayKey, 0),
+                Reacciones = likesByDay.GetValueOrDefault(dayKey, 0) + repostsByDay.GetValueOrDefault(dayKey, 0),
             });
         }
 
@@ -256,6 +269,7 @@ public static class DashboardAggregator
         IReadOnlyCollection<Post> posts,
         IReadOnlyCollection<Comment> comments,
         IReadOnlyCollection<Like> likes,
+        IReadOnlyCollection<Repost> reposts,
         DateTime from)
     {
         var hourCounts = new int[24];
@@ -268,6 +282,9 @@ public static class DashboardAggregator
 
         foreach (var l in likes.Where(l => l.CreatedAt >= from))
             hourCounts[l.CreatedAt.Hour]++;
+
+        foreach (var r in reposts.Where(r => r.CreatedAt >= from))
+            hourCounts[r.CreatedAt.Hour]++;
 
         return Enumerable.Range(0, 24)
             .Select(h => new PeakHour { Hora = h, Count = hourCounts[h] })
@@ -284,12 +301,13 @@ public static class DashboardAggregator
         IReadOnlyCollection<Post> posts,
         IReadOnlyCollection<Comment> comments,
         IReadOnlyCollection<Like> likes,
+        IReadOnlyCollection<Repost> reposts,
         IReadOnlyCollection<FeedEvent> feedEvents,
         DateTime utcNow)
     {
         var window7d = utcNow.AddDays(-7);
         var weeklyActiveIds = ComputeActiveProfileIdsInWindow(
-            activeProfiles, posts, comments, likes, feedEvents, window7d, utcNow);
+            activeProfiles, posts, comments, likes, reposts, feedEvents, window7d, utcNow);
 
         // Agrupar perfiles activos por diagnóstico (no nulo)
         var groups = activeProfiles

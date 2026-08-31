@@ -67,12 +67,21 @@ public sealed class DashboardAggregatorTests
             CreatedAt = createdAt,
         };
 
+    private static Repost MakeRepost(Guid profileId, Guid postId, DateTime createdAt)
+        => new()
+        {
+            Id = Guid.NewGuid(),
+            ProfileId = profileId,
+            PostId = postId,
+            CreatedAt = createdAt,
+        };
+
     // ─── Datos vacíos → zeros ──────────────────────────────────────────
 
     [Fact]
     public void Compute_EmptyData_ReturnsZeros()
     {
-        var result = DashboardAggregator.Compute([], [], [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([], [], [], [], [], [], BaseNow);
 
         Assert.Equal(0, result.ActiveMembers);
         Assert.Equal(0, result.PostsThisMonth);
@@ -94,7 +103,7 @@ public sealed class DashboardAggregatorTests
         var banned = MakeProfile(status: ProfileStatus.Banned);
         var profiles = new List<Profile> { active, banned };
 
-        var result = DashboardAggregator.Compute(profiles, [], [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute(profiles, [], [], [], [], [], BaseNow);
 
         Assert.Equal(1, result.ActiveMembers);
     }
@@ -115,7 +124,7 @@ public sealed class DashboardAggregatorTests
             MakePost(profile.Id, lastMonth), // Mes anterior, no cuenta
         };
 
-        var result = DashboardAggregator.Compute([profile], posts, [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([profile], posts, [], [], [], [], BaseNow);
 
         Assert.Equal(2, result.PostsThisMonth);
     }
@@ -132,7 +141,7 @@ public sealed class DashboardAggregatorTests
             MakePost(profile.Id, thisMonth, deletedAt: thisMonth), // Eliminado
         };
 
-        var result = DashboardAggregator.Compute([profile], posts, [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([profile], posts, [], [], [], [], BaseNow);
 
         Assert.Equal(1, result.PostsThisMonth);
     }
@@ -155,7 +164,7 @@ public sealed class DashboardAggregatorTests
             MakeLike(p2.Id, now.AddDays(-1)),
         };
 
-        var result = DashboardAggregator.Compute([p1, p2, p3], [], [], likes, [], now);
+        var result = DashboardAggregator.Compute([p1, p2, p3], [], [], likes, [], [], now);
 
         // 2 de 3 activos con actividad en 7d = 66.7%
         Assert.Equal(66.7, result.ParticipationRate, 1);
@@ -173,7 +182,7 @@ public sealed class DashboardAggregatorTests
             status: ProfileStatus.Banned,
             lastActiveAt: now.AddDays(-10)); // Banned, no cuenta
 
-        var result = DashboardAggregator.Compute([active, recent, banned], [], [], [], [], now);
+        var result = DashboardAggregator.Compute([active, recent, banned], [], [], [], [], [], now);
 
         Assert.Equal(1, result.InactiveOver7Days);
     }
@@ -184,7 +193,7 @@ public sealed class DashboardAggregatorTests
         var now = BaseNow;
         var noActivity = MakeProfile(lastPostAt: null, lastActiveAt: null);
 
-        var result = DashboardAggregator.Compute([noActivity], [], [], [], [], now);
+        var result = DashboardAggregator.Compute([noActivity], [], [], [], [], [], now);
 
         Assert.Equal(1, result.InactiveOver7Days);
     }
@@ -200,7 +209,7 @@ public sealed class DashboardAggregatorTests
         // Medio: 7-14 días sin actividad
         var medio = MakeProfile(lastPostAt: now.AddDays(-10));
 
-        var result = DashboardAggregator.Compute([alto, medio], [], [], [], [], now);
+        var result = DashboardAggregator.Compute([alto, medio], [], [], [], [], [], now);
 
         Assert.Equal(1, result.InactiveAtRisk);
     }
@@ -210,7 +219,7 @@ public sealed class DashboardAggregatorTests
     [Fact]
     public void Compute_ActivitySeries_Has30Entries()
     {
-        var result = DashboardAggregator.Compute([], [], [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([], [], [], [], [], [], BaseNow);
 
         Assert.Equal(30, result.ActivitySeries.Count);
         // Todos los días deben estar presentes (dia 1..31)
@@ -242,7 +251,7 @@ public sealed class DashboardAggregatorTests
             MakeLike(profile.Id, today.AddHours(16)),
         };
 
-        var result = DashboardAggregator.Compute([profile], posts, comments, likes, [], BaseNow);
+        var result = DashboardAggregator.Compute([profile], posts, comments, likes, [], [], BaseNow);
 
         var totalPosts = result.ActivitySeries.Sum(d => d.Posts);
         var totalComments = result.ActivitySeries.Sum(d => d.Comentarios);
@@ -253,12 +262,36 @@ public sealed class DashboardAggregatorTests
         Assert.Equal(1, totalLikes);
     }
 
+    [Fact]
+    public void Compute_ActivitySeries_RepostsCountedInReacciones()
+    {
+        var profile = MakeProfile();
+        var today = BaseNow.Date;
+        var postId = Guid.NewGuid();
+
+        var reposts = new List<Repost>
+        {
+            MakeRepost(profile.Id, postId, today.AddHours(11)),
+            MakeRepost(profile.Id, postId, today.AddHours(15)),
+        };
+        var likes = new List<Like>
+        {
+            MakeLike(profile.Id, today.AddHours(16)),
+        };
+
+        var result = DashboardAggregator.Compute([profile], [], [], likes, reposts, [], BaseNow);
+
+        var totalReacciones = result.ActivitySeries.Sum(d => d.Reacciones);
+        // 1 like + 2 reposts = 3 reacciones
+        Assert.Equal(3, totalReacciones);
+    }
+
     // ─── postTypes ──────────────────────────────────────────────────────
 
     [Fact]
     public void Compute_PostTypes_Has5Entries()
     {
-        var result = DashboardAggregator.Compute([], [], [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([], [], [], [], [], [], BaseNow);
 
         Assert.Equal(5, result.PostTypes.Count);
         // Cada tipo del enum debe aparecer exactamente una vez
@@ -281,7 +314,7 @@ public sealed class DashboardAggregatorTests
             MakePost(profile.Id, thisMonth, PostType.Video),
         };
 
-        var result = DashboardAggregator.Compute([profile], posts, [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([profile], posts, [], [], [], [], BaseNow);
 
         Assert.Equal(2, result.PostTypes.First(pt => pt.Type == PostType.Texto).Count);
         Assert.Equal(1, result.PostTypes.First(pt => pt.Type == PostType.Imagen).Count);
@@ -294,7 +327,7 @@ public sealed class DashboardAggregatorTests
     [Fact]
     public void Compute_PeakHours_Has24Entries()
     {
-        var result = DashboardAggregator.Compute([], [], [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([], [], [], [], [], [], BaseNow);
 
         Assert.Equal(24, result.PeakHours.Count);
         var horas = result.PeakHours.Select(p => p.Hora).OrderBy(h => h).ToList();
@@ -313,7 +346,7 @@ public sealed class DashboardAggregatorTests
             MakePost(profile.Id, new DateTime(2026, 8, 20, 14, 0, 0, DateTimeKind.Utc)),
         };
 
-        var result = DashboardAggregator.Compute([profile], posts, [], [], [], BaseNow);
+        var result = DashboardAggregator.Compute([profile], posts, [], [], [], [], BaseNow);
 
         var hour10 = result.PeakHours.First(p => p.Hora == 10).Count;
         var hour14 = result.PeakHours.First(p => p.Hora == 14).Count;
@@ -342,7 +375,7 @@ public sealed class DashboardAggregatorTests
             MakeLike(p3.Id, now.AddDays(-1)),
         };
 
-        var result = DashboardAggregator.Compute([p1, p2, p3, p4], [], [], likes, [], now);
+        var result = DashboardAggregator.Compute([p1, p2, p3, p4], [], [], likes, [], [], now);
 
         Assert.Equal(3, result.DiagnosisParticipation.Count);
 
@@ -366,7 +399,7 @@ public sealed class DashboardAggregatorTests
         var withDiag = MakeProfile(diagnosis: ProfileDiagnosis.DM2, lastActiveAt: now.AddDays(-1));
         var noDiag = MakeProfile(diagnosis: null, lastActiveAt: now.AddDays(-1));
 
-        var result = DashboardAggregator.Compute([withDiag, noDiag], [], [], [], [], now);
+        var result = DashboardAggregator.Compute([withDiag, noDiag], [], [], [], [], [], now);
 
         // Solo un grupo (DM2), null se excluye
         Assert.Single(result.DiagnosisParticipation);
@@ -390,7 +423,7 @@ public sealed class DashboardAggregatorTests
             MakePost(profile.Id, prevMonthStart.AddDays(5)),    // Mes anterior: 1
         };
 
-        var result = DashboardAggregator.Compute([profile], posts, [], [], [], now);
+        var result = DashboardAggregator.Compute([profile], posts, [], [], [], [], now);
 
         // (2 - 1) / 1 * 100 = 100%
         Assert.Equal(100.0, result.KpiTrends.PostsThisMonth, 1);
@@ -405,7 +438,7 @@ public sealed class DashboardAggregatorTests
         // Inactivo hace 30 días: LastActiveAt hace 40 días (antes de now-37)
         var p2 = MakeProfile(lastActiveAt: now.AddDays(-40));
 
-        var result = DashboardAggregator.Compute([p1, p2], [], [], [], [], now);
+        var result = DashboardAggregator.Compute([p1, p2], [], [], [], [], [], now);
 
         // inactiveNow=2, inactive30dAgo=1 → (2-1)/1*100 = 100%
         Assert.Equal(100.0, result.KpiTrends.InactiveOver7Days, 1);
@@ -423,7 +456,7 @@ public sealed class DashboardAggregatorTests
             MakeProfile(lastActiveAt: now.AddDays(-5)),
         };
 
-        var result = DashboardAggregator.Compute(profiles, [], [], [], [], now);
+        var result = DashboardAggregator.Compute(profiles, [], [], [], [], [], now);
 
         // activeInPrior30d = 0 → delta = 0
         Assert.Equal(0.0, result.KpiTrends.ActiveMembers, 1);
