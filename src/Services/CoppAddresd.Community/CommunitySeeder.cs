@@ -147,6 +147,78 @@ public static class CommunitySeeder
             postDates[k] = now.AddDays(-dayOffset).AddHours(-hourOffset).AddMinutes(-(k * 13) % 60);
         }
 
+        // Imagen keys reales (community/posts/<filename>).
+        var imageKeys = new[]
+        {
+            "community/posts/141788306d974de39283dc1c1b7d6be1.jpeg",
+            "community/posts/203b3324baec47148242a18f6501fd3c.jpeg",
+            "community/posts/48c5b15e08124b5baea9707f3551e2f1.jpg",
+            "community/posts/4fd61a2d275f4c488b5b84f8a68d915d.png",
+            "community/posts/8390ef443c1b47acb727a3b8d687a327.png",
+            "community/posts/8d41cb0572234cea84de0ec72abcf868.png",
+            "community/posts/9fe5741eec7243ee84f19674ccf57b16.jpg",
+            "community/posts/ab779f9dd4ca4aac9e49b1b1eeb6f149.png",
+        };
+
+        // Textos realistas por tipo de publicación.
+        var textoBodies = new[]
+        {
+            "Hoy completé mi caminata matutina de 30 minutos. Al principio costaba, pero ahora es lo que más espero del día. ¡Pequeños pasos grandes resultados!",
+            "Comparto algo que me funciona: escribir 3 cosas buenas del día antes de dormir. Me bajó el estrés un montón.",
+            "Día difícil. La ansiedad me jugó una mala pasada y comí de más. Mañana se empieza de nuevo, sin culpas.",
+            "Hoy cumplí 4 semanas midiendo mi presión todos los días. Promedio: 132/85. ¡Bajamos!",
+            "Como enfermera jubilada les digo: no dejen de ir a sus controles. La prevención lo es todo.",
+            "3 meses sin fumar. Mi presión mejoró muchísimo y mi respiración también. Si estás pensando en dejarlo: ¡hazlo!",
+            "Mi médico me cambió el medicamento y tuve mareos los primeros días. ¿Alguien más pasó por eso? Me ayudaría saberlo.",
+            "Recuerden que no están solos en este proceso. La constancia también se construye con descanso.",
+            "Receta del día: avena con canela y manzana sin azúcar añadida. 15 minutos de preparación y el corazón te lo agradece.",
+            "Pregunta rápida: ¿alguien ha probado los ejercicios de respiración de la app? Quiero saber si valen la pena.",
+            "Recordatorio del programa: tomen su medicación a la misma hora todos los días. Usar la alarma del celular me ayudó a no fallar nunca más.",
+            "Mi progreso de esta semana: 5 caminatas completas, 3 litros de agua diarios y mejor sueño. ¡No me lo creo!",
+            "Esto es justo lo que necesitaba leer hoy. Gracias comunidad por tanto apoyo.",
+        };
+
+        var imagenBodies = new[]
+        {
+            "Mi progreso de esta semana: fotos del día 1 y día 28. ¡El cambio es real! 💪",
+            "Así se ve mi almuerzo saludable de hoy: ensalada de quinoa con vegetales grillados. ¡Delicioso y nutritivo!",
+            "Hoy celebré mis 90 días de racha con esta foto en el parque. ¡Gracias a todos por el apoyo! 🎉",
+            "Mi setup de ejercicio en casa. No necesitas gimnasio para cuidarte. 🏠",
+            "Resultado de mis análisis de sangre después de 3 meses en el programa. ¡Los números hablan solos!",
+        };
+
+        var encuestaBodies = new[]
+        {
+            "¿Qué tema te gustaría para el próximo taller de la comunidad?",
+            "¿Cuál es tu mayor reto para mantener una alimentación saludable?",
+            "¿Qué actividad física disfrutas más?",
+        };
+
+        var logroBodies = new[]
+        {
+            "Hoy completé mi primer trote de 30 minutos sin parar. Hace 6 meses no podía subir 2 pisos sin agitarme.",
+            "Caminata comunitaria este sábado a las 7 am en el parque central. ¡Nos vemos! 🚶‍♀️",
+            "¡Bienvenidos a la Comunidad ANTARES! Este espacio es de todos: comparte tus avances, dudas y recetas.",
+            "Hoy cumplí 100 días de racha. Empecé con una caminata de 10 minutos y ahora hago 45. ¡Sigan adelante!",
+            "Mi meta del mes: reducir 2 cm de cintura. ¡Logrado en 22 días con caminata y alimentación consciente!",
+        };
+
+        var encuestaPollData = new (string Question, string[] Options)[]
+        {
+            ("¿Qué tema te gustaría para el próximo taller?",
+                ["Nutrición y recetas saludables", "Ejercicio para principiantes", "Manejo del estrés", "Control de presión arterial"]),
+            ("¿Cuál es tu mayor reto para mantener una alimentación saludable?",
+                ["Falta de tiempo para cocinar", "Antojos nocturnos", "No saber qué comer", "Costo de los alimentos saludables"]),
+            ("¿Qué actividad física disfrutas más?",
+                ["Caminar al aire libre", "Ejercicios en casa", "Yoga o estiramientos", "Natación"]),
+        };
+
+        var imageIdx = 0;
+        var textoIdx = 0;
+        var imagenIdx = 0;
+        var encuestaIdx = 0;
+        var logroIdx = 0;
+
         for (var k = 0; k < 27; k++)
         {
             var owner = postOwners[k];
@@ -154,17 +226,94 @@ public static class CommunitySeeder
             var destination = AllDestinations[k % AllDestinations.Length];
             var created = postDates[k];
 
+            string body;
+            string? imageKey = null;
+
+            switch (type)
+            {
+                case PostType.Texto:
+                    body = textoBodies[textoIdx % textoBodies.Length];
+                    textoIdx++;
+                    break;
+                case PostType.Imagen:
+                    body = imagenBodies[imagenIdx % imagenBodies.Length];
+                    imageKey = imageKeys[imageIdx % imageKeys.Length];
+                    imageIdx++;
+                    imagenIdx++;
+                    break;
+                case PostType.Video:
+                    // Sin archivos de video disponibles; chip muestra Video sin media.
+                    body = $"{owner.DisplayName} compartió un video de su rutina de ejercicio. ¡Motivación pura! 🎬";
+                    break;
+                case PostType.Encuesta:
+                    body = encuestaBodies[encuestaIdx % encuestaBodies.Length];
+                    encuestaIdx++;
+                    break;
+                case PostType.Logro:
+                    body = logroBodies[logroIdx % logroBodies.Length];
+                    logroIdx++;
+                    break;
+                default:
+                    body = $"{owner.DisplayName} compartió algo con la comunidad.";
+                    break;
+            }
+
             var post = new Post
             {
                 Id = Guid.NewGuid(),
                 ProfileId = owner.Id,
-                Body = $"{owner.DisplayName} comparte en la comunidad ({type}).",
+                Body = body,
+                ImageKey = imageKey,
                 Type = type,
                 Destination = destination,
                 CreatedAt = created,
             };
             db.Posts.Add(post);
             allPosts.Add(post);
+
+            // Para posts de Encuesta, crear la Poll con opciones y votos.
+            if (type == PostType.Encuesta)
+            {
+                var pollData = encuestaPollData[(k / AllPostTypes.Length) % encuestaPollData.Length];
+                var poll = new Poll
+                {
+                    Id = Guid.NewGuid(),
+                    PostId = post.Id,
+                    CreatedAt = created,
+                };
+                post.Poll = poll;
+
+                for (var pi = 0; pi < pollData.Options.Length; pi++)
+                {
+                    var option = new PollOption
+                    {
+                        Id = Guid.NewGuid(),
+                        PollId = poll.Id,
+                        Text = pollData.Options[pi],
+                        Position = pi,
+                    };
+                    poll.Options.Add(option);
+
+                    // Asignar votos aleatorios a cada opción (2-6 votos por opción).
+                    var voteCount = 2 + rnd.Next(5); // 2..6
+                    for (var vi = 0; vi < voteCount; vi++)
+                    {
+                        var voterIdx = rnd.Next(profiles.Count);
+                        var voter = profiles[voterIdx];
+                        // Evitar duplicados: solo si el perfil aún no votó en esta encuesta.
+                        if (!poll.Options.SelectMany(o => o.Votes).Any(v => v.ProfileId == voter.Id))
+                        {
+                            option.Votes.Add(new PollVote
+                            {
+                                Id = Guid.NewGuid(),
+                                OptionId = option.Id,
+                                ProfileId = voter.Id,
+                                CreatedAt = created.AddMinutes(30 + rnd.Next(120)),
+                            });
+                        }
+                    }
+                }
+            }
 
             // Evento de feed coherente con el tipo de publicación.
             db.FeedEvents.Add(new FeedEvent
