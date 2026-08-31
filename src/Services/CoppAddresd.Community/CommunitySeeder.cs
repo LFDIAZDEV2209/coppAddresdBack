@@ -504,45 +504,67 @@ public static class CommunitySeeder
             }
         }
 
-        // ─── SEGUIMIENTOS (cada perfil sigue 3-5 otros, mutuos cuando sea posible) ──
+        // ─── SEGUIMIENTOS (cada perfil sigue 5-8 otros, mutuos ~60%) ──────
         var usedFollowKeys = new HashSet<(Guid FollowerId, Guid FollowingId)>();
+
+        // Helper local: agregar follow evitando duplicados.
+        void AddFollow(Guid fromId, Guid toId)
+        {
+            if (!usedFollowKeys.Add((fromId, toId))) return;
+            db.Follows.Add(new Follow
+            {
+                Id = Guid.NewGuid(),
+                FollowerProfileId = fromId,
+                FollowingProfileId = toId,
+                CreatedAt = now.AddDays(-rnd.Next(30)),
+            });
+        }
+
         for (var fi = 0; fi < profiles.Count; fi++)
         {
             var follower = profiles[fi];
-            var followCount = 3 + rnd.Next(3); // 3..5
+            var followCount = 5 + rnd.Next(4); // 5..8
             var candidates = profiles
                 .Where(p => p.Id != follower.Id)
                 .OrderBy(_ => rnd.Next())
-                .Take(followCount * 2) // Tomar más candidatos para compensar dedup
+                .Take(followCount * 3) // Más candidatos para compensar dedup
                 .ToList();
 
             var created = 0;
             foreach (var candidate in candidates)
             {
                 if (created >= followCount) break;
-                if (!usedFollowKeys.Add((follower.Id, candidate.Id))) continue;
-
-                db.Follows.Add(new Follow
-                {
-                    Id = Guid.NewGuid(),
-                    FollowerProfileId = follower.Id,
-                    FollowingProfileId = candidate.Id,
-                    CreatedAt = now.AddDays(-rnd.Next(30)),
-                });
+                AddFollow(follower.Id, candidate.Id);
                 created++;
 
-                // Crear follow mutuo a veces (~40%) para habilitar mensajes.
-                if (rnd.Next(10) < 4 && usedFollowKeys.Add((candidate.Id, follower.Id)))
+                // Crear follow mutuo ~60% de las veces para habilitar mensajes.
+                if (rnd.Next(10) < 6)
                 {
-                    db.Follows.Add(new Follow
-                    {
-                        Id = Guid.NewGuid(),
-                        FollowerProfileId = candidate.Id,
-                        FollowingProfileId = follower.Id,
-                        CreatedAt = now.AddDays(-rnd.Next(30)),
-                    });
+                    AddFollow(candidate.Id, follower.Id);
                 }
             }
+        }
+
+        // ─── AMISTADES EXPLÍCITAS (anillo profiles[0..15] + extras) ──────
+        // Garantiza que los amigos aparecen en las queries de "Friends".
+        for (var ai = 0; ai < 15; ai++)
+        {
+            // Anillo: perfil[i] ↔ perfil[i+1] (bidireccional)
+            AddFollow(profiles[ai].Id, profiles[ai + 1].Id);
+            AddFollow(profiles[ai + 1].Id, profiles[ai].Id);
+        }
+        // Cerrar el anillo: perfil[15] ↔ perfil[0]
+        AddFollow(profiles[15].Id, profiles[0].Id);
+        AddFollow(profiles[0].Id, profiles[15].Id);
+
+        // Amistades extra: perfil[i] ↔ perfil[(i*3+20) % 60] para diversidad
+        for (var ai = 0; ai < 20; ai++)
+        {
+            var friendA = profiles[ai];
+            var friendB = profiles[(ai * 3 + 20) % profiles.Count];
+            if (friendA.Id == friendB.Id) continue;
+            AddFollow(friendA.Id, friendB.Id);
+            AddFollow(friendB.Id, friendA.Id);
         }
 
         // ─── REPORTES DE PUBLICACIONES (2-3) ─────────────────────────────
@@ -710,9 +732,10 @@ public static class CommunitySeeder
         // ─── GRUPOS Y CHATS DEMO (si vacío) ─────────────────────────────
         if (!await db.ChatGroups.AnyAsync(ct))
         {
-            var groupDefs = new (string Name, int MemberCount, (int Sender, int HoursAgo, string Body)[] Messages)[]
+            var groupDefs = new (string Name, int MemberCount, int CreatedDaysAgo, (int Sender, int HoursAgo, string Body)[] Messages)[]
             {
-                ("Comunidad ADRED", 0, new (int, int, string)[]
+                // Los dos primeros grupos incluyen a todos los 60 perfiles
+                ("Comunidad ADRED", 0, 45, new (int, int, string)[]
                 {
                     (0, 55, "¡Bienvenidos a la comunidad ADRED! 💙"),
                     (1, 48, "Feliz de estar aquí, un saludo a todos."),
@@ -721,7 +744,7 @@ public static class CommunitySeeder
                     (4, 20, "Yo empecé hace un mes y me he sentido increíble."),
                     (5, 8, "No se pierdan el en vivo de mañana 👀"),
                 }),
-                ("Chat ANTARES general", 0, new (int, int, string)[]
+                ("Chat ANTARES general", 0, 40, new (int, int, string)[]
                 {
                     (6, 52, "Buenos días a toda la comunidad ANTARES ☀️"),
                     (7, 44, "¿Ya vieron el nuevo reto de la app?"),
@@ -729,35 +752,114 @@ public static class CommunitySeeder
                     (9, 21, "Vamos que se puede, un día a la vez."),
                     (10, 10, "Nos vemos en el en vivo de hoy."),
                 }),
-                ("Reto caminata 30 días", 12, new (int, int, string)[]
+                // 6 grupos más pequeños con mensajes realistas (12-15 cada uno)
+                ("Desafío 10k pasos", 18, 38, new (int, int, string)[]
                 {
-                    (0, 47, "Día 5 completado ✅ ¿Cómo van?"),
-                    (1, 36, "Yo ya llevo 8 km hoy."),
-                    (2, 25, "El calor está fuerte, pero no me rindo."),
-                    (3, 12, "Medio camino, se siente increíble."),
+                    (0, 360, "Arrancamos el desafío de 10.000 pasos diarios 🚶‍♀️"),
+                    (3, 336, "Día 2 y ya me cuesta, ¡pero no me rindo!"),
+                    (6, 312, "Hoy hice 12.000 pasos, ¡récord personal!"),
+                    (9, 288, "¿Alguien usa podómetro o apps para contar?"),
+                    (12, 264, "Yo uso mi Apple Watch, se sincroniza automáticamente."),
+                    (15, 240, "Ayer solo llegué a 6.000, me sentí mal. Hoy recupero."),
+                    (18, 216, "Día 7 del desafío completado ✅"),
+                    (21, 192, "La verdad es que caminar me ha cambiado el ánimo."),
+                    (24, 168, "¿Alguien camina en la mañana o en la noche?"),
+                    (27, 144, "Yo prefiero temprano, antes de que haga calor."),
+                    (30, 120, "Mi meta esta semana: superar 15.000 un día."),
+                    (33, 96, "Compartan sus mejores rutas para caminar 🗺️"),
+                    (36, 72, "Día 14 y ya son 70 km recorridos en total 💪"),
+                    (39, 48, "La constancia es la clave, un paso a la vez."),
+                    (42, 24, "¡Vamos a cerrar fuerte esta semana!"),
                 }),
-                ("Apoyo emocional", 12, new (int, int, string)[]
+                ("Nutrición Consciente", 20, 33, new (int, int, string)[]
                 {
-                    (4, 43, "Recuerden que no están solos en este proceso 💙"),
-                    (5, 28, "Hoy fue un día difícil, pero gracias por el espacio."),
-                    (6, 15, "La constancia también se construye con descanso."),
+                    (1, 340, "Bienvenidos al grupo de nutrición consciente 🥗"),
+                    (4, 316, "Hoy preparé una ensalada de quinoa con aguacate, quedó genial."),
+                    (7, 292, "¿Alguien tiene recetas bajas en sodio que recomiende?"),
+                    (10, 268, "Yo sustituí la sal por limón y especias, funciona perfecto."),
+                    (13, 244, "Comparto mi ensalada de hoy: espinacas, nueces y fresas 🍓"),
+                    (16, 220, "¿Qué frutas son mejores para desayunar?"),
+                    (19, 196, "Manzana y pera son excelentes, bajo índice glucémico."),
+                    (22, 172, "Probé la receta de avena overnight, ¡quedó deliciosa!"),
+                    (25, 148, "¿Sustitutos del arroz que recomienden?"),
+                    (28, 124, "El bulgur o la quinua son grandes opciones."),
+                    (31, 100, "Hoy aprendí que el plátano verde tiene más resistina."),
+                    (34, 76, "Mi truco: preparo las porciones el domingo para toda la semana."),
+                    (37, 52, "¿Alguien ha probado el pan de linaza?"),
+                    (40, 28, "Sí, es buenísimo para el colesterol. Lo recomiendo."),
                 }),
-                ("Cocina saludable", 12, new (int, int, string)[]
+                ("Meditación y Sueño", 15, 27, new (int, int, string)[]
                 {
-                    (7, 39, "Comparto mi receta de avena overnight sin azúcar 🥣"),
-                    (8, 26, "¿Sustitutos del pan que recomienden?"),
-                    (9, 14, "Probé la ensalada de la semana pasada, ¡espectacular!"),
+                    (2, 320, "Empezamos el grupo de meditación y sueño 🧘‍♀️"),
+                    (5, 296, "¿Alguien probó la meditación de 5 min antes de dormir?"),
+                    (8, 272, "Yo lo hago todas las noches y dormí mucho mejor."),
+                    (11, 248, "¿Qué app de meditación usan?"),
+                    (14, 224, "Headspace me funcionó bastante bien, es sencilla."),
+                    (17, 200, "Mi insomnio mejoró desde que empecé con respiración 4-7-8."),
+                    (20, 176, "¿La respiración 4-7-8 es inhalar 4, sostener 7, exhalar 8?"),
+                    (23, 152, "Exacto, lo hago 3 veces y me duermo en minutos."),
+                    (26, 128, "Hoy medité 15 minutos con música suave, me sentí en paz."),
+                    (29, 104, "¿Alguna recomendación de té para relajarse antes de dormir?"),
+                    (32, 80, "Manzanilla o tilo son los mejores, naturales y efectivos."),
+                    (35, 56, "El ejercicio temprano también ayuda mucho con el sueño."),
+                    (38, 32, "Anoche dormí 8 horas seguidas, ¡primer vez en meses!"),
+                }),
+                ("Hipertensión al día", 25, 21, new (int, int, string)[]
+                {
+                    (0, 300, "Grupo dedicado al control de hipertensión ❤️"),
+                    (3, 276, "¿Cómo les fue con la medición de presión esta semana?"),
+                    (6, 252, "Mi promedio: 128/82, bajando poco a poco."),
+                    (9, 228, "Recuerden: la sal es el mayor enemigo de la presión."),
+                    (12, 204, "Hoy completé 30 días sin sal agregada."),
+                    (15, 180, "¿El ejercicio aeróbico ayuda con la presión arterial?"),
+                    (18, 156, "Sí, caminar 30 min al día puede reducir 5-8 puntos."),
+                    (21, 132, "Mi médico me dijo que el estrés también la sube bastante."),
+                    (24, 108, "Respirar profundo 10 min al día me ayudó con eso."),
+                    (27, 84, "¿Alguien toma potasio o magnesio como suplemento?"),
+                    (30, 60, "Yo tomo magnesio glicinato, me ayudó con calambres y sueño."),
+                    (33, 36, "Mi presión hoy: 125/80, ¡el mejor registro del mes!"),
+                    (36, 12, "Gracias a todos por el apoyo, este grupo me motiva mucho 💙"),
+                }),
+                ("Ejercicio en Casa", 18, 15, new (int, int, string)[]
+                {
+                    (1, 280, "Bienvenidos al grupo de ejercicios en casa 🏠"),
+                    (4, 256, "Hoy hice 20 min de cardio con YouTube, ¡bien sudado!"),
+                    (7, 232, "¿Alguna rutina de bajo impacto que recomienden?"),
+                    (10, 208, "Los ejercicios de chair yoga son geniales para empezar."),
+                    (13, 184, "Comparto mi rutina: 10 sentadillas, 10 planchas, 15 abdominales x3."),
+                    (16, 160, "¿Es suficiente con 20 min al día o necesito más?"),
+                    (19, 136, "La OMS recomienda 150 min semanales, 20 min diarios está perfecto."),
+                    (22, 112, "Yo uso una esterilla y bandas elásticas, todo en casa."),
+                    (25, 88, "¿Alguien hace Pilates en casa?"),
+                    (28, 64, "Sí, hay apps muy buenas para seguir la rutina guiada."),
+                    (31, 40, "Hoy completé 30 días de rutina diaria 💪"),
+                    (34, 16, "¡Felicidades! La constancia es lo más importante."),
+                }),
+                ("Apoyo y Motivación", 22, 8, new (int, int, string)[]
+                {
+                    (2, 260, "Este es un espacio seguro para compartir y apoyarnos 💙"),
+                    (5, 236, "Hoy me sentí frustrado, pero leer sus mensajes me animó."),
+                    (8, 212, "Recuerden: no se comparan con otros, solo con su yo de ayer."),
+                    (11, 188, "Gracias por las palabras, este grupo es mi refugio."),
+                    (14, 164, "Yo perdí 5 kg en 2 meses, no es rápido pero es real."),
+                    (17, 140, "Lo importante es que no te detengas, un paso a la vez."),
+                    (20, 116, "¿Alguien más siente que los primeros días son los más difíciles?"),
+                    (23, 92, "Totalmente, pero después se vuelve hábito."),
+                    (26, 68, "Hoy celebré 100 días de racha, ¡no lo puedo creer! 🎉"),
+                    (29, 44, "¡Qué inspirador! Gracias por compartir tu logro."),
+                    (32, 20, "Les mando un abrazo grande a todos, sigan adelante 🤗"),
+                    (35, 8, "Mañana empiezo una nueva semana, ¡con todo! ☀️"),
                 }),
             };
 
-            foreach (var (name, memberCount, messages) in groupDefs)
+            foreach (var (name, memberCount, createdDaysAgo, messages) in groupDefs)
             {
                 var group = new ChatGroup
                 {
                     Id = Guid.NewGuid(),
                     Name = name,
                     CreatedByProfileId = profiles[0].Id,
-                    CreatedAt = now.AddDays(-45),
+                    CreatedAt = now.AddDays(-createdDaysAgo),
                 };
                 db.ChatGroups.Add(group);
 
@@ -787,6 +889,64 @@ public static class CommunitySeeder
                         CreatedAt = now.AddHours(-hoursAgo),
                     });
                 }
+            }
+        }
+
+        // ─── DMs (conversaciones privadas entre perfiles ERP) ──────────────
+        // Seed ~40 conversaciones 1:1 con 3-6 mensajes cada una.
+        var dmPairs = new HashSet<(Guid SenderId, Guid RecipientId)>();
+        var dmBodies = new[]
+        {
+            "Hola, ¿cómo vas con el reto?",
+            "¡Muy bien! Hoy completé mi caminata",
+            "¿Te animas al live de mañana?",
+            "Claro, ahí estaré",
+            "Gracias por el apoyo",
+            "Nos vemos en el grupo",
+            "¿Probaste la receta de avena?",
+            "Sí, quedó deliciosa",
+            "¿Cómo va tu presión esta semana?",
+            "Mejor que la semana pasada, ¡bajé 3 puntos!",
+            "¿Vienes al en vivo de hoy?",
+            "Sí, ya estoy preparado",
+            "¿Cómo te sentiste hoy?",
+            "Bastante bien, caminé 40 minutos",
+            "¿Alguna recomendación para dormir mejor?",
+            "Intenta la respiración 4-7-8, a mí me funcionó",
+        };
+
+        const int dmConversationCount = 40;
+        for (var di = 0; di < dmConversationCount; di++)
+        {
+            var sender = profiles[di % profiles.Count];
+            var recipientIdx = (di * 7 + 13) % profiles.Count;
+            var recipient = profiles[recipientIdx];
+
+            // Evitar auto-conversación y duplicados (orden importa: menor id primero).
+            if (sender.Id == recipient.Id) continue;
+            var (first, second) = sender.Id.CompareTo(recipient.Id) < 0
+                ? (sender, recipient) : (recipient, sender);
+            if (!dmPairs.Add((first.Id, second.Id))) continue;
+
+            var messageCount = 3 + rnd.Next(4); // 3..6
+            var baseDay = rnd.Next(15); // Últimos 15 días
+
+            for (var mi = 0; mi < messageCount; mi++)
+            {
+                var isSenderTurn = mi % 2 == 0;
+                var msgSender = isSenderTurn ? sender : recipient;
+                var msgRecipient = isSenderTurn ? recipient : sender;
+
+                db.Messages.Add(new Message
+                {
+                    Id = Guid.NewGuid(),
+                    SenderProfileId = msgSender.Id,
+                    RecipientProfileId = msgRecipient.Id,
+                    ConversationId = null,
+                    TriggeredByProfileId = null,
+                    Body = dmBodies[(di + mi) % dmBodies.Length],
+                    CreatedAt = now.AddDays(-baseDay).AddHours(-rnd.Next(24)),
+                });
             }
         }
 
