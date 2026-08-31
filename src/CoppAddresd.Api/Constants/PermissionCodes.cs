@@ -50,6 +50,10 @@ public static class PermissionCodes
     public const string HealthTestsAssign = "HealthTests.Assign";
     public const string HealthTestsReview = "HealthTests.Review";
 
+    // Documentos Legales
+    public const string LegalDocumentsView = "LegalDocuments.View";
+    public const string LegalDocumentsManage = "LegalDocuments.Manage";
+
     /// <summary>Nombres conocidos (para el policy provider que resuelve políticas por código).</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -87,5 +91,7 @@ public static class PermissionCodes
         HealthTestsManage,
         HealthTestsAssign,
         HealthTestsReview,
+        LegalDocumentsView,
+        LegalDocumentsManage,
     ];
 }
