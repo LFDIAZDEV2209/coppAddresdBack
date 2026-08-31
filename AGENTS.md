@@ -56,7 +56,7 @@ Schema tele:   10 tablas (telemedicine_requests, appointments, appointment_cance
 
 # Historial de migraciones por microservicio (NO compartir public):
 #   - Backend (AppDbContext): public.__EFMigrationsHistory (44 migraciones)
-#   - Auth (AuthDbContext):   auth.__ef_migrations_history (10 migraciones, aislada)
+#   - Auth (AuthDbContext):   auth.__ef_migrations_history (11 migraciones, aislada)
 #   - Telemedicina:           tele.__ef_migrations_history (7 migraciones, aislada)
 #   - Community:              community.__ef_migrations_history (5 migraciones, aislada)
 # EF no namespacia las IDs por contexto: compartir la tabla public mezclaba las
