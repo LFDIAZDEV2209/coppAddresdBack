@@ -41,4 +41,5 @@ public sealed class Post
     public ICollection<Comment> Comments { get; set; } = [];
     public ICollection<Like> Likes { get; set; } = [];
     public ICollection<PostReport> Reports { get; set; } = [];
+    public ICollection<Repost> Reposts { get; set; } = [];
 }

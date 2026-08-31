@@ -28,6 +28,7 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<NetworkGrowthPoint> NetworkGrowthPoints => Set<NetworkGrowthPoint>();
     public DbSet<PostReport> PostReports => Set<PostReport>();
     public DbSet<CommentReport> CommentReports => Set<CommentReport>();
+    public DbSet<Repost> Reposts => Set<Repost>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
