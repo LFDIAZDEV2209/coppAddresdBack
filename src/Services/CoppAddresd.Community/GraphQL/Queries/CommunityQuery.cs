@@ -806,12 +806,12 @@ var profile = await db.Profiles
         // "Último mensaje por par" en el propio servidor (DISTINCT ON en PostgreSQL):
         // evita cargar todo el historial del usuario en memoria para agruparlo.
         var sql = """
-            SELECT y.id, y.sender_profile_id, y.recipient_profile_id, y.conversation_id, y.body, y.created_at
+            SELECT y.id, y.sender_profile_id, y.recipient_profile_id, y.conversation_id, y.body, y.created_at, y.triggered_by_profile_id
             FROM (
                 SELECT DISTINCT ON (x.peer_id) x.id, x.sender_profile_id, x.recipient_profile_id,
-                       x.conversation_id, x.body, x.created_at
+                       x.conversation_id, x.body, x.created_at, x.triggered_by_profile_id
                 FROM (
-                    SELECT m.id, m.sender_profile_id, m.recipient_profile_id, m.conversation_id, m.body, m.created_at,
+                    SELECT m.id, m.sender_profile_id, m.recipient_profile_id, m.conversation_id, m.body, m.created_at, m.triggered_by_profile_id,
                            CASE WHEN m.sender_profile_id = {0}
                                 THEN m.recipient_profile_id ELSE m.sender_profile_id END AS peer_id
                     FROM community.messages m
@@ -890,7 +890,7 @@ var profile = await db.Profiles
         // Último mensaje por grupo con DISTINCT ON (una sola consulta).
         var lastSql = """
             SELECT DISTINCT ON (m.conversation_id) m.id, m.sender_profile_id, m.recipient_profile_id,
-                   m.conversation_id, m.body, m.created_at
+                   m.conversation_id, m.body, m.created_at, m.triggered_by_profile_id
             FROM community.messages m
             WHERE m.conversation_id = ANY({0})
             ORDER BY m.conversation_id, m.created_at DESC
