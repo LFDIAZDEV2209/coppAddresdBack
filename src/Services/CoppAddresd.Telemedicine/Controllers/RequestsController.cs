@@ -19,7 +19,6 @@ namespace CoppAddresd.Telemedicine.Controllers;
 public class RequestsController(IMediator mediator) : ControllerBase
 {
     [HttpPost]
-    [RequirePermission(AppointmentPermissionCodes.RequestsCreate)]
     [ProducesResponseType(typeof(TelemedicineRequestDto), StatusCodes.Status201Created)]
     public async Task<ActionResult<TelemedicineRequestDto>> Create(
         [FromBody] CreateTelemedicineRequestDto request,
@@ -35,7 +34,8 @@ public class RequestsController(IMediator mediator) : ControllerBase
             request.LocationId,
             request.PreferredStart,
             request.Reason,
-            CurrentUserId()
+            CurrentUserId(),
+            HasPermission(AppointmentPermissionCodes.RequestsCreate)
         );
 
         var result = await mediator.Send(command, ct);
@@ -52,12 +52,21 @@ public class RequestsController(IMediator mediator) : ControllerBase
 
     /// <summary>Solicitudes del paciente (usuario autenticado o paciente indicado).</summary>
     [HttpGet("mine")]
-    [RequirePermission(AppointmentPermissionCodes.RequestsView)]
     [ProducesResponseType(typeof(IReadOnlyList<TelemedicineRequestDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<TelemedicineRequestDto>>> Mine(
         [FromQuery] Guid? patientId,
         CancellationToken ct
-    ) => Ok(await mediator.Send(new GetMyRequestsQuery(patientId ?? CurrentUserId()), ct));
+    ) =>
+        Ok(
+            await mediator.Send(
+                new GetMyRequestsQuery(
+                    patientId,
+                    CurrentUserId(),
+                    HasPermission(AppointmentPermissionCodes.RequestsView)
+                ),
+                ct
+            )
+        );
 
     /// <summary>Confirma una solicitud pendiente → crea la cita Confirmed.</summary>
     [HttpPost("{id:guid}/confirm")]
@@ -135,6 +144,9 @@ public class RequestsController(IMediator mediator) : ControllerBase
                 ct
             )
         );
+
+    private bool HasPermission(string permissionCode) =>
+        User.HasClaim("permission", permissionCode);
 
     private bool HasAdminView() =>
         User.HasClaim("permission", AppointmentPermissionCodes.AdminView);

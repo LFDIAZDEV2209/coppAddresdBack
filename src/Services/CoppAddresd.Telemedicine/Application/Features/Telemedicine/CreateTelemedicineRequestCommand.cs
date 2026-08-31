@@ -14,6 +14,13 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// El paciente puede elegir especialidad (obligatoria) y, opcionalmente, un
 /// profesional preferido y una fecha/hora preferida.
 /// </summary>
+/// <remarks>
+/// Alcance dual resuelto en el handler: <c>ErpMode=true</c> (usuario con
+/// permiso <c>Appointments.RequestsCreate</c>) acepta cualquier
+/// <c>PatientId</c> del cuerpo; <c>ErpMode=false</c> (paciente de la app
+/// móvil) exige que el paciente del JWT (<c>CreatedBy</c>) sea el
+/// <c>PatientId</c> de la solicitud (403 en caso contrario).
+/// </remarks>
 public sealed record CreateTelemedicineRequestCommand(
     Guid PatientId,
     Guid OrganizationId,
@@ -23,7 +30,8 @@ public sealed record CreateTelemedicineRequestCommand(
     Guid? LocationId,
     DateTimeOffset? PreferredStart,
     string Reason,
-    Guid CreatedBy
+    Guid CreatedBy,
+    bool ErpMode
 ) : IRequest<TelemedicineRequestDto>;
 
 public sealed class CreateTelemedicineRequestCommandValidator
@@ -54,6 +62,24 @@ public sealed class CreateTelemedicineRequestCommandHandler(
         CancellationToken ct
     )
     {
+        // Alcance dual: el ERP (con permiso) opera para cualquier paciente;
+        // el paciente de la app móvil solo para sí mismo (identidad del JWT).
+        if (!request.ErpMode)
+        {
+            var actingPatient = await referenceData.GetPatientByUserIdAsync(request.CreatedBy, ct);
+            if (actingPatient is null)
+            {
+                throw new ForbiddenException(
+                    "Solo los pacientes pueden solicitar citas desde la app móvil."
+                );
+            }
+
+            if (actingPatient.Id != request.PatientId)
+            {
+                throw new ForbiddenException("Solo puedes solicitar citas para tu propio perfil.");
+            }
+        }
+
         var patient = await ReferenceDataGuard.RequirePatientAsync(
             referenceData,
             request.PatientId,

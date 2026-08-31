@@ -516,3 +516,66 @@ dotnet ef database update --project src/Services/CoppAddresd.Telemedicine --star
 ```
 
 > Usar siempre `--output-dir Infrastructure/Migrations`: `MigrationsDirectory` del csproj no se honró en este setup.
+
+## Pacientes demo (app móvil ANTARES)
+
+El script `scripts/seed_patients_demo.py` crea 6 pacientes de prueba para el
+flujo móvil de telemedicina: perfil en `app.patient_profiles` + cuenta en el
+Auth Service con password conocida + acceso a la aplicación `app` + vínculo
+`patient_profiles.user_id` (idempotente; la 2ª corrida reutiliza las cuentas).
+
+```bash
+# Desde ai-service (entorno uv con psycopg):
+uv run --with psycopg[binary] python ../coppAddresdBack/scripts/seed_patients_demo.py
+```
+
+Requisitos: Postgres local (`docker compose up -d`) y el Auth Service corriendo
+en `:5123` (el script lee la clave interna de `appsettings.json` del Auth o de
+`AUTH_INTERNAL_KEY`).
+
+### Credenciales (password común `Demo1234!`)
+
+| Email                              | Documento  | Nombre           |
+| ---------------------------------- | ---------- | ---------------- |
+| `juan.perez@coppaddresd.com`       | 1000000001 | Juan Pérez       |
+| `maria.gomez@coppaddresd.com`      | 1000000002 | María Gómez      |
+| `carlos.rodriguez@coppaddresd.com` | 1000000003 | Carlos Rodríguez |
+| `ana.martinez@coppaddresd.com`     | 1000000004 | Ana Martínez     |
+| `luis.fernandez@coppaddresd.com`   | 1000000005 | Luis Fernández   |
+| `laura.sanchez@coppaddresd.com`    | 1000000006 | Laura Sánchez    |
+
+Login desde ANTARES: `email` + password con `application: "app"`, o el flujo
+OTP por identificación (canal email — en Development el código llega en la
+respuesta `devCode`). Los pacientes solo acceden por identidad (sin permisos
+ERP): pueden crear solicitudes, listar/cancelar sus citas y entrar a la sala
+de sus citas.
+
+### Profesionales demo (ERP)
+
+Los profesionales del seed (`scripts/seed_professionals_demo.py`) se crean sin
+password. `scripts/seed_professional_credentials.py` fija la password
+`Demo1234!` a todos (idempotente) vía el endpoint interno del Auth
+(`POST /api/auth/internal/seed-demo-password`, solo Development).
+
+```bash
+# Desde ai-service:
+uv run python ../coppAddresdBack/scripts/seed_professional_credentials.py
+```
+
+Login en el ERP (`coppaddresd-front` :3000) con `email` + `Demo1234!`:
+
+| Email                           | Profesión (catálogo)   |
+| ------------------------------- | ---------------------- |
+| `ana.torres@coppaddresd.com`    | Registered Dietitian   |
+| `carlos.ruiz@coppaddresd.com`   | Clinical Psychologist  |
+| `lucia.mendez@coppaddresd.com`  | Physician (MD/DO)      |
+| `pedro.salas@coppaddresd.com`   | Physical Therapist     |
+| `rosa.pineda@coppaddresd.com`   | Health Coach           |
+| `felipe.castro@coppaddresd.com` | Registered Nurse       |
+| `jorge.vega@coppaddresd.com`    | (Finance — no clínico) |
+
+Los profesionales tienen el rol `Professional` **scoped por clínica**: el
+microservicio los autoriza por introspección al Auth cuando la petición lleva
+el header `X-Clinic-Id` (lo envía el ERP). Pueden ver su bandeja de
+solicitudes, confirmar/rechazar y operar agenda, salas y encuentros de sus
+pacientes.

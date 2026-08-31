@@ -207,9 +207,17 @@ def main() -> None:
         )
 
     def classify(score: float, vid: str) -> tuple[str, str]:
-        for min_v, max_v, label, severity in ranges_by_version.get(vid, []):
-            if min_v <= score <= max_v:
-                return label, severity
+        matches = [r for r in ranges_by_version.get(vid, []) if r[0] <= score <= r[1]]
+        if matches:
+            return matches[0][2], matches[0][3]
+        # sin rango exacto: usar el más cercano (evita scores huérfanos)
+        nearest = min(
+            ranges_by_version.get(vid, []),
+            key=lambda r: min(abs(score - r[0]), abs(score - r[1])),
+            default=None,
+        )
+        if nearest:
+            return nearest[2], nearest[3]
         return "bajo", "low"
 
     def pick_responses(vid: str, target_fraction: float) -> list[tuple[str, str, str]]:
@@ -255,16 +263,68 @@ def main() -> None:
                     break
         return sums
 
+    # ---------- 1b. Pacientes existentes sin usuario ni asignaciones ----------
+    seed_docs = [p[4] for p in PATIENTS]
+    extra = fetch_rows(
+        "SELECT first_name, last_name, coalesce(gender, 'Femenino'), "
+        "       coalesce(date_of_birth::text, ''), document_number, coalesce(phone_number, '') "
+        "FROM app.patient_profiles p "
+        "WHERE document_number IS NOT NULL AND document_number <> '' "
+        "  AND document_number NOT IN ("
+        + ",".join("'{}'".format(d) for d in seed_docs)
+        + ")"
+        "  AND status ILIKE 'activ%'"
+        "  AND NOT EXISTS (SELECT 1 FROM app.health_test_assignments a WHERE a.patient_id = p.id)"
+        "  AND id <> 'b6928024-89b4-4838-b57d-0e9519bf8eb5' "
+        "ORDER BY p.created_at LIMIT 8;"
+    )
+    if extra:
+        PATIENTS.extend(
+            (f, l, g, 30 + (i * 5) % 30, d, ph)
+            for i, (f, l, g, dob, d, ph) in enumerate(extra)
+        )
+        print(f"Pacientes existentes a relacionar: {len(extra)}")
+
     # ---------- 2. Usuarios + pacientes ----------
     now = "2026-08-31"
     for idx, (first, last, gender, age, doc, phone) in enumerate(PATIENTS):
         existing = fetch_rows(
-            "SELECT id FROM app.patient_profiles WHERE document_number = '{0}';".format(
+            "SELECT id, user_id FROM app.patient_profiles WHERE document_number = '{0}';".format(
                 doc
             )
         )
+        if existing and existing[0][1]:
+            print(f"  paciente {first} {last} ya tiene usuario, omitido")
+            continue
         if existing:
-            print(f"  paciente {first} {last} ya existe, omitido")
+            print(f"  paciente {first} {last} existía sin usuario; creando cuenta")
+            existing_id = existing[0][0]
+            user_id = str(uuid.uuid4())
+            email = f"paciente.{idx + 1}@mediquer.com"
+            psql(
+                """
+            INSERT INTO auth."Users" ("Id", "UserName", "NormalizedUserName", "Email",
+                "NormalizedEmail", "FirstName", "LastName", "EmailConfirmed",
+                "PhoneNumberConfirmed", "TwoFactorEnabled", "LockoutEnabled",
+                "AccessFailedCount", "IsActive", "CreatedAt", "UpdatedAt",
+                "PasswordHash", "SecurityStamp", "ConcurrencyStamp")
+            VALUES ('{0}', '{1}', '{2}', '{1}', '{2}', '{3}', '{4}', true,
+                false, false, true, 0, true, '{5}', '{5}', '{6}', '{7}', '{7}');
+            """.format(
+                    user_id,
+                    email,
+                    email.upper(),
+                    first,
+                    last,
+                    now,
+                    password_hash.replace("'", "''"),
+                    str(uuid.uuid4()),
+                )
+            )
+            psql(
+                "UPDATE app.patient_profiles SET user_id = '{0}', updated_at = '{1}' "
+                "WHERE id = '{2}';".format(user_id, now, existing_id)
+            )
             continue
         user_id = str(uuid.uuid4())
         email = f"paciente.{idx + 1}@mediquer.com"
@@ -352,21 +412,37 @@ def main() -> None:
             """
         INSERT INTO app.patient_professionals (patient_id, professional_id, clinic_id,
             relationship_type, status, created_at, updated_at)
-        VALUES ('{0}', '{1}', '{2}', '{3}', 'Activo', '{4}', '{4}');
+        VALUES ('{0}', '{1}', '{2}', '{3}', 'Active', '{4}', '{4}');
         """.format(pid, prof_id, clinics[i % len(clinics)], rel_type, now)
         )
         pp_count += 1
     print(f"Relaciones paciente-profesional creadas: {pp_count}")
 
     # ---------- 4. Asignaciones + evaluaciones + respuestas + resultados ----------
+    # Pacientes incompletos (menos de 9 asignaciones) se re-sembran completos.
     patient_rows = fetch_rows(
-        "SELECT p.id, p.document_number FROM app.patient_profiles p "
+        "SELECT p.id, p.document_number, count(a.id)::int "
+        "FROM app.patient_profiles p "
+        "LEFT JOIN app.health_test_assignments a ON a.patient_id = p.id "
         "WHERE p.document_number IN ("
         + ",".join("'{}'".format(p[4]) for p in PATIENTS)
-        + ")"
-        + " AND NOT EXISTS (SELECT 1 FROM app.health_test_assignments a WHERE a.patient_id = p.id);"
+        + ") GROUP BY p.id HAVING count(a.id) < 9;"
     )
-    print(f"Pacientes sin evaluaciones previas (a sembrar): {len(patient_rows)}")
+    print(f"Pacientes incompletos (a re-sembrar): {len(patient_rows)}")
+
+    def delete_patient_tests(pid: str) -> None:
+        psql(f"""
+        DELETE FROM app.health_test_alerts WHERE patient_id = '{pid}';
+        DELETE FROM app.health_test_comments WHERE patient_id = '{pid}';
+        DELETE FROM app.health_test_results
+          WHERE evaluation_id IN (SELECT id FROM app.health_test_evaluations WHERE patient_id = '{pid}');
+        DELETE FROM app.health_test_responses
+          WHERE evaluation_id IN (SELECT id FROM app.health_test_evaluations WHERE patient_id = '{pid}');
+        DELETE FROM app.health_test_evaluations WHERE patient_id = '{pid}';
+        DELETE FROM app.health_test_assignments WHERE patient_id = '{pid}';
+        DELETE FROM app.health_test_battery_assignments WHERE patient_id = '{pid}';
+        """)
+
     statuses_by_patient: list[list[str]] = []
     for i in range(len(patient_rows)):
         # 9 tests: completado x6, en curso x1, pendiente x2 (varía un poco)
@@ -379,7 +455,8 @@ def main() -> None:
         statuses_by_patient.append(statuses)
 
     eval_count = 0
-    for i, (pid, doc) in enumerate(patient_rows):
+    for i, (pid, doc, existing_count) in enumerate(patient_rows):
+        delete_patient_tests(pid)
         battery_assignment_id = str(uuid.uuid4())
         battery_status = (
             "completed"
@@ -427,7 +504,11 @@ def main() -> None:
                 target_fraction = RANDOM.uniform(0.15, 0.95)
                 picks = pick_responses(vid, target_fraction)
                 total, max_total = compute_score(vid, picks)
-                score = round(total, 2)
+                # tope: el score máximo posible puede exceder el rango superior de la versión
+                max_bound = max(
+                    (r[1] for r in ranges_by_version.get(vid, [])), default=max_total
+                )
+                score = round(min(total, max_bound), 2)
                 pct = round(score / max_total * 100, 2) if max_total else 0.0
                 qualifier, severity = classify(score, vid)
 
@@ -457,14 +538,17 @@ def main() -> None:
                     )
                     # respuestas parciales (60%)
                     partial = picks[: max(1, int(len(picks) * 0.6))]
-                    for qid, oid, _ in partial:
-                        psql(
-                            """
-                        INSERT INTO app.health_test_responses (id, evaluation_id, question_id,
-                            answer_option_id, created_at)
-                        VALUES ('{0}', '{1}', '{2}', '{3}', '{4}');
-                        """.format(str(uuid.uuid4()), eval_id, qid, oid, started_at)
+                    partial_values = ",".join(
+                        "('{0}', '{1}', '{2}', '{3}', '{4}')".format(
+                            str(uuid.uuid4()), eval_id, qid, oid, started_at
                         )
+                        for qid, oid, _ in partial
+                    )
+                    psql(
+                        "INSERT INTO app.health_test_responses "
+                        "(id, evaluation_id, question_id, answer_option_id, created_at) "
+                        "VALUES " + partial_values + ";"
+                    )
                     eval_count += 1
                     break
 
@@ -516,22 +600,21 @@ def main() -> None:
                     )
                 )
 
-                for qid, oid, _ in picks:
-                    psql(
-                        """
-                    INSERT INTO app.health_test_responses (id, evaluation_id, question_id,
-                        answer_option_id, created_at)
-                    VALUES ('{0}', '{1}', '{2}', '{3}', '{4}');
-                    """.format(str(uuid.uuid4()), eval_id, qid, oid, completed_at)
+                resp_values = ",".join(
+                    "('{0}', '{1}', '{2}', '{3}', '{4}')".format(
+                        str(uuid.uuid4()), eval_id, qid, oid, completed_at
                     )
+                    for qid, oid, _ in picks
+                )
+                psql(
+                    "INSERT INTO app.health_test_responses "
+                    "(id, evaluation_id, question_id, answer_option_id, created_at) "
+                    "VALUES " + resp_values + ";"
+                )
 
                 # resultado score (code = código del instrumento)
-                psql(
-                    """
-                INSERT INTO app.health_test_results (id, evaluation_id, result_type, code,
-                    label, value, qualifier, severity, created_at)
-                VALUES ('{0}', '{1}', 'score', '{2}', 'Score total', {3}, '{4}', '{5}', '{6}');
-                """.format(
+                result_values = [
+                    "('{0}', '{1}', 'score', '{2}', 'Score total', {3}, '{4}', '{5}', '{6}')".format(
                         str(uuid.uuid4()),
                         eval_id,
                         inst_code,
@@ -540,19 +623,15 @@ def main() -> None:
                         severity,
                         completed_at,
                     )
-                )
+                ]
 
                 # subescalas por sección
                 for section, sval in subscale_scores(vid, picks).items():
                     if not section:
                         continue
                     squal, ssev = classify(sval, vid)
-                    psql(
-                        """
-                    INSERT INTO app.health_test_results (id, evaluation_id, result_type, code,
-                        label, value, qualifier, severity, created_at)
-                    VALUES ('{0}', '{1}', 'subscale', '{2}', '{3}', {4}, '{5}', '{6}', '{7}');
-                    """.format(
+                    result_values.append(
+                        "('{0}', '{1}', 'subscale', '{2}', '{3}', {4}, '{5}', '{6}', '{7}')".format(
                             str(uuid.uuid4()),
                             eval_id,
                             inst_code + "." + section,
@@ -569,13 +648,8 @@ def main() -> None:
                     iapnea_val = round(RANDOM.uniform(0, 100), 2)
                     iapnea_sev = "high" if iapnea_val >= 70 else "low"
                     iapnea_qual = "alto" if iapnea_sev == "high" else "bajo"
-                    psql(
-                        """
-                    INSERT INTO app.health_test_results (id, evaluation_id, result_type, code,
-                        label, value, qualifier, severity, created_at)
-                    VALUES ('{0}', '{1}', 'indicator', 'iapnea', 'Sospecha de apnea', {2},
-                        '{3}', '{4}', '{5}');
-                    """.format(
+                    result_values.append(
+                        "('{0}', '{1}', 'indicator', 'iapnea', 'Sospecha de apnea', {2}, '{3}', '{4}', '{5}')".format(
                             str(uuid.uuid4()),
                             eval_id,
                             iapnea_val,
@@ -587,13 +661,8 @@ def main() -> None:
                     adh_val = round(RANDOM.uniform(0, 100), 2)
                     adh_sev = "high" if adh_val < 40 else "low"
                     adh_qual = "bajo" if adh_sev == "high" else "alto"
-                    psql(
-                        """
-                    INSERT INTO app.health_test_results (id, evaluation_id, result_type, code,
-                        label, value, qualifier, severity, created_at)
-                    VALUES ('{0}', '{1}', 'indicator', 'iadherencia', 'Índice de adherencia', {2},
-                        '{3}', '{4}', '{5}');
-                    """.format(
+                    result_values.append(
+                        "('{0}', '{1}', 'indicator', 'iadherencia', 'Índice de adherencia', {2}, '{3}', '{4}', '{5}')".format(
                             str(uuid.uuid4()),
                             eval_id,
                             adh_val,
@@ -602,6 +671,12 @@ def main() -> None:
                             completed_at,
                         )
                     )
+
+                psql(
+                    "INSERT INTO app.health_test_results "
+                    "(id, evaluation_id, result_type, code, label, value, qualifier, severity, created_at) "
+                    "VALUES " + ",".join(result_values) + ";"
+                )
 
                 eval_count += 1
 

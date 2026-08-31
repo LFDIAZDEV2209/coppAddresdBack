@@ -127,7 +127,8 @@ public record PatientDto(
     IReadOnlyList<DiagnosisDto> Diagnoses,
     IReadOnlyList<MedicationDto> Medications,
     IReadOnlyList<AllergyDto> Allergies,
-    IReadOnlyList<VitalSignDto> VitalSigns
+    IReadOnlyList<VitalSignDto> VitalSigns,
+    IReadOnlyList<string> ProfessionalNames
 )
 {
     public static PatientDto FromEntity(PatientProfile entity) =>
@@ -185,6 +186,13 @@ public record PatientDto(
             entity
                 .VitalSigns.OrderByDescending(v => v.MeasuredAt)
                 .Select(VitalSignDto.FromEntity)
+                .ToList(),
+            entity
+                .Assignments.Where(a => a.Status == "Active" && a.Professional?.Employee != null)
+                .Select(a =>
+                    $"{a.Professional!.Employee!.FirstName} {a.Professional!.Employee!.LastName}".Trim()
+                )
+                .Where(n => !string.IsNullOrEmpty(n))
                 .ToList()
         );
 }

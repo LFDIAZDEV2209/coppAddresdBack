@@ -21,7 +21,8 @@ public class ValidatorsTests
             TestData.LocationId,
             null,
             "",
-            TestData.UserId
+            TestData.UserId,
+            ErpMode: true
         );
 
         var result = validator.Validate(command);
@@ -43,7 +44,8 @@ public class ValidatorsTests
             TestData.LocationId,
             null,
             "Dolor abdominal",
-            TestData.UserId
+            TestData.UserId,
+            ErpMode: true
         );
 
         Assert.True(validator.Validate(command).IsValid);
