@@ -349,7 +349,9 @@ public sealed class CommunityMutation
             .Include(p => p.Likes)
             .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
             .FirstOrDefaultAsync(
                 p => p.Poll!.Options.Any(o => o.Id == optionId) && p.DeletedAt == null, ct)
             ?? throw new GraphQLException("No se encontró la encuesta.");
@@ -446,6 +448,122 @@ public sealed class CommunityMutation
             await db.SaveChangesAsync(ct);
         }
         return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
+    }
+
+    // --- Likes (comentarios) ---
+
+    public async Task<Comment?> LikeComment(
+        Guid commentId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        var comment = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.DeletedAt == null, ct)
+            ?? throw new GraphQLException("No se encontró el comentario.");
+
+        var exists = await db.Likes.AnyAsync(l => l.CommentId == commentId && l.ProfileId == profile.Id, ct);
+        if (!exists)
+        {
+            db.Likes.Add(new Like { Id = Guid.NewGuid(), CommentId = commentId, ProfileId = profile.Id });
+            await db.SaveChangesAsync(ct);
+        }
+
+        return await db.Comments
+            .Include(c => c.Profile)
+            .Include(c => c.Likes)
+            .FirstOrDefaultAsync(c => c.Id == commentId, ct);
+    }
+
+    public async Task<Comment?> UnlikeComment(
+        Guid commentId,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        var comment = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.DeletedAt == null, ct)
+            ?? throw new GraphQLException("No se encontró el comentario.");
+
+        var like = await db.Likes.FirstOrDefaultAsync(l => l.CommentId == commentId && l.ProfileId == profile.Id, ct);
+        if (like is not null)
+        {
+            db.Likes.Remove(like);
+            await db.SaveChangesAsync(ct);
+        }
+
+        return await db.Comments
+            .Include(c => c.Profile)
+            .Include(c => c.Likes)
+            .FirstOrDefaultAsync(c => c.Id == commentId, ct);
+    }
+
+    // --- Reportes (comentarios) ---
+
+    /// <summary>
+    /// Reporta un comentario. Cualquier usuario autenticado puede reportar.
+    /// Valida que el comentario exista y no esté eliminado.
+    /// </summary>
+    public async Task<CommentReport> ReportComment(
+        Guid commentId,
+        string reason,
+        string? details,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        // Validar motivo: no vacío, 1..100 caracteres.
+        reason = reason?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(reason) || reason.Length > 100)
+            throw new GraphQLException("El motivo del reporte debe tener entre 1 y 100 caracteres.");
+
+        // Validar detalles: 0..500 caracteres.
+        details = details?.Trim();
+        if (!string.IsNullOrEmpty(details) && details.Length > 500)
+            throw new GraphQLException("Los detalles del reporte no pueden superar los 500 caracteres.");
+
+        // El comentario debe existir y no estar eliminado.
+        var comment = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.DeletedAt == null, ct)
+            ?? throw new GraphQLException("No se encontró el comentario.");
+
+        var report = new CommentReport
+        {
+            Id = Guid.NewGuid(),
+            CommentId = commentId,
+            ReportedByProfileId = profile.Id,
+            Reason = reason,
+            Details = details,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        db.CommentReports.Add(report);
+        await db.SaveChangesAsync(ct);
+
+        // Cargar navegaciones para la respuesta.
+        await db.Entry(report).Reference(r => r.Comment).LoadAsync(ct);
+        await db.Entry(report).Reference(r => r.ReportedBy).LoadAsync(ct);
+
+        return report;
+    }
+
+    /// <summary>
+    /// Resuelve (elimina) un reporte de comentario. Solo moderadores.
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<bool> ResolveCommentReport(
+        Guid reportId,
+        [Service] CommunityDbContext db,
+        CancellationToken ct)
+    {
+        var report = await db.CommentReports.FirstOrDefaultAsync(r => r.Id == reportId, ct)
+            ?? throw new GraphQLException("No se encontró el reporte.");
+        db.CommentReports.Remove(report);
+        await db.SaveChangesAsync(ct);
+        return true;
     }
 
     // --- Reportes ---

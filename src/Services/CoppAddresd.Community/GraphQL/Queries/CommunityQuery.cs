@@ -96,10 +96,14 @@ var profile = await db.Profiles
             .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
 .Include(p => p.Comments.Where(c => c.DeletedAt == null))
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Likes)
             .Where(p => p.DeletedAt == null);
 
         // Filtro por autor: coincidencia parcial e insensible a acentos (ILike + Unaccent),
@@ -142,11 +146,15 @@ var profile = await db.Profiles
             .Include(p => p.Comments)
             .ThenInclude(c => c.Replies)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
 .Include(p => p.Comments.Where(c => c.DeletedAt == null))
             .ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null))
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Likes)
             .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null, ct);
 
     /// <summary>Lista de perfiles con filtros opcionales por estado y búsqueda (moderador).</summary>
@@ -246,6 +254,80 @@ var profile = await db.Profiles
             .ToList();
     }
 
+    /// <summary>
+    /// Comentarios reportados con sus reportes asociados. Solo moderadores.
+    /// Consultas secuenciales (EF Core no permite operaciones concurrentes sobre un mismo DbContext).
+    /// </summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<List<ReportedComment>> ReportedComments(
+        [Service] CommunityDbContext db,
+        CancellationToken ct,
+        int take = 20,
+        int skip = 0)
+    {
+        // 1. Obtener los CommentIds únicos con reportes, ordenados por el reporte más reciente.
+        var reportedCommentIds = await db.CommentReports
+            .GroupBy(r => r.CommentId)
+            .Select(g => new { CommentId = g.Key, LatestReportAt = g.Max(r => r.CreatedAt) })
+            .OrderByDescending(x => x.LatestReportAt)
+            .Skip(skip)
+            .Take(take)
+            .Select(x => x.CommentId)
+            .ToListAsync(ct);
+
+        if (reportedCommentIds.Count == 0) return [];
+
+        // 2. Cargar los comentarios activos (no eliminados) correspondientes, con su Post padre.
+        var comments = await db.Comments
+            .Where(c => reportedCommentIds.Contains(c.Id) && c.DeletedAt == null)
+            .Include(c => c.Profile)
+            .Include(c => c.Likes)
+            .Include(c => c.Post)
+            .ToListAsync(ct);
+        var commentById = comments.ToDictionary(c => c.Id);
+
+        // 3. Cargar los reportes de esos comentarios.
+        var reports = await db.CommentReports
+            .Where(r => reportedCommentIds.Contains(r.CommentId))
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(ct);
+
+        // 4. Cargar perfiles de reportadores.
+        var reporterIds = reports.Select(r => r.ReportedByProfileId).Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        var reporters = await db.Profiles.Where(p => reporterIds.Contains(p.Id)).ToListAsync(ct);
+        var reporterById = reporters.ToDictionary(p => p.Id);
+
+        // 5. Agrupar y construir DTOs en el orden original.
+        var reportsByCommentId = reports.GroupBy(r => r.CommentId).ToDictionary(g => g.Key, g => g.ToList());
+
+        return reportedCommentIds
+            .Where(id => commentById.ContainsKey(id))
+            .Select(id =>
+            {
+                var comment = commentById[id];
+                var commentReports = reportsByCommentId.GetValueOrDefault(id, []);
+                return new ReportedComment
+                {
+                    CommentId = id,
+                    Comment = comment,
+                    Post = comment.Post,
+                    ReportCount = commentReports.Count,
+                    Reports = commentReports.Select(r => new CommentReportDto
+                    {
+                        Id = r.Id,
+                        CommentId = r.CommentId,
+                        Reason = r.Reason,
+                        Details = r.Details,
+                        CreatedAt = r.CreatedAt,
+                        ReportedBy = r.ReportedByProfileId.HasValue && reporterById.TryGetValue(r.ReportedByProfileId.Value, out var reporter)
+                            ? new ReportedByProfile { Id = reporter.Id, DisplayName = reporter.DisplayName }
+                            : null,
+                    }).ToList(),
+                };
+            })
+            .ToList();
+    }
+
     /// <summary>Feed de publicaciones de los perfiles que sigo (sin incluir las propias).</summary>
     [Authorize]
     public async Task<IReadOnlyList<Post>> FollowingFeed(
@@ -271,10 +353,14 @@ var profile = await db.Profiles
             .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
 .Include(p => p.Comments.Where(c => c.DeletedAt == null))
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Likes)
             .Where(p => p.DeletedAt == null && followingIds.Contains(p.ProfileId))
             .OrderByDescending(p => p.Pinned)
             .ThenBy(p => p.PinnedOrder)
