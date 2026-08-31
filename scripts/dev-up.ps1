@@ -96,19 +96,22 @@ if (-not $Watch) {
   Write-Host "  Building all 5 projects (fail fast)..." -ForegroundColor Cyan
 
   $failed = $false
-  foreach ($s in $services) {
-    $outLog = Join-Path $logs ($s.Name + '.build.log')
-    $errLog = Join-Path $logs ($s.Name + '.build.err')
-    Write-Host ("  Building {0}..." -f $s.Name.PadRight(16)) -NoNewline -ForegroundColor $s.Color
-    & dotnet build $s.Project *> $outLog
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host " FAILED" -ForegroundColor Red
-      $failed = $true
-      Write-Host ("    See {0}" -f $outLog) -ForegroundColor Red
-    } else {
-      Write-Host " OK" -ForegroundColor Green
+  Push-Location $root
+  try {
+    foreach ($s in $services) {
+      $outLog = Join-Path $logs ($s.Name + '.build.log')
+      $errLog = Join-Path $logs ($s.Name + '.build.err')
+      Write-Host ("  Building {0}..." -f $s.Name.PadRight(16)) -NoNewline -ForegroundColor $s.Color
+      & dotnet build $s.Project *> $outLog
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host " FAILED" -ForegroundColor Red
+        $failed = $true
+        Write-Host ("    See {0}" -f $outLog) -ForegroundColor Red
+      } else {
+        Write-Host " OK" -ForegroundColor Green
+      }
     }
-  }
+  } finally { Pop-Location }
 
   if ($failed) {
     Write-Host ''

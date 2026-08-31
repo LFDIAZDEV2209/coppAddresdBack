@@ -18,6 +18,17 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
     public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
+    public DbSet<Poll> Polls => Set<Poll>();
+    public DbSet<PollOption> PollOptions => Set<PollOption>();
+    public DbSet<PollVote> PollVotes => Set<PollVote>();
+    public DbSet<XpEntry> XpEntries => Set<XpEntry>();
+    public DbSet<FeedEvent> FeedEvents => Set<FeedEvent>();
+    public DbSet<Recognition> Recognitions => Set<Recognition>();
+    public DbSet<NetworkChannel> NetworkChannels => Set<NetworkChannel>();
+    public DbSet<NetworkGrowthPoint> NetworkGrowthPoints => Set<NetworkGrowthPoint>();
+    public DbSet<PostReport> PostReports => Set<PostReport>();
+    public DbSet<CommentReport> CommentReports => Set<CommentReport>();
+    public DbSet<Repost> Reposts => Set<Repost>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
