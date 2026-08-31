@@ -22,7 +22,7 @@ public sealed class RepostConfiguration : IEntityTypeConfiguration<Repost>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasOne(x => x.Profile)
-            .WithMany()
+            .WithMany(p => p.Reposts)
             .HasForeignKey(x => x.ProfileId)
             .OnDelete(DeleteBehavior.Cascade);
 

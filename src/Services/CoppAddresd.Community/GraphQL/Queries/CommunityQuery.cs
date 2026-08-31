@@ -32,6 +32,14 @@ var profile = await db.Profiles
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Likes)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.UserId == userId, ct);
         if (profile is not null) return profile;
 
@@ -66,6 +74,14 @@ var profile = await db.Profiles
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Likes)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
+            .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
+                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
         return profile;
     }

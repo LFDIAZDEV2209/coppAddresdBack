@@ -68,4 +68,5 @@ public sealed class Profile
     public ICollection<Comment> Comments { get; set; } = [];
     public ICollection<Like> Likes { get; set; } = [];
     public ICollection<XpEntry> XpEntries { get; set; } = [];
+    public ICollection<Repost> Reposts { get; set; } = [];
 }
