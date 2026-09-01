@@ -29,7 +29,11 @@ public class HealthTestsMeController(
 {
     // ===================== MIS ASIGNACIONES =====================
 
-    /// <summary>Tests pendientes/en curso del paciente (shape TestMeta de la app móvil).</summary>
+    /// <summary>
+    /// Tests del paciente: pendientes, en curso y completados (shape TestMeta
+    /// de la app móvil). Los completados se conservan para marcarlos como
+    /// realizados; no se incluyen cancelled/expired.
+    /// </summary>
     [HttpGet("assignments")]
     public async Task<ActionResult<IReadOnlyList<HealthTestAssignmentDto>>> GetMyAssignments(
         CancellationToken ct
@@ -41,8 +45,16 @@ public class HealthTestsMeController(
             return NotFound(new { message = "Paciente no encontrado" });
         }
 
-        var assignments = await repository.ListActiveAssignmentsByPatientAsync(patientId.Value, ct);
-        return Ok(assignments.Select(HealthTestAssignmentDto.FromEntity).ToList());
+        var assignments = await repository.ListAssignmentsByPatientAsync(patientId.Value, ct);
+        var visible = assignments
+            .Where(a =>
+                a.Status
+                    is HealthTestAssignmentStatus.pending
+                        or HealthTestAssignmentStatus.in_progress
+                        or HealthTestAssignmentStatus.completed
+            )
+            .ToList();
+        return Ok(visible.Select(HealthTestAssignmentDto.FromEntity).ToList());
     }
 
     /// <summary>Baterías asignadas al paciente (con progreso por test).</summary>
