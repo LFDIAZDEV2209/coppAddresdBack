@@ -1,0 +1,342 @@
+name: Deploy Backend Services
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-backend-dev
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.detect.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detectar servicios afectados
+        id: detect
+        shell: bash
+        run: |
+          SERVICES=""
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+
+          if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Auth"; then
+            SERVICES="$SERVICES auth"
+          fi
+          if echo "$CHANGED" | grep -q "src/CoppAddresd.Api"; then
+            SERVICES="$SERVICES api"
+          fi
+          if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Telemedicine"; then
+            SERVICES="$SERVICES telemedicine"
+          fi
+          if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Community"; then
+            SERVICES="$SERVICES community"
+          fi
+
+          # Cambios en infraestructura compartida (Infrastructure, Application, Domain,
+          # slnx, Dockerfiles, workflows) afectan a todos los servicios backend.
+          SHARED=$(echo "$CHANGED" | grep -E "(src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows)" || true)
+          if [ -n "$SHARED" ]; then
+            SERVICES="auth api telemedicine community"
+          fi
+
+          if [ -z "$SERVICES" ]; then
+            echo "Sin cambios backend relevantes — no se despliega nada"
+            echo "services=[]" >> "$GITHUB_OUTPUT"
+          else
+            JSON=$(echo "$SERVICES" | xargs | tr ' ' '\n' | jq -R . | jq -s -c .)
+            echo "services=$JSON" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: detect
+    if: needs.detect.outputs.services != '' && needs.detect.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test unitarios (CI-safe, sin RDS)
+        run: |
+          dotnet test tests/CoppAddresd.UnitTests -c Release --nologo
+          dotnet test tests/CoppAddresd.Telemedicine.UnitTests -c Release --nologo
+
+  deploy:
+    needs: [detect, test]
+    if: needs.detect.outputs.services != '' && needs.detect.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-2
+      ECR_REGISTRY: 933629770820.dkr.ecr.us-east-2.amazonaws.com
+      ECS_CLUSTER: cooppadresd-cluster
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::933629770820:role/cooppadresd-gha-backend
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Determinar Dockerfile y ECR por servicio
+        id: svc
+        shell: bash
+        run: |
+          case "${{ matrix.service }}" in
+            auth)
+              echo "dockerfile=src/Services/CoppAddresd.Auth/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-auth" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              ;;
+            api)
+              echo "dockerfile=src/CoppAddresd.Api/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-api" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
+              ;;
+            telemedicine)
+              echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-telemedicine" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              ;;
+            community)
+              echo "dockerfile=src/Services/CoppAddresd.Community/Dockerfile" >> "$GITHUB_OUTPUT"
+              echo "ecr=cooppadresd-community" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Build imagen (${{ github.sha }})
+        run: |
+          docker build \
+            -f "${{ steps.svc.outputs.dockerfile }}" \
+            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}" \
+            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest" \
+            .
+
+      - name: Push ECR
+        run: |
+          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
+          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest"
+
+      - name: Registrar nueva Task Definition (imagen SHA)
+        id: taskdef
+        shell: bash
+        run: |
+          TD_NAME="cooppadresd-${{ matrix.service }}"
+          TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TD_NAME" --region "${{ env.AWS_REGION }}" --query "taskDefinition" --output json)
+          NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
+          NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" \
+            --argjson envs '${{ steps.svc.outputs.extra_env }}' \
+            --argjson secs '${{ steps.svc.outputs.extra_secrets }}' '
+            .containerDefinitions[0].image = $img |
+            del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes) |
+            .containerDefinitions[0].environment =
+              ((.containerDefinitions[0].environment // []) as $cur |
+               [$cur[] | select(. as $e | ([$envs[].name] | index($e.name)) | not)] + $envs) |
+            .containerDefinitions[0].secrets =
+              ((.containerDefinitions[0].secrets // []) as $cur |
+               [$cur[] | select(. as $e | ([$secs[].name] | index($e.name)) | not)] + $secs)
+          ')
+          REGISTERED=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF_JSON" --region "${{ env.AWS_REGION }}")
+          echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
+          echo "rev=$(echo "$REGISTERED" | jq -r '.taskDefinition.revision')" >> "$GITHUB_OUTPUT"
+
+      - name: Actualizar ECS Service
+        run: |
+          aws ecs update-service \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service "cooppadresd-${{ matrix.service }}" \
+            --task-definition "${{ steps.taskdef.outputs.arn }}" \
+            --region "${{ env.AWS_REGION }}"
+
+      - name: Esperar rollout COMPLETED (polling 15s)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          SERVICE="cooppadresd-${{ matrix.service }}"
+          TD_ARN="${{ steps.taskdef.outputs.arn }}"
+          DEADLINE=$((SECONDS + 1200))
+
+          while true; do
+            DEP=$(aws ecs describe-services \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --services "$SERVICE" \
+              --region "${{ env.AWS_REGION }}" \
+              --query "services[0].deployments[?taskDefinition=='$TD_ARN'] | [0]" \
+              --output json)
+
+            STATE=$(echo "$DEP" | jq -r '.rolloutState // "MISSING"')
+            RUNNING=$(echo "$DEP" | jq -r '.runningCount // "?"')
+            DESIRED=$(echo "$DEP" | jq -r '.desiredCount // "?"')
+
+            echo "[$(date -u +%H:%M:%S)] rollout=$STATE running=$RUNNING desired=$DESIRED"
+
+            if [ "$STATE" = "COMPLETED" ] && [ "$RUNNING" = "$DESIRED" ]; then
+              echo "Deployment estable: rollout=$STATE running=$RUNNING desired=$DESIRED"
+              exit 0
+            fi
+
+            if [ "$STATE" = "FAILED" ]; then
+              echo "::error::Rollout FAILED: el deployment de $SERVICE no pudo completarse"
+              exit 1
+            fi
+
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then
+              echo "::error::Timeout 20 min: rollout=$STATE running=$RUNNING desired=$DESIRED"
+              exit 1
+            fi
+
+            sleep 15
+          done
+
+      - name: Diagnóstico en fallo
+        if: failure()
+        shell: bash
+        run: |
+          TASKS=$(aws ecs list-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service-name "cooppadresd-${{ matrix.service }}" \
+            --region "${{ env.AWS_REGION }}" --query "taskArns" --output text)
+          for T in $TASKS; do
+            aws ecs describe-tasks \
+              --cluster "${{ env.ECS_CLUSTER }}" \
+              --tasks "$T" --region "${{ env.AWS_REGION }}" \
+              --query "tasks[0].{Status:lastStatus,Stop:stoppedReason,Containers:containers[*].{Name:name,Exit:exitCode,Reason:reason}}" \
+              --output json
+          done
+          # re-register
+
+  migrate:
+    needs: [detect, deploy]
+    if: >
+      needs.detect.outputs.services != '' &&
+      needs.detect.outputs.services != '[]' &&
+      (contains(needs.detect.outputs.services, 'api') || contains(needs.detect.outputs.services, 'telemedicine'))
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-2
+      ECS_CLUSTER: cooppadresd-cluster
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.detect.outputs.services) }}
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::933629770820:role/cooppadresd-gha-backend
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Cada microservicio tiene su PROPIO historial de migraciones en su schema
+      # (api → public.__EFMigrationsHistory, telemedicine → tele.__ef_migrations_history);
+      # el runner de CI no alcanza el RDS (subred privada), así que la migración
+      # corre como one-off task Fargate DENTRO de la VPC, con el task def del
+      # servicio recién registrado (imagen nueva con la migración embebida) y el
+      # entrypoint en modo --migrate (ver Program.cs de cada servicio). La conexión
+      # sale de las env vars del task def (ConnectionStrings__DefaultConnection).
+      # Idempotente: EF omite las migraciones ya aplicadas.
+      # Auth y Community auto-migran al arrancar (MigrateAsync en su Program.cs):
+      # no necesitan paso en el pipeline.
+      # REQUISITO IAM en el role cooppadresd-gha-backend: ecs:RunTask,
+      # ecs:DescribeTasks, iam:PassRole (task/execution roles del task def) y
+      # logs:GetLogEvents (opcional, tail de logs en fallo). AccessDenied en
+      # RunTask = falta el permiso en el role, no un error del flujo.
+      - name: Aplicar migraciones (${{ matrix.service }}, one-off task ECS)
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.service }}" in
+            api|telemedicine) ;;
+            *)
+              echo "auth/community auto-migran al arrancar — sin one-off task"
+              exit 0
+              ;;
+          esac
+
+          TD_NAME="cooppadresd-${{ matrix.service }}"
+          TD_ARN=$(aws ecs describe-task-definition \
+            --task-definition "$TD_NAME" --region "$AWS_REGION" \
+            --query "taskDefinition.taskDefinitionArn" --output text)
+          CONTAINER=$(aws ecs describe-task-definition \
+            --task-definition "$TD_NAME" --region "$AWS_REGION" \
+            --query "taskDefinition.containerDefinitions[0].name" --output text)
+          NET_CFG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$TD_NAME" --region "$AWS_REGION" \
+            --query "services[0].networkConfiguration" --output json)
+
+          TASK=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TD_ARN" \
+            --region "$AWS_REGION" \
+            --launch-type FARGATE \
+            --network-configuration "$NET_CFG" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"$CONTAINER\",\"command\":[\"--migrate\"]}]}" \
+            --query "tasks[0].taskArn" --output text)
+          echo "Task de migración (${{ matrix.service }}): $TASK"
+
+          DEADLINE=$((SECONDS + 1200))
+          while true; do
+            STATE=$(aws ecs describe-tasks \
+              --cluster "$ECS_CLUSTER" --tasks "$TASK" --region "$AWS_REGION" \
+              --query "tasks[0].lastStatus" --output text)
+            EXIT=$(aws ecs describe-tasks \
+              --cluster "$ECS_CLUSTER" --tasks "$TASK" --region "$AWS_REGION" \
+              --query "tasks[0].containers[0].exitCode" --output text)
+            echo "[$(date -u +%H:%M:%S)] task=$STATE exit=$EXIT"
+
+            if [ "$STATE" = "STOPPED" ]; then
+              if [ "$EXIT" = "0" ]; then
+                echo "Migraciones de ${{ matrix.service }} aplicadas correctamente"
+                exit 0
+              fi
+              echo "::error::La migración de ${{ matrix.service }} falló (exit=$EXIT)"
+              LOG_GROUP=$(aws ecs describe-task-definition \
+                --task-definition "$TD_NAME" --region "$AWS_REGION" \
+                --query "taskDefinition.containerDefinitions[0].logConfiguration.options[\"awslogs-group\"]" \
+                --output text 2>/dev/null || true)
+              if [ -n "$LOG_GROUP" ] && [ "$LOG_GROUP" != "None" ]; then
+                PREFIX=$(aws ecs describe-task-definition \
+                  --task-definition "$TD_NAME" --region "$AWS_REGION" \
+                  --query "taskDefinition.containerDefinitions[0].logConfiguration.options[\"awslogs-stream-prefix\"]" \
+                  --output text 2>/dev/null || true)
+                TASK_ID=$(basename "$TASK")
+                aws logs get-log-events \
+                  --log-group-name "$LOG_GROUP" \
+                  --log-stream-name "$PREFIX/$CONTAINER/$TASK_ID" \
+                  --region "$AWS_REGION" --query "events[*].message" --output text \
+                  2>/dev/null | tail -40 || true
+              fi
+              exit 1
+            fi
+
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then
+              echo "::error::Timeout 20 min esperando la migración de ${{ matrix.service }} (task=$STATE)"
+              exit 1
+            fi
+            sleep 10
+          done

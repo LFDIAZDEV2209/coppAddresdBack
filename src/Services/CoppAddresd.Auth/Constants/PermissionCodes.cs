@@ -52,11 +52,13 @@ public static class PermissionCodes
     public const string PatientsDelete = "Patients.Delete";
     public const string PatientsExport = "Patients.Export";
     public const string PatientsBulkUpdate = "Patients.BulkUpdate";
+
     /// <summary>Alcance de datos "propios": solo los pacientes asignados al profesional autenticado (data scope por identidad).</summary>
     public const string PatientsViewOwn = "Patients.ViewOwn";
 
     /// <summary>Recetario: ver recetas y pacientes del ámbito propio.</summary>
     public const string PrescriptionsView = "Prescriptions.View";
+
     /// <summary>Recetario: crear recetas.</summary>
     public const string PrescriptionsCreate = "Prescriptions.Create";
 
@@ -86,6 +88,7 @@ public static class PermissionCodes
     public const string TelemedicineAgendaView = "Telemedicine.AgendaView";
     public const string TelemedicineAlertsView = "Telemedicine.AlertsView";
     public const string TelemedicineSessionsManage = "Telemedicine.SessionsManage";
+
     /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
     public const string TelemedicineAdminView = "Telemedicine.AdminView";
 
@@ -102,6 +105,7 @@ public static class PermissionCodes
     public const string AppointmentsAgendaView = "Appointments.AgendaView";
     public const string AppointmentsAlertsView = "Appointments.AlertsView";
     public const string AppointmentsSessionsManage = "Appointments.SessionsManage";
+
     /// <summary>Vista administrativa global (listados de citas, solicitudes, sesiones y KPIs).</summary>
     public const string AppointmentsAdminView = "Appointments.AdminView";
 
@@ -111,13 +115,40 @@ public static class PermissionCodes
     public const string StoreView = "Store.View";
     public const string MediaView = "Media.View";
     public const string AuditView = "Audit.View";
+
     /// <summary>Configuraciones administrativas del módulo Sistema (IA, integraciones, etc.).</summary>
     public const string SystemAdminSettings = "System.AdminSettings";
+
+    // Wellness
+    public const string WellnessView = "Wellness.View";
+    public const string WellnessManage = "Wellness.Manage";
+
+    // Store
+    public const string StoreManage = "Store.Manage";
 
     // Community
     public const string CommunityView = "Community.View";
     public const string CommunityModerate = "Community.Moderate";
     public const string CommunityProfiles = "Community.Profiles";
+    public const string CommunityManage = "Community.Manage";
+
+    // Documentos Legales
+    public const string LegalDocumentsView = "LegalDocuments.View";
+    public const string LegalDocumentsManage = "LegalDocuments.Manage";
+
+    // Financiero: acceso a información financiera sin acceso clínico.
+    public const string FinanceView = "Finance.View";
+    public const string FinanceManage = "Finance.Manage";
+
+    // Reportes: lectura de reportes/analítica del ERP.
+    public const string ReportsView = "Reports.View";
+
+    // Tests de Salud: catálogo + asignación + revisión + lectura (global/own).
+    public const string HealthTestsView = "HealthTests.View";
+    public const string HealthTestsViewOwn = "HealthTests.ViewOwn";
+    public const string HealthTestsManage = "HealthTests.Manage";
+    public const string HealthTestsAssign = "HealthTests.Assign";
+    public const string HealthTestsReview = "HealthTests.Review";
 
     public static IEnumerable<string> GetAll()
     {
@@ -172,7 +203,7 @@ public static class PermissionCodes
         yield return ClinicalRecordsView;
         yield return ClinicalRecordsCreate;
         yield return ClinicalRecordsUpdate;
-yield return TelemedicineRequestsCreate;
+        yield return TelemedicineRequestsCreate;
         yield return TelemedicineRequestsView;
         yield return TelemedicineRequestsConfirm;
         yield return TelemedicineAppointmentsSchedule;
@@ -196,12 +227,26 @@ yield return TelemedicineRequestsCreate;
         yield return AppointmentsAdminView;
         yield return InventoryView;
         yield return StoreView;
+        yield return StoreManage;
         yield return MediaView;
         yield return AuditView;
         yield return SystemAdminSettings;
         yield return CommunityView;
         yield return CommunityModerate;
         yield return CommunityProfiles;
+        yield return CommunityManage;
+        yield return WellnessView;
+        yield return WellnessManage;
+        yield return LegalDocumentsView;
+        yield return LegalDocumentsManage;
+        yield return FinanceView;
+        yield return FinanceManage;
+        yield return ReportsView;
+        yield return HealthTestsView;
+        yield return HealthTestsViewOwn;
+        yield return HealthTestsManage;
+        yield return HealthTestsAssign;
+        yield return HealthTestsReview;
     }
 
     public static string GetModule(string permissionCode)

@@ -13,6 +13,7 @@ PORTS=(
   "gateway|5080"
   "telemedicine|5130"
   "api|5122"
+  "ai|8000"
 )
 
 color() { printf "\033[%sm%s\033[0m" "$1" "$2"; }

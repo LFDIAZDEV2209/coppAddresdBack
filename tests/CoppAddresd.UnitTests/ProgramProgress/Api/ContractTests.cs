@@ -19,8 +19,7 @@ namespace CoppAddresd.UnitTests.ProgramProgress.Api;
 [Collection(ProgramApiTestCollection.Name)]
 public sealed class ContractTests(ProgramApiTestDb fixture)
 {
-    private readonly Lazy<ProgramApiHost> _host =
-        new(() => ProgramApiHost.Create(fixture));
+    private readonly Lazy<ProgramApiHost> _host = new(() => ProgramApiHost.Create(fixture));
 
     public Task InitializeAsync() => Task.CompletedTask;
 
@@ -53,8 +52,14 @@ public sealed class ContractTests(ProgramApiTestDb fixture)
         Assert.Equal(JsonValueKind.Number, template.GetProperty("totalWeeks").ValueKind);
         Assert.Equal(JsonValueKind.Number, template.GetProperty("currentWeekNumber").ValueKind);
         Assert.Equal(JsonValueKind.String, template.GetProperty("currentWeekStatus").ValueKind);
-        Assert.Equal(JsonValueKind.String, template.GetProperty("currentWeekStartDateLocal").ValueKind);
-        Assert.Equal(JsonValueKind.String, template.GetProperty("currentWeekEndDateLocal").ValueKind);
+        Assert.Equal(
+            JsonValueKind.String,
+            template.GetProperty("currentWeekStartDateLocal").ValueKind
+        );
+        Assert.Equal(
+            JsonValueKind.String,
+            template.GetProperty("currentWeekEndDateLocal").ValueKind
+        );
 
         // El "hoy" del paciente (America/Bogota, UTC-5) cae siempre dentro de la
         // semana 2 de la inscripción (determinista, ver doc de la clase).
@@ -112,14 +117,18 @@ public sealed class ContractTests(ProgramApiTestDb fixture)
     {
         var (client, enrollmentId, startMonday) = await CreateEnrolledPatientAsync();
 
-        var response = await client.PostAsync("/api/v1/program/tasks/complete",
-            ProgramApiSeed.Json(new
-            {
-                enrollmentId,
-                localDate = startMonday.AddDays(1),
-                taskCode = "podcast",
-                clientRequestId = "ac05-1",
-            }));
+        var response = await client.PostAsync(
+            "/api/v1/program/tasks/complete",
+            ProgramApiSeed.Json(
+                new
+                {
+                    enrollmentId,
+                    localDate = startMonday.AddDays(1),
+                    taskCode = "podcast",
+                    clientRequestId = "ac05-1",
+                }
+            )
+        );
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -130,7 +139,9 @@ public sealed class ContractTests(ProgramApiTestDb fixture)
         Assert.Equal(80, root.GetProperty("xpBalanceAfter").GetInt32());
         Assert.Equal(JsonValueKind.False, root.GetProperty("isPerfectDay").ValueKind);
         Assert.Equal(0, root.GetProperty("dailyBonusAwarded").GetInt32());
-        Assert.Equal(0, root.GetProperty("streakCurrent").GetInt32());
+        // Racha por umbral (SPEC §17, B): con StreakMinTasks default 1, completar
+        // 1 tarea ya inicia la racha (no se requiere día perfecto).
+        Assert.Equal(1, root.GetProperty("streakCurrent").GetInt32());
         Assert.Equal(0, root.GetProperty("freezesRemaining").GetInt32());
         Assert.Equal(80, root.GetProperty("dayPoints").GetInt32());
         // Máximo del día = puntos base (700) + bonus de día perfecto (50).
@@ -146,7 +157,8 @@ public sealed class ContractTests(ProgramApiTestDb fixture)
         var to = startMonday.AddDays(6);
 
         var response = await client.GetAsync(
-            $"/api/v1/program/calendar?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}");
+            $"/api/v1/program/calendar?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}"
+        );
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -193,14 +205,22 @@ public sealed class ContractTests(ProgramApiTestDb fixture)
         var firstWeek = weeks[0];
         Assert.Equal(1, firstWeek.GetProperty("weekNumber").GetInt32());
         Assert.Equal(JsonValueKind.String, firstWeek.GetProperty("status").ValueKind);
-        Assert.Equal(startMonday.ToString("yyyy-MM-dd"), firstWeek.GetProperty("weekStartDateLocal").GetString());
-        Assert.Equal(startMonday.AddDays(6).ToString("yyyy-MM-dd"), firstWeek.GetProperty("weekEndDateLocal").GetString());
+        Assert.Equal(
+            startMonday.ToString("yyyy-MM-dd"),
+            firstWeek.GetProperty("weekStartDateLocal").GetString()
+        );
+        Assert.Equal(
+            startMonday.AddDays(6).ToString("yyyy-MM-dd"),
+            firstWeek.GetProperty("weekEndDateLocal").GetString()
+        );
         Assert.Equal(JsonValueKind.Number, firstWeek.GetProperty("points").ValueKind);
         // isPerfectWeek es null para semanas no Completed (SPEC §7.4).
         Assert.Equal(JsonValueKind.Null, firstWeek.GetProperty("isPerfectWeek").ValueKind);
 
         // Los campos del resto de semanas existen (forma estable).
-        var lockedWeek = weeks.EnumerateArray().First(w => w.GetProperty("status").GetString() == "Locked");
+        var lockedWeek = weeks
+            .EnumerateArray()
+            .First(w => w.GetProperty("status").GetString() == "Locked");
         Assert.Equal(JsonValueKind.Null, lockedWeek.GetProperty("isPerfectWeek").ValueKind);
     }
 
@@ -211,7 +231,11 @@ public sealed class ContractTests(ProgramApiTestDb fixture)
     /// arranca el lunes anterior al de la semana UTC actual (fechas
     /// deterministas para las aserciones, ver doc de la clase).
     /// </summary>
-    private async Task<(HttpClient Client, Guid EnrollmentId, DateOnly StartMonday)> CreateEnrolledPatientAsync()
+    private async Task<(
+        HttpClient Client,
+        Guid EnrollmentId,
+        DateOnly StartMonday
+    )> CreateEnrolledPatientAsync()
     {
         await using var db = fixture.CreateDbContext();
         var user = await ProgramApiSeed.CreateAuthUserAsync(db);

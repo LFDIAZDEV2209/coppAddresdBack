@@ -14,10 +14,15 @@ namespace CoppAddresd.Auth.Controllers;
 public class PermissionsController : ControllerBase
 {
     private readonly IPermissionService _permissionService;
+    private readonly IAuthorizationService _authorizationService;
 
-    public PermissionsController(IPermissionService permissionService)
+    public PermissionsController(
+        IPermissionService permissionService,
+        IAuthorizationService authorizationService
+    )
     {
         _permissionService = permissionService;
+        _authorizationService = authorizationService;
     }
 
     [HttpGet]
@@ -52,7 +57,10 @@ public class PermissionsController : ControllerBase
 
     [HttpGet("role/{roleId:guid}")]
     [RequirePermission(PermissionCodes.PermissionsView)]
-    public async Task<ActionResult<IEnumerable<PermissionResponse>>> GetRolePermissions(Guid roleId, CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<PermissionResponse>>> GetRolePermissions(
+        Guid roleId,
+        CancellationToken ct
+    )
     {
         var permissions = await _permissionService.GetRolePermissionsAsync(roleId, ct);
         return Ok(permissions);
@@ -63,9 +71,20 @@ public class PermissionsController : ControllerBase
     public async Task<IActionResult> AssignToRole(
         Guid roleId,
         [FromBody] AssignPermissionToRoleRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var (success, error) = await _permissionService.AssignToRoleAsync(roleId, request.PermissionId, ct);
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para asignar permisos." }
+            );
+
+        var (success, error) = await _permissionService.AssignToRoleAsync(
+            roleId,
+            request.PermissionId,
+            ct
+        );
         if (!success)
             return BadRequest(new { message = error });
 
@@ -74,9 +93,23 @@ public class PermissionsController : ControllerBase
 
     [HttpDelete("role/{roleId:guid}/{permissionId:guid}")]
     [RequirePermission(PermissionCodes.PermissionsAssign)]
-    public async Task<IActionResult> RemoveFromRole(Guid roleId, Guid permissionId, CancellationToken ct)
+    public async Task<IActionResult> RemoveFromRole(
+        Guid roleId,
+        Guid permissionId,
+        CancellationToken ct
+    )
     {
-        var (success, error) = await _permissionService.RemoveFromRoleAsync(roleId, permissionId, ct);
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para remover permisos." }
+            );
+
+        var (success, error) = await _permissionService.RemoveFromRoleAsync(
+            roleId,
+            permissionId,
+            ct
+        );
         if (!success)
             return BadRequest(new { message = error });
 
@@ -85,7 +118,10 @@ public class PermissionsController : ControllerBase
 
     [HttpGet("user/{userId:guid}")]
     [RequirePermission(PermissionCodes.PermissionsView)]
-    public async Task<ActionResult<IEnumerable<PermissionResponse>>> GetUserPermissions(Guid userId, CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<PermissionResponse>>> GetUserPermissions(
+        Guid userId,
+        CancellationToken ct
+    )
     {
         var permissions = await _permissionService.GetUserPermissionsAsync(userId, ct);
         return Ok(permissions);
@@ -96,9 +132,20 @@ public class PermissionsController : ControllerBase
     public async Task<IActionResult> AssignToUser(
         Guid userId,
         [FromBody] AssignPermissionToUserRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var (success, error) = await _permissionService.AssignToUserAsync(userId, request.PermissionId, ct);
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para asignar permisos." }
+            );
+
+        var (success, error) = await _permissionService.AssignToUserAsync(
+            userId,
+            request.PermissionId,
+            ct
+        );
         if (!success)
             return BadRequest(new { message = error });
 
@@ -107,12 +154,36 @@ public class PermissionsController : ControllerBase
 
     [HttpDelete("user/{userId:guid}/{permissionId:guid}")]
     [RequirePermission(PermissionCodes.PermissionsAssign)]
-    public async Task<IActionResult> RemoveFromUser(Guid userId, Guid permissionId, CancellationToken ct)
+    public async Task<IActionResult> RemoveFromUser(
+        Guid userId,
+        Guid permissionId,
+        CancellationToken ct
+    )
     {
-        var (success, error) = await _permissionService.RemoveFromUserAsync(userId, permissionId, ct);
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para remover permisos." }
+            );
+
+        var (success, error) = await _permissionService.RemoveFromUserAsync(
+            userId,
+            permissionId,
+            ct
+        );
         if (!success)
             return BadRequest(new { message = error });
 
         return Ok(new { message = "Permiso removido del usuario correctamente" });
+    }
+
+    /// <summary>¿El caller tiene System.AdminSettings (configuración crítica)?</summary>
+    private async Task<bool> HasSystemAdminSettingsAsync()
+    {
+        var result = await _authorizationService.AuthorizeAsync(
+            User,
+            PermissionCodes.SystemAdminSettings
+        );
+        return result.Succeeded;
     }
 }

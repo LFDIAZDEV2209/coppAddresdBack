@@ -1,14 +1,21 @@
+using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services;
 using CoppAddresd.Application.Services.ProgramProgress;
+using CoppAddresd.Domain.Enums.HealthTests;
+using CoppAddresd.Infrastructure.Cache;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
 using CoppAddresd.Infrastructure.Services.Email;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace CoppAddresd.Infrastructure;
 
@@ -53,6 +60,28 @@ public static class DependencyInjection
         services.AddScoped<IWellnessRepository, WellnessRepository>();
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
+        services.AddScoped<IHealthTestRepository, HealthTestRepository>();
+
+        // Motor de scoring (Tests de Salud): estrategias registradas como
+        // keyed services + registry. Agregar una estrategia nueva = registrar
+        // la clase aquí (SPEC A9).
+        services.AddKeyedSingleton<IScoreStrategy, SumScoreStrategy>(HealthTestScoringStrategy.sum);
+        services.AddKeyedSingleton<IScoreStrategy, PercentageScoreStrategy>(
+            HealthTestScoringStrategy.percentage
+        );
+        services.AddKeyedSingleton<IScoreStrategy, SubscaleScoreStrategy>(
+            HealthTestScoringStrategy.subscale
+        );
+        services.AddKeyedSingleton<IScoreStrategy, InventoryScoreStrategy>(
+            HealthTestScoringStrategy.inventory
+        );
+        services.AddKeyedSingleton<IScoreStrategy, WeightedScoreStrategy>(
+            HealthTestScoringStrategy.weighted
+        );
+        services.AddSingleton<ScoreStrategyRegistry>();
+        services.AddSingleton<ScoreRangeEngine>();
+        services.AddSingleton<IndicatorEngine>();
+        services.AddSingleton<AlertEngine>();
 
         // Notificaciones gamificadas (SPEC §20, "Paso 7b"): servicio best-effort
         // de la capa de aplicación + repositorio del log `app.notifications`.
@@ -121,6 +150,8 @@ public static class DependencyInjection
         AddObjectStorage(services, configuration);
         AddEmailServices(services, configuration);
 
+        AddDistributedCache(services, configuration);
+
         return services;
     }
 
@@ -142,6 +173,89 @@ public static class DependencyInjection
         {
             // Default: Log (seguro para desarrollo sin credenciales)
             services.AddScoped<IEmailService, LogEmailService>();
+        }
+    }
+
+    /// <summary>
+    /// Caché distribuida compartida (Valkey) con degradación controlada. El
+    /// proveedor se elige por configuración (<c>Cache:Provider</c>): Valkey
+    /// (default: local en dev, ElastiCache for Valkey en prod vía
+    /// <c>ConnectionStrings:Valkey</c>), Memory (tests/proceso único) o None
+    /// (rollback: sin caché, todo a PostgreSQL). Fail-open por operación: un
+    /// Valkey caído nunca rompe una request. Ver docs/modules/cache/README.md.
+    /// </summary>
+    private static void AddDistributedCache(
+        IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        services.Configure<CacheOptions>(configuration.GetSection(CacheOptions.SectionName));
+
+        var provider = (configuration["Cache:Provider"] ?? CacheOptions.DefaultProvider).Trim();
+        var keyPrefix = configuration["Cache:KeyPrefix"] ?? CacheOptions.DefaultKeyPrefix;
+        var connectionString = configuration.GetConnectionString("Valkey");
+
+        switch (provider.ToLowerInvariant())
+        {
+            case "valkey":
+                // Singleton: el multiplexer es thread-safe y multiplexa todas
+                // las operaciones sobre una conexión (pooling nativo).
+                services.AddSingleton<IConnectionMultiplexer>(_ =>
+                {
+                    var raw = connectionString ?? "localhost:6379";
+                    var options = ConfigurationOptions.Parse(raw);
+                    // Contrato fail-open: el arranque NUNCA se bloquea por
+                    // caché ausente; las operaciones degradan por operación.
+                    options.AbortOnConnectFail = false;
+                    // Timeouts acotados salvo override explícito en la cadena.
+                    if (!raw.Contains("syncTimeout", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.SyncTimeout = 2000;
+                    }
+                    if (!raw.Contains("asyncTimeout", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.AsyncTimeout = 2000;
+                    }
+                    if (!raw.Contains("connectTimeout", StringComparison.OrdinalIgnoreCase))
+                    {
+                        options.ConnectTimeout = 5000;
+                    }
+
+                    return ConnectionMultiplexer.Connect(options);
+                });
+                services.AddSingleton<ICacheService>(sp => new ValkeyCacheService(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    keyPrefix,
+                    sp.GetRequiredService<ILogger<ValkeyCacheService>>()
+                ));
+                // Degraded (no Unhealthy): Valkey caído → /health responde 200
+                // con el componente degradado; el servicio sigue operativo.
+                services
+                    .AddHealthChecks()
+                    .AddCheck<ValkeyHealthCheck>(
+                        "valkey",
+                        failureStatus: HealthStatus.Degraded,
+                        tags: ["cache"]
+                    );
+                break;
+
+            case "memory":
+                services.AddMemoryCache();
+                services.AddSingleton<ICacheService>(sp => new MemoryCacheService(
+                    sp.GetRequiredService<IMemoryCache>(),
+                    keyPrefix,
+                    sp.GetRequiredService<ILogger<MemoryCacheService>>()
+                ));
+                break;
+
+            case "none":
+                services.AddSingleton<ICacheService, NoCacheService>();
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Cache:Provider desconocido: '{provider}'. Valores soportados: Valkey, Memory, None."
+                );
         }
     }
 

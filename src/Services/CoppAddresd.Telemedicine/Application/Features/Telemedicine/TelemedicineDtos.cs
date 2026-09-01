@@ -16,7 +16,9 @@ public sealed record TelemedicineRequestDto(
     DateTimeOffset? PreferredStart,
     string? Reason,
     AppointmentRequestStatus Status,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? RejectionReason
+);
 
 /// <summary>DTO de una cita de telemedicina (fila de agenda/calendario y detalle).</summary>
 public sealed record AppointmentDto(
@@ -38,7 +40,8 @@ public sealed record AppointmentDto(
     AppointmentStatus Status,
     int RescheduleCount,
     string? CancellationReason,
-    DateTime? CreatedAt);
+    DateTime? CreatedAt
+);
 
 /// <summary>Resultado paginado de solicitudes (bandeja administrativa).</summary>
 public sealed record PaginatedRequestsResult(
@@ -46,7 +49,8 @@ public sealed record PaginatedRequestsResult(
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 /// <summary>Participante de una sala según el proveedor de video.</summary>
 public sealed record RoomParticipantDto(
@@ -54,7 +58,8 @@ public sealed record RoomParticipantDto(
     string Identity,
     bool IsConnected,
     DateTimeOffset? ConnectedAt,
-    DateTimeOffset? DisconnectedAt);
+    DateTimeOffset? DisconnectedAt
+);
 
 /// <summary>Sala virtual de una cita (estado de dominio + ventana + participantes).</summary>
 public sealed record VirtualRoomDto(
@@ -66,10 +71,12 @@ public sealed record VirtualRoomDto(
     DateTimeOffset ScheduledCloseAt,
     Guid? ActiveSessionId,
     TelemedicineSessionStatus? ActiveSessionStatus,
-    IReadOnlyList<RoomParticipantDto> Participants);
+    IReadOnlyList<RoomParticipantDto> Participants
+);
 
 /// <summary>Resultado del <c>join-token</c>: token de acceso + sala.</summary>
 public sealed record JoinSessionResultDto(
     string Token,
     DateTimeOffset ExpiresAt,
-    VirtualRoomDto Room);
+    VirtualRoomDto Room
+);

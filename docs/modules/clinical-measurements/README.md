@@ -32,10 +32,10 @@ migraciones propios** (`tele.__ef_migrations_history`).
 
 Opciones evaluadas:
 
-| Opción | Costo | Riesgo |
-|---|---|---|
-| Mover ClinicalEncounter al core | Refactor ~20 archivos + migraciones cruzadas | Medio |
-| **Encounter canónico nuevo + link (elegida)** | Bajo, tele intacto | Bajo |
+| Opción                                        | Costo                                        | Riesgo |
+| --------------------------------------------- | -------------------------------------------- | ------ |
+| Mover ClinicalEncounter al core               | Refactor ~20 archivos + migraciones cruzadas | Medio  |
+| **Encounter canónico nuevo + link (elegida)** | Bajo, tele intacto                           | Bajo   |
 
 **Decisión**: crear `app.encounters` como encounter canónico en el core. El de tele **queda
 intacto** y se **linkea** con FK nullable `encounter_id` → `app.encounters.id`. No es duplicación:
@@ -65,79 +65,79 @@ El canónico NO replica el `clinical_data` JSONB del tele. Queda estructurado y 
 
 ### `unit_of_measures`
 
-| Campo | Tipo | Notas |
-|---|---|---|
-| `id` | uuid PK | default `gen_random_uuid()` |
-| `code` | varchar(50) | único — `mg/dL`, `kg`, `cm`, `mmHg` |
-| `name` | varchar(150) | |
-| `symbol` | varchar(20) | |
-| `is_active` | bool | default `true` |
+| Campo       | Tipo         | Notas                               |
+| ----------- | ------------ | ----------------------------------- |
+| `id`        | uuid PK      | default `gen_random_uuid()`         |
+| `code`      | varchar(50)  | único — `mg/dL`, `kg`, `cm`, `mmHg` |
+| `name`      | varchar(150) |                                     |
+| `symbol`    | varchar(20)  |                                     |
+| `is_active` | bool         | default `true`                      |
 
 ### `measurement_metrics`
 
-| Campo | Tipo | Notas |
-|---|---|---|
-| `id` | uuid PK | default `gen_random_uuid()` |
-| `code` | varchar(50) | único — `glucose_fasting`, `weight`, `systolic_bp` |
-| `name` | varchar(150) | |
-| `description` | text? | |
-| `default_unit_id` | uuid FK → `unit_of_measures` | Restrict |
-| `category` | varchar(50) | `vital` \| `metabolic` \| `body_comp` \| `test_score` (futuro) |
-| `is_active` | bool | default `true` |
+| Campo             | Tipo                         | Notas                                                          |
+| ----------------- | ---------------------------- | -------------------------------------------------------------- |
+| `id`              | uuid PK                      | default `gen_random_uuid()`                                    |
+| `code`            | varchar(50)                  | único — `glucose_fasting`, `weight`, `systolic_bp`             |
+| `name`            | varchar(150)                 |                                                                |
+| `description`     | text?                        |                                                                |
+| `default_unit_id` | uuid FK → `unit_of_measures` | Restrict                                                       |
+| `category`        | varchar(50)                  | `vital` \| `metabolic` \| `body_comp` \| `test_score` (futuro) |
+| `is_active`       | bool                         | default `true`                                                 |
 
 Índices: `ix_measurement_metrics_code` (único), `ix_measurement_metrics_default_unit_id`.
 
 ### `measurement_reference_ranges`
 
-| Campo | Tipo | Notas |
-|---|---|---|
-| `id` | uuid PK | default `gen_random_uuid()` |
-| `metric_id` | uuid FK → `measurement_metrics` | Cascade |
-| `age_min` / `age_max` | int? | null = todos |
-| `gender` | varchar(1)? | `M` / `F` / `X`, null = todos |
-| `min_value` / `max_value` | decimal? | |
-| `unit_id` | uuid FK → `unit_of_measures` | Restrict |
-| `priority` | int | default `0` — resuelve solapamientos (mayor gana) |
-| `notes` | text? | |
-| `is_active` | bool | default `true` |
+| Campo                     | Tipo                            | Notas                                             |
+| ------------------------- | ------------------------------- | ------------------------------------------------- |
+| `id`                      | uuid PK                         | default `gen_random_uuid()`                       |
+| `metric_id`               | uuid FK → `measurement_metrics` | Cascade                                           |
+| `age_min` / `age_max`     | int?                            | null = todos                                      |
+| `gender`                  | varchar(1)?                     | `M` / `F` / `X`, null = todos                     |
+| `min_value` / `max_value` | decimal?                        |                                                   |
+| `unit_id`                 | uuid FK → `unit_of_measures`    | Restrict                                          |
+| `priority`                | int                             | default `0` — resuelve solapamientos (mayor gana) |
+| `notes`                   | text?                           |                                                   |
+| `is_active`               | bool                            | default `true`                                    |
 
 Índices: `ix_measurement_reference_ranges_metric_id`.
 
 ### `encounters` (canónico)
 
-| Campo | Tipo | Notas |
-|---|---|---|
-| `id` | uuid PK | default `gen_random_uuid()` |
-| `patient_id` | uuid FK → `patient_profiles` | Cascade |
-| `professional_id` | uuid FK → `professionals` | Restrict |
-| `type` | varchar(30) | `consulta_periodica` \| `telemedicina` \| `seguimiento` |
-| `status` | varchar(20) | `planned` \| `in_progress` \| `completed` \| `cancelled`, default `planned` |
-| `started_at` / `ended_at` | timestamptz? | |
-| `reason` | text? | motivo de consulta |
-| `notes` | text? | |
-| `created_by` | uuid? | |
-| `created_at` | timestamptz | default `now()` |
-| `updated_at` | timestamptz? | |
+| Campo                     | Tipo                         | Notas                                                                       |
+| ------------------------- | ---------------------------- | --------------------------------------------------------------------------- |
+| `id`                      | uuid PK                      | default `gen_random_uuid()`                                                 |
+| `patient_id`              | uuid FK → `patient_profiles` | Cascade                                                                     |
+| `professional_id`         | uuid FK → `professionals`    | Restrict                                                                    |
+| `type`                    | varchar(30)                  | `consulta_periodica` \| `telemedicina` \| `seguimiento`                     |
+| `status`                  | varchar(20)                  | `planned` \| `in_progress` \| `completed` \| `cancelled`, default `planned` |
+| `started_at` / `ended_at` | timestamptz?                 |                                                                             |
+| `reason`                  | text?                        | motivo de consulta                                                          |
+| `notes`                   | text?                        |                                                                             |
+| `created_by`              | uuid?                        |                                                                             |
+| `created_at`              | timestamptz                  | default `now()`                                                             |
+| `updated_at`              | timestamptz?                 |                                                                             |
 
 Índices: `ix_encounters_patient_id`, `ix_encounters_professional_id`, `ix_encounters_status`,
 `ix_encounters_type`.
 
 ### `clinical_measurements`
 
-| Campo | Tipo | Notas |
-|---|---|---|
-| `id` | uuid PK | default `gen_random_uuid()` |
-| `patient_id` | uuid FK → `patient_profiles` | Cascade |
-| `metric_id` | uuid FK → `measurement_metrics` | Restrict |
-| `encounter_id` | uuid FK → `encounters` | **NULL = monitoreo autónomo**, SetNull |
-| `value` | decimal | |
-| `unit_id` | uuid FK → `unit_of_measures` | Restrict |
-| `observed_at` | timestamptz | cuándo se tomó |
-| `recorded_at` | timestamptz | default `now()` — cuándo se registró |
-| `source` | varchar(20) | `device` \| `patient` \| `professional` \| `lab` |
-| `notes` | text? | |
-| `created_by` | uuid? | |
-| `created_at` | timestamptz | default `now()` |
+| Campo          | Tipo                            | Notas                                            |
+| -------------- | ------------------------------- | ------------------------------------------------ |
+| `id`           | uuid PK                         | default `gen_random_uuid()`                      |
+| `patient_id`   | uuid FK → `patient_profiles`    | Cascade                                          |
+| `metric_id`    | uuid FK → `measurement_metrics` | Restrict                                         |
+| `encounter_id` | uuid FK → `encounters`          | **NULL = monitoreo autónomo**, SetNull           |
+| `value`        | decimal                         |                                                  |
+| `unit_id`      | uuid FK → `unit_of_measures`    | Restrict                                         |
+| `observed_at`  | timestamptz                     | cuándo se tomó                                   |
+| `recorded_at`  | timestamptz                     | default `now()` — cuándo se registró             |
+| `source`       | varchar(20)                     | `device` \| `patient` \| `professional` \| `lab` |
+| `notes`        | text?                           |                                                  |
+| `created_by`   | uuid?                           |                                                  |
+| `created_at`   | timestamptz                     | default `now()`                                  |
 
 Índices: `ix_clinical_measurements_patient_id`, `ix_clinical_measurements_metric_id`,
 `ix_clinical_measurements_encounter_id`, `ix_clinical_measurements_patient_observed`
@@ -147,8 +147,8 @@ El canónico NO replica el `clinical_data` JSONB del tele. Queda estructurado y 
 
 `tele.clinical_encounters` + columna:
 
-| Campo | Tipo | Notas |
-|---|---|---|
+| Campo          | Tipo  | Notas                                 |
+| -------------- | ----- | ------------------------------------- |
 | `encounter_id` | uuid? | FK → `app.encounters.id`, **SetNull** |
 
 - La entidad `ClinicalEncounter` del módulo tele gana `public Guid? EncounterId { get; set; }`
@@ -160,50 +160,59 @@ El canónico NO replica el `clinical_data` JSONB del tele. Queda estructurado y 
 
 ## Migraciones
 
-| Contexto | Historial | Contenido |
-|---|---|---|
-| `AppDbContext` (core) | `public.__EFMigrationsHistory` | crear 5 tablas (schema `app`) |
+| Contexto                       | Historial                      | Contenido                                                                     |
+| ------------------------------ | ------------------------------ | ----------------------------------------------------------------------------- |
+| `AppDbContext` (core)          | `public.__EFMigrationsHistory` | crear 5 tablas (schema `app`)                                                 |
 | `TelemedicineDbContext` (tele) | `tele.__ef_migrations_history` | `ALTER TABLE tele.clinical_encounters ADD COLUMN encounter_id uuid NULL` + FK |
 
 ## Seed (catálogo)
 
-Patrón: `IHostedService` en `CoppAddresd.Api/Seeders` (como `AgentCatalogSeeder`), idempotente
-por `code`, scope por operación (evita conflictos de tracking EF).
+Doble vía, ambas idempotentes:
+
+1. **Migración `AddServerCatalogSeeds`** (`public.__EFMigrationsHistory`): recurso embebido
+   `Migrations/Seed/AddServerCatalogs.sql` (generado por
+   `scripts/generate_server_catalogs_seed.py`, no editar a mano). Siembra unidades, métricas,
+   rangos, alérgenos, ICD-10, medicamentos, organización `medicare` y aseguradoras al correr
+   `dotnet ef database update` — garantiza el catálogo en el servidor y en clones sin arrancar
+   la API. `ON CONFLICT DO NOTHING` (los rangos usan guard `WHERE NOT EXISTS`, no tienen clave única).
+2. **`ClinicalMeasurementsSeeder`** (`IHostedService` en `CoppAddresd.Api/Seeders`, como
+   `AgentCatalogSeeder`): quedó como defensa en profundidad; al arrancar detecta el catálogo ya
+   sembrado y no duplica (idempotente por `code`).
 
 ### Unidades iniciales
 
-| code | name | symbol |
-|---|---|---|
-| `mg_dl` | Miligramos por decilitro | mg/dL |
-| `kg` | Kilogramos | kg |
-| `cm` | Centímetros | cm |
-| `mmhg` | Milímetros de mercurio | mmHg |
-| `bpm` | Latidos por minuto | bpm |
-| `pct` | Porcentaje | % |
-| `kg_m2` | Kilogramos por metro cuadrado | kg/m² |
+| code    | name                          | symbol |
+| ------- | ----------------------------- | ------ |
+| `mg_dl` | Miligramos por decilitro      | mg/dL  |
+| `kg`    | Kilogramos                    | kg     |
+| `cm`    | Centímetros                   | cm     |
+| `mmhg`  | Milímetros de mercurio        | mmHg   |
+| `bpm`   | Latidos por minuto            | bpm    |
+| `pct`   | Porcentaje                    | %      |
+| `kg_m2` | Kilogramos por metro cuadrado | kg/m²  |
 
 ### Métricas iniciales
 
-| code | name | category | unidad |
-|---|---|---|---|
-| `glucose_fasting` | Glucosa en ayunas | metabolic | mg/dL |
-| `weight` | Peso | body_comp | kg |
-| `height` | Talla | body_comp | cm |
-| `systolic_bp` | Presión arterial sistólica | vital | mmHg |
-| `diastolic_bp` | Presión arterial diastólica | vital | mmHg |
-| `heart_rate` | Frecuencia cardíaca | vital | bpm |
-| `bmi` | Índice de masa corporal | body_comp | kg/m² |
-| `body_fat` | Porcentaje de grasa corporal | body_comp | % |
+| code              | name                         | category  | unidad |
+| ----------------- | ---------------------------- | --------- | ------ |
+| `glucose_fasting` | Glucosa en ayunas            | metabolic | mg/dL  |
+| `weight`          | Peso                         | body_comp | kg     |
+| `height`          | Talla                        | body_comp | cm     |
+| `systolic_bp`     | Presión arterial sistólica   | vital     | mmHg   |
+| `diastolic_bp`    | Presión arterial diastólica  | vital     | mmHg   |
+| `heart_rate`      | Frecuencia cardíaca          | vital     | bpm    |
+| `bmi`             | Índice de masa corporal      | body_comp | kg/m²  |
+| `body_fat`        | Porcentaje de grasa corporal | body_comp | %      |
 
 ### Rangos de referencia iniciales (referencia ADA/OMS, a validar clínicamente)
 
-| métrica | edad | género | min | max | prioridad |
-|---|---|---|---|---|---|
-| `glucose_fasting` | todos | todos | 70 | 99 | 0 |
-| `systolic_bp` | todos | todos | 90 | 120 | 0 |
-| `diastolic_bp` | todos | todos | 60 | 80 | 0 |
-| `bmi` | todos | todos | 18.5 | 24.9 | 0 |
-| `heart_rate` | todos | todos | 60 | 100 | 0 |
+| métrica           | edad  | género | min  | max  | prioridad |
+| ----------------- | ----- | ------ | ---- | ---- | --------- |
+| `glucose_fasting` | todos | todos  | 70   | 99   | 0         |
+| `systolic_bp`     | todos | todos  | 90   | 120  | 0         |
+| `diastolic_bp`    | todos | todos  | 60   | 80   | 0         |
+| `bmi`             | todos | todos  | 18.5 | 24.9 | 0         |
+| `heart_rate`      | todos | todos  | 60   | 100  | 0         |
 
 ## Fuera de alcance (fases futuras)
 
