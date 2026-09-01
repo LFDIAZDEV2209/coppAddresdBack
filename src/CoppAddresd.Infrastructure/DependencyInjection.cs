@@ -258,8 +258,6 @@ public static class DependencyInjection
                 );
         }
     }
-        }
-    }
 
     /// <summary>
     /// Registra la implementación de <see cref="IObjectStorageService"/> según
