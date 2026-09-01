@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.Constants;
 using CoppAddresd.Application.Features.Store;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -11,10 +13,12 @@ namespace CoppAddresd.Api.Controllers;
 public class ItemsController(IMediator mediator) : ControllerBase
 {
     [HttpGet("stats")]
+    [RequirePermission(PermissionCodes.StoreView)]
     public async Task<ActionResult<StoreStatsDto>> Stats(CancellationToken ct)
         => Ok(await mediator.Send(new GetStoreStatsQuery(), ct));
 
     [HttpGet]
+    [RequirePermission(PermissionCodes.StoreView)]
     public async Task<ActionResult<PaginatedStoreItemsResult>> List(
         [FromQuery] string? status = null,
         [FromQuery] int page = 1,
@@ -23,6 +27,7 @@ public class ItemsController(IMediator mediator) : ControllerBase
         => Ok(await mediator.Send(new ListStoreItemsQuery(status, page, pageSize), ct));
 
     [HttpGet("{id:guid}")]
+    [RequirePermission(PermissionCodes.StoreView)]
     public async Task<ActionResult<StoreItemDto>> GetById(Guid id, CancellationToken ct)
     {
         var result = await mediator.Send(new GetStoreItemQuery(id), ct);
@@ -30,6 +35,7 @@ public class ItemsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
+    [RequirePermission(PermissionCodes.StoreManage)]
     public async Task<ActionResult<StoreItemDto>> Create(
         [FromBody] CreateStoreItemRequest request, CancellationToken ct)
     {
@@ -38,6 +44,7 @@ public class ItemsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(PermissionCodes.StoreManage)]
     public async Task<ActionResult<StoreItemDto>> Update(
         Guid id, [FromBody] UpdateStoreItemRequest request, CancellationToken ct)
     {
@@ -46,6 +53,7 @@ public class ItemsController(IMediator mediator) : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(PermissionCodes.StoreManage)]
     public async Task<IActionResult> Hide(Guid id, CancellationToken ct)
     {
         var hidden = await mediator.Send(new HideStoreItemCommand(id), ct);
@@ -53,6 +61,7 @@ public class ItemsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id:guid}/restore")]
+    [RequirePermission(PermissionCodes.StoreManage)]
     public async Task<IActionResult> Restore(Guid id, CancellationToken ct)
     {
         var restored = await mediator.Send(new RestoreStoreItemCommand(id), ct);
@@ -60,6 +69,7 @@ public class ItemsController(IMediator mediator) : ControllerBase
     }
 
     [HttpDelete("{id:guid}/permanent")]
+    [RequirePermission(PermissionCodes.StoreManage)]
     public async Task<IActionResult> DeletePermanent(Guid id, CancellationToken ct)
     {
         var deleted = await mediator.Send(new DeleteStoreItemCommand(id), ct);

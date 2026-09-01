@@ -14,6 +14,13 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// El paciente puede elegir especialidad (obligatoria) y, opcionalmente, un
 /// profesional preferido y una fecha/hora preferida.
 /// </summary>
+/// <remarks>
+/// Alcance dual resuelto en el handler: <c>ErpMode=true</c> (usuario con
+/// permiso <c>Appointments.RequestsCreate</c>) acepta cualquier
+/// <c>PatientId</c> del cuerpo; <c>ErpMode=false</c> (paciente de la app
+/// móvil) exige que el paciente del JWT (<c>CreatedBy</c>) sea el
+/// <c>PatientId</c> de la solicitud (403 en caso contrario).
+/// </remarks>
 public sealed record CreateTelemedicineRequestCommand(
     Guid PatientId,
     Guid OrganizationId,
@@ -23,7 +30,9 @@ public sealed record CreateTelemedicineRequestCommand(
     Guid? LocationId,
     DateTimeOffset? PreferredStart,
     string Reason,
-    Guid CreatedBy) : IRequest<TelemedicineRequestDto>;
+    Guid CreatedBy,
+    bool ErpMode
+) : IRequest<TelemedicineRequestDto>;
 
 public sealed class CreateTelemedicineRequestCommandValidator
     : AbstractValidator<CreateTelemedicineRequestCommand>
@@ -34,7 +43,8 @@ public sealed class CreateTelemedicineRequestCommandValidator
         RuleFor(x => x.OrganizationId).NotEmpty();
         RuleFor(x => x.SpecialtyId).NotEmpty();
         RuleFor(x => x.Reason)
-            .NotEmpty().WithMessage("El motivo de la consulta es obligatorio.")
+            .NotEmpty()
+            .WithMessage("El motivo de la consulta es obligatorio.")
             .MaximumLength(2000);
         RuleFor(x => x.CreatedBy).NotEmpty();
     }
@@ -44,35 +54,72 @@ public sealed class CreateTelemedicineRequestCommandHandler(
     IRequestRepository requests,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IAlertRepository alerts)
-    : IRequestHandler<CreateTelemedicineRequestCommand, TelemedicineRequestDto>
+    IAlertRepository alerts
+) : IRequestHandler<CreateTelemedicineRequestCommand, TelemedicineRequestDto>
 {
     public async Task<TelemedicineRequestDto> Handle(
         CreateTelemedicineRequestCommand request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var patient = await ReferenceDataGuard.RequirePatientAsync(referenceData, request.PatientId, ct);
-        var specialty = await ReferenceDataGuard.RequireSpecialtyAsync(referenceData, request.SpecialtyId, ct);
+        // Alcance dual: el ERP (con permiso) opera para cualquier paciente;
+        // el paciente de la app móvil solo para sí mismo (identidad del JWT).
+        if (!request.ErpMode)
+        {
+            var actingPatient = await referenceData.GetPatientByUserIdAsync(request.CreatedBy, ct);
+            if (actingPatient is null)
+            {
+                throw new ForbiddenException(
+                    "Solo los pacientes pueden solicitar citas desde la app móvil."
+                );
+            }
+
+            if (actingPatient.Id != request.PatientId)
+            {
+                throw new ForbiddenException("Solo puedes solicitar citas para tu propio perfil.");
+            }
+        }
+
+        var patient = await ReferenceDataGuard.RequirePatientAsync(
+            referenceData,
+            request.PatientId,
+            ct
+        );
+        var specialty = await ReferenceDataGuard.RequireSpecialtyAsync(
+            referenceData,
+            request.SpecialtyId,
+            ct
+        );
 
         ProfessionalRefDto? professional = null;
         if (request.ProfessionalId is { } professionalId)
         {
-            professional = await ReferenceDataGuard.RequireProfessionalAsync(referenceData, professionalId, ct);
+            professional = await ReferenceDataGuard.RequireProfessionalAsync(
+                referenceData,
+                professionalId,
+                ct
+            );
 
             // Si el paciente eligió un profesional, la especialidad debe estar
             // entre las que atiende (catálogo de especialidades del profesional).
-            if (professional.SpecialtyIds.Count > 0
-                && !professional.SpecialtyIds.Contains(request.SpecialtyId))
+            if (
+                professional.SpecialtyIds.Count > 0
+                && !professional.SpecialtyIds.Contains(request.SpecialtyId)
+            )
             {
                 throw new BusinessRuleViolationException(
-                    "El profesional seleccionado no atiende la especialidad solicitada.");
+                    "El profesional seleccionado no atiende la especialidad solicitada."
+                );
             }
         }
 
         if (request.PreferredStart is { } preferred)
         {
             var settings = await settingsProvider.GetSettingsAsync(
-                request.OrganizationId, request.ClinicId, ct);
+                request.OrganizationId,
+                request.ClinicId,
+                ct
+            );
             var now = DateTimeOffset.UtcNow;
 
             // La preferencia es una ventana (no un slot reservado): se valida
@@ -80,13 +127,15 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             if (preferred < now.AddHours(settings.MinAdvanceBookingHours))
             {
                 throw new BusinessRuleViolationException(
-                    $"La fecha preferida debe tener al menos {settings.MinAdvanceBookingHours} h de anticipación.");
+                    $"La fecha preferida debe tener al menos {settings.MinAdvanceBookingHours} h de anticipación."
+                );
             }
 
             if (preferred > now.AddDays(settings.MaxAdvanceBookingDays))
             {
                 throw new BusinessRuleViolationException(
-                    $"La fecha preferida no puede superar los {settings.MaxAdvanceBookingDays} días.");
+                    $"La fecha preferida no puede superar los {settings.MaxAdvanceBookingDays} días."
+                );
             }
         }
 
@@ -111,13 +160,20 @@ public sealed class CreateTelemedicineRequestCommandHandler(
         // paciente eligió uno; si no, la asigna el staff/agenda).
         if (entity.ProfessionalId is { } targetProfessionalId)
         {
-            var targetProfessional = await referenceData.GetProfessionalAsync(targetProfessionalId, ct);
-            if (AlertMaterializer.NewRequest(
+            var targetProfessional = await referenceData.GetProfessionalAsync(
+                targetProfessionalId,
+                ct
+            );
+            if (
+                AlertMaterializer.NewRequest(
                     targetProfessional?.UserId,
                     entity.Id,
                     entity.SpecialtyId,
                     patient.FullName,
-                    specialty.Name) is { } alert)
+                    specialty.Name
+                ) is
+                { } alert
+            )
             {
                 await alerts.AddRangeAsync([alert], ct);
             }
@@ -136,6 +192,8 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             entity.PreferredStart,
             entity.Reason,
             entity.Status,
-            entity.CreatedAt);
+            entity.CreatedAt,
+            entity.RejectionReason
+        );
     }
 }

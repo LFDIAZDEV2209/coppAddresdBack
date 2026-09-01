@@ -22,8 +22,26 @@ public class ProfessionalsController(
     IMediator mediator,
     IEmployeeRepository employees,
     IAuthScopedAssignmentsClient scopedAssignments,
-    ILogger<ProfessionalsController> logger) : ControllerBase
+    ILogger<ProfessionalsController> logger
+) : ControllerBase
 {
+    /// <summary>
+    /// Estadísticas del directorio con el mismo alcance del listado
+    /// (clínica/organización opcionales): totales por estado y desglose por
+    /// tipo de profesional para las StatCards.
+    /// </summary>
+    [HttpGet("stats")]
+    [RequirePermission(PermissionCodes.ProfessionalsView)]
+    public async Task<ActionResult<EmployeeStatsDto>> Stats(
+        [FromQuery] Guid? organizationId = null,
+        [FromQuery] Guid? clinicId = null,
+        CancellationToken ct = default
+    )
+    {
+        var stats = await mediator.Send(new GetEmployeesStatsQuery(organizationId, clinicId), ct);
+        return Ok(stats);
+    }
+
     /// <summary>
     /// Crea el profesional de extremo a extremo: empleado + extensión clínica
     /// + clínicas + (invitación con correo) + (roles/permisos scoped por
@@ -33,29 +51,34 @@ public class ProfessionalsController(
     [RequirePermission(PermissionCodes.ProfessionalsCreate)]
     public async Task<ActionResult<CreateProfessionalResult>> Create(
         [FromBody] CreateProfessionalRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var grantedBy = GetCallerId();
 
-        var result = await mediator.Send(new CreateProfessionalCommand(
-            request.OrganizationId,
-            request.FirstName,
-            request.MiddleName,
-            request.LastName,
-            request.Email,
-            request.PhoneCountryCode,
-            request.PhoneNumber,
-            request.JobTitle,
-            request.HireDate,
-            request.ProfessionalTypeId,
-            request.Bio,
-            request.Clinics,
-            request.SpecialtyIds,
-            request.Licenses,
-            request.ScopedRoles,
-            request.ScopedPermissions,
-            request.SendInvitation,
-            grantedBy), ct);
+        var result = await mediator.Send(
+            new CreateProfessionalCommand(
+                request.OrganizationId,
+                request.FirstName,
+                request.MiddleName,
+                request.LastName,
+                request.Email,
+                request.PhoneCountryCode,
+                request.PhoneNumber,
+                request.JobTitle,
+                request.HireDate,
+                request.ProfessionalTypeId,
+                request.Bio,
+                request.Clinics,
+                request.SpecialtyIds,
+                request.Licenses,
+                request.ScopedRoles,
+                request.ScopedPermissions,
+                request.SendInvitation,
+                grantedBy
+            ),
+            ct
+        );
 
         return CreatedAtAction(nameof(GetScopes), new { id = result.EmployeeId }, result);
     }
@@ -78,32 +101,43 @@ public class ProfessionalsController(
     public async Task<ActionResult<object>> UpdateScopes(
         Guid id,
         [FromBody] UpdateProfessionalScopesRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var (employee, _) = await LoadScopesAsync(id, ct);
         if (employee is null)
             return NotFound(new { message = "Profesional no encontrado" });
 
         if (employee.UserId is null)
-            return BadRequest(new
-            {
-                message = "El profesional aún no tiene usuario vinculado. Invítalo primero para poder asignar permisos por clínica.",
-            });
+            return BadRequest(
+                new
+                {
+                    message = "El profesional aún no tiene usuario vinculado. Invítalo primero para poder asignar permisos por clínica.",
+                }
+            );
 
         await scopedAssignments.ReplaceAsync(
             employee.UserId.Value,
             request.Roles,
             request.Permissions,
             GetCallerId(),
-            ct);
+            ct
+        );
 
-        logger.LogInformation("Scopes del profesional {EmployeeId} reemplazados ({Roles} roles, {Permissions} overrides)",
-            id, request.Roles.Count, request.Permissions.Count);
+        logger.LogInformation(
+            "Scopes del profesional {EmployeeId} reemplazados ({Roles} roles, {Permissions} overrides)",
+            id,
+            request.Roles.Count,
+            request.Permissions.Count
+        );
 
         return NoContent();
     }
 
-    private async Task<(Employee? Employee, object? Scopes)> LoadScopesAsync(Guid id, CancellationToken ct)
+    private async Task<(Employee? Employee, object? Scopes)> LoadScopesAsync(
+        Guid id,
+        CancellationToken ct
+    )
     {
         var employee = await employees.GetByIdAsync(id, ct);
         if (employee is null)
@@ -111,29 +145,41 @@ public class ProfessionalsController(
 
         if (employee.UserId is null)
         {
-            return (employee, new
-            {
-                roles = Array.Empty<object>(),
-                permissions = Array.Empty<object>(),
-                requiresInvitation = true,
-            });
+            return (
+                employee,
+                new
+                {
+                    roles = Array.Empty<object>(),
+                    permissions = Array.Empty<object>(),
+                    requiresInvitation = true,
+                }
+            );
         }
 
         var snapshot = await scopedAssignments.GetAsync(employee.UserId.Value, ct);
 
-        return (employee, new
-        {
-            requiresInvitation = false,
-            roles = snapshot.Roles.Select(r => new { r.RoleId, r.RoleName, r.ScopeType, r.ScopeId }),
-            permissions = snapshot.Permissions.Select(p => new
+        return (
+            employee,
+            new
             {
-                p.PermissionId,
-                p.PermissionCode,
-                p.ScopeType,
-                p.ScopeId,
-                p.Effect,
-            }),
-        });
+                requiresInvitation = false,
+                roles = snapshot.Roles.Select(r => new
+                {
+                    r.RoleId,
+                    r.RoleName,
+                    r.ScopeType,
+                    r.ScopeId,
+                }),
+                permissions = snapshot.Permissions.Select(p => new
+                {
+                    p.PermissionId,
+                    p.PermissionCode,
+                    p.ScopeType,
+                    p.ScopeId,
+                    p.Effect,
+                }),
+            }
+        );
     }
 
     private Guid? GetCallerId()
@@ -160,8 +206,10 @@ public record CreateProfessionalRequest(
     IReadOnlyList<LicenseInput>? Licenses,
     IReadOnlyList<ScopedRoleAssignmentInput>? ScopedRoles,
     IReadOnlyList<ScopedPermissionAssignmentInput>? ScopedPermissions,
-    bool SendInvitation = true);
+    bool SendInvitation = true
+);
 
 public record UpdateProfessionalScopesRequest(
     IReadOnlyList<ScopedRoleAssignmentInput> Roles,
-    IReadOnlyList<ScopedPermissionAssignmentInput> Permissions);
+    IReadOnlyList<ScopedPermissionAssignmentInput> Permissions
+);

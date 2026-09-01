@@ -5,4 +5,6 @@ public record RoleResponse(
     string Name,
     string? Description,
     bool IsActive,
-    DateTime CreatedAt);
+    bool IsSystem,
+    DateTime CreatedAt
+);

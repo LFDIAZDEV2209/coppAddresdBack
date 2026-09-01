@@ -1,6 +1,6 @@
-using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +20,8 @@ public class RoleService : IRoleService
         UserManager<ApplicationUser> userManager,
         AuthDbContext dbContext,
         ITokenInvalidationService tokenInvalidation,
-        ILogger<RoleService> logger)
+        ILogger<RoleService> logger
+    )
     {
         _roleManager = roleManager;
         _userManager = userManager;
@@ -31,14 +32,16 @@ public class RoleService : IRoleService
 
     public async Task<IEnumerable<RoleResponse>> GetAllAsync(CancellationToken ct = default)
     {
-        var roles = await _roleManager.Roles
-            .OrderBy(r => r.Name)
+        var roles = await _roleManager
+            .Roles.OrderBy(r => r.Name)
             .Select(r => new RoleResponse(
                 r.Id.ToString(),
                 r.Name!,
                 r.Description,
                 r.IsActive,
-                r.CreatedAt))
+                r.IsSystem,
+                r.CreatedAt
+            ))
             .ToListAsync(ct);
 
         return roles;
@@ -47,19 +50,23 @@ public class RoleService : IRoleService
     public async Task<RoleResponse?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         var role = await _roleManager.FindByIdAsync(id.ToString());
-        if (role is null) return null;
+        if (role is null)
+            return null;
 
         return new RoleResponse(
             role.Id.ToString(),
             role.Name!,
             role.Description,
             role.IsActive,
-            role.CreatedAt);
+            role.IsSystem,
+            role.CreatedAt
+        );
     }
 
     public async Task<(bool Success, string? Error, RoleResponse? Role)> CreateAsync(
         CreateRoleRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var existingRole = await _roleManager.FindByNameAsync(request.Name);
         if (existingRole is not null)
@@ -72,7 +79,7 @@ public class RoleService : IRoleService
         {
             Name = request.Name,
             Description = request.Description ?? string.Empty,
-            IsActive = true
+            IsActive = true,
         };
 
         var result = await _roleManager.CreateAsync(role);
@@ -90,7 +97,9 @@ public class RoleService : IRoleService
             role.Name!,
             role.Description,
             role.IsActive,
-            role.CreatedAt);
+            role.IsSystem,
+            role.CreatedAt
+        );
 
         return (true, null, response);
     }
@@ -98,7 +107,9 @@ public class RoleService : IRoleService
     public async Task<(bool Success, string? Error)> UpdateAsync(
         Guid id,
         UpdateRoleRequest request,
-        CancellationToken ct = default)
+        bool allowSystemChanges = false,
+        CancellationToken ct = default
+    )
     {
         var role = await _roleManager.FindByIdAsync(id.ToString());
         if (role is null)
@@ -108,6 +119,11 @@ public class RoleService : IRoleService
 
         if (request.Name is not null && request.Name != role.Name)
         {
+            if (role.IsSystem && !allowSystemChanges)
+            {
+                return (false, "No se puede renombrar un rol de sistema sin System.AdminSettings");
+            }
+
             var existingRole = await _roleManager.FindByNameAsync(request.Name);
             if (existingRole is not null && existingRole.Id != id)
             {
@@ -119,8 +135,18 @@ public class RoleService : IRoleService
         if (request.Description is not null)
             role.Description = request.Description;
 
-        if (request.IsActive.HasValue)
+        if (request.IsActive.HasValue && request.IsActive.Value != role.IsActive)
+        {
+            if (role.IsSystem && !allowSystemChanges)
+            {
+                return (
+                    false,
+                    "No se puede activar/desactivar un rol de sistema sin System.AdminSettings"
+                );
+            }
+
             role.IsActive = request.IsActive.Value;
+        }
 
         role.UpdatedAt = DateTime.UtcNow;
 
@@ -136,12 +162,21 @@ public class RoleService : IRoleService
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> DeleteAsync(
+        Guid id,
+        bool allowSystemChanges = false,
+        CancellationToken ct = default
+    )
     {
         var role = await _roleManager.FindByIdAsync(id.ToString());
         if (role is null)
         {
             return (false, "Rol no encontrado");
+        }
+
+        if (role.IsSystem && !allowSystemChanges)
+        {
+            return (false, "No se puede eliminar un rol de sistema sin System.AdminSettings");
         }
 
         var result = await _roleManager.DeleteAsync(role);
@@ -159,7 +194,8 @@ public class RoleService : IRoleService
     public async Task<(bool Success, string? Error)> AssignToUserAsync(
         Guid userId,
         Guid roleId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -183,7 +219,12 @@ public class RoleService : IRoleService
         if (!result.Succeeded)
         {
             var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogWarning("Assign role {RoleId} to user {UserId} failed: {Errors}", roleId, userId, errors);
+            _logger.LogWarning(
+                "Assign role {RoleId} to user {UserId} failed: {Errors}",
+                roleId,
+                userId,
+                errors
+            );
             return (false, errors);
         }
 
@@ -196,7 +237,8 @@ public class RoleService : IRoleService
     public async Task<(bool Success, string? Error)> RemoveFromUserAsync(
         Guid userId,
         Guid roleId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -220,7 +262,12 @@ public class RoleService : IRoleService
         if (!result.Succeeded)
         {
             var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogWarning("Remove role {RoleId} from user {UserId} failed: {Errors}", roleId, userId, errors);
+            _logger.LogWarning(
+                "Remove role {RoleId} from user {UserId} failed: {Errors}",
+                roleId,
+                userId,
+                errors
+            );
             return (false, errors);
         }
 
@@ -230,7 +277,10 @@ public class RoleService : IRoleService
         return (true, null);
     }
 
-    public async Task<IEnumerable<RoleResponse>> GetUserRolesAsync(Guid userId, CancellationToken ct = default)
+    public async Task<IEnumerable<RoleResponse>> GetUserRolesAsync(
+        Guid userId,
+        CancellationToken ct = default
+    )
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -246,12 +296,16 @@ public class RoleService : IRoleService
             var role = await _roleManager.FindByNameAsync(roleName);
             if (role is not null)
             {
-                roles.Add(new RoleResponse(
-                    role.Id.ToString(),
-                    role.Name!,
-                    role.Description,
-                    role.IsActive,
-                    role.CreatedAt));
+                roles.Add(
+                    new RoleResponse(
+                        role.Id.ToString(),
+                        role.Name!,
+                        role.Description,
+                        role.IsActive,
+                        role.IsSystem,
+                        role.CreatedAt
+                    )
+                );
             }
         }
 

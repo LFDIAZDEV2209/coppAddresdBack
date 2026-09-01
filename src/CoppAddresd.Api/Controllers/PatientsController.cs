@@ -12,6 +12,21 @@ namespace CoppAddresd.Api.Controllers;
 [Authorize]
 public class PatientsController(IMediator mediator, ICurrentContext context) : ControllerBase
 {
+    [HttpGet("stats")]
+    public async Task<ActionResult<PatientStatsDto>> Stats(CancellationToken ct)
+    {
+        var (allowed, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
+        if (!allowed)
+            return Forbid();
+
+        return Ok(
+            await mediator.Send(
+                new GetPatientsStatsQuery(context.ActiveClinicId, ownProfessionalId),
+                ct
+            )
+        );
+    }
+
     [HttpGet]
     public async Task<ActionResult<PaginatedPatientsResult>> List(
         [FromQuery] int page = 1,
@@ -19,7 +34,10 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
         [FromQuery] Guid? insurerId = null,
-        CancellationToken ct = default)
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null,
+        CancellationToken ct = default
+    )
     {
         var (allowed, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
         if (!allowed)
@@ -30,8 +48,19 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         // alcance "propio" (profesional clínico) restringe además a sus
         // pacientes asignados; el id se resuelve por identidad del JWT.
         var result = await mediator.Send(
-            new ListPatientsQuery(page, pageSize, search, status, insurerId, context.ActiveClinicId,
-                ownProfessionalId), ct);
+            new ListPatientsQuery(
+                page,
+                pageSize,
+                search,
+                status,
+                insurerId,
+                context.ActiveClinicId,
+                ownProfessionalId,
+                sortBy,
+                sortDir
+            ),
+            ct
+        );
         return Ok(result);
     }
 
@@ -43,7 +72,11 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
             return Forbid();
 
         var patient = await mediator.Send(new GetPatientQuery(id), ct);
-        if (patient is null || IsOutsideActiveClinic(patient) || await IsOutsideOwnScopeAsync(patient.Id, ownProfessionalId, ct))
+        if (
+            patient is null
+            || IsOutsideActiveClinic(patient)
+            || await IsOutsideOwnScopeAsync(patient.Id, ownProfessionalId, ct)
+        )
             return NotFound(new { message = "Paciente no encontrado" });
 
         return Ok(patient);
@@ -52,7 +85,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     [HttpPost]
     public async Task<ActionResult<PatientDto>> Create(
         [FromBody] CreatePatientRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await context.HasPermissionAsync("Patients.Create", ct))
             return Forbid();
@@ -99,7 +133,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
             request.Diagnoses,
             request.Medications,
             request.Allergies,
-            request.VitalSigns);
+            request.VitalSigns
+        );
 
         var patient = await mediator.Send(command, ct);
         return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
@@ -109,7 +144,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     public async Task<ActionResult<PatientDto>> Update(
         Guid id,
         [FromBody] UpdatePatientRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await context.HasPermissionAsync("Patients.Update", ct))
             return Forbid();
@@ -154,7 +190,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
             request.Diagnoses,
             request.Medications,
             request.Allergies,
-            request.VitalSigns);
+            request.VitalSigns
+        );
 
         var updated = await mediator.Send(command, ct);
         if (updated is null)
@@ -185,7 +222,9 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     /// <summary>Profesionales asignados al paciente (detalle: quién lo atiende).</summary>
     [HttpGet("{id:guid}/professionals")]
     public async Task<ActionResult<IReadOnlyList<PatientProfessionalAssignmentView>>> Assignments(
-        Guid id, CancellationToken ct)
+        Guid id,
+        CancellationToken ct
+    )
     {
         var (allowed, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
         if (!allowed || !await CanAccessPatientAsync(id, ownProfessionalId, ct))
@@ -203,7 +242,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     public async Task<ActionResult<PatientProfessionalAssignmentView>> Assign(
         Guid id,
         [FromBody] AssignPatientProfessionalRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await context.HasPermissionAsync("Patients.Update", ct))
             return Forbid();
@@ -223,15 +263,17 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
                 request.ProfessionalId,
                 context.ActiveClinicId,
                 request.RelationshipType,
-                context.UserId), ct);
+                context.UserId
+            ),
+            ct
+        );
 
         return Ok(assignment);
     }
 
     /// <summary>Desasigna un profesional de un paciente (Patients.Update).</summary>
     [HttpDelete("{id:guid}/professionals/{professionalId:guid}")]
-    public async Task<IActionResult> Remove(
-        Guid id, Guid professionalId, CancellationToken ct)
+    public async Task<IActionResult> Remove(Guid id, Guid professionalId, CancellationToken ct)
     {
         if (!await context.HasPermissionAsync("Patients.Update", ct))
             return Forbid();
@@ -254,7 +296,9 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     /// (Patients.ViewOwn → solo pacientes asignados a su profesional). La
     /// autorización es positiva: sin ninguno de los dos, no hay acceso.
     /// </summary>
-    private async Task<(bool Allowed, Guid? OwnProfessionalId)> ResolvePatientScopeAsync(CancellationToken ct)
+    private async Task<(bool Allowed, Guid? OwnProfessionalId)> ResolvePatientScopeAsync(
+        CancellationToken ct
+    )
     {
         if (await context.HasPermissionAsync("Patients.View", ct))
             return (true, null);
@@ -273,7 +317,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     private async Task<bool> CanAccessPatientAsync(
         Guid patientId,
         Guid? ownProfessionalId,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patient = await mediator.Send(new GetPatientQuery(patientId), ct);
         if (patient is null || IsOutsideActiveClinic(patient))
@@ -289,7 +334,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     private async Task<bool> IsOutsideOwnScopeAsync(
         Guid patientId,
         Guid? ownProfessionalId,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (ownProfessionalId is null)
         {
@@ -297,7 +343,9 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         }
 
         return !await mediator.Send(
-            new PatientIsAssignedQuery(patientId, ownProfessionalId.Value), ct);
+            new PatientIsAssignedQuery(patientId, ownProfessionalId.Value),
+            ct
+        );
     }
 
     /// <summary>
@@ -306,6 +354,6 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
     /// evita filtrar existencia entre clínicas. El directorio legacy sin
     /// clínica solo es visible sin contexto activo.
     /// </summary>
-    private bool IsOutsideActiveClinic(PatientDto patient)
-        => context.ActiveClinicId is { } clinicId && patient.ClinicId != clinicId;
+    private bool IsOutsideActiveClinic(PatientDto patient) =>
+        context.ActiveClinicId is { } clinicId && patient.ClinicId != clinicId;
 }

@@ -22,6 +22,9 @@ public sealed class Specialty
 
     public int SortOrder { get; set; }
 
+    /// <summary>Soft-disable administrable desde el ERP (no se borran catálogos).</summary>
+    public bool IsActive { get; set; } = true;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<ProfessionalSpecialty> ProfessionalSpecialties { get; set; } = [];

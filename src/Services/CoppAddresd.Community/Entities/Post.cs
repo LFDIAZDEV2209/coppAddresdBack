@@ -9,7 +9,22 @@ public sealed class Post
 
     public string Body { get; set; } = default!;
 
+    /// <summary>Clave de almacenamiento de la imagen adjunta (null si el post es solo texto).</summary>
+    public string? ImageKey { get; set; }
+
+    /// <summary>Tipo de publicación (Texto, Imagen, Video, Encuesta, Logro). Por defecto Texto.</summary>
+    public PostType? Type { get; set; }
+
+    /// <summary>Destino/canal de la publicación. Por defecto TodasLasComunidades.</summary>
+    public PostDestination? Destination { get; set; }
+
+    /// <summary>Cantidad de visualizaciones (incrementado por viewPost).</summary>
+    public int ViewCount { get; set; }
+
     public bool Pinned { get; set; }
+
+    /// <summary>Sort order among pinned posts (0 = default; higher = further down).</summary>
+    public int PinnedOrder { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -19,6 +34,12 @@ public sealed class Post
     public DateTime? DeletedAt { get; set; }
 
     public Profile? Profile { get; set; }
+
+    /// <summary>Encuesta vinculada a la publicación (null si es un post normal).</summary>
+    public Poll? Poll { get; set; }
+
     public ICollection<Comment> Comments { get; set; } = [];
     public ICollection<Like> Likes { get; set; } = [];
+    public ICollection<PostReport> Reports { get; set; } = [];
+    public ICollection<Repost> Reposts { get; set; } = [];
 }

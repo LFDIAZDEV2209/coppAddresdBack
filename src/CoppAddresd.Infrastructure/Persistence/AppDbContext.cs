@@ -1,4 +1,6 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Entities.FoodAi;
+using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +17,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<PatientProfile> PatientProfiles => Set<PatientProfile>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
-    public DbSet<PatientProfessionalAssignment> PatientProfessionalAssignments => Set<PatientProfessionalAssignment>();
+    public DbSet<PatientProfessionalAssignment> PatientProfessionalAssignments =>
+        Set<PatientProfessionalAssignment>();
     public DbSet<Insurer> Insurers => Set<Insurer>();
     public DbSet<Allergen> Allergens => Set<Allergen>();
     public DbSet<Icd10Code> Icd10Codes => Set<Icd10Code>();
@@ -41,13 +44,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<EmployeeClinic> EmployeeClinics => Set<EmployeeClinic>();
     public DbSet<ProfessionalLocation> ProfessionalLocations => Set<ProfessionalLocation>();
     public DbSet<ProfessionalSpecialty> ProfessionalSpecialties => Set<ProfessionalSpecialty>();
-    public DbSet<ProfessionalTypeSpecialty> ProfessionalTypeSpecialties => Set<ProfessionalTypeSpecialty>();
+    public DbSet<ProfessionalTypeSpecialty> ProfessionalTypeSpecialties =>
+        Set<ProfessionalTypeSpecialty>();
     public DbSet<ProfessionalLicense> ProfessionalLicenses => Set<ProfessionalLicense>();
 
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
-public DbSet<Document> Documents => Set<Document>();
-public DbSet<DocumentCategory> DocumentCategories => Set<DocumentCategory>();
-public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocumentType>();
+    public DbSet<Document> Documents => Set<Document>();
+    public DbSet<DocumentCategory> DocumentCategories => Set<DocumentCategory>();
+    public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocumentType>();
 
     public DbSet<AgentType> AgentTypes => Set<AgentType>();
     public DbSet<AgentTypeVersion> AgentTypeVersions => Set<AgentTypeVersion>();
@@ -71,15 +75,46 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<ExerciseRoutine> ExerciseRoutines => Set<ExerciseRoutine>();
     public DbSet<RoutineExercise> RoutineExercises => Set<RoutineExercise>();
     public DbSet<RoutineAssignment> RoutineAssignments => Set<RoutineAssignment>();
-    public DbSet<NutritionPlanAssignment> NutritionPlanAssignments => Set<NutritionPlanAssignment>();
+    public DbSet<NutritionPlanAssignment> NutritionPlanAssignments =>
+        Set<NutritionPlanAssignment>();
 
     // Clinical Measurements — Mediciones clínicas
     public DbSet<UnitOfMeasure> UnitOfMeasures => Set<UnitOfMeasure>();
     public DbSet<MeasurementMetric> MeasurementMetrics => Set<MeasurementMetric>();
-    public DbSet<MeasurementReferenceRange> MeasurementReferenceRanges => Set<MeasurementReferenceRange>();
+    public DbSet<MeasurementReferenceRange> MeasurementReferenceRanges =>
+        Set<MeasurementReferenceRange>();
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<ClinicalMeasurement> ClinicalMeasurements => Set<ClinicalMeasurement>();
     public DbSet<PlanSafetyRule> PlanSafetyRules => Set<PlanSafetyRule>();
+
+// Food AI — Nutrición (schema foodai)
+    public DbSet<Food> Foods => Set<Food>();
+    public DbSet<FoodNutrition> FoodNutritionEntries => Set<FoodNutrition>();
+    public DbSet<FoodAlias> FoodAliases => Set<FoodAlias>();
+
+    // Food AI — Análisis y feedback (schema foodai)
+    public DbSet<FoodAnalysis> FoodAnalyses => Set<FoodAnalysis>();
+    public DbSet<FoodAnalysisItem> FoodAnalysisItems => Set<FoodAnalysisItem>();
+    public DbSet<FoodAnalysisFeedback> FoodAnalysisFeedbacks => Set<FoodAnalysisFeedback>();
+
+    // Health Tests — Tests de Salud (catálogo versionado + ejecución)
+    public DbSet<HealthTestInstrument> HealthTestInstruments => Set<HealthTestInstrument>();
+    public DbSet<HealthTestVersion> HealthTestVersions => Set<HealthTestVersion>();
+    public DbSet<HealthTestQuestion> HealthTestQuestions => Set<HealthTestQuestion>();
+    public DbSet<HealthTestAnswerOption> HealthTestAnswerOptions => Set<HealthTestAnswerOption>();
+    public DbSet<HealthTestScoreRange> HealthTestScoreRanges => Set<HealthTestScoreRange>();
+    public DbSet<HealthTestBattery> HealthTestBatteries => Set<HealthTestBattery>();
+    public DbSet<HealthTestBatteryItem> HealthTestBatteryItems => Set<HealthTestBatteryItem>();
+    public DbSet<HealthTestBatteryAssignment> HealthTestBatteryAssignments =>
+        Set<HealthTestBatteryAssignment>();
+    public DbSet<HealthTestAssignment> HealthTestAssignments => Set<HealthTestAssignment>();
+    public DbSet<HealthTestEvaluation> HealthTestEvaluations => Set<HealthTestEvaluation>();
+    public DbSet<HealthTestResponse> HealthTestResponses => Set<HealthTestResponse>();
+    public DbSet<HealthTestResult> HealthTestResults => Set<HealthTestResult>();
+    public DbSet<HealthTestIndicatorDef> HealthTestIndicatorDefs => Set<HealthTestIndicatorDef>();
+    public DbSet<HealthTestAlertRule> HealthTestAlertRules => Set<HealthTestAlertRule>();
+    public DbSet<HealthTestAlert> HealthTestAlerts => Set<HealthTestAlert>();
+    public DbSet<HealthTestComment> HealthTestComments => Set<HealthTestComment>();
 
     // Program Progress — Módulo de progreso
     public DbSet<ProgramTemplate> ProgramTemplates => Set<ProgramTemplate>();
@@ -91,7 +126,8 @@ public DbSet<ClinicalDocumentType> ClinicalDocumentTypes => Set<ClinicalDocument
     public DbSet<XpLedgerEntry> XpLedgerEntries => Set<XpLedgerEntry>();
     public DbSet<StreakState> StreakStates => Set<StreakState>();
     public DbSet<StreakFreeze> StreakFreezes => Set<StreakFreeze>();
-    public DbSet<AdaptationRecommendation> AdaptationRecommendations => Set<AdaptationRecommendation>();
+    public DbSet<AdaptationRecommendation> AdaptationRecommendations =>
+        Set<AdaptationRecommendation>();
     public DbSet<EmotionalRecord> EmotionalRecords => Set<EmotionalRecord>();
     public DbSet<XpRule> XpRules => Set<XpRule>();
 

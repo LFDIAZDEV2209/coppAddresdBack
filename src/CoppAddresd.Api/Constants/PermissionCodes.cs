@@ -43,15 +43,67 @@ public static class PermissionCodes
     public const string ProgramAdapt = "Program.Adapt";
     public const string ProgramForceComplete = "Program.ForceComplete";
 
+    // Tests de Salud (módulo HealthTests).
+    public const string HealthTestsView = "HealthTests.View";
+    public const string HealthTestsViewOwn = "HealthTests.ViewOwn";
+    public const string HealthTestsManage = "HealthTests.Manage";
+    public const string HealthTestsAssign = "HealthTests.Assign";
+    public const string HealthTestsReview = "HealthTests.Review";
+
+    // Documentos Legales
+    public const string LegalDocumentsView = "LegalDocuments.View";
+    public const string LegalDocumentsManage = "LegalDocuments.Manage";
+
+    // Store
+    public const string StoreView = "Store.View";
+    public const string StoreManage = "Store.Manage";
+
+    // Wellness
+    public const string WellnessView = "Wellness.View";
+    public const string WellnessManage = "Wellness.Manage";
+
     /// <summary>Nombres conocidos (para el policy provider que resuelve políticas por código).</summary>
     public static IReadOnlyList<string> All { get; } =
     [
-        OrganizationsView, OrganizationsCreate, OrganizationsUpdate, OrganizationsDelete,
-        ClinicsView, ClinicsCreate, ClinicsUpdate, ClinicsDelete,
-        LocationsView, LocationsCreate, LocationsUpdate, LocationsDelete,
-        EmployeesView, EmployeesCreate, EmployeesUpdate, EmployeesDelete,
-        ProfessionalsView, ProfessionalsCreate, ProfessionalsUpdate, ProfessionalsDelete,
-        PatientsView, PatientsCreate, PatientsUpdate, PatientsDelete,
-        ProgramView, ProgramEdit, ProgramEnroll, ProgramAdapt, ProgramForceComplete,
+        OrganizationsView,
+        OrganizationsCreate,
+        OrganizationsUpdate,
+        OrganizationsDelete,
+        ClinicsView,
+        ClinicsCreate,
+        ClinicsUpdate,
+        ClinicsDelete,
+        LocationsView,
+        LocationsCreate,
+        LocationsUpdate,
+        LocationsDelete,
+        EmployeesView,
+        EmployeesCreate,
+        EmployeesUpdate,
+        EmployeesDelete,
+        ProfessionalsView,
+        ProfessionalsCreate,
+        ProfessionalsUpdate,
+        ProfessionalsDelete,
+        PatientsView,
+        PatientsCreate,
+        PatientsUpdate,
+        PatientsDelete,
+        ProgramView,
+        ProgramEdit,
+        ProgramEnroll,
+        ProgramAdapt,
+        ProgramForceComplete,
+        HealthTestsView,
+        HealthTestsViewOwn,
+        HealthTestsManage,
+        HealthTestsAssign,
+        HealthTestsReview,
+        LegalDocumentsView,
+        LegalDocumentsManage,
+        StoreView,
+        StoreManage,
+        WellnessView,
+        WellnessManage,
     ];
 }
