@@ -20,7 +20,11 @@ public class CreateRequestHandlerTests
     public CreateRequestHandlerTests()
     {
         _handler = new CreateTelemedicineRequestCommandHandler(
-            _requests, _referenceData, _settings, _alerts);
+            _requests,
+            _referenceData,
+            _settings,
+            _alerts
+        );
         _referenceData.Patients[TestData.PatientId] = TestData.Patient();
         _referenceData.Specialties[TestData.SpecialtyId] = TestData.Specialty();
     }
@@ -29,8 +33,17 @@ public class CreateRequestHandlerTests
     public async Task Handle_Valido_CreaSolicitudPending()
     {
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, null, TestData.Clinic, TestData.LocationId,
-            null, "Dolor abdominal", TestData.UserId);
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            null,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
 
         var dto = await _handler.Handle(command, CancellationToken.None);
 
@@ -45,11 +58,22 @@ public class CreateRequestHandlerTests
     [Fact]
     public async Task Handle_ConProfesional_ValidaEspecialidadYEmiteAlerta()
     {
-        _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
+        _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(
+            userId: TestData.UserId
+        );
 
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, TestData.ProfessionalId, TestData.Clinic, TestData.LocationId,
-            null, "Dolor abdominal", TestData.UserId);
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            TestData.ProfessionalId,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
 
         var dto = await _handler.Handle(command, CancellationToken.None);
 
@@ -64,14 +88,26 @@ public class CreateRequestHandlerTests
     {
         var otherSpecialty = Guid.NewGuid();
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(
-            userId: TestData.UserId, specialtyIds: [otherSpecialty]);
+            userId: TestData.UserId,
+            specialtyIds: [otherSpecialty]
+        );
 
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, TestData.ProfessionalId, TestData.Clinic, TestData.LocationId,
-            null, "Dolor abdominal", TestData.UserId);
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            TestData.ProfessionalId,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            _handler.Handle(command, CancellationToken.None));
+            _handler.Handle(command, CancellationToken.None)
+        );
         Assert.Empty(_requests.Items);
     }
 
@@ -80,11 +116,22 @@ public class CreateRequestHandlerTests
     {
         // Profesional sin catálogo de especialidades: no se bloquea la solicitud.
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(
-            userId: TestData.UserId, specialtyIds: []);
+            userId: TestData.UserId,
+            specialtyIds: []
+        );
 
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, TestData.ProfessionalId, TestData.Clinic, TestData.LocationId,
-            null, "Dolor abdominal", TestData.UserId);
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            TestData.ProfessionalId,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
 
         var dto = await _handler.Handle(command, CancellationToken.None);
 
@@ -95,12 +142,21 @@ public class CreateRequestHandlerTests
     public async Task Handle_FechaPreferidaMuyCercana_LanzaViolacion()
     {
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, null, TestData.Clinic, TestData.LocationId,
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            null,
+            TestData.Clinic,
+            TestData.LocationId,
             DateTimeOffset.UtcNow.AddHours(_settings.Settings.MinAdvanceBookingHours - 1),
-            "Dolor abdominal", TestData.UserId);
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            _handler.Handle(command, CancellationToken.None));
+            _handler.Handle(command, CancellationToken.None)
+        );
         Assert.Empty(_requests.Items);
     }
 
@@ -108,22 +164,41 @@ public class CreateRequestHandlerTests
     public async Task Handle_FechaPreferidaMuyLejana_LanzaViolacion()
     {
         var command = new CreateTelemedicineRequestCommand(
-            TestData.PatientId, TestData.Org, TestData.SpecialtyId, null, TestData.Clinic, TestData.LocationId,
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            null,
+            TestData.Clinic,
+            TestData.LocationId,
             DateTimeOffset.UtcNow.AddDays(_settings.Settings.MaxAdvanceBookingDays + 1),
-            "Dolor abdominal", TestData.UserId);
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
 
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            _handler.Handle(command, CancellationToken.None));
+            _handler.Handle(command, CancellationToken.None)
+        );
     }
 
     [Fact]
     public async Task Handle_PacienteInexistente_LanzaNotFound()
     {
         var command = new CreateTelemedicineRequestCommand(
-            Guid.NewGuid(), TestData.Org, TestData.SpecialtyId, null, TestData.Clinic, TestData.LocationId,
-            null, "Dolor abdominal", TestData.UserId);
+            Guid.NewGuid(),
+            TestData.Org,
+            TestData.SpecialtyId,
+            null,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
-            _handler.Handle(command, CancellationToken.None));
+            _handler.Handle(command, CancellationToken.None)
+        );
     }
 }

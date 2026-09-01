@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CoppAddresd.Api.Seeders;
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Interfaces;
@@ -13,7 +14,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
-using System.Text.Json;
 
 namespace CoppAddresd.UnitTests.ProgramProgress;
 
@@ -54,19 +54,21 @@ public sealed class ProgramRepositoryTestDb : IAsyncLifetime
         // las migraciones hacen GRANT) es cluster-wide y puede no existir.
         // Se crea si falta ANTES de migrar; sin privilegios de superusuario la
         // suite fallaría igualmente en los GRANT, así que el intento es seguro.
-        await ExecuteOnBaseAsync(async (cmd, ct) =>
-        {
-            cmd.CommandText = """
-                DO $$
-                BEGIN
-                    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN
-                        CREATE ROLE app_user;
-                    END IF;
-                END
-                $$;
-                """;
-            await cmd.ExecuteNonQueryAsync(ct);
-        });
+        await ExecuteOnBaseAsync(
+            async (cmd, ct) =>
+            {
+                cmd.CommandText = """
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') THEN
+                            CREATE ROLE app_user;
+                        END IF;
+                    END
+                    $$;
+                    """;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+        );
 
         // Locale: 'en_US.utf8' no existe en todo clúster (Windows usa nombres
         // tipo 'English_United States.1252'; Linux mínimo solo C/C.UTF-8). Se
@@ -78,29 +80,33 @@ public sealed class ProgramRepositoryTestDb : IAsyncLifetime
         // TEMPLATE template0: template1 arrastra un collation version mismatch
         // (XX000) tras upgrades de PostgreSQL; template0 es pristino y se
         // especifica la misma collation/encoding que la BD de dev.
-        await ExecuteOnBaseAsync(async (cmd, ct) =>
-        {
-            cmd.CommandText = $"""
-                DROP DATABASE IF EXISTS "{_testDbName}" WITH (FORCE);
-                CREATE DATABASE "{_testDbName}"
-                    TEMPLATE template0
-                    ENCODING 'UTF8'
-                    LC_COLLATE '{locale}'
-                    LC_CTYPE '{locale}';
-                """;
-            await cmd.ExecuteNonQueryAsync(ct);
-        });
+        await ExecuteOnBaseAsync(
+            async (cmd, ct) =>
+            {
+                cmd.CommandText = $"""
+                    DROP DATABASE IF EXISTS "{_testDbName}" WITH (FORCE);
+                    CREATE DATABASE "{_testDbName}"
+                        TEMPLATE template0
+                        ENCODING 'UTF8'
+                        LC_COLLATE '{locale}'
+                        LC_CTYPE '{locale}';
+                    """;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+        );
 
         // Esquema auth mínimo: las migraciones del backend crean FKs por SQL
         // hacia auth."Users"("Id") (gestionado por el Auth Service en prod).
-        await ExecuteOnTestAsync(async (cmd, ct) =>
-        {
-            cmd.CommandText = """
-                CREATE SCHEMA IF NOT EXISTS auth;
-                CREATE TABLE IF NOT EXISTS auth."Users" ("Id" uuid NOT NULL PRIMARY KEY);
-                """;
-            await cmd.ExecuteNonQueryAsync(ct);
-        });
+        await ExecuteOnTestAsync(
+            async (cmd, ct) =>
+            {
+                cmd.CommandText = """
+                    CREATE SCHEMA IF NOT EXISTS auth;
+                    CREATE TABLE IF NOT EXISTS auth."Users" ("Id" uuid NOT NULL PRIMARY KEY);
+                    """;
+                await cmd.ExecuteNonQueryAsync(ct);
+            }
+        );
 
         await using var db = CreateDbContext();
         await db.Database.MigrateAsync();
@@ -115,11 +121,13 @@ public sealed class ProgramRepositoryTestDb : IAsyncLifetime
 
         try
         {
-            await ExecuteOnBaseAsync(async (cmd, ct) =>
-            {
-                cmd.CommandText = $"DROP DATABASE IF EXISTS \"{_testDbName}\" WITH (FORCE);";
-                await cmd.ExecuteNonQueryAsync(ct);
-            });
+            await ExecuteOnBaseAsync(
+                async (cmd, ct) =>
+                {
+                    cmd.CommandText = $"DROP DATABASE IF EXISTS \"{_testDbName}\" WITH (FORCE);";
+                    await cmd.ExecuteNonQueryAsync(ct);
+                }
+            );
         }
         catch
         {
@@ -127,16 +135,14 @@ public sealed class ProgramRepositoryTestDb : IAsyncLifetime
         }
     }
 
-    public AppDbContext CreateDbContext()
-        => new(new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(ConnectionString)
-            .Options);
+    public AppDbContext CreateDbContext() =>
+        new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(ConnectionString).Options);
 
-    private Task ExecuteOnBaseAsync(Func<NpgsqlCommand, CancellationToken, Task> action)
-        => ExecuteAsync(_baseConnectionString, action);
+    private Task ExecuteOnBaseAsync(Func<NpgsqlCommand, CancellationToken, Task> action) =>
+        ExecuteAsync(_baseConnectionString, action);
 
-    private Task ExecuteOnTestAsync(Func<NpgsqlCommand, CancellationToken, Task> action)
-        => ExecuteAsync(ConnectionString, action);
+    private Task ExecuteOnTestAsync(Func<NpgsqlCommand, CancellationToken, Task> action) =>
+        ExecuteAsync(ConnectionString, action);
 
     /// <summary>
     /// Detecta un locale usable para el <c>CREATE DATABASE</c>: prefiere
@@ -148,24 +154,28 @@ public sealed class ProgramRepositoryTestDb : IAsyncLifetime
     private async Task<string> DetectAvailableLocaleAsync()
     {
         string? detected = null;
-        await ExecuteOnBaseAsync(async (cmd, ct) =>
-        {
-            cmd.CommandText = """
-                SELECT CASE
-                    WHEN EXISTS (SELECT 1 FROM pg_collation
-                                 WHERE collname IN ('en_US.utf8', 'en_US.UTF-8'))
-                    THEN 'en_US.utf8'
-                    ELSE (SELECT datcollate FROM pg_database WHERE datname = 'postgres' LIMIT 1)
-                END;
-                """;
-            detected = await cmd.ExecuteScalarAsync(ct) as string;
-        });
+        await ExecuteOnBaseAsync(
+            async (cmd, ct) =>
+            {
+                cmd.CommandText = """
+                    SELECT CASE
+                        WHEN EXISTS (SELECT 1 FROM pg_collation
+                                     WHERE collname IN ('en_US.utf8', 'en_US.UTF-8'))
+                        THEN 'en_US.utf8'
+                        ELSE (SELECT datcollate FROM pg_database WHERE datname = 'postgres' LIMIT 1)
+                    END;
+                    """;
+                detected = await cmd.ExecuteScalarAsync(ct) as string;
+            }
+        );
 
         return string.IsNullOrWhiteSpace(detected) ? "C" : detected;
     }
 
     private static async Task ExecuteAsync(
-        string connectionString, Func<NpgsqlCommand, CancellationToken, Task> action)
+        string connectionString,
+        Func<NpgsqlCommand, CancellationToken, Task> action
+    )
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -181,7 +191,8 @@ public sealed class ProgramRepositoryTestDb : IAsyncLifetime
 /// vía <see cref="ProgramProgressSeeder"/> + un paciente).
 /// </summary>
 public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
-    : IClassFixture<ProgramRepositoryTestDb>, IAsyncLifetime
+    : IClassFixture<ProgramRepositoryTestDb>,
+        IAsyncLifetime
 {
     private static readonly (TaskCode Code, int Points)[] TaskSeeds =
     [
@@ -228,13 +239,26 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(80, result.XpBalanceAfter);
 
         await using var db = fixture.CreateDbContext();
-        Assert.Equal(1, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday && t.TaskCode == TaskCode.podcast));
-        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
-            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.TaskCompletion));
-        Assert.Equal(80, await db.XpLedgerEntries
-            .Where(x => x.EnrollmentId == enrollmentId)
-            .MaxAsync(x => x.BalanceAfter));
+        Assert.Equal(
+            1,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId
+                && t.LocalDate == tuesday
+                && t.TaskCode == TaskCode.podcast
+            )
+        );
+        Assert.Equal(
+            1,
+            await db.XpLedgerEntries.CountAsync(x =>
+                x.EnrollmentId == enrollmentId && x.Reason == XpReason.TaskCompletion
+            )
+        );
+        Assert.Equal(
+            80,
+            await db
+                .XpLedgerEntries.Where(x => x.EnrollmentId == enrollmentId)
+                .MaxAsync(x => x.BalanceAfter)
+        );
     }
 
     // ---------------------------------------------------------------- AC-02
@@ -242,7 +266,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task CompleteTask_ReplayMismoClientRequestId_SinFilasNuevas()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
 
@@ -254,10 +277,18 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(first.TaskCompletionId, replay.TaskCompletionId);
 
         await using var db = fixture.CreateDbContext();
-        Assert.Equal(1, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday));
-        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
-            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.TaskCompletion));
+        Assert.Equal(
+            1,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId && t.LocalDate == tuesday
+            )
+        );
+        Assert.Equal(
+            1,
+            await db.XpLedgerEntries.CountAsync(x =>
+                x.EnrollmentId == enrollmentId && x.Reason == XpReason.TaskCompletion
+            )
+        );
         Assert.Equal(80, await db.XpLedgerEntries.MaxAsync(x => x.BalanceAfter));
     }
 
@@ -266,7 +297,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task CompleteTask_MismaClaveDiferenteRequestId_DevuelveExistenteSinDobleXp()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
 
@@ -276,8 +306,12 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(CompleteTaskOutcome.Replay, replay.Outcome);
 
         await using var db = fixture.CreateDbContext();
-        Assert.Equal(1, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday));
+        Assert.Equal(
+            1,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId && t.LocalDate == tuesday
+            )
+        );
         Assert.Equal(80, await db.XpLedgerEntries.MaxAsync(x => x.BalanceAfter));
     }
 
@@ -286,7 +320,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task CompleteTask_MismoRequestIdDiferenteFecha_DevuelveIdempotencyKeyReused()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
         var wednesday = _monday.AddDays(2);
@@ -297,8 +330,12 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(CompleteTaskOutcome.IdempotencyKeyReused, conflicted.Outcome);
 
         await using var db = fixture.CreateDbContext();
-        Assert.Equal(0, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == wednesday));
+        Assert.Equal(
+            0,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId && t.LocalDate == wednesday
+            )
+        );
         Assert.Equal(80, await db.XpLedgerEntries.MaxAsync(x => x.BalanceAfter));
     }
 
@@ -307,7 +344,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task CompleteTask_TodasLasTareasDelDia_DiaPerfectoYBonusUnico()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
 
@@ -322,20 +358,33 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(50, last.DailyBonusAwarded);
 
         await using var db = fixture.CreateDbContext();
-        Assert.Equal(6, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday));
-        var checkin = await db.DailyCheckIns.AsNoTracking().SingleAsync(
-            c => c.EnrollmentId == enrollmentId && c.LocalDate == tuesday);
+        Assert.Equal(
+            6,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId && t.LocalDate == tuesday
+            )
+        );
+        var checkin = await db
+            .DailyCheckIns.AsNoTracking()
+            .SingleAsync(c => c.EnrollmentId == enrollmentId && c.LocalDate == tuesday);
         Assert.True(checkin.IsPerfectDay);
         Assert.Equal(50, checkin.BonusAwarded);
-        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
-            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.DailyBonus));
+        Assert.Equal(
+            1,
+            await db.XpLedgerEntries.CountAsync(x =>
+                x.EnrollmentId == enrollmentId && x.Reason == XpReason.DailyBonus
+            )
+        );
         // 700 puntos base + 50 bonus.
         Assert.Equal(750, await db.XpLedgerEntries.MaxAsync(x => x.BalanceAfter));
-        Assert.Equal(1, await db.StreakStates.AsNoTracking()
-            .Where(s => s.EnrollmentId == enrollmentId)
-            .Select(s => s.CurrentStreak)
-            .SingleAsync());
+        Assert.Equal(
+            1,
+            await db
+                .StreakStates.AsNoTracking()
+                .Where(s => s.EnrollmentId == enrollmentId)
+                .Select(s => s.CurrentStreak)
+                .SingleAsync()
+        );
     }
 
     // ---------------------------------------------------------------- §7.2 replay idéntico
@@ -366,11 +415,11 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task CompleteTask_50Concurrentes_UnaSolaFilaYUnaSolaXp()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
 
-        var tasks = Enumerable.Range(0, 50)
+        var tasks = Enumerable
+            .Range(0, 50)
             .Select(i => CompleteAsync(enrollmentId, tuesday, TaskCode.podcast, $"ac10-{i}"));
         var results = await Task.WhenAll(tasks);
 
@@ -378,10 +427,20 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(49, results.Count(r => r.Outcome == CompleteTaskOutcome.Replay));
 
         await using var db = fixture.CreateDbContext();
-        Assert.Equal(1, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday && t.TaskCode == TaskCode.podcast));
-        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
-            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.TaskCompletion));
+        Assert.Equal(
+            1,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId
+                && t.LocalDate == tuesday
+                && t.TaskCode == TaskCode.podcast
+            )
+        );
+        Assert.Equal(
+            1,
+            await db.XpLedgerEntries.CountAsync(x =>
+                x.EnrollmentId == enrollmentId && x.Reason == XpReason.TaskCompletion
+            )
+        );
         Assert.Equal(80, await db.XpLedgerEntries.MaxAsync(x => x.BalanceAfter));
     }
 
@@ -390,15 +449,19 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task CompleteTask_NutSinPlan_ContenidoNuloYConXp()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
 
         var result = await CompleteAsync(enrollmentId, tuesday, TaskCode.nut, "ac13-1");
 
         await using var db = fixture.CreateDbContext();
-        var completion = await db.TaskCompletions.AsNoTracking().SingleAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday && t.TaskCode == TaskCode.nut);
+        var completion = await db
+            .TaskCompletions.AsNoTracking()
+            .SingleAsync(t =>
+                t.EnrollmentId == enrollmentId
+                && t.LocalDate == tuesday
+                && t.TaskCode == TaskCode.nut
+            );
         Assert.Null(completion.NutritionPlanId);
         Assert.Null(completion.NutritionPlanDayNumber);
         Assert.Equal(150, completion.PointsAwarded);
@@ -411,7 +474,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task EdicionPlantillaMitadDeSemana_SnapshotActualInmutable_ProximaUsaNuevoValor()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
         await CompleteAsync(enrollmentId, tuesday, TaskCode.podcast, "ac15-1");
@@ -422,15 +484,18 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
             var repo = new ProgramRepository(editDb, Configuration());
             var template = await repo.GetTemplateAsync(_templateId);
             Assert.NotNull(template);
-            template!.DayTemplates.Single(d => d.Weekday == 2 && d.TaskCode == TaskCode.podcast).Points = 999;
+            template!
+                .DayTemplates.Single(d => d.Weekday == 2 && d.TaskCode == TaskCode.podcast)
+                .Points = 999;
             await repo.UpsertTemplateAsync(template, template.DayTemplates.ToList());
         }
 
         // La semana 1 de la inscripción actual conserva su snapshot congelado.
         await using (var verifyDb = fixture.CreateDbContext())
         {
-            var week = await verifyDb.ProgramWeeks.AsNoTracking().SingleAsync(
-                w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
+            var week = await verifyDb
+                .ProgramWeeks.AsNoTracking()
+                .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
             var tuesdayPodcast = ParseSnapshot(week.TasksSnapshot)
                 .Single(t => t.Weekday == 2 && t.TaskCode == TaskCode.podcast.ToString());
             Assert.Equal(80, tuesdayPodcast.Points);
@@ -441,8 +506,9 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         var enrollmentId2 = await EnrollAsync(patientId: secondPatient);
         await using (var verifyDb = fixture.CreateDbContext())
         {
-            var week = await verifyDb.ProgramWeeks.AsNoTracking().SingleAsync(
-                w => w.EnrollmentId == enrollmentId2 && w.WeekNumber == 1);
+            var week = await verifyDb
+                .ProgramWeeks.AsNoTracking()
+                .SingleAsync(w => w.EnrollmentId == enrollmentId2 && w.WeekNumber == 1);
             var tuesdayPodcast = ParseSnapshot(week.TasksSnapshot)
                 .Single(t => t.Weekday == 2 && t.TaskCode == TaskCode.podcast.ToString());
             Assert.Equal(999, tuesdayPodcast.Points);
@@ -462,7 +528,9 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
             var repo = new ProgramRepository(editDb, Configuration());
             var template = await repo.GetTemplateAsync(_templateId);
             Assert.NotNull(template);
-            template!.DayTemplates.Single(d => d.Weekday == 2 && d.TaskCode == TaskCode.podcast).Points = 999;
+            template!
+                .DayTemplates.Single(d => d.Weekday == 2 && d.TaskCode == TaskCode.podcast)
+                .Points = 999;
             await repo.UpsertTemplateAsync(template, template.DayTemplates.ToList());
         }
 
@@ -474,15 +542,17 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(CompleteTaskOutcome.Created, result.Outcome);
 
         await using var verifyDb = fixture.CreateDbContext();
-        var week2 = await verifyDb.ProgramWeeks.AsNoTracking().SingleAsync(
-            w => w.EnrollmentId == enrollmentId && w.WeekNumber == 2);
+        var week2 = await verifyDb
+            .ProgramWeeks.AsNoTracking()
+            .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 2);
         Assert.Equal(ProgramWeekStatus.Active, week2.Status);
         var tuesdayPodcastWeek2 = ParseSnapshot(week2.TasksSnapshot)
             .Single(t => t.Weekday == 2 && t.TaskCode == TaskCode.podcast.ToString());
         Assert.Equal(999, tuesdayPodcastWeek2.Points);
 
-        var week1 = await verifyDb.ProgramWeeks.AsNoTracking().SingleAsync(
-            w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
+        var week1 = await verifyDb
+            .ProgramWeeks.AsNoTracking()
+            .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
         Assert.Equal(ProgramWeekStatus.Completed, week1.Status);
         var tuesdayPodcastWeek1 = ParseSnapshot(week1.TasksSnapshot)
             .Single(t => t.Weekday == 2 && t.TaskCode == TaskCode.podcast.ToString());
@@ -494,7 +564,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task PausaResumeRetiro_MaquinaDeEstados_YBloqueoDeCompletacion()
     {
-
         var enrollmentId = await EnrollAsync();
         await using var db = fixture.CreateDbContext();
         var repo = new ProgramRepository(db, Configuration());
@@ -504,7 +573,8 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.NotNull(paused.PausedAt);
 
         var inactive = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            CompleteAsync(enrollmentId, _monday, TaskCode.podcast, "st-1"));
+            CompleteAsync(enrollmentId, _monday, TaskCode.podcast, "st-1")
+        );
         Assert.Contains("ENROLLMENT_INACTIVE", inactive.Message);
 
         var resumed = await repo.ResumeAsync(enrollmentId);
@@ -515,53 +585,61 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(ProgramEnrollmentStatus.Withdrawn, withdrawn.Status);
         Assert.NotNull(withdrawn.WithdrawnAt);
 
-        await Assert.ThrowsAsync<BusinessRuleViolationException>(() => repo.WithdrawAsync(enrollmentId));
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            repo.WithdrawAsync(enrollmentId)
+        );
     }
 
     [RequiresPostgresFact]
     public async Task CompleteTask_TareaNoProgramadaEnSnapshot_LanzaTaskNotScheduled()
     {
-
         var sparseTemplateId = await SeedSparseTemplateAsync();
         var enrollmentId = await EnrollAsync(templateId: sparseTemplateId);
         var monday = _monday;
 
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            CompleteAsync(enrollmentId, monday, TaskCode.nut, "ns-1"));
+            CompleteAsync(enrollmentId, monday, TaskCode.nut, "ns-1")
+        );
         Assert.Contains("TASK_NOT_SCHEDULED", ex.Message);
 
         await using var db = fixture.CreateDbContext();
-        Assert.Equal(0, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == monday));
+        Assert.Equal(
+            0,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId && t.LocalDate == monday
+            )
+        );
     }
 
     [RequiresPostgresFact]
     public async Task CompleteTask_FechaFueraDelPrograma_LanzaDateOutsideActiveWeek()
     {
-
         var enrollmentId = await EnrollAsync();
         var beyondProgram = _monday.AddDays((83 * 7) + 10);
 
         var ex = await Assert.ThrowsAsync<UnprocessableEntityException>(() =>
-            CompleteAsync(enrollmentId, beyondProgram, TaskCode.podcast, "out-1"));
+            CompleteAsync(enrollmentId, beyondProgram, TaskCode.podcast, "out-1")
+        );
         Assert.Contains("DATE_OUTSIDE_ACTIVE_WEEK", ex.Message);
     }
 
     [RequiresPostgresFact]
     public async Task EnrollAsync_CreaInscripcionSemanasYRacha()
     {
-
         var enrollmentId = await EnrollAsync();
 
         await using var db = fixture.CreateDbContext();
-        var enrollment = await db.ProgramEnrollments.AsNoTracking().SingleAsync(e => e.Id == enrollmentId);
+        var enrollment = await db
+            .ProgramEnrollments.AsNoTracking()
+            .SingleAsync(e => e.Id == enrollmentId);
         Assert.Equal(ProgramEnrollmentStatus.Active, enrollment.Status);
         Assert.Equal(1, enrollment.CurrentWeekNumber);
         Assert.Equal(_monday, enrollment.StartLocalDate);
 
         Assert.Equal(83, await db.ProgramWeeks.CountAsync(w => w.EnrollmentId == enrollmentId));
-        var week1 = await db.ProgramWeeks.AsNoTracking().SingleAsync(
-            w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
+        var week1 = await db
+            .ProgramWeeks.AsNoTracking()
+            .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
         Assert.Equal(ProgramWeekStatus.Active, week1.Status);
         Assert.Equal(_monday, week1.WeekStartDateLocal);
         Assert.Equal(_monday.AddDays(6), week1.WeekEndDateLocal);
@@ -573,14 +651,14 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task EnrollAsync_SegundaInscripcionActiva_LanzaPatienteYaInscrito()
     {
-
         await EnrollAsync();
 
         await using var db = fixture.CreateDbContext();
         var repo = new ProgramRepository(db, Configuration());
 
         var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            repo.EnrollAsync(_patientId, _templateId, "America/Bogota", _monday));
+            repo.EnrollAsync(_patientId, _templateId, "America/Bogota", _monday)
+        );
         Assert.Contains("PATIENT_ALREADY_ENROLLED", ex.Message);
     }
 
@@ -589,7 +667,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task GetSnapshot_DevuelveEstadoCompletoDelDia()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
         await CompleteAsync(enrollmentId, tuesday, TaskCode.podcast, "snap-1");
@@ -603,23 +680,29 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(1, snapshot.Template.CurrentWeekNumber);
         Assert.Equal(ProgramWeekStatus.Active, snapshot.Template.CurrentWeekStatus);
         Assert.Equal(6, snapshot.TodayTasks.Count);
-        Assert.Equal("Completed", snapshot.TodayTasks.Single(t => t.TaskCode == TaskCode.podcast).Status);
-        Assert.Equal("Pending", snapshot.TodayTasks.Single(t => t.TaskCode == TaskCode.vitals).Status);
+        Assert.Equal(
+            "Completed",
+            snapshot.TodayTasks.Single(t => t.TaskCode == TaskCode.podcast).Status
+        );
+        Assert.Equal(
+            "Pending",
+            snapshot.TodayTasks.Single(t => t.TaskCode == TaskCode.vitals).Status
+        );
         Assert.Equal(80, snapshot.TodayPoints);
         Assert.Equal(750, snapshot.TodayPointsMax);
         Assert.True(snapshot.TodayBonusAvailable);
         Assert.Equal(80, snapshot.Xp.Balance);
         Assert.Equal("Explorador", snapshot.Xp.Level);
         Assert.Equal(500, snapshot.Xp.NextLevelAt);
-        // Un solo task completado: el día aún no es perfecto, la racha no aporta.
-        Assert.Equal(0, snapshot.Streak.Current);
+        // Racha por umbral (SPEC §17, B): con StreakMinTasks default 1, completar
+        // 1 tarea ya inicia la racha (no se requiere día perfecto).
+        Assert.Equal(1, snapshot.Streak.Current);
         Assert.Equal(7, snapshot.Calendar.Count);
     }
 
     [RequiresPostgresFact]
     public async Task GetCalendar_VentanaDevuelveDiasYResumen()
     {
-
         var enrollmentId = await EnrollAsync();
         var monday = _monday;
         await CompleteAsync(enrollmentId, monday, TaskCode.podcast, "cal-1");
@@ -643,7 +726,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task GetPath_DevuelveLas83Semanas()
     {
-
         var enrollmentId = await EnrollAsync();
         var monday = _monday;
         await CompleteAsync(enrollmentId, monday, TaskCode.podcast, "path-1");
@@ -668,7 +750,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task Plantillas_UpsertCreaActualiza_YReemplazoDeTareas()
     {
-
         await using var db = fixture.CreateDbContext();
         var repo = new ProgramRepository(db, Configuration());
 
@@ -683,8 +764,20 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         };
         var tareas = new List<WeeklyDayTemplate>
         {
-            new() { Weekday = 1, TaskCode = TaskCode.podcast, Points = 100, SortOrder = 1 },
-            new() { Weekday = 1, TaskCode = TaskCode.vitals, Points = 120, SortOrder = 2 },
+            new()
+            {
+                Weekday = 1,
+                TaskCode = TaskCode.podcast,
+                Points = 100,
+                SortOrder = 1,
+            },
+            new()
+            {
+                Weekday = 1,
+                TaskCode = TaskCode.vitals,
+                Points = 120,
+                SortOrder = 2,
+            },
         };
         var created = await repo.UpsertTemplateAsync(nuevo, tareas);
         Assert.NotEqual(Guid.Empty, created.Id);
@@ -699,16 +792,37 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         // Reemplazo en bloque de las tareas por día.
         var reemplazo = new List<WeeklyDayTemplate>
         {
-            new() { Weekday = 1, TaskCode = TaskCode.podcast, Points = 150, SortOrder = 1 },
-            new() { Weekday = 1, TaskCode = TaskCode.nut, Points = 150, SortOrder = 2 },
-            new() { Weekday = 2, TaskCode = TaskCode.ejercicio, Points = 200, SortOrder = 1 },
+            new()
+            {
+                Weekday = 1,
+                TaskCode = TaskCode.podcast,
+                Points = 150,
+                SortOrder = 1,
+            },
+            new()
+            {
+                Weekday = 1,
+                TaskCode = TaskCode.nut,
+                Points = 150,
+                SortOrder = 2,
+            },
+            new()
+            {
+                Weekday = 2,
+                TaskCode = TaskCode.ejercicio,
+                Points = 200,
+                SortOrder = 1,
+            },
         };
         var replaced = await repo.ReplaceWeekdayTasksAsync(created.Id, reemplazo);
         Assert.Equal(3, replaced.Count);
 
         var reloaded = await repo.GetTemplateAsync(created.Id);
         Assert.Equal(3, reloaded!.DayTemplates.Count);
-        Assert.Contains(reloaded.DayTemplates, d => d.Weekday == 2 && d.TaskCode == TaskCode.ejercicio && d.Points == 200);
+        Assert.Contains(
+            reloaded.DayTemplates,
+            d => d.Weekday == 2 && d.TaskCode == TaskCode.ejercicio && d.Points == 200
+        );
     }
 
     // ---------------------------------------------------------------- Adaptaciones
@@ -716,7 +830,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task DecideAdaptacion_PendingAprobadaAplicada_YTransicionesInvalidas()
     {
-
         var enrollmentId = await EnrollAsync();
         await using var db = fixture.CreateDbContext();
 
@@ -737,7 +850,10 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
 
         var repo = new ProgramRepository(db, Configuration());
 
-        var approved = await repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Approve);
+        var approved = await repo.DecideAdaptationAsync(
+            adaptation.Id,
+            AdaptationDecisionAction.Approve
+        );
         Assert.Equal(AdaptationStatus.Approved, approved.Status);
         Assert.NotNull(approved.DecidedAt);
 
@@ -745,25 +861,31 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         // en la MISMA transacción que la transición (verificable en BD real).
         var actorId = Guid.NewGuid();
         var applied = await repo.DecideAdaptationAsync(
-            adaptation.Id, AdaptationDecisionAction.Apply, actorId, auditActionOnApply: "AdaptationApplied");
+            adaptation.Id,
+            AdaptationDecisionAction.Apply,
+            actorId,
+            auditActionOnApply: "AdaptationApplied"
+        );
         Assert.Equal(AdaptationStatus.Applied, applied.Status);
         Assert.NotNull(applied.AppliedAt);
 
         // La fila semántica se distingue de las filas del trigger (UPDATE del DML).
-        var audit = await db.ActivityLogs.AsNoTracking()
-            .SingleAsync(l => l.RecordId == adaptation.Id.ToString()
-                && l.Action == AuditAction.AdaptationApplied);
+        var audit = await db
+            .ActivityLogs.AsNoTracking()
+            .SingleAsync(l =>
+                l.RecordId == adaptation.Id.ToString() && l.Action == AuditAction.AdaptationApplied
+            );
         Assert.Equal(actorId, audit.UserId);
 
         // Reject desde Applied no está permitido (solo Pending).
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Reject));
+            repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Reject)
+        );
     }
 
     [RequiresPostgresFact]
     public async Task DecideAdaptacion_RejectSoloDesdePending_YListado()
     {
-
         var enrollmentId = await EnrollAsync();
         await using var db = fixture.CreateDbContext();
 
@@ -786,18 +908,28 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
 
         // Apply desde Pending no está permitido (solo Approved).
         var invalidApply = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Apply));
+            repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Apply)
+        );
         Assert.Contains("ADAPTATION_STATE", invalidApply.Message);
 
-        var rejected = await repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Reject);
+        var rejected = await repo.DecideAdaptationAsync(
+            adaptation.Id,
+            AdaptationDecisionAction.Reject
+        );
         Assert.Equal(AdaptationStatus.Rejected, rejected.Status);
 
         // Rechazar dos veces tampoco.
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Reject));
+            repo.DecideAdaptationAsync(adaptation.Id, AdaptationDecisionAction.Reject)
+        );
 
         // Listado filtrado por estado.
-        var (items, total) = await repo.ListAdaptationsAsync(enrollmentId, AdaptationStatus.Rejected, 1, 20);
+        var (items, total) = await repo.ListAdaptationsAsync(
+            enrollmentId,
+            AdaptationStatus.Rejected,
+            1,
+            20
+        );
         Assert.Equal(1, total);
         Assert.Single(items);
     }
@@ -837,13 +969,19 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
 
         var repo = new ProgramRepository(db, Configuration());
         var superseded = await repo.SupersedePendingAsync(
-            enrollmentId, AdaptationKind.DifficultyChange, enrollmentId, newer.Id);
+            enrollmentId,
+            AdaptationKind.DifficultyChange,
+            enrollmentId,
+            newer.Id
+        );
 
         // Solo la anterior queda Superseded; la nueva sigue Pending (SPEC §5.6).
         Assert.Equal(1, superseded);
-        var olderReloaded = await db.AdaptationRecommendations.AsNoTracking()
+        var olderReloaded = await db
+            .AdaptationRecommendations.AsNoTracking()
             .SingleAsync(a => a.Id == older.Id);
-        var newerReloaded = await db.AdaptationRecommendations.AsNoTracking()
+        var newerReloaded = await db
+            .AdaptationRecommendations.AsNoTracking()
             .SingleAsync(a => a.Id == newer.Id);
         Assert.Equal(AdaptationStatus.Superseded, olderReloaded.Status);
         Assert.NotNull(olderReloaded.UpdatedAt);
@@ -853,7 +991,6 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task SemanaPerfecta_CompletaSemanaAvanzaYOtorgaCongelamiento()
     {
-
         var enrollmentId = await EnrollAsync();
 
         // 6 tareas × 7 días de la semana 1 (42 completaciones → semana perfecta).
@@ -867,30 +1004,40 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         }
 
         await using var db = fixture.CreateDbContext();
-        var week1 = await db.ProgramWeeks.AsNoTracking().SingleAsync(
-            w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
-        Assert.Equal(7, await db.DailyCheckIns.CountAsync(
-            c => c.ProgramWeekId == week1.Id && c.IsPerfectDay));
+        var week1 = await db
+            .ProgramWeeks.AsNoTracking()
+            .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
+        Assert.Equal(
+            7,
+            await db.DailyCheckIns.CountAsync(c => c.ProgramWeekId == week1.Id && c.IsPerfectDay)
+        );
         Assert.Equal(ProgramWeekStatus.Completed, week1.Status);
         Assert.NotNull(week1.CompletedAt);
 
-        var week2 = await db.ProgramWeeks.AsNoTracking().SingleAsync(
-            w => w.EnrollmentId == enrollmentId && w.WeekNumber == 2);
+        var week2 = await db
+            .ProgramWeeks.AsNoTracking()
+            .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 2);
         Assert.Equal(ProgramWeekStatus.Active, week2.Status);
         Assert.Equal(42, ParseSnapshot(week2.TasksSnapshot).Count);
 
-        var enrollment = await db.ProgramEnrollments.AsNoTracking().SingleAsync(
-            e => e.Id == enrollmentId);
+        var enrollment = await db
+            .ProgramEnrollments.AsNoTracking()
+            .SingleAsync(e => e.Id == enrollmentId);
         Assert.Equal(2, enrollment.CurrentWeekNumber);
         Assert.Equal(ProgramEnrollmentStatus.Active, enrollment.Status);
 
         // OQ-3: 1 congelamiento cada 7 días perfectos, tope 3.
-        var streak = await db.StreakStates.AsNoTracking().SingleAsync(
-            s => s.EnrollmentId == enrollmentId);
+        var streak = await db
+            .StreakStates.AsNoTracking()
+            .SingleAsync(s => s.EnrollmentId == enrollmentId);
         Assert.Equal(7, streak.CurrentStreak);
         Assert.Equal(1, streak.FreezesRemaining);
-        Assert.Equal(1, await db.StreakFreezes.CountAsync(
-            f => f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Granted));
+        Assert.Equal(
+            1,
+            await db.StreakFreezes.CountAsync(f =>
+                f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Granted
+            )
+        );
     }
 
     // ------------------------------------------------ BLOCKER: rollover imperfecto (§6.7/§5.2)
@@ -914,18 +1061,21 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(CompleteTaskOutcome.Created, result.Outcome);
 
         await using var db = fixture.CreateDbContext();
-        var week1 = await db.ProgramWeeks.AsNoTracking().SingleAsync(
-            w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
+        var week1 = await db
+            .ProgramWeeks.AsNoTracking()
+            .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 1);
         Assert.Equal(ProgramWeekStatus.Completed, week1.Status);
         Assert.NotNull(week1.CompletedAt);
 
-        var week2 = await db.ProgramWeeks.AsNoTracking().SingleAsync(
-            w => w.EnrollmentId == enrollmentId && w.WeekNumber == 2);
+        var week2 = await db
+            .ProgramWeeks.AsNoTracking()
+            .SingleAsync(w => w.EnrollmentId == enrollmentId && w.WeekNumber == 2);
         Assert.Equal(ProgramWeekStatus.Active, week2.Status);
         Assert.Equal(42, ParseSnapshot(week2.TasksSnapshot).Count);
 
-        var enrollment = await db.ProgramEnrollments.AsNoTracking().SingleAsync(
-            e => e.Id == enrollmentId);
+        var enrollment = await db
+            .ProgramEnrollments.AsNoTracking()
+            .SingleAsync(e => e.Id == enrollmentId);
         Assert.Equal(2, enrollment.CurrentWeekNumber);
     }
 
@@ -948,8 +1098,9 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         }
 
         await using var db = fixture.CreateDbContext();
-        var streak = await db.StreakStates.AsNoTracking().SingleAsync(
-            s => s.EnrollmentId == enrollmentId);
+        var streak = await db
+            .StreakStates.AsNoTracking()
+            .SingleAsync(s => s.EnrollmentId == enrollmentId);
         Assert.Equal(2, streak.CurrentStreak);
         Assert.Equal(2, streak.LongestStreak);
         Assert.Equal(monday.AddDays(1), streak.LastActiveDate);
@@ -976,13 +1127,16 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         }
 
         await using var db = fixture.CreateDbContext();
-        var streak = await db.StreakStates.AsNoTracking().SingleAsync(
-            s => s.EnrollmentId == enrollmentId);
+        var streak = await db
+            .StreakStates.AsNoTracking()
+            .SingleAsync(s => s.EnrollmentId == enrollmentId);
         Assert.Equal(0, streak.CurrentStreak);
         Assert.Equal(monday.AddDays(1), streak.LastBreakDate);
         // Sin castigo: la XP nunca se revoca (solo entradas positivas).
-        Assert.Equal(0, await db.XpLedgerEntries.CountAsync(
-            x => x.EnrollmentId == enrollmentId && x.Amount < 0));
+        Assert.Equal(
+            0,
+            await db.XpLedgerEntries.CountAsync(x => x.EnrollmentId == enrollmentId && x.Amount < 0)
+        );
     }
 
     // ---------------------------------------------------------------- AC-09
@@ -1010,18 +1164,26 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         }
 
         await using var db = fixture.CreateDbContext();
-        var streak = await db.StreakStates.AsNoTracking().SingleAsync(
-            s => s.EnrollmentId == enrollmentId);
-        Assert.Equal(7, streak.CurrentStreak);      // racha preservada
-        Assert.Equal(0, streak.FreezesRemaining);   // inventario decrementado (1 → 0)
+        var streak = await db
+            .StreakStates.AsNoTracking()
+            .SingleAsync(s => s.EnrollmentId == enrollmentId);
+        Assert.Equal(7, streak.CurrentStreak); // racha preservada
+        Assert.Equal(0, streak.FreezesRemaining); // inventario decrementado (1 → 0)
         Assert.Equal(1, streak.FreezesUsedTotal);
 
-        var consumed = await db.StreakFreezes.AsNoTracking().SingleAsync(
-            f => f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Consumed);
+        var consumed = await db
+            .StreakFreezes.AsNoTracking()
+            .SingleAsync(f =>
+                f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Consumed
+            );
         Assert.Equal(monday.AddDays(7), consumed.UsedOnLocalDate); // D+8
         // El consumo no re-otorga: solo la fila Consumed, sin Granted extra.
-        Assert.Equal(1, await db.StreakFreezes.CountAsync(
-            f => f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Granted));
+        Assert.Equal(
+            1,
+            await db.StreakFreezes.CountAsync(f =>
+                f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Granted
+            )
+        );
     }
 
     // ------------------------------------ Hitos de racha extendidos (módulo "cofres")
@@ -1104,31 +1266,44 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     [RequiresPostgresFact]
     public async Task TareaEmocional_PersisteRegistroEmocionalYAnimoDelDia()
     {
-
         var enrollmentId = await EnrollAsync();
         var tuesday = _monday.AddDays(1);
 
         await using (var db = fixture.CreateDbContext())
         {
             var repo = new ProgramRepository(db, Configuration());
-            await repo.CompleteTaskAsync(new CompleteTaskInput(
-                enrollmentId, tuesday, TaskCode.emocional, "emo-1", null,
-                MoodScore: 4, Barriers: "fatiga", null));
+            await repo.CompleteTaskAsync(
+                new CompleteTaskInput(
+                    enrollmentId,
+                    tuesday,
+                    TaskCode.emocional,
+                    "emo-1",
+                    null,
+                    MoodScore: 4,
+                    Barriers: "fatiga",
+                    null
+                )
+            );
         }
 
         await using var verifyDb = fixture.CreateDbContext();
-        var completion = await verifyDb.TaskCompletions.AsNoTracking().SingleAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday);
+        var completion = await verifyDb
+            .TaskCompletions.AsNoTracking()
+            .SingleAsync(t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday);
         Assert.NotNull(completion.EmotionalRecordId);
 
-        var emotional = await verifyDb.EmotionalRecords.AsNoTracking().SingleAsync(
-            r => r.ProgramEnrollmentId == enrollmentId && r.RecordedLocalDate == tuesday);
+        var emotional = await verifyDb
+            .EmotionalRecords.AsNoTracking()
+            .SingleAsync(r =>
+                r.ProgramEnrollmentId == enrollmentId && r.RecordedLocalDate == tuesday
+            );
         Assert.Equal(4, emotional.MoodScore);
         Assert.Equal("fatiga", emotional.Barriers);
         Assert.Equal(_patientId, emotional.PatientId);
 
-        var checkin = await verifyDb.DailyCheckIns.AsNoTracking().SingleAsync(
-            c => c.EnrollmentId == enrollmentId && c.LocalDate == tuesday);
+        var checkin = await verifyDb
+            .DailyCheckIns.AsNoTracking()
+            .SingleAsync(c => c.EnrollmentId == enrollmentId && c.LocalDate == tuesday);
         Assert.Equal((short?)4, checkin.MoodScore);
         Assert.Equal("fatiga", checkin.Barriers);
     }
@@ -1143,16 +1318,34 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         var repo = new ProgramRepository(db, Configuration());
 
         var ex = await Assert.ThrowsAsync<UnprocessableEntityException>(() =>
-            repo.CompleteTaskAsync(new CompleteTaskInput(
-                enrollmentId, tuesday, TaskCode.emocional, "emo-nomood", null,
-                MoodScore: null, Barriers: null, ContentFingerprint: null)));
+            repo.CompleteTaskAsync(
+                new CompleteTaskInput(
+                    enrollmentId,
+                    tuesday,
+                    TaskCode.emocional,
+                    "emo-nomood",
+                    null,
+                    MoodScore: null,
+                    Barriers: null,
+                    ContentFingerprint: null
+                )
+            )
+        );
         Assert.Contains("MOOD_SCORE_REQUIRED", ex.Message);
 
         // Sin datos clínicos fabricados: ni registro emocional ni completación.
-        Assert.Equal(0, await db.EmotionalRecords.CountAsync(
-            r => r.ProgramEnrollmentId == enrollmentId && r.RecordedLocalDate == tuesday));
-        Assert.Equal(0, await db.TaskCompletions.CountAsync(
-            t => t.EnrollmentId == enrollmentId && t.LocalDate == tuesday));
+        Assert.Equal(
+            0,
+            await db.EmotionalRecords.CountAsync(r =>
+                r.ProgramEnrollmentId == enrollmentId && r.RecordedLocalDate == tuesday
+            )
+        );
+        Assert.Equal(
+            0,
+            await db.TaskCompletions.CountAsync(t =>
+                t.EnrollmentId == enrollmentId && t.LocalDate == tuesday
+            )
+        );
     }
 
     // ---------------------------------------------------------------- B4: auditoría semántica
@@ -1169,11 +1362,17 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         {
             var repo = new ProgramRepository(db, Configuration());
             await repo.WriteAuditRowAsync(
-                "AdaptationApplied", "app", "adaptation_recommendations", recordId, actorId);
+                "AdaptationApplied",
+                "app",
+                "adaptation_recommendations",
+                recordId,
+                actorId
+            );
         }
 
         await using var verifyDb = fixture.CreateDbContext();
-        var row = await verifyDb.ActivityLogs.AsNoTracking()
+        var row = await verifyDb
+            .ActivityLogs.AsNoTracking()
             .SingleAsync(l => l.RecordId == recordId.ToString());
         Assert.Equal(AuditAction.AdaptationApplied, row.Action);
         Assert.Equal("app", row.SchemaName);
@@ -1195,29 +1394,43 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
 
         await using var db = fixture.CreateDbContext();
         var repo = new ProgramRepository(db, Configuration());
-        var localToday = await repo.GetPatientLocalTodayAsync(enrollmentId)
+        var localToday =
+            await repo.GetPatientLocalTodayAsync(enrollmentId)
             ?? throw new InvalidOperationException("Inscripción sin zona.");
 
         var utcToday = DateOnly.FromDateTime(DateTime.UtcNow);
         // Asia/Tokyo nunca está detrás de UTC: hoy local >= hoy UTC, y a última
         // hora del día UTC ya es D+1 en Tokio (mañana en UTC).
         Assert.True(localToday >= utcToday, $"hoy local {localToday} < hoy UTC {utcToday}");
-        Assert.True(localToday <= utcToday.AddDays(1), $"hoy local {localToday} > hoy UTC+1 {utcToday.AddDays(1)}");
+        Assert.True(
+            localToday <= utcToday.AddDays(1),
+            $"hoy local {localToday} > hoy UTC+1 {utcToday.AddDays(1)}"
+        );
 
         // Día perfecto en la fecha local de hoy (aunque sea mañana en UTC).
         CompleteTaskResult? last = null;
         foreach (var (code, _) in TaskSeeds)
         {
-            last = await repo.CompleteTaskAsync(new CompleteTaskInput(
-                enrollmentId, localToday, code, $"tokyo-{code}", null,
-                // La tarea emocional exige moodScore real (SPEC §3.10).
-                MoodScore: code == TaskCode.emocional ? (short?)4 : null,
-                Barriers: null, ContentFingerprint: null));
+            last = await repo.CompleteTaskAsync(
+                new CompleteTaskInput(
+                    enrollmentId,
+                    localToday,
+                    code,
+                    $"tokyo-{code}",
+                    null,
+                    // La tarea emocional exige moodScore real (SPEC §3.10).
+                    MoodScore: code == TaskCode.emocional ? (short?)4 : null,
+                    Barriers: null,
+                    ContentFingerprint: null
+                )
+            );
         }
 
         Assert.Equal(CompleteTaskOutcome.Created, last!.Outcome);
         // Streak math paciente-local: la racha registra la fecha local, no UTC.
-        var streak = await db.StreakStates.AsNoTracking().SingleAsync(s => s.EnrollmentId == enrollmentId);
+        var streak = await db
+            .StreakStates.AsNoTracking()
+            .SingleAsync(s => s.EnrollmentId == enrollmentId);
         Assert.Equal(1, streak.CurrentStreak);
         Assert.Equal(localToday, streak.LastActiveDate);
     }
@@ -1249,8 +1462,9 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
             seedDb.MediaItems.Add(media);
             await seedDb.SaveChangesAsync();
 
-            var tuesdayTemplate = await seedDb.WeeklyDayTemplates.SingleAsync(
-                d => d.TemplateId == _templateId && d.Weekday == 2 && d.TaskCode == TaskCode.podcast);
+            var tuesdayTemplate = await seedDb.WeeklyDayTemplates.SingleAsync(d =>
+                d.TemplateId == _templateId && d.Weekday == 2 && d.TaskCode == TaskCode.podcast
+            );
             tuesdayTemplate.MediaId = media.Id;
             await seedDb.SaveChangesAsync();
         }
@@ -1276,7 +1490,11 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     // ---------------------------------------------------------------- Helpers
 
     private async Task<Guid> EnrollAsync(
-        Guid? templateId = null, DateOnly? start = null, Guid? patientId = null, string? timezone = null)
+        Guid? templateId = null,
+        DateOnly? start = null,
+        Guid? patientId = null,
+        string? timezone = null
+    )
     {
         await using var db = fixture.CreateDbContext();
         var repo = new ProgramRepository(db, Configuration());
@@ -1284,31 +1502,45 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
             patientId ?? _patientId,
             templateId ?? _templateId,
             timezone ?? "America/Bogota",
-            start ?? _monday);
+            start ?? _monday
+        );
         return enrollment.Id;
     }
 
     private async Task<CompleteTaskResult> CompleteAsync(
-        Guid enrollmentId, DateOnly date, TaskCode code, string? requestId = null)
+        Guid enrollmentId,
+        DateOnly date,
+        TaskCode code,
+        string? requestId = null
+    )
     {
         await using var db = fixture.CreateDbContext();
         var repo = new ProgramRepository(db, Configuration());
-        return await repo.CompleteTaskAsync(new CompleteTaskInput(
-            enrollmentId, date, code, requestId, null,
-            // La tarea emocional exige moodScore real (SPEC §3.10): el repo
-            // ya no fabrica el default 3 (MOOD_SCORE_REQUIRED).
-            MoodScore: code == TaskCode.emocional ? (short?)4 : null,
-            Barriers: null,
-            ContentFingerprint: null));
+        return await repo.CompleteTaskAsync(
+            new CompleteTaskInput(
+                enrollmentId,
+                date,
+                code,
+                requestId,
+                null,
+                // La tarea emocional exige moodScore real (SPEC §3.10): el repo
+                // ya no fabrica el default 3 (MOOD_SCORE_REQUIRED).
+                MoodScore: code == TaskCode.emocional ? (short?)4 : null,
+                Barriers: null,
+                ContentFingerprint: null
+            )
+        );
     }
 
-    private static async Task ResetProgramTablesAsync(AppDbContext db)
-        => await db.Database.ExecuteSqlRawAsync("""
+    private static async Task ResetProgramTablesAsync(AppDbContext db) =>
+        await db.Database.ExecuteSqlRawAsync(
+            """
             TRUNCATE app.task_completions, app.xp_ledger, app.daily_checkins, app.streak_states,
                      app.streak_freezes, app.emotional_records, app.program_weeks,
                      app.program_enrollments, app.adaptation_recommendations,
                      app.weekly_day_templates, app.program_templates, app.patient_profiles CASCADE;
-            """);
+            """
+        );
 
     private static async Task<Guid> SeedDefaultTemplateAsync(AppDbContext db)
     {
@@ -1325,13 +1557,15 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         {
             for (var i = 0; i < TaskSeeds.Length; i++)
             {
-                template.DayTemplates.Add(new WeeklyDayTemplate
-                {
-                    Weekday = weekday,
-                    TaskCode = TaskSeeds[i].Code,
-                    Points = TaskSeeds[i].Points,
-                    SortOrder = i + 1,
-                });
+                template.DayTemplates.Add(
+                    new WeeklyDayTemplate
+                    {
+                        Weekday = weekday,
+                        TaskCode = TaskSeeds[i].Code,
+                        Points = TaskSeeds[i].Points,
+                        SortOrder = i + 1,
+                    }
+                );
             }
         }
 
@@ -1358,19 +1592,22 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         };
         for (short weekday = 1; weekday <= 7; weekday++)
         {
-            var codes = weekday == 1
-                ? new[] { TaskCode.podcast, TaskCode.vitals }
-                : TaskSeeds.Select(s => s.Code).ToArray();
+            var codes =
+                weekday == 1
+                    ? new[] { TaskCode.podcast, TaskCode.vitals }
+                    : TaskSeeds.Select(s => s.Code).ToArray();
             var sort = 1;
             foreach (var code in codes)
             {
-                template.DayTemplates.Add(new WeeklyDayTemplate
-                {
-                    Weekday = weekday,
-                    TaskCode = code,
-                    Points = TaskSeeds.Single(s => s.Code == code).Points,
-                    SortOrder = sort++,
-                });
+                template.DayTemplates.Add(
+                    new WeeklyDayTemplate
+                    {
+                        Weekday = weekday,
+                        TaskCode = code,
+                        Points = TaskSeeds.Single(s => s.Code == code).Points,
+                        SortOrder = sort++,
+                    }
+                );
             }
         }
 
@@ -1379,7 +1616,11 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         return template.Id;
     }
 
-    private static async Task<Guid> CreatePatientAsync(AppDbContext db, string firstName, string lastName)
+    private static async Task<Guid> CreatePatientAsync(
+        AppDbContext db,
+        string firstName,
+        string lastName
+    )
     {
         var patient = new PatientProfile
         {
@@ -1393,15 +1634,19 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     }
 
     private static IReadOnlyList<(short Weekday, string TaskCode, int Points)> ParseSnapshot(
-        JsonElement snapshot)
+        JsonElement snapshot
+    )
     {
         var result = new List<(short, string, int)>();
         foreach (var item in snapshot.EnumerateArray())
         {
-            result.Add((
-                (short)item.GetProperty("weekday").GetInt32(),
-                item.GetProperty("task_code").GetString() ?? string.Empty,
-                item.GetProperty("points").GetInt32()));
+            result.Add(
+                (
+                    (short)item.GetProperty("weekday").GetInt32(),
+                    item.GetProperty("task_code").GetString() ?? string.Empty,
+                    item.GetProperty("points").GetInt32()
+                )
+            );
         }
 
         return result;
@@ -1414,12 +1659,14 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         return today.AddDays(-daysSinceMonday);
     }
 
-    private static IConfiguration Configuration()
-        => new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Program:Streak:FreezeGrantEveryPerfectDays"] = "7",
-            })
+    private static IConfiguration Configuration() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["Program:Streak:FreezeGrantEveryPerfectDays"] = "7",
+                }
+            )
             .Build();
 }
 

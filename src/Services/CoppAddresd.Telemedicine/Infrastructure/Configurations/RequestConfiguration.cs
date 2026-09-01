@@ -17,6 +17,7 @@ public sealed class RequestConfiguration : IEntityTypeConfiguration<Telemedicine
         builder.HasKey(x => x.Id);
 
         builder.Property(x => x.Reason).HasMaxLength(2000);
+        builder.Property(x => x.RejectionReason).HasMaxLength(500);
         builder.Property(x => x.Notes).HasMaxLength(2000);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
 

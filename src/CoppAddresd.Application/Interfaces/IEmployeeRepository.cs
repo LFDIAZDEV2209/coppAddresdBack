@@ -18,7 +18,10 @@ public interface IEmployeeRepository
         string? status,
         Guid? organizationId,
         Guid? clinicId,
-        CancellationToken ct = default);
+        Guid? specialtyId,
+        IReadOnlyList<Guid>? userIds,
+        CancellationToken ct = default
+    );
 
     /// <summary>Empleado con asignaciones de clínicas y extensión profesional completa.</summary>
     Task<Employee?> GetByIdAsync(Guid id, CancellationToken ct = default);
@@ -49,9 +52,15 @@ public interface IEmployeeRepository
         Guid? locationId,
         Guid? organizationId,
         Guid? clinicId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
-    Task<bool> EmailExistsInOrganizationAsync(Guid organizationId, string email, Guid? excludeEmployeeId = null, CancellationToken ct = default);
+    Task<bool> EmailExistsInOrganizationAsync(
+        Guid organizationId,
+        string email,
+        Guid? excludeEmployeeId = null,
+        CancellationToken ct = default
+    );
 
     Task<Employee> AddAsync(Employee employee, CancellationToken ct = default);
 
@@ -83,13 +92,29 @@ public interface IEmployeeRepository
         IReadOnlyList<Guid> specialtyIds,
         IReadOnlyList<LicenseInput> licenses,
         bool completeOnboarding,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
-    Task<Professional> AddProfessionalAsync(Professional professional, CancellationToken ct = default);
+    Task<Professional> AddProfessionalAsync(
+        Professional professional,
+        CancellationToken ct = default
+    );
 
     Task UpdateProfessionalAsync(Professional professional, CancellationToken ct = default);
 
     Task<bool> ClinicExistsAsync(Guid clinicId, CancellationToken ct = default);
 
     Task<bool> SpecialtyExistsAsync(Guid specialtyId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Estadísticas del directorio con el mismo alcance que
+    /// <see cref="ListAsync"/> (clínica/organización opcionales): totales por
+    /// estado y desglose por tipo de profesional. Agregados por grupo, sin
+    /// counts independientes.
+    /// </summary>
+    Task<EmployeeStatsDto> GetStatsAsync(
+        Guid? organizationId,
+        Guid? clinicId,
+        CancellationToken ct = default
+    );
 }

@@ -34,6 +34,18 @@ public sealed class CommunitySubscription
     public Message GroupMessageAdded(Guid groupId, [EventMessage] Message message) => message;
 
     /// <summary>
+    /// Eventos del feed en vivo de la comunidad (publicaciones, rachas, hitos, logros).
+    /// </summary>
+    [Subscribe]
+    [Topic("feed_event_added")]
+    public FeedEvent FeedEventAdded([EventMessage] FeedEvent feedEvent) => feedEvent;
+
+    /// <summary>Comentarios en tiempo real (incluye respuestas anidadas).</summary>
+    [Subscribe]
+    [Topic("comment_added")]
+    public Comment CommentAdded([EventMessage] Comment comment) => comment;
+
+    /// <summary>
     /// Cambios de un grupo (creación, renombrado, altas/bajas de miembros). Solo miembros.
     /// </summary>
     [Subscribe(With = nameof(SubscribeToGroupChanged))]
