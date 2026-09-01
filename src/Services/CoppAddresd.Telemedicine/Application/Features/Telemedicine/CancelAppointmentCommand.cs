@@ -12,20 +12,29 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// <c>appointment_cancellations</c> y actualiza el estado vigente de la cita.
 /// No se puede cancelar una cita completada, cancelada o no-show.
 /// </summary>
+/// <remarks>
+/// Alcance dual: con <c>PatientUserId</c> nulo (ERP con permiso
+/// <c>Appointments.AppointmentsCancel</c>) conserva el comportamiento actual;
+/// con <c>PatientUserId</c> presente (paciente de la app móvil) exige que la
+/// cita pertenezca al paciente del JWT (403), que el estado sea
+/// <c>Confirmed</c>/<c>Requested</c> (409) y fuerza <c>CancelledBy.Patient</c>.
+/// </remarks>
 public sealed record CancelAppointmentCommand(
     Guid AppointmentId,
     string Reason,
     CancelledBy CancelledBy,
-    Guid? CancelledByUserId) : IRequest<AppointmentDto>;
+    Guid? CancelledByUserId,
+    Guid? PatientUserId = null
+) : IRequest<AppointmentDto>;
 
-public sealed class CancelAppointmentCommandValidator
-    : AbstractValidator<CancelAppointmentCommand>
+public sealed class CancelAppointmentCommandValidator : AbstractValidator<CancelAppointmentCommand>
 {
     public CancelAppointmentCommandValidator()
     {
         RuleFor(x => x.AppointmentId).NotEmpty();
         RuleFor(x => x.Reason)
-            .NotEmpty().WithMessage("El motivo de la cancelación es obligatorio.")
+            .NotEmpty()
+            .WithMessage("El motivo de la cancelación es obligatorio.")
             .MaximumLength(2000);
     }
 }
@@ -33,29 +42,55 @@ public sealed class CancelAppointmentCommandValidator
 public sealed class CancelAppointmentCommandHandler(
     IAppointmentRepository appointments,
     IAppointmentReferenceDataService referenceData,
-    IAlertRepository alerts)
-    : IRequestHandler<CancelAppointmentCommand, AppointmentDto>
+    IAlertRepository alerts
+) : IRequestHandler<CancelAppointmentCommand, AppointmentDto>
 {
-    public async Task<AppointmentDto> Handle(
-        CancelAppointmentCommand request,
-        CancellationToken ct)
+    public async Task<AppointmentDto> Handle(CancelAppointmentCommand request, CancellationToken ct)
     {
-        var entity = await appointments.GetForUpdateAsync(request.AppointmentId, ct)
+        var entity =
+            await appointments.GetForUpdateAsync(request.AppointmentId, ct)
             ?? throw new NotFoundException("Cita", request.AppointmentId);
 
-        if (entity.Status is AppointmentStatus.Completed
-            or AppointmentStatus.Cancelled
-            or AppointmentStatus.NoShow)
+        // Alcance paciente (app móvil): la cita debe ser del paciente del JWT y
+        // solo admite estados Confirmado/Solicitado.
+        var cancelledBy = request.CancelledBy;
+        if (request.PatientUserId is { } patientUserId)
+        {
+            var actingPatient = await referenceData.GetPatientByUserIdAsync(patientUserId, ct);
+            if (actingPatient is null || actingPatient.Id != entity.PatientId)
+            {
+                throw new ForbiddenException(
+                    "Solo el paciente de la cita puede cancelarla desde la app móvil."
+                );
+            }
+
+            if (entity.Status is not (AppointmentStatus.Confirmed or AppointmentStatus.Requested))
+            {
+                throw new BusinessRuleViolationException(
+                    $"El paciente no puede cancelar la cita en su estado actual ({entity.Status})."
+                );
+            }
+
+            cancelledBy = CancelledBy.Patient;
+        }
+
+        if (
+            entity.Status
+            is AppointmentStatus.Completed
+                or AppointmentStatus.Cancelled
+                or AppointmentStatus.NoShow
+        )
         {
             throw new BusinessRuleViolationException(
-                $"La cita no puede cancelarse en su estado actual ({entity.Status}).");
+                $"La cita no puede cancelarse en su estado actual ({entity.Status})."
+            );
         }
 
         var now = DateTimeOffset.UtcNow;
 
         entity.Status = AppointmentStatus.Cancelled;
         entity.CancellationReason = request.Reason;
-        entity.CancelledBy = request.CancelledBy;
+        entity.CancelledBy = cancelledBy;
         entity.CancelledAt = now;
         entity.UpdatedAt = now.UtcDateTime;
 
@@ -68,25 +103,31 @@ public sealed class CancelAppointmentCommandHandler(
             encounter.UpdatedAt = now.UtcDateTime;
         }
 
-        entity.Cancellations.Add(new AppointmentCancellation
-        {
-            AppointmentId = entity.Id,
-            CancelledBy = request.CancelledBy,
-            CancelledByUserId = request.CancelledByUserId,
-            Reason = request.Reason,
-            CancelledAt = now,
-        });
+        entity.Cancellations.Add(
+            new AppointmentCancellation
+            {
+                AppointmentId = entity.Id,
+                CancelledBy = cancelledBy,
+                CancelledByUserId = request.CancelledByUserId,
+                Reason = request.Reason,
+                CancelledAt = now,
+            }
+        );
 
         await appointments.UpdateAsync(entity, ct);
 
         // Bandeja: cancelación → al profesional asignado.
         var professional = await referenceData.GetProfessionalAsync(entity.ProfessionalId, ct);
         var patient = await referenceData.GetPatientAsync(entity.PatientId, ct);
-        if (AlertMaterializer.AppointmentCancelled(
+        if (
+            AlertMaterializer.AppointmentCancelled(
                 professional?.UserId,
                 entity.Id,
                 patient?.FullName ?? "el paciente",
-                request.Reason) is { } alert)
+                request.Reason
+            ) is
+            { } alert
+        )
         {
             await alerts.AddRangeAsync([alert], ct);
         }
@@ -115,6 +156,7 @@ public sealed class CancelAppointmentCommandHandler(
             entity.Status,
             entity.RescheduleCount,
             entity.CancellationReason,
-            entity.CreatedAt);
+            entity.CreatedAt
+        );
     }
 }

@@ -1,6 +1,7 @@
-using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Data;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
+using CoppAddresd.Auth.Services.Cache;
 using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Auth.Services;
@@ -9,22 +10,26 @@ public class PermissionService : IPermissionService
 {
     private readonly AuthDbContext _dbContext;
     private readonly ITokenInvalidationService _tokenInvalidation;
+    private readonly ICacheService _cache;
     private readonly ILogger<PermissionService> _logger;
 
     public PermissionService(
         AuthDbContext dbContext,
         ITokenInvalidationService tokenInvalidation,
-        ILogger<PermissionService> logger)
+        ICacheService cache,
+        ILogger<PermissionService> logger
+    )
     {
         _dbContext = dbContext;
         _tokenInvalidation = tokenInvalidation;
+        _cache = cache;
         _logger = logger;
     }
 
     public async Task<IEnumerable<PermissionResponse>> GetAllAsync(CancellationToken ct = default)
     {
-        var permissions = await _dbContext.Permissions
-            .OrderBy(p => p.Module)
+        var permissions = await _dbContext
+            .Permissions.OrderBy(p => p.Module)
             .ThenBy(p => p.Code)
             .Select(p => new PermissionResponse(
                 p.Id.ToString(),
@@ -32,7 +37,8 @@ public class PermissionService : IPermissionService
                 p.Name,
                 p.Description,
                 p.Module,
-                p.CreatedAt))
+                p.CreatedAt
+            ))
             .ToListAsync(ct);
 
         return permissions;
@@ -40,40 +46,48 @@ public class PermissionService : IPermissionService
 
     public async Task<PermissionResponse?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        var permission = await _dbContext.Permissions
-            .Where(p => p.Id == id)
+        var permission = await _dbContext
+            .Permissions.Where(p => p.Id == id)
             .Select(p => new PermissionResponse(
                 p.Id.ToString(),
                 p.Code,
                 p.Name,
                 p.Description,
                 p.Module,
-                p.CreatedAt))
+                p.CreatedAt
+            ))
             .FirstOrDefaultAsync(ct);
 
         return permission;
     }
 
-    public async Task<PermissionResponse?> GetByCodeAsync(string code, CancellationToken ct = default)
+    public async Task<PermissionResponse?> GetByCodeAsync(
+        string code,
+        CancellationToken ct = default
+    )
     {
-        var permission = await _dbContext.Permissions
-            .Where(p => p.Code == code)
+        var permission = await _dbContext
+            .Permissions.Where(p => p.Code == code)
             .Select(p => new PermissionResponse(
                 p.Id.ToString(),
                 p.Code,
                 p.Name,
                 p.Description,
                 p.Module,
-                p.CreatedAt))
+                p.CreatedAt
+            ))
             .FirstOrDefaultAsync(ct);
 
         return permission;
     }
 
-    public async Task<IEnumerable<PermissionResponse>> GetRolePermissionsAsync(Guid roleId, CancellationToken ct = default)
+    public async Task<IEnumerable<PermissionResponse>> GetRolePermissionsAsync(
+        Guid roleId,
+        CancellationToken ct = default
+    )
     {
-        var permissions = await _dbContext.RolePermissions
-            .Where(rp => rp.RoleId == roleId)
+        var permissions = await _dbContext
+            .RolePermissions.Where(rp => rp.RoleId == roleId)
             .Select(rp => rp.Permission)
             .OrderBy(p => p.Module)
             .ThenBy(p => p.Code)
@@ -83,16 +97,20 @@ public class PermissionService : IPermissionService
                 p.Name,
                 p.Description,
                 p.Module,
-                p.CreatedAt))
+                p.CreatedAt
+            ))
             .ToListAsync(ct);
 
         return permissions;
     }
 
-    public async Task<IEnumerable<PermissionResponse>> GetUserPermissionsAsync(Guid userId, CancellationToken ct = default)
+    public async Task<IEnumerable<PermissionResponse>> GetUserPermissionsAsync(
+        Guid userId,
+        CancellationToken ct = default
+    )
     {
-        var permissions = await _dbContext.UserPermissions
-            .Where(up => up.UserId == userId)
+        var permissions = await _dbContext
+            .UserPermissions.Where(up => up.UserId == userId)
             .Select(up => up.Permission)
             .OrderBy(p => p.Module)
             .ThenBy(p => p.Code)
@@ -102,13 +120,18 @@ public class PermissionService : IPermissionService
                 p.Name,
                 p.Description,
                 p.Module,
-                p.CreatedAt))
+                p.CreatedAt
+            ))
             .ToListAsync(ct);
 
         return permissions;
     }
 
-    public async Task<(bool Success, string? Error)> AssignToRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> AssignToRoleAsync(
+        Guid roleId,
+        Guid permissionId,
+        CancellationToken ct = default
+    )
     {
         var roleExists = await _dbContext.Roles.AnyAsync(r => r.Id == roleId, ct);
         if (!roleExists)
@@ -122,8 +145,10 @@ public class PermissionService : IPermissionService
             return (false, "Permiso no encontrado");
         }
 
-        var alreadyAssigned = await _dbContext.RolePermissions
-            .AnyAsync(rp => rp.RoleId == roleId && rp.PermissionId == permissionId, ct);
+        var alreadyAssigned = await _dbContext.RolePermissions.AnyAsync(
+            rp => rp.RoleId == roleId && rp.PermissionId == permissionId,
+            ct
+        );
 
         if (alreadyAssigned)
         {
@@ -133,14 +158,14 @@ public class PermissionService : IPermissionService
         var rolePermission = new Entities.RolePermission
         {
             RoleId = roleId,
-            PermissionId = permissionId
+            PermissionId = permissionId,
         };
 
         _dbContext.RolePermissions.Add(rolePermission);
         await _dbContext.SaveChangesAsync(ct);
 
-        var affectedUserIds = await _dbContext.UserRoles
-            .Where(ur => ur.RoleId == roleId)
+        var affectedUserIds = await _dbContext
+            .UserRoles.Where(ur => ur.RoleId == roleId)
             .Select(ur => ur.UserId)
             .Distinct()
             .ToListAsync(ct);
@@ -149,14 +174,28 @@ public class PermissionService : IPermissionService
         // del rol; antes era un loop con 2 round trips por usuario y sin ct.
         await _tokenInvalidation.InvalidateUsersTokensAsync(affectedUserIds, ct);
 
-        _logger.LogInformation("Permission {PermissionId} assigned to role {RoleId}", permissionId, roleId);
+        // Invalidación del caché de códigos por rol: la siguiente introspección
+        // reconstruye con el permiso ya asignado.
+        await _cache.RemoveAsync(AuthCacheKeys.RoleCodes(roleId), ct);
+
+        _logger.LogInformation(
+            "Permission {PermissionId} assigned to role {RoleId}",
+            permissionId,
+            roleId
+        );
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> RemoveFromRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> RemoveFromRoleAsync(
+        Guid roleId,
+        Guid permissionId,
+        CancellationToken ct = default
+    )
     {
-        var rolePermission = await _dbContext.RolePermissions
-            .FirstOrDefaultAsync(rp => rp.RoleId == roleId && rp.PermissionId == permissionId, ct);
+        var rolePermission = await _dbContext.RolePermissions.FirstOrDefaultAsync(
+            rp => rp.RoleId == roleId && rp.PermissionId == permissionId,
+            ct
+        );
 
         if (rolePermission is null)
         {
@@ -166,8 +205,8 @@ public class PermissionService : IPermissionService
         _dbContext.RolePermissions.Remove(rolePermission);
         await _dbContext.SaveChangesAsync(ct);
 
-        var affectedUserIds = await _dbContext.UserRoles
-            .Where(ur => ur.RoleId == roleId)
+        var affectedUserIds = await _dbContext
+            .UserRoles.Where(ur => ur.RoleId == roleId)
             .Select(ur => ur.UserId)
             .Distinct()
             .ToListAsync(ct);
@@ -176,11 +215,22 @@ public class PermissionService : IPermissionService
         // del rol; antes era un loop con 2 round trips por usuario y sin ct.
         await _tokenInvalidation.InvalidateUsersTokensAsync(affectedUserIds, ct);
 
-        _logger.LogInformation("Permission {PermissionId} removed from role {RoleId}", permissionId, roleId);
+        // Invalidación del caché de códigos por rol.
+        await _cache.RemoveAsync(AuthCacheKeys.RoleCodes(roleId), ct);
+
+        _logger.LogInformation(
+            "Permission {PermissionId} removed from role {RoleId}",
+            permissionId,
+            roleId
+        );
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> AssignToUserAsync(Guid userId, Guid permissionId, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> AssignToUserAsync(
+        Guid userId,
+        Guid permissionId,
+        CancellationToken ct = default
+    )
     {
         var userExists = await _dbContext.Users.AnyAsync(u => u.Id == userId, ct);
         if (!userExists)
@@ -194,8 +244,10 @@ public class PermissionService : IPermissionService
             return (false, "Permiso no encontrado");
         }
 
-        var alreadyAssigned = await _dbContext.UserPermissions
-            .AnyAsync(up => up.UserId == userId && up.PermissionId == permissionId, ct);
+        var alreadyAssigned = await _dbContext.UserPermissions.AnyAsync(
+            up => up.UserId == userId && up.PermissionId == permissionId,
+            ct
+        );
 
         if (alreadyAssigned)
         {
@@ -205,7 +257,7 @@ public class PermissionService : IPermissionService
         var userPermission = new Entities.UserPermission
         {
             UserId = userId,
-            PermissionId = permissionId
+            PermissionId = permissionId,
         };
 
         _dbContext.UserPermissions.Add(userPermission);
@@ -213,14 +265,24 @@ public class PermissionService : IPermissionService
 
         await _tokenInvalidation.InvalidateUserTokensAsync(userId, ct);
 
-        _logger.LogInformation("Permission {PermissionId} assigned to user {UserId}", permissionId, userId);
+        _logger.LogInformation(
+            "Permission {PermissionId} assigned to user {UserId}",
+            permissionId,
+            userId
+        );
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error)> RemoveFromUserAsync(Guid userId, Guid permissionId, CancellationToken ct = default)
+    public async Task<(bool Success, string? Error)> RemoveFromUserAsync(
+        Guid userId,
+        Guid permissionId,
+        CancellationToken ct = default
+    )
     {
-        var userPermission = await _dbContext.UserPermissions
-            .FirstOrDefaultAsync(up => up.UserId == userId && up.PermissionId == permissionId, ct);
+        var userPermission = await _dbContext.UserPermissions.FirstOrDefaultAsync(
+            up => up.UserId == userId && up.PermissionId == permissionId,
+            ct
+        );
 
         if (userPermission is null)
         {
@@ -232,56 +294,72 @@ public class PermissionService : IPermissionService
 
         await _tokenInvalidation.InvalidateUserTokensAsync(userId, ct);
 
-        _logger.LogInformation("Permission {PermissionId} removed from user {UserId}", permissionId, userId);
+        _logger.LogInformation(
+            "Permission {PermissionId} removed from user {UserId}",
+            permissionId,
+            userId
+        );
         return (true, null);
     }
 
-    public async Task<bool> UserHasPermissionAsync(Guid userId, string permissionCode, CancellationToken ct = default)
+    public async Task<bool> UserHasPermissionAsync(
+        Guid userId,
+        string permissionCode,
+        CancellationToken ct = default
+    )
     {
-        var permission = await _dbContext.Permissions
-            .FirstOrDefaultAsync(p => p.Code == permissionCode, ct);
+        var permission = await _dbContext.Permissions.FirstOrDefaultAsync(
+            p => p.Code == permissionCode,
+            ct
+        );
 
         if (permission is null)
         {
             return false;
         }
 
-        var hasDirectPermission = await _dbContext.UserPermissions
-            .AnyAsync(up => up.UserId == userId && up.PermissionId == permission.Id, ct);
+        var hasDirectPermission = await _dbContext.UserPermissions.AnyAsync(
+            up => up.UserId == userId && up.PermissionId == permission.Id,
+            ct
+        );
 
         if (hasDirectPermission)
         {
             return true;
         }
 
-        var hasPermissionThroughRole = await _dbContext.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .Join(_dbContext.RolePermissions,
+        var hasPermissionThroughRole = await _dbContext
+            .UserRoles.Where(ur => ur.UserId == userId)
+            .Join(
+                _dbContext.RolePermissions,
                 ur => ur.RoleId,
                 rp => rp.RoleId,
-                (ur, rp) => rp.PermissionId)
+                (ur, rp) => rp.PermissionId
+            )
             .AnyAsync(permissionId => permissionId == permission.Id, ct);
 
         return hasPermissionThroughRole;
     }
 
-    public async Task<IEnumerable<string>> GetUserAllPermissionCodesAsync(Guid userId, CancellationToken ct = default)
+    public async Task<IEnumerable<string>> GetUserAllPermissionCodesAsync(
+        Guid userId,
+        CancellationToken ct = default
+    )
     {
-        var directPermissions = await _dbContext.UserPermissions
-            .Where(up => up.UserId == userId)
+        var directPermissions = await _dbContext
+            .UserPermissions.Where(up => up.UserId == userId)
             .Select(up => up.Permission.Code)
             .ToListAsync(ct);
 
-        var rolePermissions = await _dbContext.UserRoles
-            .Where(ur => ur.UserId == userId)
-            .Join(_dbContext.RolePermissions,
+        var rolePermissions = await _dbContext
+            .UserRoles.Where(ur => ur.UserId == userId)
+            .Join(
+                _dbContext.RolePermissions,
                 ur => ur.RoleId,
                 rp => rp.RoleId,
-                (ur, rp) => rp.PermissionId)
-            .Join(_dbContext.Permissions,
-                permissionId => permissionId,
-                p => p.Id,
-                (_, p) => p.Code)
+                (ur, rp) => rp.PermissionId
+            )
+            .Join(_dbContext.Permissions, permissionId => permissionId, p => p.Id, (_, p) => p.Code)
             .ToListAsync(ct);
 
         return directPermissions.Concat(rolePermissions).Distinct();

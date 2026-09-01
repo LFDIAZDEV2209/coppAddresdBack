@@ -14,10 +14,12 @@ namespace CoppAddresd.Auth.Controllers;
 public class RolesController : ControllerBase
 {
     private readonly IRoleService _roleService;
+    private readonly IAuthorizationService _authorizationService;
 
-    public RolesController(IRoleService roleService)
+    public RolesController(IRoleService roleService, IAuthorizationService authorizationService)
     {
         _roleService = roleService;
+        _authorizationService = authorizationService;
     }
 
     [HttpGet]
@@ -41,10 +43,17 @@ public class RolesController : ControllerBase
 
     [HttpPost]
     [RequirePermission(PermissionCodes.RolesCreate)]
-    public async Task<ActionResult<RoleResponse>> Create(
+    public async Task<IActionResult> Create(
         [FromBody] CreateRoleRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para gestionar roles." }
+            );
+
         var (success, error, role) = await _roleService.CreateAsync(request, ct);
         if (!success)
             return BadRequest(new { message = error });
@@ -57,9 +66,35 @@ public class RolesController : ControllerBase
     public async Task<IActionResult> Update(
         Guid id,
         [FromBody] UpdateRoleRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var (success, error) = await _roleService.UpdateAsync(id, request, ct);
+        var existing = await _roleService.GetByIdAsync(id, ct);
+        if (existing is null)
+            return NotFound(new { message = "Rol no encontrado" });
+
+        var mutatesSystemRole =
+            existing.IsSystem
+            && (
+                request.Name is not null && request.Name != existing.Name
+                || request.IsActive.HasValue && request.IsActive.Value != existing.IsActive
+            );
+
+        if (mutatesSystemRole && !await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new
+                {
+                    message = "No se puede renombrar o activar/desactivar un rol de sistema sin System.AdminSettings.",
+                }
+            );
+
+        var (success, error) = await _roleService.UpdateAsync(
+            id,
+            request,
+            await HasSystemAdminSettingsAsync(),
+            ct
+        );
         if (!success)
             return NotFound(new { message = error });
 
@@ -70,7 +105,21 @@ public class RolesController : ControllerBase
     [RequirePermission(PermissionCodes.RolesDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var (success, error) = await _roleService.DeleteAsync(id, ct);
+        var existing = await _roleService.GetByIdAsync(id, ct);
+        if (existing is null)
+            return NotFound(new { message = "Rol no encontrado" });
+
+        if (existing.IsSystem && !await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "No se puede eliminar un rol de sistema sin System.AdminSettings." }
+            );
+
+        var (success, error) = await _roleService.DeleteAsync(
+            id,
+            await HasSystemAdminSettingsAsync(),
+            ct
+        );
         if (!success)
             return NotFound(new { message = error });
 
@@ -79,7 +128,10 @@ public class RolesController : ControllerBase
 
     [HttpGet("user/{userId:guid}")]
     [RequirePermission(PermissionCodes.RolesView)]
-    public async Task<ActionResult<IEnumerable<RoleResponse>>> GetUserRoles(Guid userId, CancellationToken ct)
+    public async Task<ActionResult<IEnumerable<RoleResponse>>> GetUserRoles(
+        Guid userId,
+        CancellationToken ct
+    )
     {
         var roles = await _roleService.GetUserRolesAsync(userId, ct);
         return Ok(roles);
@@ -90,8 +142,15 @@ public class RolesController : ControllerBase
     public async Task<IActionResult> AssignToUser(
         Guid userId,
         [FromBody] AssignRoleRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para asignar roles." }
+            );
+
         var (success, error) = await _roleService.AssignToUserAsync(userId, request.RoleId, ct);
         if (!success)
             return BadRequest(new { message = error });
@@ -103,10 +162,26 @@ public class RolesController : ControllerBase
     [RequirePermission(PermissionCodes.RolesAssign)]
     public async Task<IActionResult> RemoveFromUser(Guid userId, Guid roleId, CancellationToken ct)
     {
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para remover roles." }
+            );
+
         var (success, error) = await _roleService.RemoveFromUserAsync(userId, roleId, ct);
         if (!success)
             return BadRequest(new { message = error });
 
         return Ok(new { message = "Rol removido correctamente" });
+    }
+
+    /// <summary>¿El caller tiene System.AdminSettings (configuración crítica)?</summary>
+    private async Task<bool> HasSystemAdminSettingsAsync()
+    {
+        var result = await _authorizationService.AuthorizeAsync(
+            User,
+            PermissionCodes.SystemAdminSettings
+        );
+        return result.Succeeded;
     }
 }

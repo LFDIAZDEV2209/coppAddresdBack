@@ -13,4 +13,7 @@ public sealed class Message
 
     public string Body { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Perfil del admin que desencadenó el envío (mensajes enviados desde el perfil del sistema).</summary>
+    public Guid? TriggeredByProfileId { get; set; }
 }

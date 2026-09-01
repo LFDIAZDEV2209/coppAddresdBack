@@ -1,0 +1,48 @@
+{
+  "family": "cooppadresd-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::933629770820:role/cooppadresd-ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "933629770820.dkr.ecr.us-east-2.amazonaws.com/cooppadresd-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "ConnectionStrings__DefaultConnection",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/postgres-CKdZkU"
+        }
+      ],
+      "environment": [
+        {
+          "name": "ASPNETCORE_ENVIRONMENT",
+          "value": "Production"
+        },
+        {
+          "name": "ASPNETCORE_URLS",
+          "value": "http://+:8080"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/cooppadresd-api",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "api"
+        }
+      }
+    }
+  ]
+}
