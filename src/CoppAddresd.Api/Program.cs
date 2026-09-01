@@ -54,6 +54,9 @@ builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
 // Seed de reglas de seguridad clínica para la generación de planes con IA.
 builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
 
+// Seed del catálogo nutricional de Food AI (schema foodai, USDA FDC).
+builder.Services.AddHostedService<FoodAiNutritionSeeder>();
+
 // Seed de la plantilla por defecto del programa de 83 semanas (default-83w).
 builder.Services.AddHostedService<ProgramProgressSeeder>();
 
