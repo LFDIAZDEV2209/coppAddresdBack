@@ -39,24 +39,24 @@ Modelar la batería de evaluación inicial del programa (9 tests ANTARES) y perm
 
 ## Tablas (schema `app.`)
 
-| Tabla                             | Descripción                                                                            |
-| --------------------------------- | -------------------------------------------------------------------------------------- |
-| `health_test_instruments`         | Catálogo de tests (código único, categoría, orden)                                     |
-| `health_test_versions`            | Versiones snapshot (número, estado draft/active/retired, estrategia, peso)             |
-| `health_test_questions`           | Preguntas por versión (sección, tipo scale/single/multi/open, dirección)               |
-| `health_test_answer_options`      | Opciones por pregunta con `score_value`                                                |
-| `health_test_score_ranges`        | Rangos de interpretación por versión (etiqueta + severidad)                            |
-| `health_test_batteries`           | Baterías configurables                                                                 |
-| `health_test_battery_items`       | Ítems de batería (instrumento + versión opcional + orden + obligatorio + periodicidad) |
-| `health_test_battery_assignments` | Batería asignada a un paciente (agrupación semántica)                                  |
-| `health_test_assignments`         | Test asignado a un paciente (unidad de trabajo del ERP/mobile)                         |
-| `health_test_evaluations`         | Ejecución de una versión por un paciente (score + porcentaje)                          |
-| `health_test_responses`           | Respuestas del paciente a cada pregunta                                                |
-| `health_test_results`             | Resultados calculados (score/subscale/indicator), append-only                          |
-| `health_test_indicator_defs`      | Definición de indicadores (`computation` jsonb)                                        |
-| `health_test_alert_rules`         | Reglas de alerta (`condition` jsonb)                                                   |
-| `health_test_alerts`              | Alertas generadas (estado active/reviewing/resolved/closed)                            |
-| `health_test_comments`            | Comentarios de revisión del profesional                                                |
+| Tabla                             | Descripción                                                                                                                                 |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `health_test_instruments`         | Catálogo de tests (código único, categoría, orden)                                                                                          |
+| `health_test_versions`            | Versiones snapshot (número, estado draft/active/retired, estrategia, peso)                                                                  |
+| `health_test_questions`           | Preguntas por versión (sección, tipo scale/single/multi/open/num, dirección, metadata num: unit/min/max/default, min_label/max_label, hint) |
+| `health_test_answer_options`      | Opciones por pregunta con `score_value`                                                                                                     |
+| `health_test_score_ranges`        | Rangos de interpretación por versión (etiqueta + severidad)                                                                                 |
+| `health_test_batteries`           | Baterías configurables                                                                                                                      |
+| `health_test_battery_items`       | Ítems de batería (instrumento + versión opcional + orden + obligatorio + periodicidad)                                                      |
+| `health_test_battery_assignments` | Batería asignada a un paciente (agrupación semántica)                                                                                       |
+| `health_test_assignments`         | Test asignado a un paciente (unidad de trabajo del ERP/mobile)                                                                              |
+| `health_test_evaluations`         | Ejecución de una versión por un paciente (score + porcentaje)                                                                               |
+| `health_test_responses`           | Respuestas del paciente a cada pregunta                                                                                                     |
+| `health_test_results`             | Resultados calculados (score/subscale/indicator), append-only                                                                               |
+| `health_test_indicator_defs`      | Definición de indicadores (`computation` jsonb)                                                                                             |
+| `health_test_alert_rules`         | Reglas de alerta (`condition` jsonb)                                                                                                        |
+| `health_test_alerts`              | Alertas generadas (estado active/reviewing/resolved/closed)                                                                                 |
+| `health_test_comments`            | Comentarios de revisión del profesional                                                                                                     |
 
 Estados: instrumento/versión `draft/active/retired` · asignación `pending/in_progress/completed/expired/cancelled` ·
 evaluación `started/completed/abandoned` · alerta `active/reviewing/resolved/closed`. Se almacenan como
@@ -183,7 +183,10 @@ GET  /me/history        historial de evaluaciones (evolución)
 ```
 
 Los shapes `/me/*` replican los de `antares-paciente` (`TestMeta`, `ScaleQ`, respuestas por opción,
-resumen con 6 scores), de modo que la UX mobile no cambia al conectar el backend.
+resumen con 6 scores), de modo que la UX mobile no cambia al conectar el backend. El render mobile es
+un wizard de **una pregunta a la vez**: escala y selección única avanzan automáticamente al responder;
+multi/num/texto requieren el botón Continuar. Las preguntas `num` (biometría) responden por
+`value_text` y no puntúan.
 
 En la batería inicial, un test completado **sigue en la lista** (estado `completed`, badge
 «Hecho»); no se oculta. Tras **al menos 3** evaluaciones completadas, la app permite omitir el
@@ -213,8 +216,16 @@ sueño, IAC-ADRESD, ORP, ERS, batería ANTARES), sus preguntas, opciones con `sc
 la batería inicial, los indicadores (IAC-ADRESD, sospecha de apnea) y las reglas de alerta se siembran
 con la migración `AddHealthTestsCatalogSeed` (SQL embebido, idempotente).
 
-**Fuente de verdad del seed**: `scripts/generate_health_tests_seed.py` (fiel a
-`antares-paciente/src/data/tests.ts`). Editar el script, regenerar el SQL, nunca editar el SQL a mano.
+**Fuente de verdad del seed**: `scripts/generate_health_tests_seed.py` — contenido **fiel a
+`ANTARES_Tests_Perfil_Salud (1).html`** (preguntas, opciones, secciones, hints y biometría con
+unidad/rango; espejo en `antares-paciente/src/data/tests.ts` para el modo demo de la app).
+Editar el script, regenerar el SQL, nunca editar el SQL a mano.
+
+**Reemplazo del contenido inicial** (p. ej. al cambiar las preguntas del onboarding): la migración
+`ReplaceInitialBatterySeed` borra en orden FK-safe evaluaciones/respuestas/asignaciones y
+preguntas/opciones/rangos de la v1 de los 9 instrumentos y vuelve a sembrar el recurso regenerado
+(los instrumentos/versiones/batería/indicadores/reglas conservan su identidad). Es una operación
+**destructiva** sobre los datos de la batería (solo aplica en la transición del contenido).
 
 ## Cómo extender
 

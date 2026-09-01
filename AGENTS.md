@@ -55,7 +55,7 @@ Schema audit:   1 tabla (activity_logs)
 Schema tele:   10 tablas (telemedicine_requests, appointments, appointment_cancellations/reschedules, virtual_rooms, telemedicine_sessions, clinical_encounters, telemedicine_alerts, telemedicine_settings, telemedicine_webhook_events). Historial de migraciones propio en tele.__ef_migrations_history (aislado del public.__EFMigrationsHistory).
 
 # Historial de migraciones por microservicio (NO compartir public):
-#   - Backend (AppDbContext): public.__EFMigrationsHistory (44 migraciones)
+#   - Backend (AppDbContext): public.__EFMigrationsHistory (47 migraciones)
 #   - Auth (AuthDbContext):   auth.__ef_migrations_history (11 migraciones, aislada)
 #   - Telemedicina:           tele.__ef_migrations_history (7 migraciones, aislada)
 #   - Community:              community.__ef_migrations_history (5 migraciones, aislada)
