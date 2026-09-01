@@ -54,8 +54,9 @@ public enum HealthTestAlertStatus
 
 /// <summary>
 /// Tipo de pregunta de un instrumento (SPEC A3): <c>scale</c> (escala Likert),
-/// <c>single</c> (selección única), <c>multi</c> (selección múltiple) y
-/// <c>open</c> (texto libre).
+/// <c>single</c> (selección única), <c>multi</c> (selección múltiple),
+/// <c>open</c> (texto libre) y <c>num</c> (valor numérico con unidad/rango;
+/// no puntúa, su respuesta viaja como <c>value_text</c>).
 /// </summary>
 public enum HealthTestQuestionType
 {
@@ -63,6 +64,7 @@ public enum HealthTestQuestionType
     single = 2,
     multi = 3,
     open = 4,
+    num = 5,
 }
 
 /// <summary>

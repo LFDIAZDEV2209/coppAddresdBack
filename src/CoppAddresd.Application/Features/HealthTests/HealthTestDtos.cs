@@ -103,7 +103,14 @@ public record HealthTestQuestionDto(
     HealthTestScoringDirection ScoringDirection,
     int SortOrder,
     bool IsActive,
-    IReadOnlyList<HealthTestAnswerOptionDto> Options
+    IReadOnlyList<HealthTestAnswerOptionDto> Options,
+    string? Unit,
+    decimal? MinValue,
+    decimal? MaxValue,
+    decimal? DefaultValue,
+    string? MinLabel,
+    string? MaxLabel,
+    string? Hint
 )
 {
     public static HealthTestQuestionDto FromEntity(HealthTestQuestion q) =>
@@ -119,7 +126,14 @@ public record HealthTestQuestionDto(
             q.IsActive,
             q.Options.OrderBy(o => o.SortOrder)
                 .Select(HealthTestAnswerOptionDto.FromEntity)
-                .ToList()
+                .ToList(),
+            q.Unit,
+            q.MinValue,
+            q.MaxValue,
+            q.DefaultValue,
+            q.MinLabel,
+            q.MaxLabel,
+            q.Hint
         );
 }
 
