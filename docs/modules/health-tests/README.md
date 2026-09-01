@@ -173,7 +173,7 @@ GET    /health-tests/stats                                      View/ViewOwn (da
 ### Mobile — `/api/v1/health-tests/me` (JWT `aud=app`, paciente por `user_id`)
 
 ```
-GET  /me/assignments    tests pendientes/en curso (shape TestMeta)
+GET  /me/assignments    tests pendientes, en curso y completados (shape TestMeta); no incluye cancelled/expired
 GET  /me/batteries      baterías asignadas con progreso
 GET  /me/tests/{id}     preguntas de la versión (shape ScaleQ + opciones)
 POST /me/tests/{id}/start      → evaluación Started
@@ -184,6 +184,10 @@ GET  /me/history        historial de evaluaciones (evolución)
 
 Los shapes `/me/*` replican los de `antares-paciente` (`TestMeta`, `ScaleQ`, respuestas por opción,
 resumen con 6 scores), de modo que la UX mobile no cambia al conectar el backend.
+
+En la batería inicial, un test completado **sigue en la lista** (estado `completed`, badge
+«Hecho»); no se oculta. Tras **al menos 3** evaluaciones completadas, la app permite omitir el
+resto o continuar después.
 
 ### Detalle de evaluación (hub del paciente ERP)
 
