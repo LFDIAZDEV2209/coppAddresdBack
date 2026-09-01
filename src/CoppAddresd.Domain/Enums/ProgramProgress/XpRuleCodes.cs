@@ -19,6 +19,13 @@ public static class XpRuleCodes
     public const string Streak11 = "STREAK_11";
     public const string Streak22 = "STREAK_22";
     public const string Streak50 = "STREAK_50";
+    // Catálogo extendido del módulo "cofres" (misma mecánica SPEC §16, B;
+    // sin multiplicador). Los nombres coinciden con los miembros STREAK_14/30/75/100
+    // de <see cref="XpReason"/> (dedupe parcial por reason).
+    public const string Streak14 = "STREAK_14";
+    public const string Streak30 = "STREAK_30";
+    public const string Streak75 = "STREAK_75";
+    public const string Streak100 = "STREAK_100";
 
     // --- XP clínica (SPEC §15): otorgamientos basados en la evolución de las
     // métricas clínicas frente a la línea base (se disparan SOLO en

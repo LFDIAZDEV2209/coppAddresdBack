@@ -55,7 +55,15 @@ public sealed record CompleteTaskResult(
     int DayPoints,
     int DayPointsMax);
 
-/// <summary>Snapshot del programa para la home del móvil (SPEC §7.1).</summary>
+/// <summary>
+/// Snapshot del programa para la home del móvil (SPEC §7.1).
+/// <c>StreakChests</c> es un campo aditivo del módulo "cofres": definiciones
+/// del catálogo STREAK_* con su estado real de otorgamiento (null en
+/// respuestas previas → el móvil cae a sus definiciones de fallback). Para la
+/// UI de cofres el móvil DEBE preferir este campo sobre
+/// <c>NextMilestoneDays</c>, cuya semántica (múltiplos de 7) no corresponde a
+/// los hitos reales del catálogo.
+/// </summary>
 public sealed record ProgramSnapshotDto(
     Guid EnrollmentId,
     ProgramSnapshotTemplateDto Template,
@@ -67,7 +75,8 @@ public sealed record ProgramSnapshotDto(
     XpInfoDto Xp,
     StreakInfoDto Streak,
     int NextMilestoneDays,
-    IReadOnlyList<CalendarDayDto> Calendar);
+    IReadOnlyList<CalendarDayDto> Calendar,
+    IReadOnlyList<StreakChestDto>? StreakChests = null);
 
 /// <summary>
 /// Bloque de plantilla/semana actual del snapshot. <c>StreakMinTasks</c> y
@@ -110,18 +119,49 @@ public sealed record TodayTaskDto(
     TodayTaskContentDto? Content,
     bool ContentUnavailable = false);
 
+public sealed record PodcastChapterDto(int AtSeconds, string Label);
+
+public sealed record RecentVitalsDto(
+    int? HeartRate,
+    int? Systolic,
+    int? Diastolic,
+    int? O2Saturation,
+    decimal? Glucose,
+    decimal? WeightKg,
+    decimal? TemperatureC,
+    DateTime? RecordedAt);
+
+public sealed record NutritionMealDto(
+    string MealType,
+    string? Description,
+    string? Foods,
+    int? Calories,
+    decimal? ProteinG,
+    decimal? CarbsG,
+    decimal? FatG,
+    decimal? FiberG,
+    int? WaterMl,
+    string? Notes,
+    int SortOrder);
+
+public sealed record ExerciseItemDto(
+    string Name,
+    string? Description,
+    int? Sets,
+    int? Repetitions,
+    int? DurationSecs,
+    int? RestSeconds,
+    string? TargetMuscle,
+    string? Equipment,
+    string? Tips,
+    int SortOrder);
+
 /// <summary>
-/// Contenido multimedia de una tarea del día (podcast) más contenido resuelto
-/// de nutrición y ejercicio (T-75/T-76). La resolución la hace el repositorio
-/// en <c>GetSnapshotAsync</c> (una sola query set, sin N+1).
+/// Contenido resuelto para las misiones del día (SPEC §R3.1, §4.2, §4.3).
 ///
-/// Campos de podcast: <c>MediaId</c>, <c>Title</c>, <c>DurationSecs</c>,
-/// <c>ThumbnailUrl</c>.
-/// Campos de nutrición: <c>NutritionPlanId</c>, <c>NutritionPlanName</c>,
-/// <c>NutritionPlanDayNumber</c>.
-/// Campos de ejercicio: <c>ExerciseRoutineId</c>, <c>ExerciseRoutineName</c>.
-/// <c>ContentUnavailable</c>: true cuando una tarea tipo nut/ejercicio necesita
-/// contenido pero no hay asignación activa que cubra hoy (SPEC §4.2/§4.3).
+/// Soporta podcast (mediaId/title/durationSecs/thumbnailUrl/author/description/mediaUrl/chapters/takeaways),
+/// planes de nutrición y ejercicio (T-75/T-76) y últimos signos vitales. La resolución
+/// la hace el repositorio en <c>GetSnapshotAsync</c> (una sola query set, sin N+1).
 /// </summary>
 public sealed record TodayTaskContentDto(
     Guid? MediaId,
@@ -131,9 +171,22 @@ public sealed record TodayTaskContentDto(
     Guid? NutritionPlanId = null,
     string? NutritionPlanName = null,
     int? NutritionPlanDayNumber = null,
+    int? DailyCalorieTarget = null,
+    decimal? DailyProteinTarget = null,
+    decimal? DailyCarbsTarget = null,
+    decimal? DailyFatTarget = null,
+    decimal? DailyFiberTarget = null,
+    IReadOnlyList<NutritionMealDto>? NutritionMeals = null,
     Guid? ExerciseRoutineId = null,
     string? ExerciseRoutineName = null,
-    bool ContentUnavailable = false);
+    RecentVitalsDto? RecentVitals = null,
+    string? Author = null,
+    string? Description = null,
+    string? MediaUrl = null,
+    IReadOnlyList<PodcastChapterDto>? Chapters = null,
+    IReadOnlyList<string>? Takeaways = null,
+    bool ContentUnavailable = false,
+    IReadOnlyList<ExerciseItemDto>? Exercises = null);
 
 /// <summary>XP + nivel de gamificación (nunca métrica clínica, SPEC §6.15).</summary>
 public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
@@ -149,8 +202,7 @@ public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
 /// <c>NbStreak</c>/<c>NbLongestStreak</c> son la racha consecutiva de la tarea
 /// <c>nutribiotico</c> y su máximo histórico; <c>NbNextMilestone</c> es el
 /// próximo hito <c>{ days, xp, daysRemaining }</c> por encima de la racha
-/// actual (null si ya llegó a 90). Con default para no romper los call sites
-/// existentes — los campos previos no cambian.
+/// actual (null si ya llegó a 90). <c>NbWeekDays</c> es el historial booleano de 7 días.
 /// </summary>
 public sealed record StreakInfoDto(
     int Current,
@@ -161,7 +213,8 @@ public sealed record StreakInfoDto(
     int MultiplierRemainingHours,
     int NbStreak = 0,
     int NbLongestStreak = 0,
-    NbNextMilestoneDto? NbNextMilestone = null);
+    NbNextMilestoneDto? NbNextMilestone = null,
+    IReadOnlyList<bool>? NbWeekDays = null);
 
 /// <summary>
 /// Próximo hito de la racha propia del nutribiótico (SPEC §19, D): días del
@@ -169,6 +222,22 @@ public sealed record StreakInfoDto(
 /// alcanzarlo. Null en el snapshot cuando la racha actual ya es ≥ 90.
 /// </summary>
 public sealed record NbNextMilestoneDto(int Days, int Xp, int DaysRemaining);
+
+/// <summary>
+/// Cofre de racha del snapshot (módulo "cofres"): definición del hito tomada
+/// del catálogo (<c>app.xp_rules</c>, reglas <c>STREAK_*</c> activas, XP
+/// <c>base_xp ?? fallback</c>) y su estado real de otorgamiento
+/// (<c>app.xp_ledger</c>, <c>source_ref_type = 'streak_milestone'</c>).
+/// El móvil renderiza el trail de cofres de ESTA verdad y nunca la deriva de
+/// <c>streak.current</c>: los hitos se otorgan UNA vez por inscripción, por lo
+/// que tras una rotura y regeneración de racha la derivación client-side
+/// mostraría como disponibles cofres ya pagados. Ordenado por <c>Days</c>.
+/// </summary>
+public sealed record StreakChestDto(
+    int Days,
+    int Xp,
+    bool Granted,
+    DateTime? GrantedAt = null);
 
 /// <summary>Día del mini calendario del snapshot (7 días).</summary>
 public sealed record CalendarDayDto(

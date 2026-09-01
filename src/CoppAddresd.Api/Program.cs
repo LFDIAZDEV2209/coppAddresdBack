@@ -51,6 +51,11 @@ builder.Services.AddHostedService<ProgramProgressSeeder>();
 // Seed de rutinas de ejercicio base para el configurador de contenido del ERP.
 builder.Services.AddHostedService<ExerciseRoutineSeeder>();
 
+// Seed de desarrollo: inscribe a la paciente dev en default-83w y asigna
+// contenido de 4 semanas. Se registra DESPUÉS de ProgramProgressSeeder y
+// ExerciseRoutineSeeder para que la plantilla y las rutinas ya existan.
+builder.Services.AddHostedService<DevProgramSeeder>();
+
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
 // (no incluido en el shared framework de .NET 10), así que se usa un check
