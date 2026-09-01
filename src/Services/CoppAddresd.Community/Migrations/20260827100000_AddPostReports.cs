@@ -1,4 +1,6 @@
 using System;
+using CoppAddresd.Community.Persistence;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,6 +8,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace CoppAddresd.Community.Migrations
 {
     /// <inheritdoc />
+    [DbContext(typeof(CommunityDbContext))]
+    [Migration("20260827100000_AddPostReports")]
     public partial class AddPostReports : Migration
     {
         /// <inheritdoc />
@@ -16,12 +20,28 @@ namespace CoppAddresd.Community.Migrations
                 schema: "community",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "uuid", nullable: false, defaultValueSql: "gen_random_uuid()"),
+                    id = table.Column<Guid>(
+                        type: "uuid",
+                        nullable: false,
+                        defaultValueSql: "gen_random_uuid()"
+                    ),
                     post_id = table.Column<Guid>(type: "uuid", nullable: false),
                     reported_by_profile_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    reason = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    details = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    created_at = table.Column<DateTime>(type: "timestamptz", nullable: false, defaultValueSql: "now()")
+                    reason = table.Column<string>(
+                        type: "character varying(100)",
+                        maxLength: 100,
+                        nullable: false
+                    ),
+                    details = table.Column<string>(
+                        type: "character varying(500)",
+                        maxLength: 500,
+                        nullable: true
+                    ),
+                    created_at = table.Column<DateTime>(
+                        type: "timestamptz",
+                        nullable: false,
+                        defaultValueSql: "now()"
+                    ),
                 },
                 constraints: table =>
                 {
@@ -32,35 +52,38 @@ namespace CoppAddresd.Community.Migrations
                         principalSchema: "community",
                         principalTable: "posts",
                         principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Cascade
+                    );
                     table.ForeignKey(
                         name: "FK_post_reports_profiles_reported_by_profile_id",
                         column: x => x.reported_by_profile_id,
                         principalSchema: "community",
                         principalTable: "profiles",
                         principalColumn: "id",
-                        onDelete: ReferentialAction.SetNull);
-                });
+                        onDelete: ReferentialAction.SetNull
+                    );
+                }
+            );
 
             migrationBuilder.CreateIndex(
                 name: "ix_post_reports_post_id",
                 schema: "community",
                 table: "post_reports",
-                column: "post_id");
+                column: "post_id"
+            );
 
             migrationBuilder.CreateIndex(
                 name: "ix_post_reports_reported_by_profile_id",
                 schema: "community",
                 table: "post_reports",
-                column: "reported_by_profile_id");
+                column: "reported_by_profile_id"
+            );
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "post_reports",
-                schema: "community");
+            migrationBuilder.DropTable(name: "post_reports", schema: "community");
         }
     }
 }
