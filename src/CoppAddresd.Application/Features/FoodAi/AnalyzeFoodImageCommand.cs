@@ -1,0 +1,27 @@
+using CoppAddresd.Application.DTOs.FoodAi;
+using MediatR;
+
+namespace CoppAddresd.Application.Features.FoodAi;
+
+/// <summary>
+/// Ingesta de una imagen de comida: validación → almacenamiento → detección
+/// en el Food AI Service → nutrición (por alimento + totales).
+/// </summary>
+public record AnalyzeFoodImageCommand(
+    Stream ImageStream,
+    string FileName,
+    string ContentType,
+    long Length,
+    Guid? UserId = null)
+    : IRequest<AnalyzeFoodImageResult>;
+
+public record AnalyzeFoodImageResult(
+    string AnalysisId,
+    string Status,
+    string ModelVersion,
+    string SegModelVersion,
+    string ClassifierVersion,
+    int InferenceTimeMs,
+    IReadOnlyList<DetectedFoodDto> Foods,
+    NutritionValueDto? Summary = null,
+    NutritionRangeDto? SummaryRange = null);

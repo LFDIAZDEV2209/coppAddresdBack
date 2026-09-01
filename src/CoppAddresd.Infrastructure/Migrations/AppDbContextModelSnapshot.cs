@@ -1296,6 +1296,505 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("exercise_routines", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.Food", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("category");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<decimal?>("MappingConfidence")
+                        .HasPrecision(4, 3)
+                        .HasColumnType("numeric(4,3)")
+                        .HasColumnName("mapping_confidence");
+
+                    b.Property<string>("MappingStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("mapping_status");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_foods_name");
+
+                    b.ToTable("foods", "foodai");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAlias", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Alias")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("alias");
+
+                    b.Property<Guid>("FoodId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Alias")
+                        .IsUnique()
+                        .HasDatabaseName("ix_food_aliases_alias");
+
+                    b.HasIndex("FoodId");
+
+                    b.ToTable("food_aliases", "foodai");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("AnalysisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("analysis_id");
+
+                    b.Property<string>("ClassifierVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("classifier_version");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("DepthModelVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("depth_model_version");
+
+                    b.Property<string>("DetectorVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("detector_version");
+
+                    b.Property<string>("ImageKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("image_key");
+
+                    b.Property<string>("PortionMethod")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("portion_method");
+
+                    b.Property<string>("SegmenterVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("segmenter_version");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SourceVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_version");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<decimal?>("SummaryCalories")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("summary_calories");
+
+                    b.Property<decimal?>("SummaryCarbohydrates")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("summary_carbohydrates");
+
+                    b.Property<decimal?>("SummaryFat")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("summary_fat");
+
+                    b.Property<decimal?>("SummaryFiber")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("summary_fiber");
+
+                    b.Property<decimal?>("SummaryProtein")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("summary_protein");
+
+                    b.Property<decimal?>("SummarySodium")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("summary_sodium");
+
+                    b.Property<decimal?>("SummarySugar")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("summary_sugar");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnalysisId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_food_analyses_analysis_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_food_analyses_user_id");
+
+                    b.ToTable("food_analyses", "foodai");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysisFeedback", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("AnalysisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("analysis_id");
+
+                    b.Property<string>("CorrectedFood")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("corrected_food");
+
+                    b.Property<int?>("CorrectedGrams")
+                        .HasColumnType("integer")
+                        .HasColumnName("corrected_grams");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("FeedbackType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("feedback_type");
+
+                    b.Property<Guid?>("ItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("OriginalFood")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("original_food");
+
+                    b.Property<int?>("OriginalGrams")
+                        .HasColumnType("integer")
+                        .HasColumnName("original_grams");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnalysisId", "CreatedAt")
+                        .HasDatabaseName("ix_food_analysis_feedback_analysis_id_created_at");
+
+                    b.ToTable("food_analysis_feedback", "foodai");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysisItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("AnalysisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("analysis_id");
+
+                    b.Property<int>("BboxHeight")
+                        .HasColumnType("integer")
+                        .HasColumnName("bbox_height");
+
+                    b.Property<int>("BboxWidth")
+                        .HasColumnType("integer")
+                        .HasColumnName("bbox_width");
+
+                    b.Property<int>("BboxX")
+                        .HasColumnType("integer")
+                        .HasColumnName("bbox_x");
+
+                    b.Property<int>("BboxY")
+                        .HasColumnType("integer")
+                        .HasColumnName("bbox_y");
+
+                    b.Property<decimal?>("Calories")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("calories");
+
+                    b.Property<decimal?>("Carbohydrates")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("carbohydrates");
+
+                    b.Property<double>("DetectionConfidence")
+                        .HasPrecision(6, 4)
+                        .HasColumnType("double precision")
+                        .HasColumnName("detection_confidence");
+
+                    b.Property<int?>("EstimatedGrams")
+                        .HasColumnType("integer")
+                        .HasColumnName("estimated_grams");
+
+                    b.Property<decimal?>("Fat")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("fat");
+
+                    b.Property<decimal?>("Fiber")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("fiber");
+
+                    b.Property<int>("ItemIndex")
+                        .HasColumnType("integer")
+                        .HasColumnName("item_index");
+
+                    b.Property<int?>("MaskAreaPixels")
+                        .HasColumnType("integer")
+                        .HasColumnName("mask_area_pixels");
+
+                    b.Property<string>("MaskKey")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("mask_key");
+
+                    b.Property<int?>("MaxGrams")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_grams");
+
+                    b.Property<int?>("MinGrams")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_grams");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("NutritionStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("nutrition_status");
+
+                    b.Property<double?>("PortionConfidence")
+                        .HasPrecision(6, 4)
+                        .HasColumnType("double precision")
+                        .HasColumnName("portion_confidence");
+
+                    b.Property<string>("PortionMethod")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("portion_method");
+
+                    b.Property<string>("PortionSize")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("portion_size");
+
+                    b.Property<decimal?>("Protein")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("protein");
+
+                    b.Property<decimal?>("Sodium")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("sodium");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SourceVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_version");
+
+                    b.Property<decimal?>("Sugar")
+                        .HasPrecision(12, 2)
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("sugar");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AnalysisId", "ItemIndex")
+                        .IsUnique()
+                        .HasDatabaseName("ix_food_analysis_items_analysis_id_item_index");
+
+                    b.ToTable("food_analysis_items", "foodai");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodNutrition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<decimal>("Calories")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("calories");
+
+                    b.Property<decimal>("Carbohydrates")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("carbohydrates");
+
+                    b.Property<decimal>("Fat")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("fat");
+
+                    b.Property<decimal>("Fiber")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("fiber");
+
+                    b.Property<Guid>("FoodId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("imported_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<decimal>("Protein")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("protein");
+
+                    b.Property<decimal>("ServingGrams")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("serving_grams");
+
+                    b.Property<decimal>("Sodium")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("sodium");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("source");
+
+                    b.Property<string>("SourceId")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("SourceVersion")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("source_version");
+
+                    b.Property<decimal>("Sugar")
+                        .HasPrecision(10, 2)
+                        .HasColumnType("numeric(10,2)")
+                        .HasColumnName("sugar");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FoodId", "ImportedAt")
+                        .HasDatabaseName("ix_food_nutrition_food_id_imported_at");
+
+                    b.ToTable("food_nutrition", "foodai");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAlert", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7227,6 +7726,50 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Media");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAlias", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.FoodAi.Food", "Food")
+                        .WithMany("Aliases")
+                        .HasForeignKey("FoodId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Food");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysisFeedback", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis", "Analysis")
+                        .WithMany("Feedbacks")
+                        .HasForeignKey("AnalysisId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Analysis");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysisItem", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis", "Analysis")
+                        .WithMany("Items")
+                        .HasForeignKey("AnalysisId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Analysis");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodNutrition", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.FoodAi.Food", "Food")
+                        .WithMany("NutritionEntries")
+                        .HasForeignKey("FoodId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Food");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAlert", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
@@ -8353,6 +8896,20 @@ namespace CoppAddresd.Infrastructure.Migrations
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ExerciseRoutine", b =>
                 {
                     b.Navigation("Exercises");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.Food", b =>
+                {
+                    b.Navigation("Aliases");
+
+                    b.Navigation("NutritionEntries");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis", b =>
+                {
+                    b.Navigation("Feedbacks");
+
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestAssignment", b =>

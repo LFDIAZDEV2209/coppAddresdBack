@@ -6,9 +6,11 @@ using CoppAddresd.Api.Handlers;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Common.Behaviors;
+using CoppAddresd.Application.Features.FoodAi;
 using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Infrastructure.Extensions;
+using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -37,6 +39,9 @@ public static class ApplicationServiceExtensions
         services.Configure<FcmSettings>(
             configuration.GetSection(FcmSettings.SectionName));
 
+        services.Configure<FoodAiSettings>(
+            configuration.GetSection(FoodAiSettings.SectionName));
+
         // Clave interna compartida con el microservicio de Telemedicina
         // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).
         services.Configure<TelemedicineServiceSettings>(
@@ -58,7 +63,23 @@ public static class ApplicationServiceExtensions
             .AddResiliencePolicy()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
-// FCM: mismo patrón que AiServiceClient (HttpClient tipado). El
+services.AddHttpClient<IFoodAiClient, FoodAiClient>()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
+        services.AddScoped<IImageStorage, LocalImageStorage>();
+        services.AddScoped<CoppAddresd.Application.Features.FoodAi.ImageFileValidator>();
+        services.AddScoped<INutritionProvider, DatabaseNutritionProvider>();
+        services.AddScoped<INutritionCalculator, NutritionCalculator>();
+        services.AddScoped<IFoodAnalysisRepository, FoodAnalysisRepository>();
+
+        services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
+        {
+            var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+            client.BaseAddress = new Uri(aiSettings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
+        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
+        // FCM: mismo patrón que AiServiceClient (HttpClient tipado). El
         // cliente degrada a "disabled" sin credenciales, nunca lanza.
         services.AddHttpClient<IFcmClient, FcmClient>()
             .AddResiliencePolicy()

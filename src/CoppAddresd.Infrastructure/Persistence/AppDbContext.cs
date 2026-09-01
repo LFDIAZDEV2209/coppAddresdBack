@@ -1,4 +1,5 @@
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Entities.FoodAi;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using Microsoft.EntityFrameworkCore;
@@ -85,6 +86,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<ClinicalMeasurement> ClinicalMeasurements => Set<ClinicalMeasurement>();
     public DbSet<PlanSafetyRule> PlanSafetyRules => Set<PlanSafetyRule>();
+
+// Food AI — Nutrición (schema foodai)
+    public DbSet<Food> Foods => Set<Food>();
+    public DbSet<FoodNutrition> FoodNutritionEntries => Set<FoodNutrition>();
+    public DbSet<FoodAlias> FoodAliases => Set<FoodAlias>();
+
+    // Food AI — Análisis y feedback (schema foodai)
+    public DbSet<FoodAnalysis> FoodAnalyses => Set<FoodAnalysis>();
+    public DbSet<FoodAnalysisItem> FoodAnalysisItems => Set<FoodAnalysisItem>();
+    public DbSet<FoodAnalysisFeedback> FoodAnalysisFeedbacks => Set<FoodAnalysisFeedback>();
 
     // Health Tests — Tests de Salud (catálogo versionado + ejecución)
     public DbSet<HealthTestInstrument> HealthTestInstruments => Set<HealthTestInstrument>();
