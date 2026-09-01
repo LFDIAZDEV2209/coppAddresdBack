@@ -1024,6 +1024,83 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
             f => f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Granted));
     }
 
+    // ------------------------------------ Hitos de racha extendidos (módulo "cofres")
+
+    [RequiresPostgresFact]
+    public async Task Racha_Hito7_OtorgaStreak7UnaVezYSnapshotExponeCofres()
+    {
+        // 7 días perfectos consecutivos → racha 7 → hito STREAK_7 (una vez) y
+        // el snapshot expone el trail de cofres con la verdad del libro mayor.
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 7; dayOffset++)
+        {
+            var date = monday.AddDays(dayOffset);
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, date, code, $"chest-d{dayOffset}-{code}");
+            }
+        }
+
+        await using var db = fixture.CreateDbContext();
+        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
+            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.STREAK_7));
+        Assert.Equal(100, await db.XpLedgerEntries
+            .Where(x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.STREAK_7)
+            .Select(x => x.Amount)
+            .SingleAsync());
+
+        var repo = new ProgramRepository(db, Configuration());
+        var snapshot = await repo.GetSnapshotAsync(enrollmentId, monday.AddDays(7));
+        Assert.NotNull(snapshot);
+        Assert.Equal(7, snapshot!.Streak.Current);
+
+        // Trail completo del catálogo extendido, ordenado por días.
+        var chests = snapshot.StreakChests!;
+        Assert.Equal(8, chests.Count);
+        Assert.Equal(new[] { 7, 11, 14, 22, 30, 50, 75, 100 }, chests.Select(c => c.Days).ToArray());
+        Assert.Equal(new[] { 100, 200, 300, 500, 800, 1500, 2500, 5000 }, chests.Select(c => c.Xp).ToArray());
+
+        // Solo el cofre de 7 días está otorgado (verdad del libro mayor).
+        Assert.True(chests[0].Granted);
+        Assert.NotNull(chests[0].GrantedAt);
+        Assert.Equal(100, chests[0].Xp);
+        Assert.True(chests.Skip(1).All(c => !c.Granted && c.GrantedAt is null));
+    }
+
+    [RequiresPostgresFact]
+    public async Task Racha_Hito14_OtorgaStreak14UnaVezYNoActivaMultiplicador()
+    {
+        // 14 días perfectos consecutivos: cruza los hitos 7, 11 y 14. El x2 del
+        // hito 11 dura 24h, así que al llegar al día 14 ya venció → STREAK_14 se
+        // otorga con su XP base (300, sin multiplicador) y solo una vez.
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 14; dayOffset++)
+        {
+            var date = monday.AddDays(dayOffset);
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, date, code, $"chest14-d{dayOffset}-{code}");
+            }
+        }
+
+        await using var db = fixture.CreateDbContext();
+        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
+            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.STREAK_14));
+        Assert.Equal(300, await db.XpLedgerEntries
+            .Where(x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.STREAK_14)
+            .Select(x => x.Amount)
+            .SingleAsync());
+        // Los hitos 7 y 11 se cruzaron en el camino, también una sola vez.
+        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
+            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.STREAK_7));
+        Assert.Equal(1, await db.XpLedgerEntries.CountAsync(
+            x => x.EnrollmentId == enrollmentId && x.Reason == XpReason.STREAK_11));
+    }
+
     [RequiresPostgresFact]
     public async Task TareaEmocional_PersisteRegistroEmocionalYAnimoDelDia()
     {

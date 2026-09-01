@@ -161,4 +161,22 @@ public enum XpReason
     /// Sin validación requerida.
     /// </summary>
     RECOVERY_MISSION = 27,
+
+    // --- Hitos de racha del catálogo extendido (módulo "cofres"): misma
+    // mecánica que STREAK_7/11/22/50 (SPEC §16, B — UNA vez por inscripción,
+    // source_ref_type = 'streak_milestone', dedupe parcial por reason). Ninguno
+    // activa multiplicador x2 (el multiplicador queda exclusivamente en
+    // 11/22/50). Se persisten como string (HasConversion), sin migración.
+
+    /// <summary>Hito de racha de 14 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_14 = 28,
+
+    /// <summary>Hito de racha de 30 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_30 = 29,
+
+    /// <summary>Hito de racha de 75 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_75 = 30,
+
+    /// <summary>Hito de racha de 100 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_100 = 31,
 }
