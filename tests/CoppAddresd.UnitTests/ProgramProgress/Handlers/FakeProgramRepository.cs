@@ -866,4 +866,27 @@ internal sealed class FakeProgramRepository : IProgramRepository
 
     public Task<StreakReconciliationSummary> ReconcileStreaksAsync(CancellationToken ct = default)
         => Task.FromResult(new StreakReconciliationSummary(0, 0, []));
+
+    // --- Biometría ---
+
+    public Task<BiometriaCommunityDto> GetBiometriaCommunityAsync(CancellationToken ct = default)
+        => Task.FromResult(new BiometriaCommunityDto(
+            null, null, null, 0, [],
+            new GrasaDistribution([], []),
+            [], [], [], []));
+
+    public Task<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)> ListBiometriaPatientsAsync(
+        string? search, string? gender, string? imcCategory, string? glucosaCategory,
+        int page, int pageSize, CancellationToken ct = default)
+        => Task.FromResult<(IReadOnlyList<BiometriaPatientListItemDto>, int)>(([], 0));
+
+    public Task<BiometriaPatientDetailDto?> GetBiometriaPatientAsync(Guid patientId, CancellationToken ct = default)
+        => Task.FromResult<BiometriaPatientDetailDto?>(null);
+
+    public async IAsyncEnumerable<BiometriaPatientListItemDto> StreamBiometriaPatientsForExportAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
 }
