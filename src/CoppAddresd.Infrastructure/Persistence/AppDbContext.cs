@@ -147,6 +147,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Program Progress — Notificaciones gamificadas (SPEC §20)
     public DbSet<AppNotification> AppNotifications => Set<AppNotification>();
 
+    // SOS — Alertas de emergencia (schema sos)
+    public DbSet<SosAlert> SosAlerts => Set<SosAlert>();
+
     // Program Progress — Debilidades del paciente (SPEC §21, "Paso 7c")
     public DbSet<Weakness> Weaknesses => Set<Weakness>();
 
