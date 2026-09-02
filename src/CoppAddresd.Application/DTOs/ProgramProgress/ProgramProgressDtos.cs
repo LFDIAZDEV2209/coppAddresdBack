@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 
 namespace CoppAddresd.Application.DTOs.ProgramProgress;
@@ -145,9 +146,9 @@ public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
 /// <c>MultiplierRemainingHours</c> son las horas restantes redondeadas hacia
 /// abajo (0 sin multiplicador).
 ///
-/// Campos aditivos de la racha propia del nutribiótico (SPEC §19, D — Paso 7a):
+/// Campos aditivos de la racha propia del nutracéutico (SPEC §19, D — Paso 7a):
 /// <c>NbStreak</c>/<c>NbLongestStreak</c> son la racha consecutiva de la tarea
-/// <c>nutribiotico</c> y su máximo histórico; <c>NbNextMilestone</c> es el
+/// <c>nutraceutico</c> y su máximo histórico; <c>NbNextMilestone</c> es el
 /// próximo hito <c>{ days, xp, daysRemaining }</c> por encima de la racha
 /// actual (null si ya llegó a 90). Con default para no romper los call sites
 /// existentes — los campos previos no cambian.
@@ -164,7 +165,7 @@ public sealed record StreakInfoDto(
     NbNextMilestoneDto? NbNextMilestone = null);
 
 /// <summary>
-/// Próximo hito de la racha propia del nutribiótico (SPEC §19, D): días del
+/// Próximo hito de la racha propia del nutracéutico (SPEC §19, D): días del
 /// hito, XP base del catálogo (<c>app.xp_rules</c>) y días restantes para
 /// alcanzarlo. Null en el snapshot cuando la racha actual ya es ≥ 90.
 /// </summary>
@@ -234,7 +235,7 @@ public static class ProgramTaskCatalog
         TaskCode.vitals => ("Medir signos vitales", "FC · SpO2 · Glucosa · Peso"),
         TaskCode.nut => ("Cumplir plan nutricional", "Mediterráneo · 1,800 kcal"),
         TaskCode.ejercicio => ("Hacer ejercicio del día", "Circuito 12 min · Semana 12"),
-        TaskCode.nutribiotico => ("Tomar nutribiótico", "Dosis diaria matutina"),
+        TaskCode.nutraceutico => ("Tomar nutracéutico", "Dosis diaria matutina"),
         TaskCode.emocional => ("Evaluación emocional", "Estado psicológico · Semana 12"),
         _ => ("Tarea", ""),
     };
@@ -431,7 +432,8 @@ public sealed record AdaptationRecommendationDto(
     DateTime? DecidedAt,
     DateTime? AppliedAt,
     DateTime CreatedAt,
-    DateTime? UpdatedAt)
+    DateTime? UpdatedAt,
+    [property: JsonPropertyName("patient_name")] string? PatientName = null)
 {
     public static AdaptationRecommendationDto FromEntity(
         Domain.Entities.ProgramProgress.AdaptationRecommendation a) => new(
@@ -569,7 +571,7 @@ public static class EnrollmentWeekTaskLabels
             ["vitals"] = "Signos vitales",
             ["nut"] = "Plan nutricional",
             ["ejercicio"] = "Ejercicio",
-            ["nutribiotico"] = "Nutribiótico",
+            ["nutraceutico"] = "Nutracéutico",
             ["emocional"] = "Evaluación emocional",
         };
 

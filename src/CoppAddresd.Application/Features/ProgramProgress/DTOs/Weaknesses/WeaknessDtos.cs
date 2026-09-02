@@ -26,7 +26,8 @@ public sealed record WeaknessDto(
     [property: JsonPropertyName("assignedTo")] Guid? AssignedTo,
     [property: JsonPropertyName("resolvedAt")] DateTime? ResolvedAt,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
-    [property: JsonPropertyName("updatedAt")] DateTime? UpdatedAt);
+    [property: JsonPropertyName("updatedAt")] DateTime? UpdatedAt,
+    [property: JsonPropertyName("patient_name")] string? PatientName = null);
 
 /// <summary>
 /// Resultado paginado de una lista de debilidades (SPEC §21, D): la lista de
