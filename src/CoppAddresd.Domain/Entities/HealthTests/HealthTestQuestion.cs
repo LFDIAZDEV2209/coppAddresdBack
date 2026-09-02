@@ -31,6 +31,23 @@ public sealed class HealthTestQuestion
 
     public bool IsActive { get; set; } = true;
 
+    // Metadata del tipo num (biometría): unidad y rango válido del valor.
+    public string? Unit { get; set; }
+
+    public decimal? MinValue { get; set; }
+
+    public decimal? MaxValue { get; set; }
+
+    public decimal? DefaultValue { get; set; }
+
+    // Etiquetas de extremos de la escala (min_lbl/max_lbl del render).
+    public string? MinLabel { get; set; }
+
+    public string? MaxLabel { get; set; }
+
+    /// <summary>Instrucción/ayuda opcional bajo el texto de la pregunta (sub del render).</summary>
+    public string? Hint { get; set; }
+
     // Navigation
     public HealthTestVersion? Version { get; set; }
 

@@ -5,6 +5,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901214922_UpdateInitialBatteryInstrumentNames")]
+    partial class UpdateInitialBatteryInstrumentNames
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -6840,17 +6843,9 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("media_id");
 
-                    b.Property<Guid?>("NutritionPlanId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("nutrition_plan_id");
-
                     b.Property<int>("Points")
                         .HasColumnType("integer")
                         .HasColumnName("points");
-
-                    b.Property<Guid?>("RoutineId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("routine_id");
 
                     b.Property<int>("SortOrder")
                         .ValueGeneratedOnAdd()
