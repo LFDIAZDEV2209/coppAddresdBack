@@ -652,6 +652,28 @@ public interface IProgramRepository
         string? actor,
         CancellationToken ct = default);
 
+    // --- Biometría (SPEC §06) ---
+
+    /// <summary>Resumen comunitario de biometría: promedios, distribuciones, evolución semanal, ciudades y alertas.</summary>
+    Task<BiometriaCommunityDto> GetBiometriaCommunityAsync(CancellationToken ct = default);
+
+    /// <summary>Listado paginado de pacientes con indicadores de biometría (última medición).</summary>
+    Task<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)> ListBiometriaPatientsAsync(
+        string? search,
+        string? gender,
+        string? imcCategory,
+        string? glucosaCategory,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
+
+    /// <summary>Detalle de biometría de un paciente: historial semanal, heatmap y datos exactos.</summary>
+    Task<BiometriaPatientDetailDto?> GetBiometriaPatientAsync(Guid patientId, CancellationToken ct = default);
+
+    /// <summary>Exporte CSV de biometría de pacientes.</summary>
+    IAsyncEnumerable<BiometriaPatientListItemDto> StreamBiometriaPatientsForExportAsync(
+        CancellationToken ct = default);
+
     // --- Exporte CSV (B14) ---
 
     /// <summary>
