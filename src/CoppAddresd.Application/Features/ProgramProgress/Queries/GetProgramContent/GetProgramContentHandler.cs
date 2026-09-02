@@ -25,6 +25,40 @@ public sealed class GetProgramContentHandler(
             return null;
         }
 
+        // T-83 (B18): una sola carga de asignaciones para todas las semanas
+        // (ResolveRangeAsync) + resolución de nombres por ID DISTINTO (batch) —
+        // antes se llamaba al resolvedor por semana (hasta 83 cargas).
+        var lastWeekStart = enrollment.StartLocalDate.AddDays((enrollment.TotalWeeks - 1) * 7);
+        var resolutions = await contentResolver.ResolveRangeAsync(
+            enrollment.PatientId, enrollment.StartLocalDate, lastWeekStart, ct);
+
+        // Nombres de planes/rutinas: una query por ID DISTINTO (no por semana).
+        var planNames = new Dictionary<Guid, (string Code, string Name)>();
+        foreach (var planId in resolutions.Values
+                     .Select(r => r.NutritionPlanId)
+                     .Where(id => id is not null)
+                     .Cast<Guid>()
+                     .Distinct())
+        {
+            if (await programRepository.GetPlanNameAsync(planId, ct) is { } planName)
+            {
+                planNames[planId] = planName;
+            }
+        }
+
+        var routineNames = new Dictionary<Guid, (string Code, string Name)>();
+        foreach (var routineId in resolutions.Values
+                     .Select(r => r.ExerciseRoutineId)
+                     .Where(id => id is not null)
+                     .Cast<Guid>()
+                     .Distinct())
+        {
+            if (await programRepository.GetRoutineNameAsync(routineId, ct) is { } routineName)
+            {
+                routineNames[routineId] = routineName;
+            }
+        }
+
         var weeks = new List<ProgramContentWeekDto>(enrollment.TotalWeeks);
 
         for (var weekNumber = 1; weekNumber <= enrollment.TotalWeeks; weekNumber++)
@@ -34,22 +68,20 @@ public sealed class GetProgramContentHandler(
 
             // Resolver contenido al inicio de la ventana (SPEC §4.2/§4.3):
             // la asignación activa que cubre el start de la semana gana.
-            var resolution = await contentResolver.ResolveAsync(
-                enrollment.PatientId, weekStart, ct);
+            resolutions.TryGetValue(weekStart, out var resolution);
 
             ProgramContentPlanRef? planRef = null;
             if (resolution?.NutritionPlanId is { } planId)
             {
-                // Cargar nombre del plan (anti N+1: batch por ID).
-                var planName = await programRepository.GetPlanNameAsync(planId, ct);
-                planRef = new ProgramContentPlanRef(planId, planName?.Name ?? "unknown", planName?.Name ?? "unknown");
+                var planName = planNames.GetValueOrDefault(planId);
+                planRef = new ProgramContentPlanRef(planId, planName.Name ?? "unknown", planName.Name ?? "unknown");
             }
 
             ProgramContentRoutineRef? routineRef = null;
             if (resolution?.ExerciseRoutineId is { } routineId)
             {
-                var routineName = await programRepository.GetRoutineNameAsync(routineId, ct);
-                routineRef = new ProgramContentRoutineRef(routineId, routineName?.Name ?? "unknown", routineName?.Name ?? "unknown");
+                var routineName = routineNames.GetValueOrDefault(routineId);
+                routineRef = new ProgramContentRoutineRef(routineId, routineName.Name ?? "unknown", routineName.Name ?? "unknown");
             }
 
             weeks.Add(new ProgramContentWeekDto(

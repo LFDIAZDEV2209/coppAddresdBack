@@ -30,7 +30,15 @@ public sealed class ListAdaptationsQueryHandler(
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 
         return new PaginatedAdaptationsResult(
-            items.Select(AdaptationRecommendationDto.FromEntity).ToList(),
+            items.Select(a =>
+            {
+                var patientName = a.Enrollment?.Patient is null
+                    ? null
+                    : $"{a.Enrollment.Patient.FirstName} {a.Enrollment.Patient.LastName}".Trim();
+                if (string.IsNullOrWhiteSpace(patientName)) patientName = null;
+                var dto = AdaptationRecommendationDto.FromEntity(a);
+                return dto with { PatientName = patientName };
+            }).ToList(),
             total, page, pageSize, totalPages);
     }
 }

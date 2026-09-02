@@ -33,7 +33,7 @@ namespace CoppAddresd.Application.Services.ProgramProgress;
 ///    <c>ai_recommendation</c> (latente: requiere fuente de sueño).
 /// 8. WK_ADH_LOW_STREAK (adherence, medium): adherencia semanal &lt; 50% →
 ///    <c>recovery_mode</c>.
-/// 9. WK_ADH_NB_MISSED (supplement, low): adherencia del nutribiótico a 7 días
+/// 9. WK_ADH_NB_MISSED (supplement, low): adherencia del nutracéutico a 7 días
 ///    &lt; 70% → <c>ai_recommendation</c>.
 /// 10. WK_ADH_EXERCISE_LOW (exercise, low): cumplimiento de ejercicio &lt; 60%
 ///     → <c>reto_adjustment</c>.
@@ -67,7 +67,7 @@ public static class WeaknessRulesEngine
     /// <summary>Adherencia semanal mínima del programa para WK_ADH_LOW_STREAK.</summary>
     public const decimal WeeklyAdherenceMinPct = 50m;
 
-    /// <summary>Adherencia mínima del nutribiótico a 7 días para WK_ADH_NB_MISSED.</summary>
+    /// <summary>Adherencia mínima del nutracéutico a 7 días para WK_ADH_NB_MISSED.</summary>
     public const decimal NbAdherenceMin7dPct = 70m;
 
     /// <summary>Cumplimiento mínimo de ejercicio para WK_ADH_EXERCISE_LOW.</summary>
@@ -176,13 +176,13 @@ public static class WeaknessRulesEngine
                 metricId: null, weeklyAdherence, "recovery_mode"));
         }
 
-        // 9. Nutribiótico faltante (supplement): constancia de la toma a 7 días.
+        // 9. Nutracéutico faltante (supplement): constancia de la toma a 7 días.
         if (data.NbAdherence7dPct is { } nbAdherence && nbAdherence < NbAdherenceMin7dPct)
         {
             detected.Add(NewDescriptor(
                 WeaknessCodes.AdhNbMissed, WeaknessCategory.supplement, WeaknessSeverity.low,
-                "Constancia baja del nutribiótico",
-                $"Adherencia del nutribiótico a 7 días {nbAdherence:0}% (< {NbAdherenceMin7dPct:0}%). " +
+                "Constancia baja del nutracéutico",
+                $"Adherencia del nutracéutico a 7 días {nbAdherence:0}% (< {NbAdherenceMin7dPct:0}%). " +
                 "Acción sugerida: recomendación de constancia de la toma.",
                 metricId: null, nbAdherence, "ai_recommendation"));
         }
