@@ -1,4 +1,4 @@
-# Programa del Paciente — Gamificación y Progreso (ANTARES / COPP-ADRESD)
+﻿# Programa del Paciente — Gamificación y Progreso (ANTARES / COPP-ADRESD)
 
 Documento de contexto para el módulo de **Progreso del Programa** del paciente: el recorrido gamificado de 83 semanas que acompaña a los pacientes de obesidad, diabetes y riesgo cardiovascular de la aseguradora. Aquí encontrarás **qué hace, por qué lo hace y qué reglas lo rigen** desde la perspectiva del producto y del negocio. Los detalles técnicos (modelo de datos, endpoints, migraciones, tareas) viven en [`PLAN.md`](./PLAN.md), [`SPEC.md`](./SPEC.md) y [`TASKS.md`](./TASKS.md).
 
@@ -8,7 +8,7 @@ Documento de contexto para el módulo de **Progreso del Programa** del paciente:
 
 ### 1.1 Qué es el programa del paciente
 
-El programa ANTARES (sub-marca COPP-ADRESD) es un protocolo clínico de **83 semanas** que estructura el día a día de un paciente con obesidad, diabetes o riesgo cardiovascular. Cada semana tiene una plantilla de misiones (tareas) que el paciente cumple desde su app móvil (`antares-paciente`) y que un equipo clínico (médicos, nutricionistas, endocrinólogos, preparadores) supervisa desde el ERP. Las misiones diarias incluyen escuchar un podcast educativo, registrar signos vitales, seguir el plan nutricional, hacer ejercicio, tomar el nutribiótico ADRED y completar un check-in emocional.
+El programa ANTARES (sub-marca COPP-ADRESD) es un protocolo clínico de **83 semanas** que estructura el día a día de un paciente con obesidad, diabetes o riesgo cardiovascular. Cada semana tiene una plantilla de misiones (tareas) que el paciente cumple desde su app móvil (`antares-paciente`) y que un equipo clínico (médicos, nutricionistas, endocrinólogos, preparadores) supervisa desde el ERP. Las misiones diarias incluyen escuchar un podcast educativo, registrar signos vitales, seguir el plan nutricional, hacer ejercicio, tomar el nutracéutico ADRED y completar un check-in emocional.
 
 Lo que el paciente ve como "tarea" está conectado con un programa backend (`coppAddresdBack`) que registra cada cumplimiento, calcula puntos y racha, y produce dos tipos de indicadores: **gamificación** (XP, nivel, racha, multiplicador) e **indicadores clínicos reales** (Índice de Salud e Índice de Transformación). El ERP y la app móvil hoy conviven: la app sigue funcionando con mocks mientras el backend se conecta en fases.
 
@@ -116,14 +116,14 @@ El módulo de **Progreso del Programa** está estructurado bajo un **modelo ERP 
    - Contiene **varias Misiones / Tareas Completadas (`TaskCompletion`)** (relación `1:N`).
 
 4. **Misión / Tarea Completada (`TaskCompletion`)**
-   - Representa la **ejecución y cumplimiento de 1 misión programada** para el día (`TaskCode`: `podcast`, `vitals`, `nut`, `ejercicio`, `nutribiotico`, `emocional`).
+   - Representa la **ejecución y cumplimiento de 1 misión programada** para el día (`TaskCode`: `podcast`, `vitals`, `nut`, `ejercicio`, `nutraceutico`, `emocional`).
    - Mantiene la clave de idempotencia del cliente (`ClientRequestId`) para evitar duplicación de puntos por reintentos de red.
    - Se vincula semánticamente en runtime con la entidad de contenido correspondiente (relación opcional `1:1` según el tipo de tarea):
      - `nut` ➔ `NutritionPlan` / `NutritionPlanDay`
      - `ejercicio` ➔ `ExerciseRoutine`
      - `podcast` ➔ `MediaItem`
      - `vitals` ➔ `VitalSignsBatch` (`VitalSign`)
-     - `nutribiotico` ➔ `Product`
+     - `nutraceutico` ➔ `Product`
      - `emocional` ➔ `EmotionalRecord`
 
 ---
@@ -153,7 +153,7 @@ La plantilla semanal del paciente (`default-83w`) programa **6 tipos de tarea** 
 | `vitals`       | Medir signos vitales                 | 120                     |
 | `nut`          | Cumplir plan nutricional del día     | 150                     |
 | `ejercicio`    | Hacer ejercicio del día              | 150                     |
-| `nutribiotico` | Tomar nutribiótico ADRED             | 80                      |
+| `nutraceutico` | Tomar nutracéutico ADRED             | 80                      |
 | `emocional`    | Check-in emocional (ánimo, barreras) | 120                     |
 
 **Día perfecto**: cuando el paciente completa todas las tareas programadas de su día, recibe un **bonus de +50 XP**. El día perfecto es la unidad de cadencia para la concesión de congelamientos de racha (ver §2.4).
@@ -170,7 +170,7 @@ Los puntos y topes ya no son código: viven en una tabla catálogo (`app.xp_rule
 
 | Categoría  | Reglas sembradas                                                         | Puntos base                | Topes                                               |
 | ---------- | ------------------------------------------------------------------------ | -------------------------- | --------------------------------------------------- |
-| Adherencia | `TASK_PODCAST/VITALS/NUT/EJERCICIO/NUTRIBIOTICO/EMOCIONAL` + `DAY_BONUS` | NULL (tareas) / 50 (bonus) | 1/día · 7/semana (tareas); 1/día · 7/semana (bonus) |
+| Adherencia | `TASK_PODCAST/VITALS/NUT/EJERCICIO/nutraceutico/EMOCIONAL` + `DAY_BONUS` | NULL (tareas) / 50 (bonus) | 1/día · 7/semana (tareas); 1/día · 7/semana (bonus) |
 | Racha      | `STREAK_7/11/22/50`                                                      | 100 / 200 / 500 / 1500     | 1/día · 1/semana                                    |
 | Clínica    | `CLINICAL_IMPROVE/STABLE/WEEKLY_ALL_UP/SIGNIFICANT`                      | 50 / 20 / 150 / 100        | Una vez por período (sin topes diarios)             |
 | Nutrición  | `NUTRITION_MEAL_COMPLETE/HYDRATION/WEEK_85/RECOVERY`                     | 10 / 5 / 75 / 50           | 4/día (comida) · 1/día (agua)                       |
@@ -198,7 +198,7 @@ Cruzar el umbral de **5 000 XP** (nivel Transformación) dispara una recomendaci
 La racha cuenta **días consecutivos que cumplen el umbral del programa**. Configuración actual (plantilla `default-83w`):
 
 - **Umbral de mantenimiento**: `streak_min_tasks = 1` — basta una tarea por día local para mantener la racha (configurable por plantilla).
-- **Tareas esenciales** (`essential_task_codes`): `nut`, `ejercicio`, `nutribiotico` — son las que cuentan para "rescatar" un día perdido con un congelamiento.
+- **Tareas esenciales** (`essential_task_codes`): `nut`, `ejercicio`, `nutraceutico` — son las que cuentan para "rescatar" un día perdido con un congelamiento.
 - **Concesión de congelamientos**: 1 cada 7 días perfectos consecutivos, tope de 3 en inventario.
 - **Rescate con congelamiento**: si el paciente no llega al umbral un día y tiene un congelamiento, **solo lo consume** si ese día cumplió al menos una tarea esencial. Sin tarea esencial → la racha se rompe y el congelamiento queda en inventario (no se consume).
 
@@ -342,10 +342,10 @@ Este flujo se complementa con la configuración de plantillas (§7.6) y las reco
 - **Pantallas ERP** (B7): gestión de plantillas, lista de inscripciones, cola de revisiones pendientes y de adaptaciones. Las pantallas de configuración de contenido por semana (SPEC §7.8) están implementadas. **Pendiente**: cola de adaptaciones (T-26).
 - **Motor de adaptación** (P2): `ProgramAdaptationEngine` **implementado** (T-23) — motor de reglas determinista (Application/Services/ProgramProgress) evaluado tras cada `CompleteTask` en la misma transacción: 2+ días imperfectos en 7 días → `RoutineContentRefresh` auto-aplicada (Applied + audit `AdaptationApplied`); ánimo ≤ 2 por 7 días → variante suave; cruce de 5000 XP → `DifficultyChange` con aprobación (cola ERP, supersede de Pending previas). Dedupe temporal de 7 días por (kind, target). Tests: `AdaptationEngineTests` (10). La cola ERP de decisión (T-26) ya está en el frontend (`/program/adaptations`).
 - **Rotación de podcasts** (P2): tabla `app.media_progressions` y resolutor por fecha (T-25). ⚠️ Requiere sincronizar la rama con `dev` antes de generar la migración (la BD local contiene migraciones de `dev` —health-tests, server catalogs— ausentes del código de la rama actual; `dotnet ef migrations add` generaría DROPs).
-- **Scoping de clínico** (T-81): pendiente en `GET/PUT /enrollments/{id}/content` (hoy cualquier `Program.View` lee cualquier inscripción); ya aplicado en `GET /enrollments/{id}/week/{n}`.
-- **Transacción en SetWeekContent** (T-82) y **optimización de GET content** (T-83): aplazados (B18).
-- **Reconciliación nocturna** (P3): job que recorre `xp_ledger` y recalcula `streak_states` por inscripción.
-- **Inscripción masiva y exporte CSV** (P3): `IJobDispatcher` para >100 pacientes, endpoint de exporte.
+- **Scoping de clínico** (T-81), **transacción en SetWeekContent** (T-82) y **optimización de GET content** (T-83): ✔ **implementados (2026-09-02, B18)** — scoping `patient_professionals` vía `IProgramActorContext` en content/enrollments/week-detail (bypass Admin/OrganizationAdmin/ClinicAdmin + paciente propio), `SetWeekContent` en una transacción (`IWellnessRepository.ExecuteInTransactionAsync`) y GET content con una sola carga de asignaciones (`ResolveRangeAsync`). Contrato: SPEC §7.9.1.
+- **Bitácora de actividad ERP** (2026-09-02): `GET /program/activity-log` (SPEC §7.9.2) lee `audit.activity_logs` filtrado a las tablas del módulo; la pantalla ERP "Bitácora de actividad" (`/program/activity-log`) reemplazó a la cola de validación de XP (los endpoints de decisión siguen vivos).
+- **Reconciliación nocturna** (P3, B12): ✔ **implementada (2026-09-02)** — `ReconcileStreakJob` + hosted service nocturno (`Program:Reconciliation`) + disparo manual `POST /program/maintenance/reconcile-streaks` (SPEC §7.9.5).
+- **Inscripción masiva y exporte CSV** (P3, B13/B14): ✔ **implementados (2026-09-02)** — `POST /program/enrollments/bulk` (tope 100/request, reporte por fila; dispatcher async diferido) y `GET /program/enrollments/export` (stream CSV, permiso `Program.Export`). UI ERP en Inscripciones (SPEC §7.9.3/§7.9.4).
 - **i18n en la app** (P3): strings en inglés.
 - **Trabajo futuro fuera del plan actual**: notificaciones gamificadas, detección de debilidades por IA, integración con intervenciones y telemedicina para XP de teleconsulta — estos ítems no están diseñados en `SPEC.md`/`PLAN.md` y requerirían una nueva fase.
 
@@ -355,7 +355,7 @@ La app **sigue funcionando con mocks** (`src/data/program.ts`). El plan de integ
 
 ### 4.4 ERP (`coppaddresd-front`)
 
-Sin pantallas del módulo todavía. Las pantallas de gestión de plantillas y revisiones pendientes están diseñadas pero no implementadas.
+Pantallas del módulo implementadas en `/program/*`: dashboard, hoy, adherencia, cofres, plantillas, inscripciones (con dialog de inscripción individual + **inscripción masiva** + **exporte CSV**), contenido por semana, reglas XP, scores (calcula Índice de Salud/Transformación por paciente), **bitácora de actividad** (reemplaza a la cola de revisiones clínicas de XP), debilidades, adaptaciones, intervenciones y perfil 360 del paciente (`/program/patients/[id]`).
 
 ---
 

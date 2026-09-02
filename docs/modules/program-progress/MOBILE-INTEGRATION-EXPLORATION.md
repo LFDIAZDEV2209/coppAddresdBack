@@ -1,4 +1,4 @@
-# EXPLORACIÓN — Integración Móvil del Programa de Progreso
+﻿# EXPLORACIÓN — Integración Móvil del Programa de Progreso
 
 > Exploración técnica del estado actual del código backend y móvil para la
 > integración del módulo Progreso del Programa. Fuente de verificación: código
@@ -96,7 +96,7 @@ public async Task<ActionResult<ProgramEnrollmentDto>> EnrollSelf(
     "currentWeekStartDateLocal": "2026-09-21",
     "currentWeekEndDateLocal": "2026-09-27",
     "streakMinTasks": 1,
-    "essentialTaskCodes": ["nut","ejercicio","nutribiotico"]
+    "essentialTaskCodes": ["nut","ejercicio","nutraceutico"]
   },
   "todayLocalDate": "2026-09-24",
   "todayTasks": [

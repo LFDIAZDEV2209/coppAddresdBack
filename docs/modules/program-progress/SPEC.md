@@ -13,7 +13,7 @@
 | 1 | Schema | `app.` (same as Wellness; mobile-facing module) |
 | 2 | Per-week config | **Reusable weekly template** (catalog rows in `app.weekly_day_templates`), snapshotted per `program_week` at week start |
 | 3 | Per-day task resolution | Template decides *which* task types run on which weekday. Content (nutrition/routine/podcast) is resolved at runtime against the patient's active `NutritionPlanAssignment` / `RoutineAssignment` / `MediaItem` |
-| 4 | Task catalog | Same 6 task codes the mobile uses: `podcast`, `vitals`, `nut`, `ejercicio`, `nutribiotico`, `emocional` |
+| 4 | Task catalog | Same 6 task codes the mobile uses: `podcast`, `vitals`, `nut`, `ejercicio`, `nutraceutico`, `emocional` |
 | 5 | Base points | Stored in `app.weekly_day_templates.points` (default 80/120/150/150/80/120 — matches mobile mock) |
 | 6 | Day bonus | +50 when *all scheduled tasks for the weekday are completed*; computed on the last completion of the day (idempotent) |
 | 7 | Idempotency | Unique `(enrollment_id, local_date, task_code)` on `task_completions`; partial unique `(source_ref_type, source_ref_id, reason)` on `xp_ledger`; `client_request_id` column carries the mobile retry key |
@@ -29,14 +29,14 @@
 | 17 | Score engine | Scores are **computed on read** with a stored history: `GET /api/v1/program/scores` recomputes and persists an `app.health_scores` / `app.transformation_scores` row for the current period if missing or stale (the stored `period_end` is before today in patient-local time). No cron / queue infrastructure exists in MVP — see §13.3. |
 | 18 | Baselines & authorship | `app.clinical_baselines` rows require a clinician `set_by` (`auth.users.id`); a patient can never self-set a baseline. `target_value` requires clinical validation (clinician-set, never inferred). |
 | 19 | Scores are indicators, not diagnosis | Health and Transformation Scores are adherence / evolution indicators only. UI labels them as program indicators. Scores never reduce XP, never break streaks, and never feed punishment mechanics. PHI (mood, barriers, notes) is excluded from audit payloads (existing rule, §8.5). |
-| 20 | XP rules catalog | XP awarding is data-driven from `app.xp_rules` (SPEC §14, P1.5): a rule `Active` within `valid_from..valid_until` wins over the default behavior (points = `base_xp ?? <existing source>`, multiplier, topes `max_per_day`/`max_per_week`); no rule or inactive/expired rule falls back to the current behavior (template points, no limits). Edits are **prospective only** — they never rewrite `xp_ledger` history. Seeder ships 24 default rules (11 adherencia/racha + 4 clínicas + 4 nutrición + 5 racha nutribiótico, SPEC §14.2/§15.2/§18.1/§19.2); admin API `GET/PUT /api/v1/program/xp-rules` (permission `Program.Edit`). |
+| 20 | XP rules catalog | XP awarding is data-driven from `app.xp_rules` (SPEC §14, P1.5): a rule `Active` within `valid_from..valid_until` wins over the default behavior (points = `base_xp ?? <existing source>`, multiplier, topes `max_per_day`/`max_per_week`); no rule or inactive/expired rule falls back to the current behavior (template points, no limits). Edits are **prospective only** — they never rewrite `xp_ledger` history. Seeder ships 24 default rules (11 adherencia/racha + 4 clínicas + 4 nutrición + 5 racha nutracéutico, SPEC §14.2/§15.2/§18.1/§19.2); admin API `GET/PUT /api/v1/program/xp-rules` (permission `Program.Edit`). |
 | 21 | Clinical XP (P1.5, SPEC §15) | XP clínica se dispara SOLO en `POST /api/v1/program/scores/calculate` (el `GET /scores` nunca otorga XP): mejoría favorable ≥ umbral (default 5%) → revisión `pending` que decide un clínico (`CLINICAL_SIGNIFICANT`, no cuenta en totales hasta aprobarse); mejoría 1%..umbral → auto `CLINICAL_IMPROVE`; estable → auto `CLINICAL_STABLE`; desfavorable → **0 XP, nunca penaliza**; todas favorables → `CLINICAL_WEEKLY_ALL_UP`. Idempotencia por el dedupe parcial `(source_ref_type, source_ref_id, reason)` con `clinical_period` + `health_scores.id`. Los totales de XP excluyen las filas `requires_validation` sin `validated_by`. Decisiones clínicas bajo `Program.Adapt` + rol clínico (AC-22). |
 | 22 | Streak multiplier x2 (P1.5, SPEC §16, "Paso 4") | Los hitos de racha (7/11/22/50 días) otorgan su XP del catálogo **una única vez por inscripción** (dedupe parcial del libro mayor, `source_ref_type='streak_milestone'`); los hitos 11/22/50 además **activan un multiplicador x2 del paciente** (24h/48h/72h) que se SOBRESCRIBE al alcanzar un hito nuevo (se extiende desde ahora) y aplica a **TODA** la XP mientras está vigente (tareas, bonus de día, hitos y clínica — sin excepciones). Vencido → se trata como 1.0 con reset lazy en el próximo otorgamiento; `xp_ledger.multiplier_used` registra el multiplicador efectivo (regla × paciente); el snapshot expone `multiplierActive`/`multiplierEndsAt`/`multiplierRemainingHours`. |
-| 23 | Configurable streak threshold & essential tasks (P1.5, SPEC §17, "Paso 5") | `app.program_templates` gana `streak_min_tasks` (SMALLINT NOT NULL default 1) y `essential_task_codes` (jsonb, default `[]`); el seed `default-83w` fija 1 y `["nut","ejercicio","nutribiotico"]` **solo en create** (idempotente: re-runs no pisan config existente). Un día "cumple el umbral" si `tasks_done >= streak_min_tasks` (default 1 → comportamiento previo); el día perfecto sigue siendo "todas las tareas" (bonus + concesión de congelamientos, sin cambios). El rescate con congelamiento exige ≥1 tarea esencial el día perdido (regla ADRED, AC-31/AC-32): sin tarea esencial el congelamiento NO se consume (queda en inventario) y la racha se rompe. El snapshot expone `streakMinTasks`/`essentialTaskCodes` (aditivos). La cadencia de concesión (1 por 7 días perfectos, tope 3) no cambia. | Umbral ajustable sin migración (el seeder es la vía de config hasta que exista la edición ERP B7); el rescate exige esfuerzo esencial real (referencia ADRED) adaptado a la economía de congelamientos del módulo. |
+| 23 | Configurable streak threshold & essential tasks (P1.5, SPEC §17, "Paso 5") | `app.program_templates` gana `streak_min_tasks` (SMALLINT NOT NULL default 1) y `essential_task_codes` (jsonb, default `[]`); el seed `default-83w` fija 1 y `["nut","ejercicio","nutraceutico"]` **solo en create** (idempotente: re-runs no pisan config existente). Un día "cumple el umbral" si `tasks_done >= streak_min_tasks` (default 1 → comportamiento previo); el día perfecto sigue siendo "todas las tareas" (bonus + concesión de congelamientos, sin cambios). El rescate con congelamiento exige ≥1 tarea esencial el día perdido (regla ADRED, AC-31/AC-32): sin tarea esencial el congelamiento NO se consume (queda en inventario) y la racha se rompe. El snapshot expone `streakMinTasks`/`essentialTaskCodes` (aditivos). La cadencia de concesión (1 por 7 días perfectos, tope 3) no cambia. | Umbral ajustable sin migración (el seeder es la vía de config hasta que exista la edición ERP B7); el rescate exige esfuerzo esencial real (referencia ADRED) adaptado a la economía de congelamientos del módulo. |
 | 24 | Granular nutrition XP (P1.5, SPEC §18, "Paso 6") | La nutrición gana XP granular **aditiva** a la tarea `nut` existente: `POST /api/v1/program/nutrition/log` registra la comida/hidratación (`des`/`alm`/`mer`/`cen`/`agua`) en `app.habit_checks` (único por paciente+plantilla+fecha; duplicado → `409 HABIT_ALREADY_LOGGED`) y otorga `NUTRITION_MEAL_COMPLETE` (10, tope 4/día) / `NUTRITION_HYDRATION` (5, tope 1/día) por el camino del catálogo. Los premios semanales (`NUTRITION_WEEK_85` +75 por adherencia ≥85%, `NUTRITION_RECOVERY` +50 por +20pp vs el período anterior) se disparan SOLO en `POST /scores/calculate`, con la MISMA fuente de adherencia que la dimensión `nutrition` del Health Score (reuso, no duplicación) y el dedupe `('nutrition_period', health_scores.id, reason)`. `NUTRITION_PHOTO` queda **diferido** (el backend de este paso registra el log directo, sin análisis de foto). La tarea `nut` NO se auto-completa desde el log; su flujo queda intacto. | La XP granular recompensa el detalle diario (acción + registro) sin romper el contrato de puntos del programa; el doble premio (tarea 150 + comidas hasta 40/día) es visible y se tunea vía `xp_rules`. El semanal recompensa el hábito (85%) y la recuperación (+20pp) con la misma fuente que ya alimenta el Health Score. |
-| 25 | Nutriobiótico streak (P1.5, SPEC §19, "Paso 7a") | La tarea `nutribiotico` mantiene su **PROPIA racha consecutiva** (`app.streak_states.nb_current_streak`/`nb_longest_streak`/`nb_last_completed_date`), independiente de la racha general y de los congelamientos (decisión de producto): un **día perdido la rompe** (se reinicia a 1 en la próxima completación) y **NO la protegen los congelamientos** (AC-38). Los hitos de la corrida (7/14/30/60/90 días → `NB_STREAK_7/14/30/60/90`, 50/100/250/500/1000 XP, categoría `nutriobiotic`, topes 1/día y 1/semana) se otorgan en el camino de completación de la tarea (solo primera escritura, dentro de la transacción FOR UPDATE) con el multiplicador del paciente (SPEC §16) y el dedupe parcial `('nb_milestone', task_completions.id, reason)` — **cada corrida nueva re-otorga su hito al alcanzarlo** (AC-39); el mismo hito dentro de la misma semana se omite (tope 1/semana). La XP base de la tarea `TASK_NUTRIBIOTICO` y la racha general NO cambian. El snapshot expone `nbStreak`/`nbLongestStreak`/`nbNextMilestone` (aditivos). | La racha propia premia el hábito diario del nutribiótico (el pilar de producto de CoppAddresd) sin acoplarse a la racha general del programa: un paciente puede perder la racha general por un día sin tareas y aun así mantener su compromiso con el nutribiótico. El re-otorgamiento por corrida (AC-39) recompensa cada ciclo de constancia (referencia ADRED adaptada); los topes 1/día y 1/semana del catálogo limitan el farm. |
-| 26 | Gamified notifications (P1.5, SPEC §20, "Paso 7b") | Nuevo log `app.notifications` + push FCM reutilizando el camino EXISTENTE del módulo de notificaciones (`app.device_tokens` + `IFcmClient`). Servicio **best-effort** dentro de los flujos de otorgamiento (tras la escritura de la XP, SOLO en la primera concesión, nunca en replay): un fallo de envío/persistencia NUNCA rompe la transacción de XP (AC-42). Anti-spam configurable (`Program:Notifications`): máx. 2 por tipo por día local + máx. 6 totales por día local; límite alcanzado → se omite en silencio (AC-41). Horario de silencio 22:00–07:00 local (la prioridad `critical` lo ignora). Disparadores: hito de racha (`milestone_reached`, high), hito nutribiótico (`nb_milestone`, high), subida de nivel (`level_up`, high, comparando el nivel antes/después del día) y día perfecto (`day_complete`, normal). `multiplier_expiring`, "racha en riesgo a fin de día" y evaluación semanal → **FUTURO** (necesitan scheduler; no hay cron en MVP). Endpoints del centro de notificaciones: `GET /api/v1/program/notifications` (paginado, `readAt` + `unreadCount`) y `POST /api/v1/program/notifications/{id}/read` (paciente-propio, anti-IDOR 404). | La gamificación debe reconocer los logros en el momento en que ocurren, pero el backend no tiene colas/cron (patrón documentado): la notificación se dispara transaccionalmente dentro del flujo de otorgamiento con semántica best-effort (el log persiste aunque FCM falle, AC-42) y los límites anti-spam protegen al paciente del ruido. Lo que necesita timing (vencimiento del x2, racha en riesgo, semanal) queda documentado como trabajo futuro con scheduler. |
-| 27 | Weakness detection (P1.5, SPEC §21, "Paso 7c") | Nuevo log `app.weaknesses` + motor determinista de reglas (ADRED-inspired, sin ML) que detecta debilidades del paciente (adherencia nutricional, glucosa/% grasa, motivación, adherencia semanal, nutribiótico, ejercicio) y las persiste con dedupe por estado abierto (AC-43: no duplica mientras exista una `open`/`acknowledged`/`in_intervention` con el mismo código). La detección corre SOLO en `POST /scores/calculate`, una vez por recálculo (AC-45), después de puntajes + XP clínica + premios semanales. Cola clínica `GET /api/v1/program/weaknesses/open` (`Program.Adapt`) y transiciones `POST .../{id}/status` (`acknowledged`/`in_intervention`/`resolved`/`dismissed`) con guardia clínica AC-22 (un paciente → 403, AC-44); el paciente ve las suyas en `GET /api/v1/program/weaknesses` (`Program.View`). Umbrales clínicos marcados `REQUIRES_CLINICAL_VALIDATION`. La narrativa semanal LLM ("AI weekly assessment") queda DOCUMENTADA como contrato FUTURO (P3): requiere un endpoint nuevo en el ai-service + scheduler o disparo manual (SPEC §21.5); el backend de este paso NO llama IA (no existe el endpoint). | El motor convierte la misma data que ya alimenta los puntajes (SPEC §13/§18) en hallazgos accionables para el clínico, sin ML ni cron: reglas deterministas con dedupe idempotente dentro del recálculo manual existente. El LLM narrativo se difiere porque requiere un endpoint dedicado en el ai-service (no inventar llamadas que no existen). |
+| 25 | Nutriobiótico streak (P1.5, SPEC §19, "Paso 7a") | La tarea `nutraceutico` mantiene su **PROPIA racha consecutiva** (`app.streak_states.nb_current_streak`/`nb_longest_streak`/`nb_last_completed_date`), independiente de la racha general y de los congelamientos (decisión de producto): un **día perdido la rompe** (se reinicia a 1 en la próxima completación) y **NO la protegen los congelamientos** (AC-38). Los hitos de la corrida (7/14/30/60/90 días → `NB_STREAK_7/14/30/60/90`, 50/100/250/500/1000 XP, categoría `nutriobiotic`, topes 1/día y 1/semana) se otorgan en el camino de completación de la tarea (solo primera escritura, dentro de la transacción FOR UPDATE) con el multiplicador del paciente (SPEC §16) y el dedupe parcial `('nb_milestone', task_completions.id, reason)` — **cada corrida nueva re-otorga su hito al alcanzarlo** (AC-39); el mismo hito dentro de la misma semana se omite (tope 1/semana). La XP base de la tarea `TASK_NUTRACEUTICO` y la racha general NO cambian. El snapshot expone `nbStreak`/`nbLongestStreak`/`nbNextMilestone` (aditivos). | La racha propia premia el hábito diario del nutracéutico (el pilar de producto de CoppAddresd) sin acoplarse a la racha general del programa: un paciente puede perder la racha general por un día sin tareas y aun así mantener su compromiso con el nutracéutico. El re-otorgamiento por corrida (AC-39) recompensa cada ciclo de constancia (referencia ADRED adaptada); los topes 1/día y 1/semana del catálogo limitan el farm. |
+| 26 | Gamified notifications (P1.5, SPEC §20, "Paso 7b") | Nuevo log `app.notifications` + push FCM reutilizando el camino EXISTENTE del módulo de notificaciones (`app.device_tokens` + `IFcmClient`). Servicio **best-effort** dentro de los flujos de otorgamiento (tras la escritura de la XP, SOLO en la primera concesión, nunca en replay): un fallo de envío/persistencia NUNCA rompe la transacción de XP (AC-42). Anti-spam configurable (`Program:Notifications`): máx. 2 por tipo por día local + máx. 6 totales por día local; límite alcanzado → se omite en silencio (AC-41). Horario de silencio 22:00–07:00 local (la prioridad `critical` lo ignora). Disparadores: hito de racha (`milestone_reached`, high), hito nutracéutico (`nb_milestone`, high), subida de nivel (`level_up`, high, comparando el nivel antes/después del día) y día perfecto (`day_complete`, normal). `multiplier_expiring`, "racha en riesgo a fin de día" y evaluación semanal → **FUTURO** (necesitan scheduler; no hay cron en MVP). Endpoints del centro de notificaciones: `GET /api/v1/program/notifications` (paginado, `readAt` + `unreadCount`) y `POST /api/v1/program/notifications/{id}/read` (paciente-propio, anti-IDOR 404). | La gamificación debe reconocer los logros en el momento en que ocurren, pero el backend no tiene colas/cron (patrón documentado): la notificación se dispara transaccionalmente dentro del flujo de otorgamiento con semántica best-effort (el log persiste aunque FCM falle, AC-42) y los límites anti-spam protegen al paciente del ruido. Lo que necesita timing (vencimiento del x2, racha en riesgo, semanal) queda documentado como trabajo futuro con scheduler. |
+| 27 | Weakness detection (P1.5, SPEC §21, "Paso 7c") | Nuevo log `app.weaknesses` + motor determinista de reglas (ADRED-inspired, sin ML) que detecta debilidades del paciente (adherencia nutricional, glucosa/% grasa, motivación, adherencia semanal, nutracéutico, ejercicio) y las persiste con dedupe por estado abierto (AC-43: no duplica mientras exista una `open`/`acknowledged`/`in_intervention` con el mismo código). La detección corre SOLO en `POST /scores/calculate`, una vez por recálculo (AC-45), después de puntajes + XP clínica + premios semanales. Cola clínica `GET /api/v1/program/weaknesses/open` (`Program.Adapt`) y transiciones `POST .../{id}/status` (`acknowledged`/`in_intervention`/`resolved`/`dismissed`) con guardia clínica AC-22 (un paciente → 403, AC-44); el paciente ve las suyas en `GET /api/v1/program/weaknesses` (`Program.View`). Umbrales clínicos marcados `REQUIRES_CLINICAL_VALIDATION`. La narrativa semanal LLM ("AI weekly assessment") queda DOCUMENTADA como contrato FUTURO (P3): requiere un endpoint nuevo en el ai-service + scheduler o disparo manual (SPEC §21.5); el backend de este paso NO llama IA (no existe el endpoint). | El motor convierte la misma data que ya alimenta los puntajes (SPEC §13/§18) en hallazgos accionables para el clínico, sin ML ni cron: reglas deterministas con dedupe idempotente dentro del recálculo manual existente. El LLM narrativo se difiere porque requiere un endpoint dedicado en el ai-service (no inventar llamadas que no existen). |
 
 **Implementation contract**: any change that violates decisions 1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 18, 19 is a breaking change to the spec and must be discussed in a SPEC.md PR.
 
@@ -54,7 +54,7 @@
 - Mobile snapshot endpoint + task completion endpoint + calendar/path endpoints.
 - ERP template CRUD + enrollment list + adaptation review.
 - **Health & Transformation Score engine** (P1.5, see §13): `app.health_score_weights` + `app.clinical_baselines` + `app.health_scores` + `app.transformation_scores`; on-read computation with stored history; `GET /api/v1/program/scores` and `POST /api/v1/program/scores/calculate`.
-- **Gamified notifications** (P1.5, see §20): `app.notifications` log + push FCM transaccional best-effort en los flujos de otorgamiento (hitos de racha / nutribiótico, subida de nivel, día perfecto) + centro de notificaciones del móvil (`GET /api/v1/program/notifications`).
+- **Gamified notifications** (P1.5, see §20): `app.notifications` log + push FCM transaccional best-effort en los flujos de otorgamiento (hitos de racha / nutracéutico, subida de nivel, día perfecto) + centro de notificaciones del móvil (`GET /api/v1/program/notifications`).
 - **Weakness detection** (P1.5, see §21): `app.weaknesses` log + motor determinista de reglas (ADRED-inspired) disparado en `POST /scores/calculate` + cola clínica (`GET /api/v1/program/weaknesses/open`) y transiciones de estado (`POST .../{id}/status`) con guardia clínica AC-22; el paciente ve sus debilidades (`GET /api/v1/program/weaknesses`). La narrativa semanal LLM es FUTURO (contract in §21.5, no implementada).
 
 ### Out of scope (deferred)
@@ -92,7 +92,7 @@ The domain model follows a hierarchical ERP-style operational structure that dec
 ```
 [Template Level]
 ProgramTemplate (83-week Master Definition)
-   └── (1:N) WeeklyDayTemplate (Day & Task Configuration: podcast, vitals, nut, ejercicio, nutribiotico, emocional)
+   └── (1:N) WeeklyDayTemplate (Day & Task Configuration: podcast, vitals, nut, ejercicio, nutraceutico, emocional)
 
 [Patient Runtime Level]
 ProgramEnrollment (Aggregate Root / Active Patient Program)
@@ -119,7 +119,7 @@ ProgramEnrollment (Aggregate Root / Active Patient Program)
    - Owns `1:N` **Completed Tasks (`TaskCompletion`)**.
 
 4. **Task / Mission (`TaskCompletion`)**:
-   - Execution record of a single scheduled task (`TaskCode`: `podcast`, `vitals`, `nut`, `ejercicio`, `nutribiotico`, `emocional`).
+   - Execution record of a single scheduled task (`TaskCode`: `podcast`, `vitals`, `nut`, `ejercicio`, `nutraceutico`, `emocional`).
    - Carries the `ClientRequestId` idempotency key to prevent double XP awards on network retries.
    - Resolves content dynamically at runtime (`1:1` optional link to `NutritionPlan`, `ExerciseRoutine`, `MediaItem`, `VitalSign`, `Product`, or `EmotionalRecord`).
 
@@ -170,7 +170,7 @@ Indexes: `ix_program_templates_status`, `ix_program_templates_code` (unique alre
 | `id` | `uuid` | PK | |
 | `template_id` | `uuid` | NOT NULL, FK `app.program_templates(id)` ON DELETE CASCADE | |
 | `weekday` | `smallint` | NOT NULL CHECK (`weekday BETWEEN 1 AND 7`) | 1 = Monday … 7 = Sunday (matches NutritionPlanDay index) |
-| `task_code` | `varchar(20)` | NOT NULL | `podcast`/`vitals`/`nut`/`ejercicio`/`nutribiotico`/`emocional` |
+| `task_code` | `varchar(20)` | NOT NULL | `podcast`/`vitals`/`nut`/`ejercicio`/`nutraceutico`/`emocional` |
 | `points` | `int` | NOT NULL CHECK (`>= 0`) | Base points awarded for this task |
 | `sort_order` | `int` | NOT NULL DEFAULT 0 | UI ordering within the weekday |
 | `media_id` | `uuid` | NULL, FK `app.media_items(id)` ON DELETE RESTRICT | Template-level podcast/content fallback used by P1 resolution (§4.4) |
@@ -266,7 +266,7 @@ Indexes: `ix_daily_checkins_enrollment_id`, `uq_daily_checkins_enrollment_date` 
 | `exercise_routine_id` | `uuid` | NULL, FK `app.exercise_routines(id)` | `ejercicio` |
 | `media_id` | `uuid` | NULL, FK `app.media_items(id)` | `podcast` |
 | `vital_signs_batch_id` | `uuid` | NULL, FK `app.vital_signs(id)` | `vitals` |
-| `nutribiotic_product_id` | `uuid` | NULL, FK `erp.products(id)` | `nutribiotico` |
+| `nutribiotic_product_id` | `uuid` | NULL, FK `erp.products(id)` | `nutraceutico` |
 | `emotional_record_id` | `uuid` | NULL, FK new `app.emotional_records(id)` (created in P1, see §3.10) | `emocional` |
 
 Indexes: `ix_task_completions_enrollment_id`, `ix_task_completions_daily_checkin_id`, `ix_task_completions_program_week_id`, `uq_task_completions_enrollment_date_task` UNIQUE (`enrollment_id, local_date, task_code`), `ix_task_completions_client_request_id` (lookup on retry).
@@ -388,7 +388,7 @@ We do **not** duplicate these tables:
 | `app.exercise_routines` + `app.routine_assignments` | `ejercicio` task content |
 | `app.media_items` | `podcast` task content |
 | `app.vital_signs` | `vitals` task content |
-| `erp.products` | `nutribiotico` task content |
+| `erp.products` | `nutraceutico` task content |
 | `auth.users` | FK target for actor columns and resolvers |
 
 ---
@@ -648,7 +648,7 @@ Returns the full program state for the patient's current enrollment, used by the
     "currentWeekStartDateLocal": "2026-09-21",
     "currentWeekEndDateLocal": "2026-09-27",
     "streakMinTasks": 1,
-    "essentialTaskCodes": ["nut","ejercicio","nutribiotico"]
+    "essentialTaskCodes": ["nut","ejercicio","nutraceutico"]
   },
   "todayLocalDate": "2026-09-24",
   "todayTasks": [
@@ -749,7 +749,7 @@ Returns per-day rollups for the requested window (max 92 days). Used by the path
       "isPerfectDay": true,
       "points": 750,
       "bonusAwarded": 50,
-      "completedTaskCodes": ["podcast","vitals","nut","ejercicio","nutribiotico","emocional"]
+      "completedTaskCodes": ["podcast","vitals","nut","ejercicio","nutraceutico","emocional"]
     }
   ],
   "summary": { "perfectDays": 18, "missedDays": 2, "totalXp": 1450 }
@@ -885,6 +885,89 @@ Upserts the underlying Wellness assignments for the specified week's date window
 - `422 INVALID_ROUTINE_ID` — `exerciseRoutineId` provided but no matching `app.exercise_routines` row exists.
 - `401 UNAUTHORIZED`.
 
+### 7.9 Mantenimiento, bitácora, inscripción masiva y exporte CSV (ERP)
+
+#### 7.9.1 Scoping clínico (T-81, B18)
+
+Los endpoints de clínico del módulo aplican el scoping de §6.14 vía
+`IProgramActorContext.ActorScopedToEnrollmentAsync` / `ResolveScopedPatientIdsAsync`:
+
+- **Bypass**: roles `Admin` / `OrganizationAdmin` / `ClinicAdmin` (alcance org/clinic).
+- **Paciente autenticado**: solo su propio perfil/inscripción.
+- **Clínico**: solo pacientes con asignación activa en `app.patient_professionals`
+  (resuelta vía `erp.employees.user_id` → `erp.professionals.employee_id`).
+- **Cualquier otro caso**: denegado — los endpoints responden `404` (nunca `403`).
+
+Endpoints con guardia: `GET/PUT /program/enrollments/{id}/content`,
+`POST /program/enrollments/{id}/pause|resume|withdraw`, `GET
+/program/enrollments/{id}/week/{n}` y `GET /program/enrollments` (filtro de
+listado). `SetWeekContent` (§7.8.2) corre además dentro de UNA transacción
+explícita (T-82) y el timeline (§7.8.1) resuelve las N semanas con UNA carga de
+asignaciones (T-83).
+
+#### 7.9.2 `GET /api/v1/program/activity-log` — Bitácora de actividad (ERP)
+
+Entradas del log de auditoría trigger-based (`audit.activity_logs`) filtradas a
+las tablas `app.*` del módulo. Solo lectura; NUNCA expone `old_data`/`new_data`
+(posible PHI, §8.5). Reemplaza la cola de validación de XP como pantalla ERP
+(`/program/activity-log`, "Bitácora de actividad"); los endpoints de decisión de
+revisiones (`/xp-rules/clinical-pending`) siguen vivos para el móvil/ERP API.
+
+**Permission**: `Program.View`.
+
+**Query**: `page` (default 1), `pageSize` (default 20, máx 100), `table`
+(nombre exacto de tabla), `action` (`INSERT`/`UPDATE`/`DELETE`; valor
+desconocido se ignora), `from`/`to` (ventana de `occurred_at`), `actor` (email
+contiene).
+
+**Response 200**: `{ data: [{ id, occurredAt, action, tableName, recordId, actorType, actorEmail, actorRole }], total, page, pageSize, totalPages }` — orden `occurredAt` descendente.
+
+**Tablas incluidas**: `program_templates`, `weekly_day_templates`,
+`program_enrollments`, `program_weeks`, `daily_checkins`, `task_completions`,
+`xp_rules`, `xp_ledger`, `streak_states`, `streak_freezes`,
+`clinical_baselines`, `health_score_weights`, `health_scores`,
+`transformation_scores`, `clinical_xp_reviews`, `adaptation_recommendations`,
+`habit_templates`, `habit_checks`, `emotional_records`, `notifications`,
+`weaknesses`, `interventions`.
+
+#### 7.9.3 `POST /api/v1/program/enrollments/bulk` — Inscripción masiva (B13)
+
+Despacha la inscripción individual (§7.5) por cada paciente y reporta el
+resultado por fila — un fallo individual NO aborta el lote. Síncrono con tope
+de **100 pacientes por request** (lotes mayores → 400 por validación); el
+dispatcher asíncrono queda como trabajo futuro.
+
+**Permission**: `Program.Enroll`. Scoping: igual que la inscripción individual.
+
+**Request**: `{ patientIds: Guid[] (1..100), templateId?: uuid, timezone: IANA, startLocalDate?: date }`.
+
+**Response 200**: `{ results: [{ patientId, enrollmentId?, error? }], created, failed }` — `results` en el mismo orden del request.
+
+#### 7.9.4 `GET /api/v1/program/enrollments/export` — Exporte CSV (B14)
+
+Stream `text/csv` (`IAsyncEnumerable`, sin buffering completo) de las
+inscripciones visibles por el actor. Filtros opcionales: `clinicId` (clínica
+del paciente), `from`/`to` (ventana de `created_at`). Columnas:
+`enrollment_id, patient_id, patient_name, document, status, timezone,
+start_local_date, current_week, total_weeks, xp_balance, streak_current,
+streak_longest, freezes_remaining, created_at` (BOM UTF-8, escape CSV estándar).
+
+**Permission**: `Program.Export` (sembrado P3; Admin lo recibe automáticamente).
+
+#### 7.9.5 `POST /api/v1/program/maintenance/reconcile-streaks` — Reconciliación de rachas (B12)
+
+Recalcula `current_streak`/`longest_streak`/`last_active_date` de cada
+inscripción activa desde la fuente de verdad (`task_completions` por día ≥
+`streak_min_tasks` + días rescatados con congelamiento consumido) y corrige con
+`ExecuteUpdate` las filas desviadas (log `Program.StreakDiscrepancy`). Idempotente.
+**NUNCA** toca `daily_checkins.is_perfect_day` ni el inventario de congelamientos.
+
+**Permission**: `Program.Edit` (disparo manual). El mismo camino corre nocturno
+vía `ReconcileStreakHostedService` (config `Program:Reconciliation:Enabled`,
+default true; `Program:Reconciliation:HourUtc`, default 3).
+
+**Response 200**: `{ scanned, fixed, discrepancies: string[] }`.
+
 ---
 
 ## 8. Backend mapping
@@ -920,13 +1003,13 @@ Conventions mirror Wellness: `ProgramController` at `/api/v1/program`, MediatR c
 
 - `ProgramProgressSeeder` runs on startup (idempotent). It seeds:
   - 1 default `program_templates` row (`default-83w`) if missing.
-  - The `default-83w` row seeds its streak config (SPEC §17, A): `streak_min_tasks = 1` y `essential_task_codes = ["nut","ejercicio","nutribiotico"]`. Solo en create: si la plantilla ya existe, el seeder no toca su configuración (misma regla idempotente que el resto).
+  - The `default-83w` row seeds its streak config (SPEC §17, A): `streak_min_tasks = 1` y `essential_task_codes = ["nut","ejercicio","nutraceutico"]`. Solo en create: si la plantilla ya existe, el seeder no toca su configuración (misma regla idempotente que el resto).
   - 7 rows in `weekly_day_templates` (one per weekday) with the mobile mock points.
   - 7 rows for the 6 task codes that the template ships with (default content placeholders; clinician fills real `media_id` later).
   - The `podcast` rows seed `weekly_day_templates.media_id` with a published `app.media_items` fallback per weekday (template-level default for P1 resolution, §4.4).
   - Permissions: `Program.{View,Edit,Enroll,Adapt,ForceComplete}`.
   - 5 default `app.health_score_weights` rows (`adherence=0.30, clinical=0.30, nutrition=0.20, psychology=0.10, exercise=0.10`) for the Score engine (§13). Idempotent UPSERT by `dimension`.
-  - 24 default `app.xp_rules` rows (SPEC §14.2 + §15.2 + §18.1 + §19.2): `TASK_PODCAST`..`TASK_EMOCIONAL`, `DAY_BONUS`, `STREAK_7`, `STREAK_11`, `STREAK_22`, `STREAK_50`, las 4 clínicas `CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP`, las 4 de nutrición `NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY` y las 5 de la racha del nutribiótico `NB_STREAK_7`, `NB_STREAK_14`, `NB_STREAK_30`, `NB_STREAK_60`, `NB_STREAK_90` (SPEC §19.2). Idempotent by `code` (`ON CONFLICT (code) DO NOTHING`): an existing rule is never overwritten, so admin edits (§14.4) survive re-runs.
+  - 24 default `app.xp_rules` rows (SPEC §14.2 + §15.2 + §18.1 + §19.2): `TASK_PODCAST`..`TASK_EMOCIONAL`, `DAY_BONUS`, `STREAK_7`, `STREAK_11`, `STREAK_22`, `STREAK_50`, las 4 clínicas `CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP`, las 4 de nutrición `NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY` y las 5 de la racha del nutracéutico `NB_STREAK_7`, `NB_STREAK_14`, `NB_STREAK_30`, `NB_STREAK_60`, `NB_STREAK_90` (SPEC §19.2). Idempotent by `code` (`ON CONFLICT (code) DO NOTHING`): an existing rule is never overwritten, so admin edits (§14.4) survive re-runs.
   - 5 `app.habit_templates` rows (SPEC §18.2, nutrición granular): las 4 comidas del móvil (`des`/`alm`/`mer`/`cen`, categoría `alimentacion`) + hidratación (`agua`, categoría `agua`). Idempotent by `code`; son la fuente de la dimensión `nutrition` del Health Score (§13.4.3) y del log de `POST /nutrition/log`.
 - Seeder is **never** destructive (no DELETEs on production data).
 
@@ -1013,14 +1096,14 @@ The mobile app keeps the existing UI shapes (XP gauge, level badge, 6 task cards
 | AC-28 | Patient's streak reaches exactly 11 days (11th consecutive perfect day). | `STREAK_11` XP awarded **once** (`source_ref_type='streak_milestone'`, `source_ref_id=streak_states.enrollment_id`, `reason='STREAK_11'`); `streak_states.multiplier_active = 2.0` with `multiplier_ends_at = now + 24h`; a rebuilt streak that re-reaches day 11 neither re-awards nor re-activates (shared idempotency guard). Milestone 7 awards `STREAK_7` **without** activating a multiplier. |
 | AC-29 | Patient completes tasks while the x2 window is active. | Task completions, day bonus and any other award use `total = floor(base × rule.Multiplier × 2.0)`; each `xp_ledger` row records `multiplier_used = rule.Multiplier × 2.0`. |
 | AC-30 | The x2 window expires (`multiplier_ends_at` in the past) before the next award. | The next award treats the multiplier as 1.0 and **lazily resets** `streak_states.multiplier_active = 1.0` / `multiplier_ends_at = null` inside the award transaction; the snapshot shows `multiplierActive = 1.0`, `multiplierEndsAt = null`, `multiplierRemainingHours = 0`. |
-| AC-31 | Template with `streak_min_tasks = 3`: the patient completes 2 tasks on day D (below threshold). | Day D does **not** maintain the streak. On the next day that meets the threshold, IF the patient has a freeze AND completed at least one essential task (nut/ejercicio/nutribiotico) on day D, the freeze is consumed (`streak_freezes(kind='Consumed', used_on_local_date=D)`) and the streak is preserved (SPEC §17 C). |
+| AC-31 | Template with `streak_min_tasks = 3`: the patient completes 2 tasks on day D (below threshold). | Day D does **not** maintain the streak. On the next day that meets the threshold, IF the patient has a freeze AND completed at least one essential task (nut/ejercicio/nutraceutico) on day D, the freeze is consumed (`streak_freezes(kind='Consumed', used_on_local_date=D)`) and the streak is preserved (SPEC §17 C). |
 | AC-32 | Same setup as AC-31 (day D below threshold) but the patient completed **no** essential task on day D, with a freeze available. | The streak breaks (`current_streak = 0`, `last_break_date = D`) and the freeze is **NOT consumed** — it stays in inventory (`freezes_remaining` unchanged, SPEC §17 C). |
 | AC-33 | Patient logs a meal via `POST /program/nutrition/log { mealCode: 'des' }`. | 1 `app.habit_checks` row (único por `(patient, habit_template, local_date)`), 1 `xp_ledger` row `NUTRITION_MEAL_COMPLETE` +10 (rule `NUTRITION_MEAL_COMPLETE`, `source_ref_type='habit_log'`, `source_ref_id=habit_check.id`), max 4/día (una por comida: des/alm/mer/cen); loguear la misma comida otra vez el mismo día → `409 HABIT_ALREADY_LOGGED`, sin doble XP. |
 | AC-34 | Patient logs hydration via `POST /program/nutrition/log { mealCode: 'agua' }`. | 1 `xp_ledger` row `NUTRITION_HYDRATION` +5, tope 1/día (regla `NUTRITION_HYDRATION`); duplicado → `409 HABIT_ALREADY_LOGGED`. |
 | AC-35 | Clinician runs `POST /scores/calculate` for a period where the patient's nutrition adherence (habit_checks categoría `alimentacion`, misma fuente que la dimensión `nutrition` del Health Score) is ≥ 85%. | 1 `xp_ledger` row `NUTRITION_WEEK_85` +75 (`source_ref_type='nutrition_period'`, `source_ref_id=health_scores.id`, `reason='NUTRITION_WEEK_85'`); re-corrrer `/calculate` para el mismo período NO duplica (dedupe parcial). Sin logs en el período → 0 XP (nunca penaliza). |
 | AC-36 | Clinician runs `POST /scores/calculate` and the current period's adherence is ≥ 20 points above the previous period's (the prior `health_scores` row's nutrition dimension). | 1 `xp_ledger` row `NUTRITION_RECOVERY` +50 (mismo dedupe `nutrition_period`); los premios semanales respetan el multiplicador del paciente vigente (SPEC §16, C.4). |
-| AC-37 | Patient completes the `nutribiotico` task 7 consecutive patient-local days (each completion is the first write of that day). | `app.streak_states` shows `nb_current_streak = 7`, `nb_longest_streak = 7`, `nb_last_completed_date = día 7`; exactly 1 `xp_ledger` row `NB_STREAK_7` +50 (`source_ref_type='nb_milestone'`, `source_ref_id=task_completions.id` de la completación del día 7, `reason='NB_STREAK_7'`, multiplicador del paciente aplicado). Re-completar el día 7 (replay) NO duplica la XP. La racha general y `TASK_NUTRIBIOTICO` (80 base) quedan intactas. |
-| AC-38 | Patient completes `nutribiotico` on day D, skips D+1 (no completions), and completes again on D+2 — with a freeze available. | The NB streak is **not** protected by freezes: on D+2 the new count is `1` (`nb_current_streak` reset; `nb_last_completed_date = D+2`), no freeze is consumed, and no NB milestone is awarded. The general streak may still be rescued by a freeze (SPEC §17, C) — both streaks are independent. |
+| AC-37 | Patient completes the `nutraceutico` task 7 consecutive patient-local days (each completion is the first write of that day). | `app.streak_states` shows `nb_current_streak = 7`, `nb_longest_streak = 7`, `nb_last_completed_date = día 7`; exactly 1 `xp_ledger` row `NB_STREAK_7` +50 (`source_ref_type='nb_milestone'`, `source_ref_id=task_completions.id` de la completación del día 7, `reason='NB_STREAK_7'`, multiplicador del paciente aplicado). Re-completar el día 7 (replay) NO duplica la XP. La racha general y `TASK_NUTRACEUTICO` (80 base) quedan intactas. |
+| AC-38 | Patient completes `nutraceutico` on day D, skips D+1 (no completions), and completes again on D+2 — with a freeze available. | The NB streak is **not** protected by freezes: on D+2 the new count is `1` (`nb_current_streak` reset; `nb_last_completed_date = D+2`), no freeze is consumed, and no NB milestone is awarded. The general streak may still be rescued by a freeze (SPEC §17, C) — both streaks are independent. |
 | AC-39 | Patient completes a 7-day NB run (awards `NB_STREAK_7`), then resets (misses a day), then completes a NEW 7-day run. | The new run re-awards `NB_STREAK_7` once when it reaches day 7 again (new `source_ref_id = task_completions.id`, no dedupe collision): each 7/14/30/60/90 run awards its milestone when reached. Within the SAME calendar week the re-award is capped by `NB_STREAK_7.max_per_week = 1` (the award is skipped, never an error). |
 | AC-40 | Patient reaches a streak milestone (7/11/22/50), an NB milestone (7/14/30/60/90), crosses a level threshold, or completes a perfect day — each on its FIRST award (never on replay). | Exactly one `app.notifications` row is inserted with the matching type (`milestone_reached` / `nb_milestone` / `level_up` / `day_complete`) and the FCM push is attempted through the existing device-token path (`app.device_tokens` + `IFcmClient`). The XP award transaction is never affected by the notification outcome (best-effort, SPEC §20, B). |
 | AC-41 | Patient already received 2 notifications of the same type (or 6 notifications total) on the same patient-local day; another event of that type fires. | The notification is skipped silently: no `app.notifications` row, no FCM push, only a debug log. The XP award proceeds normally (anti-spam, SPEC §20, B). |
@@ -1393,9 +1476,9 @@ All conventions match §3 (`gen_random_uuid()` id, `timestamptz` timestamps, aud
 
 Indexes: `uq_xp_rules_code` UNIQUE (`code`), `ix_xp_rules_category`, `ix_xp_rules_active`.
 
-### 14.2 Seeded rules (11 + 4 clínicas + 4 nutrición + 5 racha nutribiótico, UPSERT by `code`)
+### 14.2 Seeded rules (11 + 4 clínicas + 4 nutrición + 5 racha nutracéutico, UPSERT by `code`)
 
-`ProgramProgressSeeder` seeds idempotently (`ON CONFLICT (code) DO NOTHING` — an existing rule is never overwritten, so admin edits survive re-runs). The 4 clinical rules (`CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP`) live in **SPEC §15.2** — they power the clinical XP engine, which fires only on `POST /scores/calculate`. The 4 nutrition rules (`NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY`) live in **SPEC §18.1** — granular nutrition XP ("Paso 6"), also additive to the existing `nut` task. The 5 nutribiotic-streak rules (`NB_STREAK_7`, `NB_STREAK_14`, `NB_STREAK_30`, `NB_STREAK_60`, `NB_STREAK_90`) live in **SPEC §19.2** — "Paso 7a", additive to `TASK_NUTRIBIOTICO`.
+`ProgramProgressSeeder` seeds idempotently (`ON CONFLICT (code) DO NOTHING` — an existing rule is never overwritten, so admin edits survive re-runs). The 4 clinical rules (`CLINICAL_IMPROVE`, `CLINICAL_SIGNIFICANT`, `CLINICAL_STABLE`, `CLINICAL_WEEKLY_ALL_UP`) live in **SPEC §15.2** — they power the clinical XP engine, which fires only on `POST /scores/calculate`. The 4 nutrition rules (`NUTRITION_MEAL_COMPLETE`, `NUTRITION_HYDRATION`, `NUTRITION_WEEK_85`, `NUTRITION_RECOVERY`) live in **SPEC §18.1** — granular nutrition XP ("Paso 6"), also additive to the existing `nut` task. The 5 nutribiotic-streak rules (`NB_STREAK_7`, `NB_STREAK_14`, `NB_STREAK_30`, `NB_STREAK_60`, `NB_STREAK_90`) live in **SPEC §19.2** — "Paso 7a", additive to `TASK_NUTRACEUTICO`.
 
 | Code | Category | BaseXp | MaxPerDay | MaxPerWeek |
 |------|----------|--------|-----------|------------|
@@ -1403,7 +1486,7 @@ Indexes: `uq_xp_rules_code` UNIQUE (`code`), `ix_xp_rules_category`, `ix_xp_rule
 | `TASK_VITALS` | adherence | NULL | 1 | 7 |
 | `TASK_NUT` | adherence | NULL | 1 | 7 |
 | `TASK_EJERCICIO` | adherence | NULL | 1 | 7 |
-| `TASK_NUTRIBIOTICO` | adherence | NULL | 1 | 7 |
+| `TASK_NUTRACEUTICO` | adherence | NULL | 1 | 7 |
 | `TASK_EMOCIONAL` | adherence | NULL | 1 | 7 |
 | `DAY_BONUS` | adherence | 50 | 1 | 7 |
 | `STREAK_7` | streak | 100 | 1 | 1 |
@@ -1416,7 +1499,7 @@ Indexes: `uq_xp_rules_code` UNIQUE (`code`), `ix_xp_rules_category`, `ix_xp_rule
 | `NB_STREAK_60` | nutriobiotic | 500 | 1 | 1 |
 | `NB_STREAK_90` | nutriobiotic | 1000 | 1 | 1 |
 
-**Consistency note**: the `STREAK_*` rows are seeded as data-driven configuration with their limits; since "Paso 4" (SPEC §16) they have a **live call site**: the milestone engine resolves them generically by code via the same awarding path (§14.3) when `current_streak` reaches the milestone day, and each is awarded **once per enrollment** (idempotent via the `streak_milestone` dedupe). Before §16 they were forward-looking only (no milestone XP was awarded; only `nextMilestoneDays` was derived, §7.1). The 4 nutrition rules are **aditivas**: los logs de `POST /nutrition/log` y los premios semanales de `POST /scores/calculate` SUMA a la XP de la tarea `nut` (SPEC §18, decisión 24; el doble premio se tunea vía el catálogo). The 5 `NB_STREAK_*` rules (SPEC §19, "Paso 7a") are **also aditivas** a la tarea `nutribiotico`: premian los hitos de la racha propia de la tarea (7/14/30/60/90 días) y se otorgan en el camino de completación con el dedupe `('nb_milestone', task_completions.id, reason)` — **cada corrida re-otorga su hito** (AC-39), con topes 1/día y 1/semana.
+**Consistency note**: the `STREAK_*` rows are seeded as data-driven configuration with their limits; since "Paso 4" (SPEC §16) they have a **live call site**: the milestone engine resolves them generically by code via the same awarding path (§14.3) when `current_streak` reaches the milestone day, and each is awarded **once per enrollment** (idempotent via the `streak_milestone` dedupe). Before §16 they were forward-looking only (no milestone XP was awarded; only `nextMilestoneDays` was derived, §7.1). The 4 nutrition rules are **aditivas**: los logs de `POST /nutrition/log` y los premios semanales de `POST /scores/calculate` SUMA a la XP de la tarea `nut` (SPEC §18, decisión 24; el doble premio se tunea vía el catálogo). The 5 `NB_STREAK_*` rules (SPEC §19, "Paso 7a") are **also aditivas** a la tarea `nutraceutico`: premian los hitos de la racha propia de la tarea (7/14/30/60/90 días) y se otorgan en el camino de completación con el dedupe `('nb_milestone', task_completions.id, reason)` — **cada corrida re-otorga su hito** (AC-39), con topes 1/día y 1/semana.
 
 ### 14.3 Award-path resolution (precedence + anti-fraud)
 
@@ -1721,7 +1804,7 @@ La racha deja de ser binaria (perfecta o rota) y pasa a un **umbral configurable
 | `streak_min_tasks` | `smallint` | NOT NULL DEFAULT `1`, CHECK (`>= 1`) | Mínimo de tareas completadas por día (fecha local) para mantener la racha |
 | `essential_task_codes` | `jsonb` | NOT NULL DEFAULT `'[]'` | Códigos de tarea que cuentan como esenciales para el rescate con congelamiento |
 
-El seeder `default-83w` fija `streak_min_tasks = 1` y `essential_task_codes = ["nut","ejercicio","nutribiotico"]` **solo en create** (UPSERT idempotente: un template existente nunca se pisa — misma regla que el resto del seeder). Una lista esencial vacía (template previo a §17) significa **sin restricción**: el rescate con congelamiento vuelve al comportamiento previo (no es un bug, es la compatibilidad hacia atrás del default).
+El seeder `default-83w` fija `streak_min_tasks = 1` y `essential_task_codes = ["nut","ejercicio","nutraceutico"]` **solo en create** (UPSERT idempotente: un template existente nunca se pisa — misma regla que el resto del seeder). Una lista esencial vacía (template previo a §17) significa **sin restricción**: el rescate con congelamiento vuelve al comportamiento previo (no es un bug, es la compatibilidad hacia atrás del default).
 
 ### 17.2 Mantenimiento de racha por umbral (B)
 
@@ -1845,13 +1928,13 @@ AC-33..AC-36 (SPEC §10.2). Tests **opcionales** en esta fase, corridos manualme
 
 ## 19. Nutriobiótico streak (P1.5 — "Paso 7a")
 
-La tarea `nutribiotico` (el pilar de producto de CoppAddresd) mantiene su **propia racha consecutiva**, independiente de la racha general del programa (SPEC §6.6/§17): solo se alimenta al completar la tarea nutribiotico, un día perdido la rompe y los congelamientos **NO la protegen**. Premia la constancia con hitos de corrida (7/14/30/60/90 días) otorgados en el camino de completación de la tarea. **Tests OPTIONALES / manuales per el workflow actual** (gate = build verde + migración generada sin aplicar).
+La tarea `nutraceutico` (el pilar de producto de CoppAddresd) mantiene su **propia racha consecutiva**, independiente de la racha general del programa (SPEC §6.6/§17): solo se alimenta al completar la tarea nutraceutico, un día perdido la rompe y los congelamientos **NO la protegen**. Premia la constancia con hitos de corrida (7/14/30/60/90 días) otorgados en el camino de completación de la tarea. **Tests OPTIONALES / manuales per el workflow actual** (gate = build verde + migración generada sin aplicar).
 
 ### 19.1 Columnas nuevas en `app.streak_states` (migración `AddProgramProgressNbStreak`, aditiva y reversible)
 
 | Columna | Tipo | Constraints | Notas |
 |---------|------|-------------|-------|
-| `nb_current_streak` | `smallint` | NOT NULL DEFAULT `0` | Racha consecutiva de la tarea nutribiotico (0 = sin corrida activa) |
+| `nb_current_streak` | `smallint` | NOT NULL DEFAULT `0` | Racha consecutiva de la tarea nutraceutico (0 = sin corrida activa) |
 | `nb_longest_streak` | `smallint` | NOT NULL DEFAULT `0` | Máximo histórico de `nb_current_streak` |
 | `nb_last_completed_date` | `date` | NULL | Fecha local del último día que aportó a la racha; NULL hasta la primera completación |
 
@@ -1873,7 +1956,7 @@ Los miembros `NB_STREAK_7/14/30/60/90` de `XpReason` (16..20) y las constantes h
 
 ### 19.3 Mantenimiento de la racha propia (B)
 
-En el camino de completación (`ProgramRepository.CompleteTaskCoreAsync`, dentro de la transacción con la inscripción bloqueada `FOR UPDATE`), **solo en la primera escritura** de `task_code = 'nutribiotico'` (el replay idempotente nunca llega acá):
+En el camino de completación (`ProgramRepository.CompleteTaskCoreAsync`, dentro de la transacción con la inscripción bloqueada `FOR UPDATE`), **solo en la primera escritura** de `task_code = 'nutraceutico'` (el replay idempotente nunca llega acá):
 
 1. **Nuevo conteo**: si `nb_last_completed_date == ayer` (fecha local del paciente) → `nb_current_streak + 1`; en cualquier otro caso (sin historial o día perdido) → `1`. La racha NO distingue días perfectos ni umbrales (SPEC §17): solo pregunta si ayer se completó la tarea.
 2. **Actualización** vía `ExecuteUpdate` (convención del repositorio): `nb_current_streak = nuevo`, `nb_longest_streak = MAX(nb_longest_streak, nuevo)`, `nb_last_completed_date = hoy`, `updated_at = now`.
@@ -1883,8 +1966,8 @@ En el camino de completación (`ProgramRepository.CompleteTaskCoreAsync`, dentro
 
 ### 19.4 Reglas que NO cambian
 
-- La racha general (`current_streak`/`longest_streak`/`last_active_date`), los congelamientos y el rescate (SPEC §17) quedan **intactos**: la racha del nutribiótico es un contador aparte.
-- La tarea `nutribiotico` sigue otorgando sus puntos de plantilla (`TASK_NUTRIBIOTICO`, 80 base) al completarse; los hitos `NB_STREAK_*` son XP **aditiva** (decisión 25).
+- La racha general (`current_streak`/`longest_streak`/`last_active_date`), los congelamientos y el rescate (SPEC §17) quedan **intactos**: la racha del nutracéutico es un contador aparte.
+- La tarea `nutraceutico` sigue otorgando sus puntos de plantilla (`TASK_NUTRACEUTICO`, 80 base) al completarse; los hitos `NB_STREAK_*` son XP **aditiva** (decisión 25).
 - El bonus de día perfecto (`DAY_BONUS`) y los hitos de la racha general (`STREAK_*`, SPEC §16) no se tocan.
 
 ### 19.5 Exposición en el snapshot (D)
@@ -1893,8 +1976,8 @@ En el camino de completación (`ProgramRepository.CompleteTaskCoreAsync`, dentro
 
 | Campo | Tipo | Semántica |
 |-------|------|-----------|
-| `nbStreak` | `int` | Racha consecutiva actual de la tarea nutribiotico |
-| `nbLongestStreak` | `int` | Máximo histórico de la racha del nutribiótico |
+| `nbStreak` | `int` | Racha consecutiva actual de la tarea nutraceutico |
+| `nbLongestStreak` | `int` | Máximo histórico de la racha del nutracéutico |
 | `nbNextMilestone` | `{ days, xp, daysRemaining } \| null` | Próximo hito por encima de `nbStreak` (de la tabla 7/14/30/60/90 con su XP base del catálogo); `null` si la racha ya es ≥ 90 |
 
 La lectura nunca escribe (mismo patrón que el multiplicador, SPEC §16, D).
@@ -1910,7 +1993,7 @@ AC-37, AC-38, AC-39 (SPEC §10.2). Tests **opcionales** en esta fase, corridos m
 | Entidad + enums | `src/CoppAddresd.Domain` | `Entities/ProgramProgress/StreakState.cs` (3 propiedades `Nb*`); `Enums/ProgramProgress/XpReason.cs` (5 miembros `NB_STREAK_*`), `XpRuleCodes.cs` (5 constantes) |
 | EF configuration | `src/CoppAddresd.Infrastructure` | `Configurations/ProgramProgress/StreakStateConfiguration.cs` (3 columnas, `smallint` default 0 + `date` nullable) |
 | Migración | `src/CoppAddresd.Infrastructure` | `Migrations/<timestamp>_AddProgramProgressNbStreak.cs` (aditiva y reversible: 3 columnas en `streak_states`) |
-| Motor de la racha + hitos | `src/CoppAddresd.Infrastructure` | `Repositories/ProgramRepository.cs` (`UpdateNbStreakAsync` + tabla `NbMilestones`; hook en `CompleteTaskCoreAsync` solo para `nutribiotico`; `GetSnapshotAsync` con `nbStreak`/`nbLongestStreak`/`nbNextMilestone`) |
+| Motor de la racha + hitos | `src/CoppAddresd.Infrastructure` | `Repositories/ProgramRepository.cs` (`UpdateNbStreakAsync` + tabla `NbMilestones`; hook en `CompleteTaskCoreAsync` solo para `nutraceutico`; `GetSnapshotAsync` con `nbStreak`/`nbLongestStreak`/`nbNextMilestone`) |
 | Snapshot DTO | `src/CoppAddresd.Application` | `DTOs/ProgramProgress/ProgramProgressDtos.cs` (`StreakInfoDto` + 3 campos aditivos con default; `NbNextMilestoneDto` nuevo) |
 | Seeder | `src/CoppAddresd.Api` | `Seeders/ProgramProgressSeeder.cs` (5 reglas `NB_STREAK_*`, categoría `nutriobiotic`) |
 
@@ -1974,14 +2057,14 @@ XP correspondiente:
 | Evento | `type` | Mensaje (message) | Prioridad |
 |--------|--------|-------------------|-----------|
 | Hito de racha alcanzado (7/11/22/50) | `milestone_reached` | `🏆 ¡X días! +N XP` (hitos 11/22/50 con x2 activado: `· ¡x2 por N horas!` plegado en el mismo mensaje) | high |
-| Hito de la racha del nutribiótico (7/14/30/60/90) | `nb_milestone` | `💊 ¡X días tomando tu Nutriobiótico!` | high |
+| Hito de la racha del nutracéutico (7/14/30/60/90) | `nb_milestone` | `💊 ¡X días tomando tu Nutriobiótico!` | high |
 | Subida de nivel (cruce de umbral de la escalera `XpLevels`) | `level_up` | `⭐ ¡Subiste a Nivel X!` (X = nombre del nivel alcanzado) | high |
 | Día perfecto (bonus `DAY_BONUS` otorgado) | `day_complete` | `✅ Día perfecto · +N XP` (N = bonus efectivo) | normal |
 
 Reglas:
 - **Solo primera concesión**: el replay idempotente (`CompleteTaskAsync`) nunca
   genera notificaciones; el guardia "XP ya otorgada" del hito de racha
-  (§16, B.3) y los topes del nutribiótico (§19, B.4) protegen también la
+  (§16, B.3) y los topes del nutracéutico (§19, B.4) protegen también la
   notificación.
 - **Subida de nivel**: se compara el nivel ANTES y DESPUÉS de todos los
   otorgamientos del día (tarea + bonus + hitos), evaluado tras el flush del
@@ -2093,7 +2176,7 @@ Indexes: `ix_weaknesses_patient_status` (`patient_id`, `status`) — cola del pa
 | `WK_PSY_HIGH_STRESS` | psychological | medium | estrés > 7/10 — **LATENTE**: no existe columna física de estrés; dispara cuando una fuente futura alimente `StressScore` | — | `referral_psychologist` |
 | `WK_PSY_SLEEP_POOR` | sleep | low | sueño promedio < 6 h — **LATENTE**: no existe fuente de sueño; dispara cuando una fuente futura alimente `AvgSleepHours` | — | `ai_recommendation` |
 | `WK_ADH_LOW_STREAK` | adherence | medium | adherencia semanal < 50% | dimensión `adherence` de `app.health_scores` del período (§13.4.1) | `recovery_mode` |
-| `WK_ADH_NB_MISSED` | supplement | low | adherencia del nutribiótico a 7 días < 70% | `app.task_completions` (`nutribiotico`, días distintos / 7) | `ai_recommendation` |
+| `WK_ADH_NB_MISSED` | supplement | low | adherencia del nutracéutico a 7 días < 70% | `app.task_completions` (`nutraceutico`, días distintos / 7) | `ai_recommendation` |
 | `WK_ADH_EXERCISE_LOW` | exercise | low | cumplimiento de ejercicio < 60% | `app.task_completions` (`ejercicio`, días distintos / días del período) | `reto_adjustment` |
 
 > **REQUIRES_CLINICAL_VALIDATION**: los umbrales clínicos (glucosa 125 mg/dL, delta de % grasa 0.3) son propuestos por el equipo (referencia ADRED adaptada) y deben confirmarse con el comité clínico antes de operar como referencia. Las reglas LATENTES (estrés/sueño) están implementadas en el motor pero no pueden disparar hasta que exista la fuente de datos.
@@ -2278,3 +2361,146 @@ El servicio de **Telemedicina** (servicio separado, schema `tele.`, repo separad
 | Query / command + DTOs | `src/CoppAddresd.Application` | `Features/ProgramProgress/Queries/ListInterventions/`, `Queries/ListOpenInterventions/`, `Commands/AcceptIntervention/`, `Commands/UpdateInterventionStatus/`, `Commands/MarkTeleScheduled/`, `Commands/MarkTeleAttended/`, `Commands/MarkTeleComply/`, `DTOs/Interventions/` |
 | Controller | `src/CoppAddresd.Api` | `Controllers/ProgramController.cs` (7 acciones + request) |
 | Seeder | `src/CoppAddresd.Api` | `Seeders/ProgramProgressSeeder.cs` (7 reglas `intervention`) |
+
+---
+
+## 23. ERP Clinical Emphasis — Dashboard & Patient Overview (Phase B)
+
+Extiende los contratos ERP con **métricas clínicas** (BMI, HbA1c, % grasa) para dar visibilidad al equipo clínico sobre el estado de los pacientes.
+
+### 23.1 Nuevo métrica sembrada `hba1c`
+
+El `ClinicalMeasurementsSeeder` agrega la métrica `hba1c` (Hemoglobina glicosilada, categoría `metabolic`, unidad `pct`) con rango de referencia ADA 4.0–5.6% (normal). Las métricas `bmi` y `body_fat` ya existían.
+
+### 23.2 `ErpDashboardKpis` — campos clínicos (additivos)
+
+Campos nuevos en el objeto `kpis` del `GET /api/v1/program/erp/dashboard`:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `bmi_promedio` | `decimal?` | Promedio de BMI de la última medición por paciente. Null si no hay datos. |
+| `hba1c_promedio` | `decimal?` | Promedio de HbA1c de la última medición por paciente. Null si no hay datos. |
+| `body_fat_promedio` | `decimal?` | Promedio de % grasa corporal de la última medición por paciente. Null si no hay datos. |
+| `pacientes_bmi_ge30` | `int` | Número de pacientes con BMI ≥ 30 (obesidad). 0 si no hay datos. |
+| `pacientes_hba1c_ge7` | `int` | Número de pacientes con HbA1c ≥ 7.0% (diabetes mal controlada). 0 si no hay datos. |
+| `pacientes_body_fat_alto` | `int` | Número de pacientes con % grasa ≥ 25% (umbral genérico). 0 si no hay datos. |
+
+**Implementación**: consulta set-based `AsNoTracking` sobre `app.clinical_measurements` JOIN `app.measurement_metrics`, filtrada por códigos `bmi`, `hba1c`, `body_fat`, con `GROUP BY (patient_id, metric_code)` y `ORDER BY observed_at DESC` para obtener la última medición por paciente por métrica. Sin N+1. Sin PHI logs.
+
+**AC-50**: El dashboard retorna los campos clínicos. Si un paciente no tiene mediciones, los promedios son null y los conteos son 0. El frontend existente no se rompe porque los campos son aditivos.
+
+### 23.3 `PatientOverviewDto` — `mediciones_clinicas` block
+
+Nuevo bloque `mediciones_clinicas` en el `GET /api/v1/program/erp/patients/{id}/overview`:
+
+```json
+{
+  "mediciones_clinicas": {
+    "bmi": {
+      "latest_value": 28.5,
+      "unit": "kg/m²",
+      "observed_at": "2026-08-15T10:30:00Z",
+      "baseline_value": 31.2,
+      "delta_pct": -8.7,
+      "series_12w": [
+        { "date": "2026-06-01T08:00:00Z", "value": 31.2 },
+        { "date": "2026-07-15T09:00:00Z", "value": 29.8 }
+      ]
+    },
+    "hba1c": { ... },
+    "body_fat": { ... }
+  }
+}
+```
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `latest_value` | `decimal?` | Último valor medido en la ventana (global, no limitado a semana). |
+| `unit` | `string?` | Símbolo de unidad (ej. `kg/m²`, `%`). |
+| `observed_at` | `DateTime?` | Cuándo se tomó la medición. |
+| `baseline_value` | `decimal?` | Valor base (de `app.clinical_baselines`). Null si no hay baseline. |
+| `delta_pct` | `decimal?` | Cambio porcentual `(latest - baseline) / baseline × 100`. Null si no hay baseline o baseline = 0. |
+| `series_12w` | `list` | Serie temporal de las últimas 12 semanas (fecha + valor). Puede estar vacía. |
+
+**Implementación**: `LoadLatestMeasurementPerMetricAsync` (reutiliza patrón existente) para la métrica del paciente + query de baselines por paciente + query de serie temporal 12 semanas con `observed_at >= now - 12w`. Todo `AsNoTracking`, sin N+1.
+
+**AC-51**: El overview retorna `mediciones_clinicas` con 3 métricas. Si no hay datos para una métrica, todos sus campos internos son null y `series_12w` es vacía. El frontend existente no se rompe porque el campo es nullable.
+
+### 23.4 Métricas clínicas del módulo
+
+| Código | Nombre | Categoría | Unidad | Rango normal |
+|--------|--------|-----------|--------|-------------|
+| `bmi` | Índice de masa corporal | `body_comp` | `kg/m²` | 18.5–24.9 |
+| `hba1c` | Hemoglobina glicosilada | `metabolic` | `%` | 4.0–5.6 (ADA) |
+| `body_fat` | Porcentaje de grasa corporal | `body_comp` | `%` | — |
+
+Umbrales de alerta para el dashboard:
+- BMI ≥ 30 → obesidad
+- HbA1c ≥ 7.0% → diabetes mal controlada
+- % grasa ≥ 25% → alto (umbral genérico, sin distinción de género)
+
+### 23.5 `ProgramErpDashboardDto` — campos nuevos (additivos)
+
+Campos nuevos en el `GET /api/v1/program/erp/dashboard`:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `distribucion_semanas` | `list` | Distribución de pacientes activos por fase del programa (5 buckets siempre presentes, count=0 cuando vacío). |
+| `evolucion_xp_30d` | `list` | Serie diaria de XP validado en los últimos 30 días (un `ErpDailyValue` por día, value=0 cuando no hay datos). |
+| `evolucion_clinica_30d` | `list` | Promedios diarios comunitarios de BMI, HbA1c y % grasa en los últimos 30 días (un `ErpClinicalDailyAvg` por día, campos null cuando no hay datos). |
+
+#### `distribucion_semanas`
+
+Buckets de fase calculados desde `CurrentWeekNumber` de las inscripciones activas:
+
+| Bucket | Rango de semana |
+|--------|----------------|
+| `Orientación (S1-4)` | week ≤ 4 |
+| `Adaptación (S5-12)` | 5–12 |
+| `Activa (S13-30)` | 13–30 |
+| `Transformación (S31-50)` | 31–50 |
+| `Mantenimiento (S51-83)` | ≥ 51 |
+
+Siempre se emiten los 5 buckets (count=0 cuando no hay pacientes en esa fase).
+
+#### `evolucion_xp_30d`
+
+Serie diaria de XP **validado** (misma regla que los totales de XP del dashboard):
+- Filtra `xp_ledger_entries` de las inscripciones activas en la ventana de 30 días.
+- Excluye entradas con `rule.requires_validation = true` y `validated_by = null`.
+- Agrupa por día local (fecha UTC) y suma `amount`.
+- Se rellena cada día del rango con 0 cuando no hay datos.
+
+#### `evolucion_clinica_30d`
+
+Promedios diarios comunitarios (promedio de la última medición de cada paciente por métrica por día):
+- Para cada día en la ventana de 30 días, calcula el promedio de la última medición por paciente para `bmi`, `hba1c`, `body_fat`.
+- Implementación set-based: `clinical_measurements` JOIN `measurement_metrics`, agrupado por `(patient_id, metric_code, local_day)`, tomando la medición más reciente por paciente por métrica por día, luego promediando entre pacientes.
+- Se rellena cada día del rango con null cuando no hay datos.
+
+**AC-52**: El dashboard retorna `distribucion_semanas`, `evolucion_xp_30d` y `evolucion_clinica_30d`. Los campos son aditivos: el frontend existente no se rompe porque no los consume. `distribucion_semanas` siempre tiene 5 entradas; `evolucion_xp_30d` y `evolucion_clinica_30d` siempre tienen 30 entradas.
+
+### 23.6 `ProgramErpCofresDto` — campo `proximos_a_desbloquear`
+
+Nuevo campo en el `GET /api/v1/program/erp/cofres`:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| `proximos_a_desbloquear` | `int` | Número de pacientes activos cuya racha actual está dentro de 3 días de un hito STREAK_* (7, 11, 22, 50). Si `CurrentStreak ≥ 50` (último hito), se cuenta 0 para ese paciente. |
+
+**Implementación**: iteración sobre `streak_states` de las inscripciones activas; para cada paciente, se verifica si existe un hito `m` donde `(m - CurrentStreak)` está en 1..3.
+
+**AC-53**: El endpoint cofres retorna `proximos_a_desbloquear` como entero. El frontend existente no se rompe porque el campo es aditivo.
+
+### 23.7 `patient_name` en DTOs admin
+
+Campo `patient_name` (nullable, snake_case) agregado a los siguientes DTOs para enriquecer las colas administrativas:
+
+| DTO | Endpoint(s) | Resolución |
+|-----|-------------|------------|
+| `ClinicalReviewDto` | `GET /xp-rules/clinical-pending` | Batch: `patient_profiles` por `PatientId` |
+| `InterventionDto` | `GET /interventions`, `GET /interventions/open` | Batch: `patient_profiles` por `PatientId` |
+| `WeaknessDto` | `GET /weaknesses`, `GET /weaknesses/open` | Batch: `patient_profiles` por `PatientId` |
+| `AdaptationRecommendationDto` | `GET /adaptations` | Construido vía `FromEntity` (null por defecto; resolución en el handler del query si se requiere) |
+
+**AC-54**: Los listados admin retornan `patient_name` con el nombre completo del paciente (o null si no se pudo resolver). Las mutaciones (decide, update status, etc.) también retornan el nombre. El frontend existente no se rompe porque el campo es aditivo y nullable.

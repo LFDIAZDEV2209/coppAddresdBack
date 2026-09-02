@@ -1,4 +1,4 @@
-# Diseño — Integración móvil del Progreso del Programa
+﻿# Diseño — Integración móvil del Progreso del Programa
 
 ## Enfoque técnico
 
@@ -72,7 +72,7 @@ En desarrollo, `vite.config.ts` debe mantener `/api/auth → http://localhost:51
 
 ## Tipos y límites de validación
 
-`types.ts` debe modelar `ProgramSnapshotDto`, `TodayTaskDto`, `TodayTaskContentDto`, `XpInfoDto`, `StreakInfoDto`, `NbNextMilestoneDto`, `ProgramCalendarDto`, `ProgramPathDto`, `CompleteTaskResponseDto`, `ProgramEnrollmentDto`, `ScoresResponseDto`, `HealthScoreDto`, `TransformationScoreDto`, `IndicatorDetailDto` y `NutritionLogResultDto`. `DateOnly` será `YYYY-MM-DD`; `DateTime` será ISO string nullable. `TaskCode` será la unión exacta de `podcast | vitals | nut | ejercicio | nutribiotico | emocional`; estados conocidos serán unions de strings, con guardas para valores desconocidos.
+`types.ts` debe modelar `ProgramSnapshotDto`, `TodayTaskDto`, `TodayTaskContentDto`, `XpInfoDto`, `StreakInfoDto`, `NbNextMilestoneDto`, `ProgramCalendarDto`, `ProgramPathDto`, `CompleteTaskResponseDto`, `ProgramEnrollmentDto`, `ScoresResponseDto`, `HealthScoreDto`, `TransformationScoreDto`, `IndicatorDetailDto` y `NutritionLogResultDto`. `DateOnly` será `YYYY-MM-DD`; `DateTime` será ISO string nullable. `TaskCode` será la unión exacta de `podcast | vitals | nut | ejercicio | nutraceutico | emocional`; estados conocidos serán unions de strings, con guardas para valores desconocidos.
 
 Los campos aditivos (`streakMinTasks`, `essentialTaskCodes`, `nb*`, `multiplier*`, `contentUnavailable`, contenido nullable) se leerán con defaults seguros. JSON desconocido se ignora. La validación de formato en el borde comprueba códigos, UUID, rango de mood `1..5`, fechas ISO, ventana de calendario y `mealCode` (`des|alm|mer|cen|agua`); las reglas de autorización, agenda, zona local, fingerprint, XP y concurrencia quedan en el servidor. Nunca convertir una fecha local con `new Date('YYYY-MM-DD')`; usar strings y utilidades locales existentes. `completedAt`/`multiplierEndsAt` se formatean como instantes con timezone del dispositivo solo para presentación.
 
