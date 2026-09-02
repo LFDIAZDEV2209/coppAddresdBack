@@ -1743,7 +1743,7 @@ public sealed class ProgramRepository(
         var nbCompletionsThisWeek = await dbContext
             .TaskCompletions.AsNoTracking()
             .Where(c => c.EnrollmentId == enrollmentId
-                     && c.TaskCode == TaskCode.nutribiotico
+                     && c.TaskCode == TaskCode.nutraceutico
                      && c.LocalDate >= weekStart
                      && c.LocalDate <= weekEnd)
             .Select(c => c.LocalDate)
