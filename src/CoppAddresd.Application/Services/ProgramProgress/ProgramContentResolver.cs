@@ -97,6 +97,68 @@ public sealed class ProgramContentResolver(
         return resolution;
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<DateOnly, ProgramContentResolution>> ResolveRangeAsync(
+        Guid patientId,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct = default)
+    {
+        // T-83 (B18): una sola carga de asignaciones para toda la ventana
+        // (independiente del número de fechas) + cache de días por plan.
+        var planAssignments = await wellnessRepository
+            .ListPlanAssignmentsByPatientAsync(patientId, ct);
+        var routineAssignments = await wellnessRepository
+            .ListAssignmentsByPatientAsync(patientId, ct);
+
+        var result = new Dictionary<DateOnly, ProgramContentResolution>();
+        var planDaysCache = new Dictionary<Guid, HashSet<int>>();
+
+        for (var date = from; date <= to; date = date.AddDays(1))
+        {
+            var activePlanAssignment = planAssignments
+                .Where(a => a.Status == AssignmentStatus.Active
+                            && IsDateInWindow(a.StartDate, a.EndDate, date))
+                .OrderByDescending(a => a.StartDate)
+                .FirstOrDefault();
+
+            var activeRoutineAssignment = routineAssignments
+                .Where(a => a.Status == AssignmentStatus.Active
+                            && IsDateInWindow(a.StartDate, a.EndDate, date))
+                .OrderByDescending(a => a.StartDate)
+                .FirstOrDefault();
+
+            if (activePlanAssignment is null && activeRoutineAssignment is null)
+            {
+                continue;
+            }
+
+            int? resolvedDayNumber = null;
+            if (activePlanAssignment is not null)
+            {
+                if (!planDaysCache.TryGetValue(activePlanAssignment.PlanId, out var days))
+                {
+                    var planDays = await wellnessRepository
+                        .ListPlanDaysAsync(activePlanAssignment.PlanId, ct);
+                    days = planDays.Select(d => d.DayNumber).ToHashSet();
+                    planDaysCache[activePlanAssignment.PlanId] = days;
+                }
+
+                var weekday = ToIsoWeekday(date);
+                resolvedDayNumber = days.Contains(weekday) ? weekday : null;
+            }
+
+            result[date] = new ProgramContentResolution
+            {
+                NutritionPlanId = activePlanAssignment?.PlanId,
+                NutritionPlanDayNumber = resolvedDayNumber,
+                ExerciseRoutineId = activeRoutineAssignment?.RoutineId,
+            };
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Verifica si la fecha local cae dentro de la ventana de la asignación.
     /// Regla SPEC §6.10: start_date &lt;= localDate AND localDate &lt;= COALESCE(end_date, 'infinity').

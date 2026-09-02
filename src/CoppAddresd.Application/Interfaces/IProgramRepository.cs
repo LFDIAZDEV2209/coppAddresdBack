@@ -1,9 +1,13 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Erp;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums.ProgramProgress;
@@ -61,12 +65,16 @@ public interface IProgramRepository
     /// <summary>
     /// Listado paginado de inscripciones con filtros opcionales por paciente y
     /// estado (SPEC §7.5, ERP). Ordena por creación descendente.
+    /// <paramref name="scopedPatientIds"/> (T-81): filtro opcional de scoping
+    /// del actor — lista con ids = solo esas inscripciones; <c>null</c> = sin
+    /// filtro. La lista vacía se deniega antes, en el handler.
     /// </summary>
     Task<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)> ListEnrollmentsAsync(
         Guid? patientId,
         ProgramEnrollmentStatus? status,
         int page,
         int pageSize,
+        IReadOnlyList<Guid>? scopedPatientIds = null,
         CancellationToken ct = default);
 
     // --- Completación de tareas ---
@@ -603,4 +611,75 @@ public interface IProgramRepository
         int weekNumber,
         Guid clinicianUserId,
         CancellationToken ct = default);
+
+    // --- ERP gamificación (SPEC §23) ---
+
+    /// <summary>Dashboard ERP del monitoreo comunitario (SPEC §23, AC-50).</summary>
+    Task<ProgramErpDashboardDto> GetErpDashboardAsync(CancellationToken ct = default);
+
+    /// <summary>Vista de hoy para el ERP (SPEC §23, AC-51).</summary>
+    Task<ProgramErpTodayDto> GetErpTodayAsync(CancellationToken ct = default);
+
+    /// <summary>Vista de adherencia ERP con tabla paginada (SPEC §23, AC-52).</summary>
+    Task<ProgramErpAdherenciaDto> GetErpAdherenciaAsync(
+        int page, int pageSize,
+        string? search, string? sortBy, string? sortDir,
+        CancellationToken ct = default);
+
+    /// <summary>Vista de cofres/rachas ERP (SPEC §23, AC-53).</summary>
+    Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default);
+
+    /// <summary>Perfil 360 de un paciente (SPEC §23, AC-54). Devuelve null si el paciente no tiene inscripción.</summary>
+    Task<PatientOverviewDto?> GetPatientOverviewAsync(Guid patientId, CancellationToken ct = default);
+
+    // --- Bitácora de actividad (ERP) ---
+
+    /// <summary>
+    /// Bitácora de actividad del módulo (ERP): entradas del log de auditoría
+    /// trigger-based (<c>audit.activity_logs</c>) filtradas a las tablas
+    /// <c>app.*</c> del módulo, paginadas (orden descendente por
+    /// <c>occurred_at</c>) con filtros opcionales por tabla, acción
+    /// (INSERT/UPDATE/DELETE), ventana de fechas y actor (email contiene).
+    /// Solo lectura; nunca expone <c>old_data</c>/<c>new_data</c>.
+    /// </summary>
+    Task<PaginatedActivityLogResult> ListActivityLogAsync(
+        int page,
+        int pageSize,
+        string? tableName,
+        string? action,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        string? actor,
+        CancellationToken ct = default);
+
+    // --- Exporte CSV (B14) ---
+
+    /// <summary>
+    /// Stream de inscripciones para el exporte CSV (B14, T-30): proyección
+    /// <c>AsNoTracking</c> con <c>AsAsyncEnumerable</c> — NUNCA bufferiza el
+    /// resultado completo. Filtros por clínica del paciente y ventana de
+    /// creación; <paramref name="scopedPatientIds"/> aplica el scoping del actor
+    /// (T-81): lista con ids = solo esas inscripciones; <c>null</c> = sin
+    /// filtro; lista vacía = stream sin filas (denegado).
+    /// </summary>
+    IAsyncEnumerable<EnrollmentExportRow> StreamEnrollmentsForExportAsync(
+        Guid? clinicId,
+        DateTime? from,
+        DateTime? to,
+        IReadOnlyList<Guid>? scopedPatientIds,
+        CancellationToken ct = default);
+
+    // --- Reconciliación de rachas (B12) ---
+
+    /// <summary>
+    /// Reconciliación de rachas (B12, T-28): recalcula
+    /// <c>current_streak</c>/<c>longest_streak</c>/<c>last_active_date</c> de
+    /// CADA inscripción activa desde la fuente de verdad
+    /// (<c>task_completions</c> por día ≥ umbral de la plantilla + días
+    /// rescatados con congelamiento consumido) y corrige con
+    /// <c>ExecuteUpdate</c> las filas desviadas (log de discrepancias).
+    /// Idempotente: re-correr no vuelve a corregir. NUNCA toca
+    /// <c>daily_checkins.is_perfect_day</c> ni el inventario de congelamientos.
+    /// </summary>
+    Task<StreakReconciliationSummary> ReconcileStreaksAsync(CancellationToken ct = default);
 }

@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Features.HealthTests.Scoring;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services;
 using CoppAddresd.Application.Services.ProgramProgress;
@@ -121,6 +122,12 @@ public static class DependencyInjection
         // deterministas evaluadas por ProgramRepository tras cada completación
         // (dentro de la misma transacción). Sin estado: Scoped por consistencia.
         services.AddScoped<IProgramAdaptationEngine, ProgramAdaptationEngine>();
+
+        // Job de reconciliación de rachas (B12, T-28): orquesta la pasada de
+        // recálculo de streak_states. Lo consume el hosted service nocturno
+        // (ReconcileStreakHostedService en la API) y el disparo manual
+        // (POST /program/maintenance/reconcile-streaks).
+        services.AddScoped<ReconcileStreakJob>();
 
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).
