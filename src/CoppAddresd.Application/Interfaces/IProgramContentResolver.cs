@@ -27,6 +27,21 @@ public interface IProgramContentResolver
         Guid patientId,
         DateOnly localDate,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Resuelve el contenido activo para TODAS las fechas locales de la ventana
+    /// [<c>from</c>, <c>to</c>] en una sola pasada (T-83, B18): carga las
+    /// asignaciones del paciente UNA vez y los días de cada plan distinto una
+    /// vez (cache). Devuelve un diccionario solo con las fechas que tienen
+    /// contenido activo (ausencia de clave = sin asignación para ese día).
+    /// Consumido por el timeline del configurador de contenido (GET content),
+    /// que necesita resolver N semanas sin recargar asignaciones por semana.
+    /// </summary>
+    Task<IReadOnlyDictionary<DateOnly, ProgramContentResolution>> ResolveRangeAsync(
+        Guid patientId,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct = default);
 }
 
 /// <summary>
