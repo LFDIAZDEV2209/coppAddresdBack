@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
+using CoppAddresd.Application.Features.Sos;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services;
 using CoppAddresd.Application.Services.ProgramProgress;
@@ -9,6 +10,7 @@ using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
 using CoppAddresd.Infrastructure.Services.Email;
+using CoppAddresd.Infrastructure.Services.Sos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -62,6 +64,7 @@ public static class DependencyInjection
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
+        services.AddScoped<ISosAlertRepository, SosAlertRepository>();
 
         // Motor de scoring (Tests de Salud): estrategias registradas como
         // keyed services + registry. Agregar una estrategia nueva = registrar
@@ -156,10 +159,64 @@ public static class DependencyInjection
 
         AddObjectStorage(services, configuration);
         AddEmailServices(services, configuration);
+        AddSosServices(services, configuration);
 
         AddDistributedCache(services, configuration);
 
         return services;
+    }
+
+    /// <summary>
+    /// Registra los servicios SOS (SMS, email, voz) según la configuración
+    /// <c>Sos:*</c>. Por defecto todos los canales usan fakes de log
+    /// (desarrollo sin credenciales). SMS/Voz reales requieren Twilio
+    /// configurado; el email reutiliza <see cref="IEmailService"/> existente.
+    /// </summary>
+    private static void AddSosServices(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<SosOptions>(configuration.GetSection(SosOptions.SectionName));
+        services.Configure<TwilioSosOptions>(configuration.GetSection(TwilioSosOptions.SectionName));
+
+        var smsProvider = configuration["Sos:SmsProvider"] ?? "Log";
+        var voiceProvider = configuration["Sos:VoiceProvider"] ?? "Log";
+
+        // SMS
+        if (smsProvider.Equals("Twilio", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<ISmsSender>(sp =>
+            {
+                var twilioOpts = sp.GetRequiredService<IOptions<TwilioSosOptions>>().Value;
+                if (!twilioOpts.IsConfigured)
+                {
+                    throw new InvalidOperationException(
+                        "Twilio SMS no configurado: define Twilio:AccountSid/ApiKeySid/ApiKeySecret/FromNumber.");
+                }
+                return ActivatorUtilities.CreateInstance<TwilioSmsSender>(sp);
+            });
+        }
+        else
+        {
+            services.AddScoped<ISmsSender, LogSmsSender>();
+        }
+
+        // Voz (TTS)
+        if (voiceProvider.Equals("Twilio", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IVoiceCaller>(sp =>
+            {
+                var twilioOpts = sp.GetRequiredService<IOptions<TwilioSosOptions>>().Value;
+                if (!twilioOpts.IsConfigured)
+                {
+                    throw new InvalidOperationException(
+                        "Twilio Voice no configurado: define Twilio:AccountSid/ApiKeySid/ApiKeySecret/FromNumber.");
+                }
+                return ActivatorUtilities.CreateInstance<TwilioVoiceCaller>(sp);
+            });
+        }
+        else
+        {
+            services.AddScoped<IVoiceCaller, LogVoiceCaller>();
+        }
     }
 
     /// <summary>
