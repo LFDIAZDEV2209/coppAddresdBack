@@ -1390,7 +1390,7 @@ public sealed class ProgramRepository(
             .ToList();
         var mediaById =
             mediaIds.Count == 0
-                ? new Dictionary<Guid, (string Title, int? DurationSecs, string? ThumbnailKey)>()
+                ? new Dictionary<Guid, (string Title, string? Description, string Author, int? DurationSecs, string? ThumbnailKey, string StorageKey)>()
                 : (
                     await dbContext
                         .MediaItems.AsNoTracking()
@@ -1399,11 +1399,14 @@ public sealed class ProgramRepository(
                         {
                             m.Id,
                             m.Title,
+                            m.Description,
+                            m.Author,
                             m.DurationSecs,
                             m.ThumbnailKey,
+                            m.StorageKey,
                         })
                         .ToListAsync(ct)
-                ).ToDictionary(m => m.Id, m => (m.Title, m.DurationSecs, m.ThumbnailKey));
+                ).ToDictionary(m => m.Id, m => (m.Title, m.Description, m.Author, m.DurationSecs, m.ThumbnailKey, m.StorageKey));
 
         var fallbackMediaByTask = fallbackByTask
             .Where(f => f.MediaId.HasValue)
@@ -1426,25 +1429,122 @@ public sealed class ProgramRepository(
         // Pre-cargar nombres de plan/rutina para el contenido del snapshot
         // (anti N+1: batch por IDs resueltos).
         string? resolvedPlanName = null;
+        int? resolvedCalorieTarget = null;
+        decimal? resolvedProteinTarget = null;
+        decimal? resolvedCarbsTarget = null;
+        decimal? resolvedFatTarget = null;
+        decimal? resolvedFiberTarget = null;
+        IReadOnlyList<NutritionMealDto>? resolvedMeals = null;
+
         string? resolvedRoutineName = null;
+        IReadOnlyList<ExerciseItemDto>? resolvedExercises = null;
+
         if (contentResolution is { })
         {
             if (contentResolution.NutritionPlanId is { } planId)
             {
-                resolvedPlanName = await dbContext
+                var dayNumber = contentResolution.NutritionPlanDayNumber ?? 1;
+
+                var planData = await dbContext
                     .NutritionPlans.AsNoTracking()
                     .Where(p => p.Id == planId)
-                    .Select(p => (string?)p.Name)
+                    .Select(p => new
+                    {
+                        p.Name,
+                        p.DailyCalorieTarget,
+                        p.DailyProteinTarget,
+                        p.DailyCarbsTarget,
+                        p.DailyFatTarget,
+                        p.DailyFiberTarget,
+                        Meals = dbContext.NutritionPlanDays
+                            .AsNoTracking()
+                            .Where(d => d.PlanId == planId && d.DayNumber == dayNumber)
+                            .OrderBy(d => d.SortOrder)
+                            .Select(d => new NutritionMealDto(
+                                d.MealType.ToString(),
+                                d.Description,
+                                d.Foods,
+                                d.Calories,
+                                d.ProteinG,
+                                d.CarbsG,
+                                d.FatG,
+                                d.FiberG,
+                                d.WaterMl,
+                                d.Notes,
+                                d.SortOrder
+                            ))
+                            .ToList()
+                    })
                     .FirstOrDefaultAsync(ct);
+
+                resolvedPlanName = planData?.Name;
+                resolvedCalorieTarget = planData?.DailyCalorieTarget;
+                resolvedProteinTarget = planData?.DailyProteinTarget;
+                resolvedCarbsTarget = planData?.DailyCarbsTarget;
+                resolvedFatTarget = planData?.DailyFatTarget;
+                resolvedFiberTarget = planData?.DailyFiberTarget;
+                resolvedMeals = planData?.Meals;
             }
             if (contentResolution.ExerciseRoutineId is { } routineId)
             {
-                resolvedRoutineName = await dbContext
+                var routineData = await dbContext
                     .ExerciseRoutines.AsNoTracking()
                     .Where(r => r.Id == routineId)
-                    .Select(r => (string?)r.Name)
+                    .Select(r => new
+                    {
+                        r.Name,
+                        Exercises = r.Exercises
+                            .OrderBy(e => e.SortOrder)
+                            .Select(e => new ExerciseItemDto(
+                                e.Name,
+                                e.Description,
+                                e.Sets,
+                                e.Repetitions,
+                                e.DurationSecs,
+                                e.RestSeconds,
+                                e.TargetMuscle,
+                                e.Equipment,
+                                e.Tips,
+                                e.SortOrder
+                            ))
+                            .ToList()
+                    })
                     .FirstOrDefaultAsync(ct);
+
+                resolvedRoutineName = routineData?.Name;
+                resolvedExercises = routineData?.Exercises;
             }
+        }
+
+        RecentVitalsDto? recentVitals = null;
+        var latestVital = await dbContext
+            .VitalSigns.AsNoTracking()
+            .Where(v => v.PatientId == row.PatientId)
+            .OrderByDescending(v => v.MeasuredAt)
+            .Select(v => new
+            {
+                v.HeartRate,
+                v.Systolic,
+                v.Diastolic,
+                v.O2Saturation,
+                v.WeightKg,
+                v.TemperatureC,
+                v.MeasuredAt,
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (latestVital is not null)
+        {
+            recentVitals = new RecentVitalsDto(
+                HeartRate: latestVital.HeartRate,
+                Systolic: latestVital.Systolic,
+                Diastolic: latestVital.Diastolic,
+                O2Saturation: latestVital.O2Saturation,
+                Glucose: null,
+                WeightKg: latestVital.WeightKg,
+                TemperatureC: latestVital.TemperatureC,
+                RecordedAt: latestVital.MeasuredAt
+            );
         }
 
         var checkin = await dbContext
@@ -1476,28 +1576,40 @@ public sealed class ProgramRepository(
 
                 if (taskCode == TaskCode.podcast)
                 {
-                    // Podcast: contenido multimedia existente (sin cambios).
-                    if (done?.MediaId is { } mediaId)
+                    var activeMediaId = done?.MediaId ?? (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fbId) ? fbId : (Guid?)null);
+                    if (activeMediaId.HasValue && mediaById.TryGetValue(activeMediaId.Value, out var media))
                     {
-                        content = mediaById.TryGetValue(mediaId, out var media)
-                            ? new TodayTaskContentDto(
-                                mediaId,
-                                media.Title,
-                                media.DurationSecs,
-                                media.ThumbnailKey
-                            )
-                            : new TodayTaskContentDto(mediaId, null, null, null);
+                        var duration = media.DurationSecs ?? 480;
+                        var defaultChapters = new List<PodcastChapterDto>
+                        {
+                            new(0, "Por qué la racha importa"),
+                            new((int)(duration * 0.2), "Insulina y horarios"),
+                            new((int)(duration * 0.55), "El circuito de 12 minutos"),
+                            new((int)(duration * 0.8), "Reto de hoy"),
+                        };
+                        var defaultTakeaways = new List<string>
+                        {
+                            "Misma hora · mismo ritual diario",
+                            "Proteína en cada comida principal",
+                            "12 minutos bastan si son diarios",
+                        };
+
+                        content = new TodayTaskContentDto(
+                            MediaId: activeMediaId.Value,
+                            Title: media.Title,
+                            DurationSecs: media.DurationSecs,
+                            ThumbnailUrl: media.ThumbnailKey,
+                            Author: media.Author,
+                            Description: media.Description,
+                            MediaUrl: media.StorageKey,
+                            Chapters: defaultChapters,
+                            Takeaways: defaultTakeaways,
+                            ContentUnavailable: false
+                        );
                     }
-                    else if (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fallbackMediaId))
+                    else if (activeMediaId.HasValue)
                     {
-                        content = mediaById.TryGetValue(fallbackMediaId, out var media)
-                            ? new TodayTaskContentDto(
-                                fallbackMediaId,
-                                media.Title,
-                                media.DurationSecs,
-                                media.ThumbnailKey
-                            )
-                            : new TodayTaskContentDto(fallbackMediaId, null, null, null);
+                        content = new TodayTaskContentDto(activeMediaId.Value, null, null, null);
                     }
                 }
                 else if (taskCode == TaskCode.nut)
@@ -1513,6 +1625,12 @@ public sealed class ProgramRepository(
                             NutritionPlanId: planId,
                             NutritionPlanName: resolvedPlanName,
                             NutritionPlanDayNumber: contentResolution.NutritionPlanDayNumber,
+                            DailyCalorieTarget: resolvedCalorieTarget,
+                            DailyProteinTarget: resolvedProteinTarget,
+                            DailyCarbsTarget: resolvedCarbsTarget,
+                            DailyFatTarget: resolvedFatTarget,
+                            DailyFiberTarget: resolvedFiberTarget,
+                            NutritionMeals: resolvedMeals,
                             ExerciseRoutineId: null,
                             ExerciseRoutineName: null,
                             ContentUnavailable: false
@@ -1546,7 +1664,8 @@ public sealed class ProgramRepository(
                             NutritionPlanDayNumber: null,
                             ExerciseRoutineId: routineId,
                             ExerciseRoutineName: resolvedRoutineName,
-                            ContentUnavailable: false
+                            ContentUnavailable: false,
+                            Exercises: resolvedExercises
                         );
                     }
                     else
@@ -1561,6 +1680,18 @@ public sealed class ProgramRepository(
                             ContentUnavailable: true
                         );
                     }
+                }
+
+                else if (taskCode == TaskCode.vitals)
+                {
+                    content = new TodayTaskContentDto(
+                        MediaId: null,
+                        Title: null,
+                        DurationSecs: null,
+                        ThumbnailUrl: null,
+                        RecentVitals: recentVitals,
+                        ContentUnavailable: false
+                    );
                 }
 
                 return new TodayTaskDto(
@@ -1606,6 +1737,62 @@ public sealed class ProgramRepository(
             ? new NbNextMilestoneDto(next.Days, next.BaseXp, next.Days - nbStreak)
             : null;
 
+        // Historial de 7 días del nutribiótico para la semana actual
+        var weekStart = week.WeekStartDateLocal;
+        var weekEnd = week.WeekEndDateLocal;
+        var nbCompletionsThisWeek = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .Where(c => c.EnrollmentId == enrollmentId
+                     && c.TaskCode == TaskCode.nutribiotico
+                     && c.LocalDate >= weekStart
+                     && c.LocalDate <= weekEnd)
+            .Select(c => c.LocalDate)
+            .ToListAsync(ct);
+
+        var nbCompletedDatesSet = nbCompletionsThisWeek.ToHashSet();
+        var nbWeekDays = new List<bool>(7);
+        for (var d = 0; d < 7; d++)
+        {
+            var date = weekStart.AddDays(d);
+            nbWeekDays.Add(nbCompletedDatesSet.Contains(date));
+        }
+
+        // Cofres de racha (módulo "cofres"): definiciones del catálogo
+        // STREAK_* (ordenadas por día) cruzadas con los otorgamientos reales
+        // del libro mayor (source_ref_type = 'streak_milestone'). XP mostrada:
+        // el monto real del libro mayor para cofres otorgados; base_xp de la
+        // regla activa (o fallback de semilla) para los pendientes. Dos
+        // queries indexadas adicionales, AsNoTracking; la lectura nunca
+        // escribe.
+        var streakRuleCodes = StreakMilestones.Select(m => m.RuleCode).ToList();
+        var streakRules = await dbContext
+            .XpRules.AsNoTracking()
+            .Where(r => streakRuleCodes.Contains(r.Code) && r.Active)
+            .ToDictionaryAsync(r => r.Code, r => r, ct);
+        var streakMilestoneGrants = await dbContext
+            .XpLedgerEntries.AsNoTracking()
+            .Where(x => x.EnrollmentId == enrollmentId
+                     && x.SourceRefType == StreakMilestoneSourceRefType)
+            .Select(x => new { x.Reason, x.Amount, x.AwardedAt })
+            .ToListAsync(ct);
+        var grantsByReason = streakMilestoneGrants
+            .GroupBy(x => x.Reason)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var streakChests = new List<StreakChestDto>(StreakMilestones.Count);
+        foreach (var milestone in StreakMilestones)
+        {
+            var catalogXp = streakRules.TryGetValue(milestone.RuleCode, out var rule)
+                && rule.BaseXp is { } ruleXp
+                ? ruleXp
+                : milestone.BaseXp;
+            streakChests.Add(
+                grantsByReason.TryGetValue(milestone.Reason, out var grant)
+                    ? new StreakChestDto(milestone.Day, grant.Amount, true, grant.AwardedAt)
+                    : new StreakChestDto(milestone.Day, catalogXp, false)
+            );
+        }
+
         return new ProgramSnapshotDto(
             enrollmentId,
             new ProgramSnapshotTemplateDto(
@@ -1636,10 +1823,12 @@ public sealed class ProgramRepository(
                 multiplierRemainingHours,
                 nbStreak,
                 nbLongestStreak,
-                nextNbMilestone
+                nextNbMilestone,
+                nbWeekDays
             ),
             nextMilestone,
-            calendar
+            calendar,
+            streakChests
         );
     }
 
@@ -2663,18 +2852,24 @@ public sealed class ProgramRepository(
     // ------------------------------------------------------- Hitos de racha + multiplicador (SPEC §16)
 
     /// <summary>
-    /// Tabla de hitos de racha (SPEC §16, B): día hito → razón del libro mayor
-    /// (= código de regla), regla del catálogo, XP base (semilla §14.2) y
+    /// Tabla de hitos de racha (SPEC §16, B + catálogo extendido del módulo
+    /// "cofres"): día hito → razón del libro mayor (= código de regla), regla
+    /// del catálogo, XP base (semilla §14.2 + extendido 14/30/75/100) y
     /// duración en horas del multiplicador x2 activado al alcanzarlo (0 = el
     /// hito no activa multiplicador). Día 7 → sin multiplicador; 11 → 24h;
-    /// 22 → 48h; 50 → 72h.
+    /// 22 → 48h; 50 → 72h. Los hitos extendidos (14/30/75/100) NUNCA activan
+    /// multiplicador.
     /// </summary>
     private static readonly IReadOnlyList<StreakMilestone> StreakMilestones =
     [
         new(7, XpReason.STREAK_7, XpRuleCodes.Streak7, 100, 0),
         new(11, XpReason.STREAK_11, XpRuleCodes.Streak11, 200, 24),
+        new(14, XpReason.STREAK_14, XpRuleCodes.Streak14, 300, 0),
         new(22, XpReason.STREAK_22, XpRuleCodes.Streak22, 500, 48),
+        new(30, XpReason.STREAK_30, XpRuleCodes.Streak30, 800, 0),
         new(50, XpReason.STREAK_50, XpRuleCodes.Streak50, 1500, 72),
+        new(75, XpReason.STREAK_75, XpRuleCodes.Streak75, 2500, 0),
+        new(100, XpReason.STREAK_100, XpRuleCodes.Streak100, 5000, 0),
     ];
 
     /// <summary>Hito de racha cuyo día coincide exactamente con la racha actual (null si no es hito).</summary>
@@ -3051,6 +3246,7 @@ public sealed class ProgramRepository(
                 sort_order = d.SortOrder,
                 routine_id = d.RoutineId,
                 nutrition_plan_id = d.NutritionPlanId,
+                media_id = d.MediaId,
             })
         );
 
@@ -3079,6 +3275,12 @@ public sealed class ProgramRepository(
                 && Guid.TryParse(nProp.GetString(), out var nGuid)
                     ? nGuid
                     : null;
+            Guid? mediaId =
+                item.TryGetProperty("media_id", out var mProp)
+                && mProp.ValueKind == JsonValueKind.String
+                && Guid.TryParse(mProp.GetString(), out var mGuid)
+                    ? mGuid
+                    : null;
 
             result.Add(
                 new SnapshotTask(
@@ -3087,7 +3289,8 @@ public sealed class ProgramRepository(
                     item.GetProperty("points").GetInt32(),
                     item.GetProperty("sort_order").GetInt32(),
                     routineId,
-                    nutPlanId
+                    nutPlanId,
+                    mediaId
                 )
             );
         }
@@ -6556,7 +6759,10 @@ public sealed class ProgramRepository(
                     d.Weekday,
                     d.TaskCode.ToString(),
                     d.Points,
-                    d.SortOrder
+                    d.SortOrder,
+                    d.RoutineId,
+                    d.NutritionPlanId,
+                    d.MediaId
                 ))
                 .ToList();
         }
@@ -6741,6 +6947,23 @@ public sealed class ProgramRepository(
                         }
                     }
                 }
+                else if (string.Equals(taskCode, "podcast", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (task.MediaId is { } mId)
+                    {
+                        contentRefId = mId;
+                        var m = await dbContext
+                            .MediaItems.AsNoTracking()
+                            .Where(x => x.Id == mId)
+                            .Select(x => new { x.Title, x.Author })
+                            .FirstOrDefaultAsync(ct);
+                        if (m is not null)
+                        {
+                            contentName = m.Title;
+                            detailText = m.Author;
+                        }
+                    }
+                }
 
                 dayTasks.Add(
                     new EnrollmentWeekTaskDto(
@@ -6817,7 +7040,8 @@ public sealed class ProgramRepository(
         int Points,
         int SortOrder,
         Guid? RoutineId = null,
-        Guid? NutritionPlanId = null
+        Guid? NutritionPlanId = null,
+        Guid? MediaId = null
     );
 
     // ===================== ERP Gamificación (SPEC §23) =====================

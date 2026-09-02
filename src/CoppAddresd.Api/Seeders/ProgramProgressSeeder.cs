@@ -273,8 +273,12 @@ private async Task SeedXpRulesAsync(CancellationToken ct)
         // --- Racha: hitos (sin otorgamiento automático en el MVP actual) ---
         new XpRuleSeed(XpRuleCodes.Streak7, "Hito de racha 7 días", "streak", 100, 1, 1),
         new XpRuleSeed(XpRuleCodes.Streak11, "Hito de racha 11 días", "streak", 200, 1, 1),
+        new XpRuleSeed(XpRuleCodes.Streak14, "Hito de racha 14 días", "streak", 300, 1, 1),
         new XpRuleSeed(XpRuleCodes.Streak22, "Hito de racha 22 días", "streak", 500, 1, 1),
+        new XpRuleSeed(XpRuleCodes.Streak30, "Hito de racha 30 días", "streak", 800, 1, 1),
         new XpRuleSeed(XpRuleCodes.Streak50, "Hito de racha 50 días", "streak", 1500, 1, 1),
+        new XpRuleSeed(XpRuleCodes.Streak75, "Hito de racha 75 días", "streak", 2500, 1, 1),
+        new XpRuleSeed(XpRuleCodes.Streak100, "Hito de racha 100 días", "streak", 5000, 1, 1),
         // --- Clínica (SPEC §15): se otorgan en POST /scores/calculate ---
         // Sin topes por día/semana: una mejoría por período clínico (el dedupe
         // parcial de xp_ledger (clinical_period, health_score, reason) limita a
