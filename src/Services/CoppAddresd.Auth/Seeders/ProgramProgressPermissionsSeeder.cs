@@ -27,6 +27,7 @@ public static class ProgramProgressPermissionsSeeder
         "Program.Enroll",
         "Program.Adapt",
         "Program.ForceComplete",
+        "Program.Export",
     ];
 
     public static async Task SeedAsync(AuthDbContext dbContext, ILogger logger, CancellationToken ct = default)

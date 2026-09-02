@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.BackgroundJobs;
 using CoppAddresd.Api.Extensions;
 using CoppAddresd.Api.Middleware;
 using CoppAddresd.Api.Security;
@@ -62,6 +63,11 @@ builder.Services.AddHostedService<ProgramProgressSeeder>();
 
 // Seed de rutinas de ejercicio base para el configurador de contenido del ERP.
 builder.Services.AddHostedService<ExerciseRoutineSeeder>();
+
+// Reconciliación nocturna de rachas (B12, T-28): job diario configurable vía
+// Program:Reconciliation (Enabled/HourUtc); disparo manual en
+// POST /program/maintenance/reconcile-streaks.
+builder.Services.AddHostedService<ReconcileStreakHostedService>();
 
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore

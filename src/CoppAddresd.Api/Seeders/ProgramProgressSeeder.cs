@@ -14,7 +14,7 @@ namespace CoppAddresd.Api.Seeders;
 /// decisión 16; UPSERT idempotente por <c>dimension</c>) y las 24 reglas por
 /// defecto de <c>app.xp_rules</c> (11 de adherencia/racha — SPEC §14.2,
 /// decisión 20 — + 4 clínicas — SPEC §15 — + 4 de nutrición granular —
-/// SPEC §18 — + 5 de la racha propia del nutribiótico — SPEC §19; UPSERT
+/// SPEC §18 — + 5 de la racha propia del nutracéutico — SPEC §19; UPSERT
 /// idempotente por <c>code</c>).
 ///
 /// Idempotente por <c>program_templates.code</c> (configurable vía
@@ -45,7 +45,7 @@ public sealed class ProgramProgressSeeder(
         new(TaskCode.vitals, 120),
         new(TaskCode.nut, 150),
         new(TaskCode.ejercicio, 150),
-        new(TaskCode.nutribiotico, 80),
+        new(TaskCode.nutraceutico, 80),
         new(TaskCode.emocional, 120),
     ];
 
@@ -151,10 +151,10 @@ public sealed class ProgramProgressSeeder(
             // Umbral de racha y tareas esenciales (SPEC §17, A): 1 tarea por día
             // mantiene la racha (default) y el rescate con congelamiento exige
             // una tarea esencial (referencia ADRED: nut / ejercicio /
-            // nutribiotico). Solo se fijan en el create: si la plantilla ya
+            // nutraceutico). Solo se fijan en el create: si la plantilla ya
             // existe, el seed no toca su configuración (idempotencia).
             StreakMinTasks = 1,
-            EssentialTaskCodes = ["nut", "ejercicio", "nutribiotico"],
+            EssentialTaskCodes = ["nut", "ejercicio", "nutraceutico"],
         };
 
         for (short weekday = 1; weekday <= 7; weekday++)
@@ -251,7 +251,7 @@ public sealed class ProgramProgressSeeder(
 /// nutrición granular (categoría <c>nutrition</c>, SPEC §18) alimentan
 /// <c>POST /nutrition/log</c> y los premios semanales de <c>/calculate</c>.
 /// Las 5 reglas <c>NB_STREAK_*</c> (categoría <c>nutriobiotic</c>, SPEC §19)
-/// premian los hitos de la racha propia de la tarea nutribiotico.
+/// premian los hitos de la racha propia de la tarea nutraceutico.
 /// Las 7 reglas de intervenciones (categoría <c>intervention</c>, SPEC §22,
 /// "Paso 7d") premian los eventos del ciclo de vida de las intervenciones
 /// derivadas de debilidades: evaluación, aceptación, teleconsulta
@@ -266,7 +266,7 @@ private async Task SeedXpRulesAsync(CancellationToken ct)
         new XpRuleSeed(XpRuleCodes.TaskVitals, "Tarea signos vitales", "adherence", null, 1, 7),
         new XpRuleSeed(XpRuleCodes.TaskNut, "Tarea plan nutricional", "adherence", null, 1, 7),
         new XpRuleSeed(XpRuleCodes.TaskEjercicio, "Tarea ejercicio", "adherence", null, 1, 7),
-        new XpRuleSeed(XpRuleCodes.TaskNutribiotico, "Tarea nutribiótico", "adherence", null, 1, 7),
+        new XpRuleSeed(XpRuleCodes.TaskNutraceutico, "Tarea nutracéutico", "adherence", null, 1, 7),
         new XpRuleSeed(XpRuleCodes.TaskEmocional, "Tarea evaluación emocional", "adherence", null, 1, 7),
         // --- Adherencia: bonus de día perfecto ---
         new XpRuleSeed(XpRuleCodes.DayBonus, "Bonus día perfecto", "adherence", 50, 1, 7),
@@ -293,16 +293,16 @@ private async Task SeedXpRulesAsync(CancellationToken ct)
         new XpRuleSeed(XpRuleCodes.NutritionHydration, "Hidratación registrada (XP granular)", "nutrition", 5, 1, 7),
         new XpRuleSeed(XpRuleCodes.NutritionWeek85, "Adherencia nutricional semanal ≥ 85%", "nutrition", 75, 1, 1),
         new XpRuleSeed(XpRuleCodes.NutritionRecovery, "Recuperación nutricional (+20pp vs período anterior)", "nutrition", 50, 1, 1),
-        // --- Racha propia del nutribiótico (SPEC §19, B): hitos de la racha
-        // CONSECUTIVA de la tarea nutribiotico, independiente de la racha
+        // --- Racha propia del nutracéutico (SPEC §19, B): hitos de la racha
+        // CONSECUTIVA de la tarea nutraceutico, independiente de la racha
         // general (un día perdido la rompe; los congelamientos NO la protegen).
         // Se otorgan en el camino de completación de la tarea (solo primera
         // escritura), con el multiplicador del paciente y topes 1/día y 1/semana.
-        new XpRuleSeed(XpRuleCodes.NbStreak7, "Hito racha nutribiótico 7 días", "nutriobiotic", 50, 1, 1),
-        new XpRuleSeed(XpRuleCodes.NbStreak14, "Hito racha nutribiótico 14 días", "nutriobiotic", 100, 1, 1),
-        new XpRuleSeed(XpRuleCodes.NbStreak30, "Hito racha nutribiótico 30 días", "nutriobiotic", 250, 1, 1),
-        new XpRuleSeed(XpRuleCodes.NbStreak60, "Hito racha nutribiótico 60 días", "nutriobiotic", 500, 1, 1),
-        new XpRuleSeed(XpRuleCodes.NbStreak90, "Hito racha nutribiótico 90 días", "nutriobiotic", 1000, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak7, "Hito racha nutracéutico 7 días", "nutriobiotic", 50, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak14, "Hito racha nutracéutico 14 días", "nutriobiotic", 100, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak30, "Hito racha nutracéutico 30 días", "nutriobiotic", 250, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak60, "Hito racha nutracéutico 60 días", "nutriobiotic", 500, 1, 1),
+        new XpRuleSeed(XpRuleCodes.NbStreak90, "Hito racha nutracéutico 90 días", "nutriobiotic", 1000, 1, 1),
         // --- Intervenciones (SPEC §22, "Paso 7d"): XP por eventos del ciclo
         // de vida de las intervenciones derivadas de debilidades. Se otorgan
         // por el camino del catálogo (§14.3) con dedupe parcial del libro
