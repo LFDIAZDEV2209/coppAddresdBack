@@ -53,6 +53,9 @@ public sealed class ClinicalMeasurementsSeeder(
         new("bmi", "Índice de masa corporal", "body_comp", "kg_m2"),
         new("body_fat", "Porcentaje de grasa corporal", "body_comp", "pct"),
         new("hba1c", "Hemoglobina glicosilada", "metabolic", "pct"),
+        new("waist", "Cintura", "body_comp", "cm"),
+        new("hip", "Cadera", "body_comp", "cm"),
+        new("wrist", "Muñeca", "body_comp", "cm"),
     ];
 
     private static readonly IReadOnlyList<ReferenceRangeSeed> ReferenceRanges =
