@@ -1,4 +1,4 @@
-# MOBILE-INTEGRATION — Program Progress Module
+﻿# MOBILE-INTEGRATION — Program Progress Module
 
 > Concrete plan for connecting the `antares-paciente` mobile app to the
 > backend program-progress endpoints. Extends [`PLAN.md`](./PLAN.md) (master

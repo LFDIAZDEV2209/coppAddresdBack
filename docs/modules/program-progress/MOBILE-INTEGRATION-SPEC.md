@@ -1,4 +1,4 @@
-# Especificación — Integración Móvil del Progreso del Programa
+﻿# Especificación — Integración Móvil del Progreso del Programa
 
 > Contrato ejecutable entre `antares-paciente` y los endpoints `/api/v1/program/*` de `coppAddresdBack`.
 > Define QUÉ debe hacer la app y QUÉ no debe asumir. El backend es la fuente de verdad de rutas, DTOs y
@@ -38,7 +38,7 @@
 | # | Requisito |
 |---|-----------|
 | R2.1 | La app DEBE renderizar el snapshot con `todayTasks[]` (taskCode/title/short/points/status/content), `xp` (balance/level/nextLevelAt), `streak` (current/longest/freezesRemaining/multiplierActive/multiplierEndsAt/multiplierRemainingHours), `todayPoints`, `todayPointsMax`, `nextMilestoneDays` y `template.currentWeekNumber`. |
-| R2.2 | `tasks/complete` DEBE enviar `enrollmentId` y `todayLocalDate` tomados del snapshot (nunca de input del usuario) y `taskCode` del catálogo (`podcast`\|`vitals`\|`nut`\|`ejercicio`\|`nutribiotico`\|`emocional`); `clientRequestId` es obligatorio. |
+| R2.2 | `tasks/complete` DEBE enviar `enrollmentId` y `todayLocalDate` tomados del snapshot (nunca de input del usuario) y `taskCode` del catálogo (`podcast`\|`vitals`\|`nut`\|`ejercicio`\|`nutraceutico`\|`emocional`); `clientRequestId` es obligatorio. |
 | R2.3 | `calendar` DEBE solicitar un rango ≤ 92 días; `StreakView` usa `days[].isPerfectDay` para el mapa de consistencia. |
 | R2.4 | `path` DEBE renderizar nodos por estado `Locked`/`Active`/`Completed` y `isPerfectWeek`. |
 | R2.5 | `scores` DEBE alimentar `EvolutionView` (Health + Transformation con breakdown por pilar); la UI DEBE etiquetarlos como "Índice" (no XP) y mostrar la fecha de cálculo. |
