@@ -12,7 +12,7 @@ public static class XpRuleCodes
     public const string TaskVitals = "TASK_VITALS";
     public const string TaskNut = "TASK_NUT";
     public const string TaskEjercicio = "TASK_EJERCICIO";
-    public const string TaskNutribiotico = "TASK_NUTRIBIOTICO";
+    public const string TaskNutraceutico = "TASK_NUTRACEUTICO";
     public const string TaskEmocional = "TASK_EMOCIONAL";
     public const string DayBonus = "DAY_BONUS";
     public const string Streak7 = "STREAK_7";
@@ -38,8 +38,8 @@ public static class XpRuleCodes
     public const string NutritionWeek85 = "NUTRITION_WEEK_85";
     public const string NutritionRecovery = "NUTRITION_RECOVERY";
 
-    // --- Racha propia del nutribiótico (SPEC §19, B, "Paso 7a"): hitos de la
-    // racha CONSECUTIVA de la tarea nutribiotico (independiente de la racha
+    // --- Racha propia del nutracéutico (SPEC §19, B, "Paso 7a"): hitos de la
+    // racha CONSECUTIVA de la tarea nutraceutico (independiente de la racha
     // general y de los congelamientos). Los nombres coinciden con los
     // miembros de <see cref="XpReason"/> (dedupe parcial por reason),
     // precedente CLINICAL_*/NUTRITION_*. Cada corrida de 7/14/... días

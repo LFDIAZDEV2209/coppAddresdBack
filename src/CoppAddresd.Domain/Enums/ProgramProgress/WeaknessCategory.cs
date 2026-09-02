@@ -25,7 +25,7 @@ public enum WeaknessCategory
     /// <summary>Adherencia general al programa (racha, semana).</summary>
     adherence = 5,
 
-    /// <summary>Suplemento / nutribiótico (constancia de la toma).</summary>
+    /// <summary>Suplemento / nutracéutico (constancia de la toma).</summary>
     supplement = 6,
 
     /// <summary>Sueño (horas promedio).</summary>
