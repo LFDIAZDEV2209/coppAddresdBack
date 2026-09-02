@@ -149,7 +149,7 @@ def seed_patient_profile(
             INSERT INTO app.patient_profiles (
                 id, first_name, last_name, document_number, email,
                 date_of_birth, status, created_by, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, 'active', %s, now())
+            ) VALUES (%s, %s, %s, %s, %s, %s, 'Activo', %s, now())
             ON CONFLICT (id) DO NOTHING
             """,
             (
