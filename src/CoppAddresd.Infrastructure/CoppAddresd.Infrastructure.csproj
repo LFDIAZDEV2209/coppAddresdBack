@@ -18,6 +18,8 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <!-- Cliente RESP compatible con Valkey local y ElastiCache for Valkey (prod). -->
     <PackageReference Include="StackExchange.Redis" Version="2.8.58" />
+    <!-- Twilio SDK para SMS y voz (SOS emergency dispatch). -->
+    <PackageReference Include="Twilio" Version="7.14.9" />
   </ItemGroup>
 
   <ItemGroup>
