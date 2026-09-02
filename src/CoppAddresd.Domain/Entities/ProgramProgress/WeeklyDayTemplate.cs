@@ -16,7 +16,7 @@ public sealed class WeeklyDayTemplate
     /// <summary>Día de la semana: 1 = lunes … 7 = domingo (mismo índice que NutritionPlanDay).</summary>
     public short Weekday { get; set; }
 
-    /// <summary>Código de tarea: podcast, vitals, nut, ejercicio, nutribiotico, emocional.</summary>
+    /// <summary>Código de tarea: podcast, vitals, nut, ejercicio, nutraceutico, emocional.</summary>
     public TaskCode TaskCode { get; set; }
 
     /// <summary>Puntos base que otorga esta tarea.</summary>
@@ -31,6 +31,12 @@ public sealed class WeeklyDayTemplate
     /// (SPEC §4.4). Nullable; el seeder lo puebla para el task <c>podcast</c>.
     /// </summary>
     public Guid? MediaId { get; set; }
+
+    /// <summary>Rutina de ejercicio específica para este día (opcional).</summary>
+    public Guid? RoutineId { get; set; }
+
+    /// <summary>Plan nutricional específico para este día (opcional).</summary>
+    public Guid? NutritionPlanId { get; set; }
 
     /// <summary>Usuario de <c>auth.users</c> que creó la fila (auditoría, sin navegación EF).</summary>
     public Guid? CreatedBy { get; set; }

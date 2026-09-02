@@ -73,4 +73,15 @@ public interface IWellnessRepository
     Task<NutritionPlanAssignment> AddPlanAssignmentAsync(NutritionPlanAssignment assignment, CancellationToken ct = default);
     Task UpdatePlanAssignmentAsync(NutritionPlanAssignment assignment, CancellationToken ct = default);
     Task DeletePlanAssignmentAsync(NutritionPlanAssignment assignment, CancellationToken ct = default);
+
+    /// <summary>
+    /// Ejecuta la operación dentro de UNA transacción explícita
+    /// (convención §6.13: <c>CreateExecutionStrategy().ExecuteAsync</c> +
+    /// BeginTransaction + commit/rollback). Permite componer varios upserts del
+    /// repositorio (que persisten cada uno con su <c>SaveChanges</c>) en una
+    /// única unidad atómica: todos los <c>SaveChanges</c> internos se alistan en
+    /// la transacción ambiente. Un fallo → rollback total y la excepción se
+    /// propaga.
+    /// </summary>
+    Task<T> ExecuteInTransactionAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken ct = default);
 }

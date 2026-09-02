@@ -42,6 +42,7 @@ public static class PermissionCodes
     public const string ProgramEnroll = "Program.Enroll";
     public const string ProgramAdapt = "Program.Adapt";
     public const string ProgramForceComplete = "Program.ForceComplete";
+    public const string ProgramExport = "Program.Export";
 
     // Tests de Salud (módulo HealthTests).
     public const string HealthTestsView = "HealthTests.View";

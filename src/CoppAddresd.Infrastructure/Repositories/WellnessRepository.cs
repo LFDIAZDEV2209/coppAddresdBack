@@ -25,17 +25,24 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
             .Include(x => x.Patient)
             .AsQueryable();
 
-        if (isTemplate.HasValue)
-            query = query.Where(x => x.IsTemplate == isTemplate.Value);
+        if (patientId.HasValue && !isTemplate.HasValue)
+        {
+            query = query.Where(x => x.IsTemplate || x.PatientId == patientId.Value);
+        }
+        else
+        {
+            if (isTemplate.HasValue)
+                query = query.Where(x => x.IsTemplate == isTemplate.Value);
+
+            if (patientId.HasValue)
+                query = query.Where(x => x.PatientId == patientId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(x => x.Name.Contains(search));
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(x => x.Status.ToString() == status);
-
-        if (patientId.HasValue)
-            query = query.Where(x => x.PatientId == patientId.Value);
 
         var total = await query.CountAsync(ct);
 
@@ -367,5 +374,27 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
     {
         dbContext.NutritionPlanAssignments.Remove(assignment);
         await dbContext.SaveChangesAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<T> ExecuteInTransactionAsync<T>(
+        Func<CancellationToken, Task<T>> operation, CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var result = await operation(ct);
+                await transaction.CommitAsync(ct);
+                return result;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
     }
 }

@@ -1,4 +1,4 @@
-# TASKS — Program Progress Module
+﻿# TASKS — Program Progress Module
 
 > Dependency-ordered implementation backlog for the 83-week patient program.
 > Source of truth: [`PLAN.md`](./PLAN.md) (master plan) + [`SPEC.md`](./SPEC.md)
@@ -10,13 +10,55 @@
 
 ## 0. Phases & batches at a glance
 
-| Phase | Batches | Exit criteria |
-|-------|---------|---------------|
-| **P0 — Plan** | (this file + SPEC + PLAN) | Reviewer sign-off (Gate G1) |
-| **P1 — MVP** | B1 Foundations · B2 Seeder · B3 Repository · B4 Application · B5 API · B5-S Health & Transformation Score engine · B5-R XP Rules catalog · B5-C Clinical XP · B5-M Streak multiplier (P1.5) · B5-T Streak threshold & essentials (P1.5) · B5-N Granular nutrition XP (P1.5) · B5-NB Nutriobiótico streak (P1.5) · B5-NOT Gamified notifications (P1.5) · B5-WK Weakness detection (P1.5) · B5-IV Interventions & tele XP (P1.5) · B6 Mobile Slice 1+2 · B7 ERP Phase-1 | All P1 acceptance scenarios AC-01..AC-15 pass; P1.5 acceptance scenarios AC-19..AC-22 pass; XP rules acceptance AC-23/AC-24 pass (manual, B5-R); clinical XP acceptance AC-25..AC-27 pass (manual, B5-C); streak multiplier acceptance AC-28..AC-30 pass (manual, B5-M); streak threshold & essentials acceptance AC-31/AC-32 pass (manual, B5-T); granular nutrition acceptance AC-33..AC-36 pass (manual, B5-N); nutribiótico streak acceptance AC-37..AC-39 pass (manual, B5-NB); gamified notifications acceptance AC-40..AC-42 pass (manual, B5-NOT); weakness detection acceptance AC-43..AC-45 pass (manual, B5-WK); intervention acceptance AC-46..AC-49 pass (manual, B5-IV); Gate G2 review before apply |
-| **P2 — Adaptation** | B8 Mobile Slice 3+4 · B9 Adaptation engine · B10 ERP Adaptation queue · B11 Media rotation | AC-16/AC-17 pass; clinician can approve and the next week reflects new content |
-| **P3 — Enhancements** | B12 Streak rescue audit · B13 Bulk enrollment · B14 CSV export · B15 i18n | All P2 acceptance scenarios pass; locale parity in EN/ES |
-| **Gate G3 — Final verification** | B16 Verification & observability | All SPEC §10.2 acceptance scenarios pass; mobile demo continuity proven |
+| Phase | Batches | Status | Exit criteria |
+|-------|---------|--------|---------------|
+| **P0 — Plan** | (this file + SPEC + PLAN) | ✅ **COMPLETED** | Reviewer sign-off (Gate G1) |
+| **P1 — MVP Backend Core** | B1 Foundations · B2 Seeder · B3 Repository · B4 Application · B5 API | ✅ **COMPLETED** | 12 EF Core migrations, 454 unit tests passing |
+| **P1.5 — Gamification & Clinical Engines** | B5-S Scores · B5-R XP Rules · B5-C Clinical XP · B5-M Streak Multipliers · B5-T Streak Essentials · B5-N Nutrition XP · B5-NB Nutriobiótico Streak · B5-NOT Notifications · B5-WK Weaknesses · B5-IV Interventions | ✅ **COMPLETED** | Score engine, multi-streak, XP catalog, weakness rules & notification persistence implemented |
+| **P1.5 / B7 — ERP Admin Frontend** | Templates, Enrollments, Program Content (`/program/content`), `WeekTasksDialog` (hybrid 7-day Read / Tabbed Edit mode) | ✅ **COMPLETED** | `coppaddresd-front` full UI, per-day routine pickers (`routineId`), 1-click day-copy shortcuts |
+| **P2 — Adaptation & AI** | B8 Mobile Slice 3+4 · B9 Adaptation engine · B10 ERP Adaptation queue · B11 Media rotation | ⏳ **PENDING** | AC-16/AC-17 pass; clinician can approve adaptation; LLM weekly assessment narrative |
+| **P3 — Enhancements** | B12 Streak rescue audit · B13 Bulk enrollment · B14 CSV export · B15 i18n | ⏳ **PENDING** | All P2 acceptance scenarios pass; locale parity in EN/ES |
+| **Gate G3 — Final verification** | B16 Verification & observability | ⏳ **PENDING** | All SPEC §10.2 acceptance scenarios pass; mobile demo continuity proven |
+
+---
+
+### Implementation Status Checklist
+
+- [x] **P0: Planning & Specification**
+  - [x] Domain model, PostgreSQL schema isolation (`app.`), API contracts documented in SPEC.md/PLAN.md/TASKS.md.
+- [x] **P1: Backend MVP Core (`coppAddresdBack`)**
+  - [x] **B1: Foundations**: 11 Domain entities & enums created (`ProgramTemplate`, `ProgramEnrollment`, `ProgramWeek`, `TaskCompletion`, etc.).
+  - [x] **B2: Seeder & Auth**: 5 `Program.*` permissions seeded + `default-83w` 83-week template seeder.
+  - [x] **B3: Repository Layer**: `ProgramRepository` implemented with `FOR UPDATE` concurrency, snapshot jsonb, per-day task routine resolution (`RoutineId`, `NutritionPlanId`).
+  - [x] **B4: Application Layer**: MediatR CQRS commands, queries & FluentValidation for task completions, enrollment states, template management.
+  - [x] **B5: API Layer**: `ProgramController` endpoints mapped and secured.
+- [x] **P1.5: Advanced Clinical & Gamification Engines**
+  - [x] **B5-S**: Health & Transformation Score calculation engine (`app.health_scores`, `app.transformation_scores`).
+  - [x] **B5-R**: Dynamic `app.xp_rules` catalog & execution pipeline.
+  - [x] **B5-C**: Clinical improvement XP awarding with clinician validation gate.
+  - [x] **B5-M**: Streak milestone x2 multiplier engine (11/22/50 days).
+  - [x] **B5-T**: Configurable streak threshold & essential task checks (`nut`, `ejercicio`, `nutraceutico`).
+  - [x] **B5-N**: Granular nutrition XP (`app.habit_checks`) + 85% weekly adherence bonus.
+  - [x] **B5-NB**: Dedicated Nutriobiótico streak tracking (`nb_current_streak`) & milestone awards.
+  - [x] **B5-NOT**: Transactional notification logging (`app.notifications`) + FCM push client.
+  - [x] **B5-WK**: Deterministic weakness detection rule engine (`app.weaknesses`).
+  - [x] **B5-IV**: Telemedicine & clinical intervention XP tracking (`app.interventions`).
+- [x] **B7 / ERP Admin Frontend (`coppaddresd-front`)**
+  - [x] Templates page (`/program/templates`) & Template detail editor (`/program/templates/[id]`).
+  - [x] Enrollments page (`/program/enrollments`) with patient enrollment modal.
+  - [x] Program content page (`/program/content`): Weekly nutrition plan & exercise routine assignment table with clean Select labels (`textValue`).
+  - [x] `WeekTasksDialog`: Hybrid 7-day Read Mode (panorama completo de toda la semana) + Tabbed Day Edit Mode con selectores por día (`routineId`), puntos XP, eliminación/adición de tareas y botones de copia rápida (Lun-Vie, toda la semana).
+- [ ] **P2: Adaptation Engine & Mobile Live Sync** (see [`MOBILE-INTEGRATION.md`](./MOBILE-INTEGRATION.md) for full mobile integration plan)
+  - [ ] **B6 (Mobile Slice 1+2)**: T-16 `apiClient.ts` + service layer, **T-16b TanStack Query setup + hooks**, T-17 view wiring, T-18 `completeStep` mutation.
+  - [ ] **B8 (Mobile Slice 3+4)**: T-21 calendar integration, T-22 path/sendero integration.
+  - [ ] **B9**: Automated recommendation engine triggers.
+  - [ ] **B10**: ERP Adaptation queue UI panel.
+  - [ ] **AI Weekly Assessment**: LLM-driven narrative generation in `ai-service` (SPEC §21.5).
+- [ ] **P3: Enhancements**
+  - [x] **B12**: Streak reconciliation job (`ReconcileStreakJob` + hosted service nocturno + `POST /program/maintenance/reconcile-streaks`).
+  - [x] **B13**: Bulk patient enrollment (`POST /program/enrollments/bulk`, tope 100/request; dispatcher async diferido).
+  - [x] **B14**: CSV export (`GET /program/enrollments/export`, stream, permiso `Program.Export`).
+  - [ ] **B15**: i18n EN/ES localization parity (móvil, repo `antares-paciente`).
 
 ---
 
@@ -49,7 +91,7 @@
   - `src/CoppAddresd.Domain/Entities/ProgramProgress/EmotionalRecord.cs`
   - `src/CoppAddresd.Domain/Enums/ProgramProgress/ProgramEnrollmentStatus.cs`
   - `src/CoppAddresd.Domain/Enums/ProgramProgress/ProgramWeekStatus.cs`
-  - `src/CoppAddresd.Domain/Enums/ProgramProgress/TaskCode.cs` (string-backed enum, fixed values: `podcast`, `vitals`, `nut`, `ejercicio`, `nutribiotico`, `emocional`)
+  - `src/CoppAddresd.Domain/Enums/ProgramProgress/TaskCode.cs` (string-backed enum, fixed values: `podcast`, `vitals`, `nut`, `ejercicio`, `nutraceutico`, `emocional`)
   - `src/CoppAddresd.Domain/Enums/ProgramProgress/XpReason.cs`
   - `src/CoppAddresd.Domain/Enums/ProgramProgress/AdaptationKind.cs`
   - `src/CoppAddresd.Domain/Enums/ProgramProgress/AdaptationStatus.cs`
@@ -790,12 +832,12 @@
 - **Depends on**: T-54, T-56
 - **Objective**: Seed de la configuración de racha del template `default-83w` (solo en create) y mantener PLAN/SPEC/TASKS consistentes con el "Paso 5".
 - **Affected paths**:
-  - `src/CoppAddresd.Api/Seeders/ProgramProgressSeeder.cs` (`StreakMinTasks = 1`, `EssentialTaskCodes = ["nut","ejercicio","nutribiotico"]` en el create del template)
+  - `src/CoppAddresd.Api/Seeders/ProgramProgressSeeder.cs` (`StreakMinTasks = 1`, `EssentialTaskCodes = ["nut","ejercicio","nutraceutico"]` en el create del template)
   - `coppAddresdBack/docs/modules/program-progress/SPEC.md` (§17 + decisión 23 + AC-09 actualizado + AC-31/AC-32 + §3.1/§6.6/§7.1/§8.4)
   - `coppAddresdBack/docs/modules/program-progress/PLAN.md` (decisión 19 + phasing + riesgo)
   - `coppAddresdBack/docs/modules/program-progress/TASKS.md` (este batch)
 - **Implementation notes**: El seed solo fija la configuración al crear el template (idempotente por `code`): si la plantilla ya existe, no se toca su configuración. Logs: sin PHI (los códigos de tarea no son datos de paciente).
-- **Acceptance criteria**: Tras el restart (template nuevo), `SELECT streak_min_tasks, essential_task_codes FROM app.program_templates WHERE code = 'default-83w'` = `1` y `["nut","ejercicio","nutribiotico"]`; re-correr el seeder no pisa config de un template existente. Docs consistentes (`streak_min_tasks`, `essential_task_codes`, `B5-T`, `T-54..T-57`, `AC-32`, `AddProgramProgressStreakConfig`).
+- **Acceptance criteria**: Tras el restart (template nuevo), `SELECT streak_min_tasks, essential_task_codes FROM app.program_templates WHERE code = 'default-83w'` = `1` y `["nut","ejercicio","nutraceutico"]`; re-correr el seeder no pisa config de un template existente. Docs consistentes (`streak_min_tasks`, `essential_task_codes`, `B5-T`, `T-54..T-57`, `AC-32`, `AddProgramProgressStreakConfig`).
 - **Verification**: `dotnet build src/CoppAddresd.Api`; docs cross-check (grep de `streak_min_tasks`, `B5-T`, `AddProgramProgressStreakConfig`).
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
@@ -888,7 +930,7 @@
 
 ## Batch B5-NB — Nutriobiótico streak (P1.5, "Paso 7a")
 
-> Racha propia de la tarea `nutribiotico` (SPEC §19, decisión 25): la tarea
+> Racha propia de la tarea `nutraceutico` (SPEC §19, decisión 25): la tarea
 > mantiene su PROPIA racha consecutiva en `app.streak_states`
 > (`nb_current_streak`/`nb_longest_streak`/`nb_last_completed_date`),
 > independiente de la racha general y de los congelamientos (un día perdido la
@@ -904,7 +946,7 @@
 
 - **Phase**: P1.5
 - **Depends on**: T-50 (multiplicador/`multiplier_*` en `streak_states`), T-02 (EF conventions), T-03 (migration flow)
-- **Objective**: 3 columnas de racha propia del nutribiótico en `app.streak_states` (`nb_current_streak` SMALLINT NOT NULL default 0, `nb_longest_streak` SMALLINT NOT NULL default 0, `nb_last_completed_date` DATE NULL) + 5 miembros `NB_STREAK_*` en `XpReason` (16..20) y 5 constantes homónimas en `XpRuleCodes` + configuración EF + migración aditiva y reversible `AddProgramProgressNbStreak`.
+- **Objective**: 3 columnas de racha propia del nutracéutico en `app.streak_states` (`nb_current_streak` SMALLINT NOT NULL default 0, `nb_longest_streak` SMALLINT NOT NULL default 0, `nb_last_completed_date` DATE NULL) + 5 miembros `NB_STREAK_*` en `XpReason` (16..20) y 5 constantes homónimas en `XpRuleCodes` + configuración EF + migración aditiva y reversible `AddProgramProgressNbStreak`.
 - **Affected paths**:
   - `src/CoppAddresd.Domain/Entities/ProgramProgress/StreakState.cs` (3 propiedades `Nb*`)
   - `src/CoppAddresd.Domain/Enums/ProgramProgress/XpReason.cs` + `XpRuleCodes.cs` (5 miembros/constantes `NB_STREAK_*`)
@@ -919,7 +961,7 @@
 
 - **Phase**: P1.5
 - **Depends on**: T-62 (enums), T-45 (patrón del seeder `SeedXpRulesAsync`)
-- **Objective**: Seed idempotente de las 5 reglas de la racha del nutribiótico (SPEC §19.2): `NB_STREAK_7` (50), `NB_STREAK_14` (100), `NB_STREAK_30` (250), `NB_STREAK_60` (500), `NB_STREAK_90` (1000), categoría `nutriobiotic`, topes `max_per_day = 1`/`max_per_week = 1`.
+- **Objective**: Seed idempotente de las 5 reglas de la racha del nutracéutico (SPEC §19.2): `NB_STREAK_7` (50), `NB_STREAK_14` (100), `NB_STREAK_30` (250), `NB_STREAK_60` (500), `NB_STREAK_90` (1000), categoría `nutriobiotic`, topes `max_per_day = 1`/`max_per_week = 1`.
 - **Affected paths**:
   - `src/CoppAddresd.Api/Seeders/ProgramProgressSeeder.cs` (`SeedXpRulesAsync` + 5 reglas; comentarios de cabecera: 19 → 24 reglas)
 - **Implementation notes**: `ON CONFLICT (code) DO NOTHING` (regla existente nunca se pisa). Los nombres coinciden con los miembros de `XpReason` (dedupe por `reason`, precedente `CLINICAL_*`/`NUTRITION_*`).
@@ -927,11 +969,11 @@
 - **Verification**: `dotnet build src/CoppAddresd.Api` (temp OutputPath si un proceso de dev bloquea el bin); docs cross-check.
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
-### T-64 — Motor de la racha del nutribiótico + hitos en el camino de completación
+### T-64 — Motor de la racha del nutracéutico + hitos en el camino de completación
 
 - **Phase**: P1.5
 - **Depends on**: T-62 (schema), T-43 (`ResolveXpAwardAsync`), T-51 (patrón del motor de hitos)
-- **Objective**: `ProgramRepository.UpdateNbStreakAsync` + hook en `CompleteTaskCoreAsync` (solo primera escritura de `task_code = 'nutribiotico'`, dentro de la transacción FOR UPDATE): nuevo conteo (ayer → `+1`; cualquier otro caso → `1`), actualización vía `ExecuteUpdate` (`nb_current_streak`, `nb_longest_streak = MAX`, `nb_last_completed_date = hoy`) y, si el conteo cae exactamente en un hito (7/14/30/60/90), otorgamiento por el camino del catálogo (`rule_code = NB_STREAK_{days}`, `source_ref_type = 'nb_milestone'`, `source_ref_id = task_completions.id`, `reason = 'NB_STREAK_{days}'`) con el multiplicador del paciente. Topes 1/día y 1/semana: un tope alcanzado omite el hito (nunca rompe la completación). NO toca la racha general, el día perfecto ni `TASK_NUTRIBIOTICO`.
+- **Objective**: `ProgramRepository.UpdateNbStreakAsync` + hook en `CompleteTaskCoreAsync` (solo primera escritura de `task_code = 'nutraceutico'`, dentro de la transacción FOR UPDATE): nuevo conteo (ayer → `+1`; cualquier otro caso → `1`), actualización vía `ExecuteUpdate` (`nb_current_streak`, `nb_longest_streak = MAX`, `nb_last_completed_date = hoy`) y, si el conteo cae exactamente en un hito (7/14/30/60/90), otorgamiento por el camino del catálogo (`rule_code = NB_STREAK_{days}`, `source_ref_type = 'nb_milestone'`, `source_ref_id = task_completions.id`, `reason = 'NB_STREAK_{days}'`) con el multiplicador del paciente. Topes 1/día y 1/semana: un tope alcanzado omite el hito (nunca rompe la completación). NO toca la racha general, el día perfecto ni `TASK_NUTRACEUTICO`.
 - **Affected paths**:
   - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`UpdateNbStreakAsync`, `NbMilestones`, `FindNbMilestone`, `FindNextNbMilestone`, hook en `CompleteTaskCoreAsync`)
 - **Implementation notes**: El dedupe parcial usa `source_ref_id = task_completions.id` (la completación que dispara el hito, única por corrida) para que cada corrida nueva RE-OTORGUE su hito (AC-39) sin colisionar con la corrida anterior (a diferencia de los hitos generales, SPEC §16, una vez por inscripción). `ResolveXpAwardAsync` puede lanzar `BusinessRuleViolationException` (XP_DAILY_LIMIT_REACHED/XP_WEEKLY_LIMIT_REACHED): se captura SOLO esa excepción y se omite el hito.
@@ -961,7 +1003,7 @@
 
 > Notificaciones gamificadas (SPEC §20, decisión 26): log `app.notifications` +
 > push FCM **best-effort** disparado transaccionalmente dentro de los flujos de
-> otorgamiento (hito de racha, hito del nutribiótico, subida de nivel y día
+> otorgamiento (hito de racha, hito del nutracéutico, subida de nivel y día
 > perfecto — SOLO primera concesión), reutilizando el camino FCM EXISTENTE
 > (`app.device_tokens` + `IFcmClient`, READ-ONLY: no se toca FcmClient/
 > DeviceTokenRepository/NotificationsController). Anti-spam (máx. 2 por tipo por
@@ -1007,8 +1049,8 @@
 ### T-68 — Disparadores transaccionales en `ProgramRepository` (hitos, nivel, día perfecto)
 
 - **Phase**: P1.5
-- **Depends on**: T-67 (servicio), T-51 (motor de hitos), T-64 (racha nutribiótico)
-- **Objective**: Hooks de notificación en los flujos de otorgamiento de `CompleteTaskCoreAsync` (constructor con parámetro opcional `IGamifiedNotificationService?` — null → omitir, patrón de los calculadores): hito de racha (`milestone_reached` high, "🏆 ¡X días! +N XP", x2 plegado en 11/22/50), hito del nutribiótico (`nb_milestone` high, "💊 ¡X días tomando tu Nutriobiótico!"), subida de nivel (`level_up` high, comparando el nivel antes/después de TODOS los otorgamientos del día, tras el flush), día perfecto (`day_complete` normal, "✅ Día perfecto · +N XP"). Solo primera concesión (el replay nunca llega; las guardias de hitos protegen también la notificación).
+- **Depends on**: T-67 (servicio), T-51 (motor de hitos), T-64 (racha nutracéutico)
+- **Objective**: Hooks de notificación en los flujos de otorgamiento de `CompleteTaskCoreAsync` (constructor con parámetro opcional `IGamifiedNotificationService?` — null → omitir, patrón de los calculadores): hito de racha (`milestone_reached` high, "🏆 ¡X días! +N XP", x2 plegado en 11/22/50), hito del nutracéutico (`nb_milestone` high, "💊 ¡X días tomando tu Nutriobiótico!"), subida de nivel (`level_up` high, comparando el nivel antes/después de TODOS los otorgamientos del día, tras el flush), día perfecto (`day_complete` normal, "✅ Día perfecto · +N XP"). Solo primera concesión (el replay nunca llega; las guardias de hitos protegen también la notificación).
 - **Affected paths**:
   - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (hooks en `CompleteTaskCoreAsync`, `AwardStreakMilestoneIfReachedAsync` + parámetro `patientId`, `UpdateNbStreakAsync` + parámetro `patientId`)
 - **Implementation notes**: La notificación corre DESPUÉS de la escritura de la XP y NUNCA la revierte (best-effort, AC-42). `multiplier_expiring` es FUTURO (necesita scheduler) — no se implementa (§20.4).
@@ -1069,7 +1111,7 @@
 
 - **Phase**: P1.5
 - **Depends on**: T-70 (schema), T-37 (`BuildHealthScoreInputAsync`/`GetNutritionLogAsync`/helpers de período)
-- **Objective**: `WeaknessRulesEngine` (función pura, 10 reglas `WK_*` con umbrales documentados — clínicos marcados `REQUIRES_CLINICAL_VALIDATION`) + `PatientWeeklyData` (paquete semanal: adherencia nutricional = misma fuente §18; glucosa/% grasa desde líneas base + mediciones; motivación = proxy `mood × 2` del último registro emocional; estrés/sueño LATENTES; adherencia semanal desde `health_scores`; nutribiótico 7d y ejercicio desde `task_completions`) + `IWeaknessDetectionService`/`WeaknessDetectionService` (orquesta: repositorio → motor → persistencia con dedupe AC-43).
+- **Objective**: `WeaknessRulesEngine` (función pura, 10 reglas `WK_*` con umbrales documentados — clínicos marcados `REQUIRES_CLINICAL_VALIDATION`) + `PatientWeeklyData` (paquete semanal: adherencia nutricional = misma fuente §18; glucosa/% grasa desde líneas base + mediciones; motivación = proxy `mood × 2` del último registro emocional; estrés/sueño LATENTES; adherencia semanal desde `health_scores`; nutracéutico 7d y ejercicio desde `task_completions`) + `IWeaknessDetectionService`/`WeaknessDetectionService` (orquesta: repositorio → motor → persistencia con dedupe AC-43).
 - **Affected paths**:
   - `src/CoppAddresd.Application/Services/ProgramProgress/PatientWeeklyData.cs` (nuevo)
   - `src/CoppAddresd.Application/Services/ProgramProgress/WeaknessDescriptor.cs` (nuevo)
@@ -1210,47 +1252,78 @@
 - **Phase**: P1
 - **Depends on**: T-13 (backend snapshot/complete endpoints live)
 - **Objective**: Add a typed API client and the TypeScript types matching SPEC §7.
-- **Affected paths**:
-  - `antares-paciente/src/api/program.ts` (new)
-  - `antares-paciente/src/types/program.ts` (new, exported)
-  - `antares-paciente/src/api/http.ts` (extend existing HTTP wrapper with `getJson<T>` / `postJson<T>` if not present)
-- **Implementation notes**: Use the same auth header + base URL as other API calls in `antares-paciente`. Generate `clientRequestId = ulid()` on each `completeStep`. Cache snapshots in `AppContext` for stale-while-revalidate.
-- **Acceptance criteria**: `api/program.ts` exports `getSnapshot`, `completeTask`, `getCalendar`, `getPath`. Types match SPEC §7.1 JSON keys.
+- **Affected paths** (UPDATED — see [`MOBILE-INTEGRATION.md`](./MOBILE-INTEGRATION.md) §4 for rationale):
+  - `antares-paciente/src/utils/apiClient.ts` (new — mirrors ERP's `apiFetch` pattern from `coppaddresd-front/lib/api/http.ts`)
+  - `antares-paciente/src/services/program/types.ts` (new — TS interfaces matching SPEC §7 DTOs)
+  - `antares-paciente/src/services/program/program-service.ts` (new — snapshot, path, calendar, enrollment)
+  - `antares-paciente/src/services/program/tasks-service.ts` (new — completeTask)
+  - `antares-paciente/src/services/program/scores-service.ts` (new — Health & Transform scores)
+  - `antares-paciente/src/services/program/nutrition-service.ts` (new — meal/hydration logging)
+- **Implementation notes**: `apiClient.ts` wraps `fetch` with Bearer token from `sessionStorage` (// TODO: migrate to Capacitor Secure Storage), refresh on 401 (single-flight, same logic as ERP), timeout with `AbortController` (15s default), and `ApiError` typed mapping compatible with RFC 7807. Generate `clientRequestId = crypto.randomUUID()` on each `completeTask` call.
+- **Acceptance criteria**: `services/program/program-service.ts` exports `fetchSnapshot`, `fetchCalendar`, `fetchPath`, `autoEnroll`. `tasks-service.ts` exports `completeTask`. Types match SPEC §7.1 JSON keys. `apiClient.ts` handles 401 refresh transparently.
 - **Verification**: `npm run build` passes; `npm run lint` passes; new file imports compile.
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
-### T-17 — Wire `AppContext` to snapshot
+### T-16b — TanStack Query setup
 
 - **Phase**: P1
 - **Depends on**: T-16
-- **Objective**: Replace `src/data/program.ts` static constants with live data where applicable.
+- **Objective**: Install and configure `@tanstack/react-query` as the cache/sync layer for the mobile app.
 - **Affected paths**:
-  - `antares-paciente/src/context/AppContext.tsx` (add `programSnapshot` state + reducer actions)
-  - `antares-paciente/src/pages/ProgramPage.tsx` (replace hardcoded `PROGRAM_TASKS`, `PROGRAM_POINTS_MAX`, `DAY_BONUS_PTS` with snapshot-derived values; fall back to mock if fetch fails)
-- **Implementation notes**: Keep the mobile UI shapes intact. Mock fallback guarantees demo continuity. Add a thin `lastSyncFailed` badge state.
+  - `antares-paciente/package.json` (add `@tanstack/react-query`)
+  - `antares-paciente/src/App.tsx` or entry point (wrap with `QueryClientProvider`)
+  - `antares-paciente/src/hooks/useProgram.ts` (new — `useQuery` for `/me/snapshot`)
+  - `antares-paciente/src/hooks/useProgramPath.ts` (new — `useQuery` for `/path`)
+  - `antares-paciente/src/hooks/useCompleteTask.ts` (new — `useMutation` with optimistic XP update)
+  - `antares-paciente/src/hooks/useProgramCalendar.ts` (new — `useQuery` for `/calendar`)
+  - `antares-paciente/src/hooks/useProgramScores.ts` (new — `useQuery` for `/scores`)
+  - `antares-paciente/src/hooks/useNutritionLog.ts` (new — `useMutation` for meal logging)
+- **Implementation notes**: Justified divergence from ERP (which uses custom hooks with `useEffect`): the mobile app needs offline-first patterns, background refetch, and optimistic mutation updates for XP/streak that TanStack Query handles natively. Defaults: `staleTime: 5min`, `retry: 2`, `refetchOnWindowFocus: true`. Each hook falls back to mock data from `data/program.ts` when the query errors (// TODO: Remove mock fallback).
+- **Acceptance criteria**: `QueryClientProvider` wraps the app. `useProgram()` returns snapshot data or mock fallback. `useCompleteTask()` performs optimistic XP update and rolls back on error.
+- **Verification**: `npm run build` passes; `npm run dev` renders ProgramPage with QueryClientProvider active.
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-17 — Wire views to snapshot via hooks
+
+- **Phase**: P1
+- **Depends on**: T-16b
+- **Objective**: Replace `src/data/program.ts` static constants with live data via TanStack Query hooks.
+- **Affected paths**:
+  - `antares-paciente/src/pages/ProgramPage.tsx` (consume `useProgram()` hook; replace hardcoded `PROGRAM_TASKS`, `PROGRAM_POINTS_MAX`, `DAY_BONUS_PTS` with snapshot-derived values)
+  - `antares-paciente/src/pages/program/TodayView.tsx` (consume `useProgramPath()`)
+  - `antares-paciente/src/pages/program/StreakView.tsx` (consume `useProgram()` for streak + `useProgramCalendar()` for consistency map)
+  - `antares-paciente/src/pages/program/EvolutionView.tsx` (consume `useProgramScores()`)
+  - `antares-paciente/src/data/program.ts` (KEEP as mock fallback — add `// TODO: Remove mock fallback` markers)
+- **Implementation notes**: Each view consumes its TanStack Query hook. On error/loading, falls back to mock data from `data/program.ts`. Auto-enrollment: on first `ProgramPage` mount, if `useProgram()` returns 404/not-found, trigger `POST /enrollments/me` (idempotent) then refetch. The `AppContext` program-related fields (`program`, `programWeek`, `streak`, `weekCheckins`, `pointsToday`, `pointsTotal`) remain as legacy with `// TODO: Remove after full migration` — views read from hooks first.
 - **Acceptance criteria**:
-  - App boot triggers `getSnapshot()`; failure → mock fallback, no error to the user.
-  - XP gauge, level badge, task cards, and calendar render from snapshot data.
-  - AC-18 is reproducible: backend off → mobile still renders.
+  - App boot triggers `useProgram()` → `fetchSnapshot()`; failure → mock fallback, no error to the user.
+  - XP gauge, level badge, task cards, streak, and calendar render from snapshot data when backend is up.
+  - AC-18 is reproducible: backend off → mobile still renders with mock data.
+  - Auto-enrollment fires transparently on first visit.
 - **Verification**:
   - `npm run dev` and open in the browser.
   - Toggle backend off; reload app; UI still renders.
+  - With backend on: verify data comes from API (check Network tab).
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
 ### T-18 — Wire `completeStep` to `POST /tasks/complete`
 
 - **Phase**: P1
 - **Depends on**: T-17
-- **Objective**: Optimistic UI + idempotent retry + reconcile on response.
+- **Objective**: Optimistic UI via `useMutation` + idempotent retry + reconcile on response.
 - **Affected paths**:
-  - `antares-paciente/src/context/AppContext.tsx` (`completeStep` reducer → `api/completeTask`)
-  - `antares-paciente/src/pages/ProgramPage.tsx` (`finish` helper uses the new reducer)
-- **Implementation notes**: Persist queued writes to `localStorage` keyed by `clientRequestId`. On reconnect, replay the queue in order. Replay must NOT award XP twice (server enforces; client just trusts the response).
+  - `antares-paciente/src/hooks/useCompleteTask.ts` (implement `useMutation` with optimistic XP/streak update)
+  - `antares-paciente/src/pages/program/Lessons.tsx` (each lesson's "complete" action calls `useCompleteTask().mutate()`)
+  - `antares-paciente/src/pages/program/TodayView.tsx` (node tap triggers lesson → completion → path refetch)
+  - `antares-paciente/src/context/AppContext.tsx` (`completeStep` becomes a thin wrapper that calls the mutation — `// TODO: Remove AppContext.completeStep after full migration`)
+- **Implementation notes**: `useMutation` with `onMutate` for optimistic update (increment XP, mark task done in query cache), `onError` for rollback, `onSettled` for refetch of snapshot + path. Persist failed writes to `localStorage` keyed by `clientRequestId` for offline queue. On reconnect, replay queue (server enforces idempotency — client trusts response). Confetti/XP popup animations fire on `onMutate` (optimistic), not on `onSuccess`.
 - **Acceptance criteria**:
   - AC-01..AC-04 reproducible against the dev backend.
   - Toggling network mid-write does not double-award XP on next sync.
+  - Confetti animation fires immediately (optimistic), not after server response.
 - **Verification**:
   - `npm run dev`; complete a task; kill network; complete again; restore network; refresh — XP is correct.
+  - Check localStorage for queued writes when offline.
 - **Suggested agent role**: `sdd-apply` (Tier 2).
 
 ---
@@ -1388,6 +1461,15 @@
 
 ### T-28 — Reconciliation job
 
+> ✔ **IMPLEMENTADO (2026-09-02)**: `ReconcileStreakJob` (Application) +
+> `ProgramRepository.ReconcileStreaksAsync` (set-based, umbral de plantilla +
+> congelamientos consumidos, `ExecuteUpdate` solo en desviaciones, idempotente)
+> + `ReconcileStreakHostedService` nocturno (config `Program:Reconciliation`)
+> + disparo manual `POST /program/maintenance/reconcile-streaks`
+> (`Program.Edit`). Desviación: sin `IJobDispatcher`/`app.background_jobs`
+> (no existen en el monorepo) se usa un `BackgroundService` con `PeriodicTimer`
+> equivalente. Contrato en SPEC §7.9.5.
+
 - **Phase**: P3
 - **Depends on**: T-12 (P1 stable)
 - **Objective**: Nightly job walks `xp_ledger` and recomputes `streak_states` per enrollment.
@@ -1405,6 +1487,14 @@
 
 ### T-29 — Bulk enrollment job (admin / clinic onboarding)
 
+> ✔ **IMPLEMENTADO (2026-09-02)**: `BulkEnrollPatientsCommand` (+ validador,
+> tope 100/request) que despacha `EnrollPatientCommand` por paciente
+> (mismo camino individual: idempotencia, plantilla por defecto) con reporte
+> parcial por fila → `POST /program/enrollments/bulk` (`Program.Enroll`).
+> UI ERP: dialog "Inscripción masiva" (multi-select de pacientes) en
+> `/program/enrollments`. Desviación: el proceso es síncrono (el dispatcher
+> async para >100 pacientes queda diferido — la infra de jobs no existe).
+
 - **Phase**: P3
 - **Depends on**: T-12
 - **Objective**: Admin can enroll N patients in a single transaction with a single audit row per patient.
@@ -1421,6 +1511,12 @@
 ## Batch B14 — CSV export (P3)
 
 ### T-30 — Export endpoint
+
+> ✔ **IMPLEMENTADO (2026-09-02)**: `GET /program/enrollments/export?clinicId=&from=&to=`
+> — stream `text/csv` vía `IStreamRequest` + `AsAsyncEnumerable` (sin buffering),
+> scoping del actor aplicado, permiso nuevo `Program.Export` sembrado en el
+> Auth Service (Admin lo recibe). UI ERP: botón "Exportar CSV" en Inscripciones
+> (blob download con Bearer). Contrato en SPEC §7.9.4.
 
 - **Phase**: P3
 - **Depends on**: T-29
@@ -1487,6 +1583,231 @@
 
 ---
 
+## Batch B17 — Content resolver & configuración de contenido desde ERP (P1.5)
+
+> Cierra el gap de resolución de contenido del SPEC §4.2/§4.3/§6.10 (nutrición y
+> rutina por fecha) y agrega la configuración por semana desde el ERP. Sin
+> migraciones nuevas: lee/escribe tablas existentes de Wellness
+> (`nutrition_plan_assignments`, `routine_assignments`, `nutrition_plan_days`).
+
+### T-74 — Resolver de contenido por fecha (nutrición + rutina)
+
+- **Phase**: P1.5
+- **Depends on**: T-12 (módulo programa estable); tablas de asignación Wellness existentes
+- **Objective**: Implementar el resolver de contenido que, para un `(patientId, localDate)`, devuelve la asignación activa de plan nutricional y de rutina: `status = Active` y `start_date <= local_date <= COALESCE(end_date, 'infinity')`; si hay superposición, gana la de `start_date` más reciente (SPEC §6.10). Incluye la verificación de día (SPEC §4.2): si el plan no tiene día para ese weekday, el resultado lo indica (`HasDayForWeekday = false`).
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Interfaces/IProgramContentResolver.cs` (nuevo)
+  - `src/CoppAddresd.Application/Services/ProgramProgress/ProgramContentResolver.cs` (nuevo)
+  - `src/CoppAddresd.Infrastructure/DependencyInjection.cs` (registro)
+- **Implementation notes**: El resolver puede inyectar `AppDbContext` (lectura) o `IWellnessRepository` (que ya expone `ListPlanAssignmentsByPatientAsync`/`ListAssignmentsByPatientAsync`); evaluar traer todas las asignaciones del paciente y filtrar en memoria vs query por ventana. Sin escrituras. Respetar el skill `query-performance` (evitar N+1).
+- **Acceptance criteria**: Para Brian con asignación xyz (semana 1) y abc (semana 3), el resolver devuelve xyz para fechas de semana 1 y abc para fechas de semana 3; null si no hay asignación; la de `start_date` más reciente gana en solapamiento.
+- **Verification**: `dotnet build` (0 errores; OutputPath temporal si procesos dev bloquean bins).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-75 — Snapshot: contenido de nutrición y rutina en `todayTasks[].content`
+
+- **Phase**: P1.5
+- **Depends on**: T-74
+- **Objective**: Extender `TodayTaskContentDto` (o el contenido del snapshot) para que las tareas `nut`/`ejercicio` expongan el plan/rutina resueltos (nombre del plan, `nutritionPlanDayNumber` disponible) cuando hay asignación activa; null + flag `contentUnavailable` cuando no (AC-13). El contenido de `podcast` (MediaItem) no cambia.
+- **Affected paths**:
+  - `src/CoppAddresd.Application/DTOs/ProgramProgress/ProgramProgressDtos.cs`
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`GetSnapshotAsync`)
+- **Implementation notes**: Mantener el shape del contrato móvil (§7.1): `content` puede ser null o el objeto resuelto; no romper `TodayTaskContentDto` existente (agregar campos, no renombrar).
+- **Acceptance criteria**: Snapshot de Brian en semana 1 muestra el plan xyz en la tarea `nut`; sin asignación → `content: null` y `contentUnavailable: true`.
+- **Verification**: `dotnet build` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-76 — Completación: resolver y persistir content FKs + verificación §4.2
+
+- **Phase**: P1.5
+- **Depends on**: T-74
+- **Objective**: En el flujo de completación, resolver `nutrition_plan_id`, `nutrition_plan_day_number` y `exercise_routine_id` ANTES de persistir `TaskCompletion`; si el plan no tiene día para el weekday, los FKs quedan null y la XP se otorga igual (AC-13); sin rutina asignada → `exercise_routine_id = null` (SPEC §4.3).
+- **Affected paths**:
+  - `src/CoppAddresd.Infrastructure/Repositories/ProgramRepository.cs` (`CompleteTaskAsync` / `CompleteTaskCoreAsync`)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/CompleteTask/CompleteTaskCommandHandler.cs` (si el resolver se inyecta en el handler) o el wiring de `CompleteTaskInput`
+- **Implementation notes**: El resolver corre dentro de la transacción FOR UPDATE existente (lectura consistente con el lock del enrollment). El `content_fingerprint` (si el cliente lo envía) debe computarse contra el contenido resuelto (SPEC §6.2).
+- **Acceptance criteria**: AC-13 reproducible: `nut` con plan sin día → fila con `nutrition_plan_id = NULL`; XP otorgada (default MVP); `ejercicio` sin rutina → `exercise_routine_id = NULL`.
+- **Verification**: `dotnet build` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-77 — Endpoints del configurador: `GET/PUT /program/enrollments/{id}/content`
+
+- **Phase**: P1.5
+- **Depends on**: T-74
+- **Objective**: Endpoints para que el ERP configure el contenido por semana sin hacer matemática de fechas:
+  - `GET /api/v1/program/enrollments/{id}/content` → timeline `semana × plan × rutina` (ventanas computadas desde `start_local_date`; cada semana muestra la asignación vigente o null).
+  - `PUT /api/v1/program/enrollments/{id}/content/week/{weekNumber}` → upsert de las asignaciones Wellness subyacentes para la ventana de esa semana (crea/actualiza `nutrition_plan_assignments`/`routine_assignments` con `status = Active`; `null` en plan/rutina desasigna la semana).
+- **Affected paths**:
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Queries/GetProgramContent/` (nuevo)
+  - `src/CoppAddresd.Application/Features/ProgramProgress/Commands/SetWeekContent/` (nuevo)
+  - `src/CoppAddresd.Application/DTOs/ProgramProgress/ProgramProgressDtos.cs`
+  - `src/CoppAddresd.Api/Controllers/ProgramController.cs`
+- **Implementation notes**: Permisos: `Program.View` (GET) / `Program.Edit` (PUT). Anti-IDOR: el clínico solo sobre pacientes asignados (`app.patient_professionals`, mismo patrón que enrollments); 404 en lectura cruzada. `created_by` = actor del JWT (auditoría existente de Wellness). Sin migración: las tablas ya existen.
+- **Acceptance criteria**: GET devuelve la semana N con su ventana correcta y el plan/rutina vigentes; PUT de la semana 1 con plan xyz crea la asignación con `start_date` = lunes de semana 1 y `end_date` = domingo de semana 1; re-PUT reemplaza sin duplicar.
+- **Verification**: `dotnet build` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-78 — SPEC §7.8 + AC + README delta
+
+- **Phase**: P1.5
+- **Depends on**: T-77
+- **Objective**: Agregar el contrato del configurador a `SPEC.md` (sección nueva §7.8 con los 2 endpoints + AC nuevos) y actualizar `README.md` (flujo "Configuración de contenido desde el ERP": semana × plan × rutina sobre asignaciones Wellness).
+- **Affected paths**:
+  - `coppAddresdBack/docs/modules/program-progress/SPEC.md`
+  - `coppAddresdBack/docs/modules/program-progress/README.md`
+- **Acceptance criteria**: SPEC/TASKS/README consistentes; el contrato §7.8 documenta permisos, anti-IDOR y la regla de desasignación.
+- **Verification**: revisión manual (docs).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-79 — ERP: botón "Inscribir" en Inscripciones del programa
+
+- **Phase**: P1.5 (ERP)
+- **Depends on**: —
+- **Objective**: Cerrar el gap de la pantalla de inscripciones: dialog de inscripción con picker de paciente, plantilla, timezone y fecha de inicio (opcional), que llama `enroll()` del hook existente (`POST /program/enrollments`, permiso `Program.Enroll`).
+- **Affected paths**:
+  - `coppaddresd-front/features/program/components/program-enrollments-page.tsx`
+  - `coppaddresd-front/features/program/components/program-enroll-dialog.tsx` (nuevo, si no existe)
+- **Implementation notes**: Reutilizar `enrollPatient`/`EnrollPatientInput` ya existentes; picker de paciente y plantilla como en otros módulos (pacientes, templates). `timezone` default `America/Bogota`.
+- **Acceptance criteria**: Un clínico con `Program.Enroll` inscribe a Brian; la lista refresca con la nueva inscripción; sin permiso, el botón no aparece.
+- **Verification**: `yarn build` + `yarn lint` + `tsc --noEmit` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+### T-80 — ERP: pantalla "Contenido del programa" (timeline semana × plan × rutina)
+
+- **Phase**: P1.5 (ERP)
+- **Depends on**: T-79, T-77 (backend)
+- **Objective**: Nueva página en `features/program` que, para un paciente inscrito, renderiza el timeline de semanas (1..N) con el plan de nutrición y la rutina asignados por semana (GET content), permite asignar/cambiar/desasignar con pickers de Wellness (`fetchNutritionPlansForPicker`, `fetchRoutinesForPicker`) y guarda por semana (PUT content/week/n). Badges: asignado / sin asignar. Item de navegación "Programa".
+- **Affected paths**:
+  - `coppaddresd-front/features/program/types/index.ts` (tipos del content)
+  - `coppaddresd-front/features/program/services/program-content-service.ts` (nuevo)
+  - `coppaddresd-front/features/program/hooks/use-program-content.ts` (nuevo)
+  - `coppaddresd-front/features/program/components/program-content-page.tsx` (nuevo)
+  - `coppaddresd-front/app/(dashboard)/program/content/page.tsx` (nuevo) + nav
+- **Implementation notes**: No romper los 14 cambios previos del ERP; seguir el patrón de las páginas `features/program` existentes (SectionHeader, Table, skeletons, empty states, locale es-CO). La semana N del timeline = ventana `[start_local_date + 7*(N-1), +6]` que devuelve el backend (el ERP no calcula fechas).
+- **Acceptance criteria**: Para Brian: semana 1 = plan xyz + rutina jkl; semana 3 = plan abc; se guarda, recarga y persiste; semana sin asignar muestra "Sin asignar" y no rompe.
+- **Verification**: `yarn build` + `yarn lint` + `tsc --noEmit` (0 errores).
+- **Suggested agent role**: `sdd-apply` (Tier 2).
+
+## Batch B18 — Follow-ups del configurador de contenido (P1.5, aplazados)
+
+> ✔ **IMPLEMENTADO (2026-09-02)**: T-81 (scoping `patient_professionals` vía
+> `IProgramActorContext.ActorScopedToEnrollmentAsync`/`ResolveScopedPatientIdsAsync`,
+> bypass Admin/OrganizationAdmin/ClinicAdmin + paciente propio), T-82
+> (`SetWeekContent` dentro de UNA transacción vía
+> `IWellnessRepository.ExecuteInTransactionAsync`) y T-83 (GET content resuelve
+> las N semanas con UNA carga de asignaciones vía
+> `IProgramContentResolver.ResolveRangeAsync` + nombres batch por ID distinto).
+
+### T-81 — Scoping de clínico (patient_professionals) en endpoints del módulo
+
+- **Phase**: P1.5 (follow-up)
+- **Depends on**: B17
+- **Objective**: Aplicar el scoping de SPEC §6.14 ("clínicos solo sobre pacientes asignados vía `app.patient_professionals`") a los endpoints de clínico del módulo: `GET/PUT /program/enrollments/{id}/content` y los existentes de enrollments (list/pause/resume/withdraw). Sin scoping, un clínico con `Program.View`/`Program.Edit` a nivel org/clinic puede leer/modificar cualquier inscripción por UUID.
+- **Acceptance criteria**: Clínico sin asignación al paciente → `404`; con asignación → 200. Anti-IDOR entre clínicos.
+
+### T-82 — Transacción en SetWeekContent (atomicidad)
+
+- **Phase**: P1.5 (follow-up)
+- **Depends on**: T-77
+- **Objective**: Envolver el trim de asignaciones superpuestas + upsert en `CreateExecutionStrategy().ExecuteAsync(...)` (convención SPEC §6.13); hoy cada `Update/AddPlanAssignmentAsync` persiste por separado y un PUT concurrente a la misma semana podría duplicar.
+- **Acceptance criteria**: Dos PUTs concurrentes a la misma semana terminan con una única asignación activa.
+
+### T-83 — Optimizar GET content (una sola carga de asignaciones)
+
+- **Phase**: P1.5 (follow-up)
+- **Depends on**: T-77
+- **Objective**: `GetProgramContentHandler` llama al resolver 83 veces (una por semana, recargando asignaciones del paciente). Optimizar a carga única de asignaciones + slice por ventana por semana (o un `ResolveRangeAsync`).
+- **Acceptance criteria**: GET content ≤ N queries (independiente de totalWeeks).
+
+> Nota de producto (B17): `NutritionPlan`/`ExerciseRoutine` no tienen columna `Code`; el DTO de contenido usa `Name` para `code` y `name`. Si se requieren códigos reales, agregar columna `code` (migración futura). Las asignaciones superpuestas se marcan `Completed` + recorte de `end_date` (no existe `Superseded` en el enum de Wellness).
+
+---
+
+## Batch B19 — Clinical emphasis: Dashboard & Patient Overview (Phase B)
+
+> Métricas clínicas (BMI, HbA1c, % grasa) en el dashboard ERP y el perfil 360 del paciente. **SPEC §23**.
+
+### T-84 — ClinicalMeasurementsSeeder: add `hba1c` metric
+
+- **Phase**: Phase B (clinical emphasis)
+- **Objective**: Agregar métrica `hba1c` (Hemoglobina glicosilada, `metabolic`, `pct`) al `ClinicalMeasurementsSeeder` + rango de referencia ADA 4.0–5.6%.
+- **Acceptance criteria**: `dotnet build` 0 errors; seed idempotente.
+- **Verification**: `dotnet build src/CoppAddresd.Api`
+
+### T-85 — ErpDashboardKpis clinical aggregates
+
+- **Phase**: Phase B
+- **Depends on**: T-84
+- **Objective**: Extender `ErpDashboardKpis` con campos: `bmi_promedio`, `hba1c_promedio`, `body_fat_promedio` (decimal?), `pacientes_bmi_ge30`, `pacientes_hba1c_ge7`, `pacientes_body_fat_alto` (int). Implementar cálculo set-based en `GetErpDashboardAsync` (JOIN `clinical_measurements` + `measurement_metrics`, GROUP BY patient+metric, latest by observed_at). Umbrales: bmi≥30, hba1c≥7.0, body_fat≥25.
+- **Acceptance criteria**: `dotnet build` 0 errors; campos retornados por el dashboard.
+- **Verification**: `dotnet build src/CoppAddresd.Api`
+
+### T-86 — PatientOverview mediciones_clinicas block
+
+- **Phase**: Phase B
+- **Depends on**: T-84
+- **Objective**: Agregar DTOs `PatientOverviewMetricPoint`, `PatientOverviewMetricSnapshot`, `PatientOverviewClinicalMetricsDto`. Implementar bloque `mediciones_clinicas` en `GetPatientOverviewAsync` con latest measurement, baseline, delta_pct, series 12 semanas para bmi/hba1c/body_fat. Todo `AsNoTracking`, sin N+1.
+- **Acceptance criteria**: `dotnet build` 0 errors; campo `mediciones_clinicas` en la respuesta.
+- **Verification**: `dotnet build src/CoppAddresd.Api`
+
+### T-87 — SPEC §23 documentation
+
+- **Phase**: Phase B
+- **Depends on**: T-85, T-86
+- **Objective**: Documentar §23 en SPEC.md con contrato ERP clínico, campos KPIs, bloque mediciones_clinicas, AC-50/AC-51. Actualizar TASKS.md.
+- **Acceptance criteria**: SPEC.md §23 completo; docs consistentes con código.
+
+---
+
+## Batch B20 — ERP Dashboard series, cofres KPI & patient_name (Phase B)
+
+> Extensiones aditivas al dashboard ERP y cofres: distribución de semanas, evolución XP/clínica 30 días, proximos_a_desbloquear, y `patient_name` en DTOs admin. **SPEC §23.5–23.7**.
+
+### T-88 — Dashboard: distribucion_semanas + evolucion_xp_30d + evolucion_clinica_30d
+
+- **Phase**: Phase B (ERP dashboard extensions)
+- **Depends on**: T-85
+- **Objective**: Agregar `distribucion_semanas` (5 buckets de fase por `CurrentWeekNumber`), `evolucion_xp_30d` (XP validado por día, 30 días), y `evolucion_clinica_30d` (promedio BMI/HbA1c/body_fat por día, 30 días) a `ProgramErpDashboardDto` + `GetErpDashboardAsync` + Fake.
+- **Acceptance criteria**: DTOs con `[JsonPropertyName]` snake_case; 5 buckets siempre presentes; 30 entradas en cada serie; XP filtrado por validación; sin N+1; `dotnet build` 0 errores.
+- **Verification**: `dotnet build src/CoppAddresd.Application && dotnet build src/CoppAddresd.Infrastructure`
+- **SPEC**: §23.5, AC-52
+
+### T-89 — Cofres: proximos_a_desbloquear
+
+- **Phase**: Phase B (ERP cofres KPI)
+- **Depends on**: none (additive)
+- **Objective**: Agregar `proximos_a_desbloquear` (int) a `ProgramErpCofresDto` + `GetErpCofresAsync` + Fake. Conteo de pacientes con racha dentro de 3 días de un hito (7, 11, 22, 50).
+- **Acceptance criteria**: Entero retornado; CurrentStreak ≥ 50 cuenta 0; `dotnet build` 0 errores.
+- **Verification**: `dotnet build src/CoppAddresd.Application && dotnet build src/CoppAddresd.Infrastructure`
+- **SPEC**: §23.6, AC-53
+
+### T-90 — Patient_name en ClinicalReviewDto + InterventionDto + WeaknessDto
+
+- **Phase**: Phase B (admin DTO enrichment)
+- **Depends on**: none (additive)
+- **Objective**: Agregar `patient_name` (nullable, snake_case) como último parámetro posicional con default null a `ClinicalReviewDto`, `InterventionDto`, `WeaknessDto`. Resolver nombres via batch join `patient_profiles` en los métodos de lista del repositorio (`ListPendingClinicalReviewsAsync`, `ListInterventionsAsync`, `ListOpenInterventionsAsync`, `ListWeaknessesAsync`, `ListOpenWeaknessesAsync`) y en las mutaciones (`DecideClinicalXpReviewAsync`, `UpdateWeaknessStatusAsync`, `AcceptInterventionAsync`, etc.). Fake pasa null.
+- **Acceptance criteria**: Todos los listados y mutaciones retornan `patient_name`; sin N+1 (batched); `dotnet build` 0 errores.
+- **Verification**: `dotnet build src/CoppAddresd.Application && dotnet build src/CoppAddresd.Infrastructure`
+- **SPEC**: §23.7, AC-54
+
+### T-91 — Patient_name en AdaptationRecommendationDto
+
+- **Phase**: Phase B (admin DTO enrichment)
+- **Depends on**: none (additive)
+- **Objective**: Agregar `patient_name` (nullable, snake_case) como último parámetro posicional con default null a `AdaptationRecommendationDto` en `ProgramProgressDtos.cs`. `FromEntity` pasa null por defecto (el DTO no se construye en el repositorio). La resolución se deja para el handler del query si se requiere en el futuro.
+- **Acceptance criteria**: Campo agregado; `FromEntity` no rompe; `dotnet build` 0 errores.
+- **Verification**: `dotnet build src/CoppAddresd.Application && dotnet build src/CoppAddresd.Infrastructure`
+- **SPEC**: §23.7, AC-54
+
+### T-92 — SPEC §23.5–23.7 documentation
+
+- **Phase**: Phase B (docs)
+- **Depends on**: T-88, T-89, T-90, T-91
+- **Objective**: Documentar §23.5 (dashboard series), §23.6 (cofres KPI), §23.7 (patient_name admin DTOs) en SPEC.md con contratos, AC-52/AC-53/AC-54. Actualizar TASKS.md.
+- **Acceptance criteria**: SPEC.md §23.5–23.7 completos; docs consistentes con código.
+
+---
+
 ## Gate G3 — Final verification
 
 | Gate | Owner | Trigger | Exit |
@@ -1545,6 +1866,7 @@ T-04 (Auth perms) ─▶ T-05 (seeder) ─────────────�
 
 P3: T-28, T-29, T-30, T-31 (after P1+G2 stable)
 G3: T-32, T-33, T-34 (after P1+P2 stable)
+B17 (content config ERP, P1.5): T-74 (resolver) ─▶ T-75 (snapshot content) ─▶ T-76 (completion FKs) ─▶ T-77 (endpoints content) ─▶ T-78 (SPEC/README) · T-79 (ERP enroll) ─▶ T-80 (ERP content page, dep T-77)
 ```
 
 ---

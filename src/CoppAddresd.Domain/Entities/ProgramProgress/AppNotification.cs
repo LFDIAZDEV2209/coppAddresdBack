@@ -3,7 +3,7 @@ namespace CoppAddresd.Domain.Entities.ProgramProgress;
 /// <summary>
 /// Log de notificaciones gamificadas del programa (SPEC §20, "Paso 7b"): una
 /// fila por notificación generada en los flujos de otorgamiento del módulo
-/// (hito de racha, hito de la racha del nutribiótico, subida de nivel y día
+/// (hito de racha, hito de la racha del nutracéutico, subida de nivel y día
 /// perfecto). El registro es la fuente de verdad del centro de notificaciones
 /// del móvil (<c>GET /api/v1/program/notifications</c>) y la base del
 /// anti-spam (máx. por tipo/día, máx. total por día y horario de silencio,
@@ -21,7 +21,7 @@ public sealed class AppNotification
     /// <summary>
     /// Código del evento que generó la notificación (SPEC §20, C):
     /// <c>milestone_reached</c> (hito de racha 7/11/22/50),
-    /// <c>nb_milestone</c> (hito de la racha del nutribiótico),
+    /// <c>nb_milestone</c> (hito de la racha del nutracéutico),
     /// <c>level_up</c> (cruce de umbral de nivel) o <c>day_complete</c>
     /// (día perfecto). Usado por el anti-spam (máx. 2 por tipo por día).
     /// </summary>

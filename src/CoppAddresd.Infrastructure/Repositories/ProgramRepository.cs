@@ -1,10 +1,15 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Erp;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
@@ -50,15 +55,20 @@ public sealed class ProgramRepository(
     IConfiguration configuration,
     IHealthScoreCalculator? healthScoreCalculator = null,
     ITransformationScoreCalculator? transformationScoreCalculator = null,
-    IGamifiedNotificationService? gamifiedNotificationService = null) : IProgramRepository
+    IGamifiedNotificationService? gamifiedNotificationService = null,
+    IProgramContentResolver? programContentResolver = null,
+    IProgramAdaptationEngine? programAdaptationEngine = null
+) : IProgramRepository
 {
     private const int MaxFreezes = 3;
 
     private readonly IHealthScoreCalculator _healthScoreCalculator =
-        healthScoreCalculator ?? new HealthScoreCalculator(NullLogger<HealthScoreCalculator>.Instance);
+        healthScoreCalculator
+        ?? new HealthScoreCalculator(NullLogger<HealthScoreCalculator>.Instance);
 
     private readonly ITransformationScoreCalculator _transformationScoreCalculator =
-        transformationScoreCalculator ?? new TransformationScoreCalculator(NullLogger<TransformationScoreCalculator>.Instance);
+        transformationScoreCalculator
+        ?? new TransformationScoreCalculator(NullLogger<TransformationScoreCalculator>.Instance);
 
     /// <summary>
     /// Notificaciones gamificadas (SPEC §20, "Paso 7b"): opcional para no romper
@@ -66,11 +76,31 @@ public sealed class ProgramRepository(
     /// patrón que los calculadores). Null → las notificaciones se omiten sin
     /// error; el servicio es best-effort y nunca lanza (AC-42).
     /// </summary>
-    private readonly IGamifiedNotificationService? _gamifiedNotificationService = gamifiedNotificationService;
+    private readonly IGamifiedNotificationService? _gamifiedNotificationService =
+        gamifiedNotificationService;
+
+    /// <summary>
+    /// Resolvedor de contenido del programa (T-74/T-75/T-76): determina el plan
+    /// de alimentación activo y la rutina de ejercicio activa para un paciente
+    /// en una fecha local. Opcional para no romper call sites de tests.
+    /// </summary>
+    private readonly IProgramContentResolver? _programContentResolver = programContentResolver;
+
+    /// <summary>
+    /// Motor de reglas de adaptación (SPEC §6.8, T-23): funciones puras y
+    /// deterministas evaluadas tras cada completación dentro de la misma
+    /// transacción. Opcional para no romper call sites de tests; sin DI cae
+    /// a la implementación real sin estado.
+    /// </summary>
+    private readonly IProgramAdaptationEngine _programAdaptationEngine =
+        programAdaptationEngine ?? new ProgramAdaptationEngine();
 
     /// <summary>Cada N días perfectos consecutivos se otorga un congelamiento (OQ-3, default 7).</summary>
     private readonly int _freezeGrantEveryPerfectDays =
-        int.TryParse(configuration["Program:Streak:FreezeGrantEveryPerfectDays"], out var configured)
+        int.TryParse(
+            configuration["Program:Streak:FreezeGrantEveryPerfectDays"],
+            out var configured
+        )
         && configured > 0
             ? configured
             : 7;
@@ -82,7 +112,10 @@ public sealed class ProgramRepository(
     /// <c>Program:ClinicalXp:SignificantThresholdPct</c> (default 5).
     /// </summary>
     private readonly decimal _clinicalSignificantThresholdPct =
-        decimal.TryParse(configuration["Program:ClinicalXp:SignificantThresholdPct"], out var configuredThreshold)
+        decimal.TryParse(
+            configuration["Program:ClinicalXp:SignificantThresholdPct"],
+            out var configuredThreshold
+        )
         && configuredThreshold > 0m
             ? configuredThreshold
             : 5m;
@@ -95,7 +128,8 @@ public sealed class ProgramRepository(
         string timezone,
         DateOnly startLocalDate,
         Guid? createdBy = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -103,16 +137,18 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var template = await dbContext.ProgramTemplates
-                    .AsNoTracking()
-                    .Include(t => t.DayTemplates)
-                    .FirstOrDefaultAsync(t => t.Id == templateId, ct)
+                var template =
+                    await dbContext
+                        .ProgramTemplates.AsNoTracking()
+                        .Include(t => t.DayTemplates)
+                        .FirstOrDefaultAsync(t => t.Id == templateId, ct)
                     ?? throw new NotFoundException($"Plantilla {templateId} no encontrada.");
 
                 if (template.Status != TemplateStatus.Active)
                 {
                     throw new BusinessRuleViolationException(
-                        $"TEMPLATE_NOT_ACTIVE: la plantilla {template.Code} no está activa.");
+                        $"TEMPLATE_NOT_ACTIVE: la plantilla {template.Code} no está activa."
+                    );
                 }
 
                 var now = DateTime.UtcNow;
@@ -131,14 +167,16 @@ public sealed class ProgramRepository(
                 };
                 dbContext.ProgramEnrollments.Add(enrollment);
 
-                dbContext.StreakStates.Add(new StreakState
-                {
-                    EnrollmentId = enrollment.Id,
-                    CurrentStreak = 0,
-                    LongestStreak = 0,
-                    FreezesRemaining = 0,
-                    FreezesUsedTotal = 0,
-                });
+                dbContext.StreakStates.Add(
+                    new StreakState
+                    {
+                        EnrollmentId = enrollment.Id,
+                        CurrentStreak = 0,
+                        LongestStreak = 0,
+                        FreezesRemaining = 0,
+                        FreezesUsedTotal = 0,
+                    }
+                );
 
                 // Semanas 1..N: la 1 nace Active con su snapshot; el resto nacen
                 // Locked con snapshot vacío que se toma al activar (SPEC §4.5:
@@ -147,19 +185,24 @@ public sealed class ProgramRepository(
                 for (var weekNumber = 1; weekNumber <= template.TotalWeeks; weekNumber++)
                 {
                     var start = startLocalDate.AddDays((weekNumber - 1) * 7);
-                    dbContext.ProgramWeeks.Add(new ProgramWeek
-                    {
-                        Id = Guid.NewGuid(),
-                        EnrollmentId = enrollment.Id,
-                        WeekNumber = weekNumber,
-                        Status = weekNumber == 1 ? ProgramWeekStatus.Active : ProgramWeekStatus.Locked,
-                        WeekStartDateLocal = start,
-                        WeekEndDateLocal = start.AddDays(6),
-                        TasksSnapshot = weekNumber == 1 ? snapshot : EmptySnapshot(),
-                        TemplateVersionAtStart = template.Version,
-                        ActivatedAt = weekNumber == 1 ? now : null,
-                        CreatedAt = now,
-                    });
+                    dbContext.ProgramWeeks.Add(
+                        new ProgramWeek
+                        {
+                            Id = Guid.NewGuid(),
+                            EnrollmentId = enrollment.Id,
+                            WeekNumber = weekNumber,
+                            Status =
+                                weekNumber == 1
+                                    ? ProgramWeekStatus.Active
+                                    : ProgramWeekStatus.Locked,
+                            WeekStartDateLocal = start,
+                            WeekEndDateLocal = start.AddDays(6),
+                            TasksSnapshot = weekNumber == 1 ? snapshot : EmptySnapshot(),
+                            TemplateVersionAtStart = template.Version,
+                            ActivatedAt = weekNumber == 1 ? now : null,
+                            CreatedAt = now,
+                        }
+                    );
                 }
 
                 await dbContext.SaveChangesAsync(ct);
@@ -170,7 +213,8 @@ public sealed class ProgramRepository(
             {
                 await transaction.RollbackAsync(ct);
                 throw new BusinessRuleViolationException(
-                    "PATIENT_ALREADY_ENROLLED: el paciente ya tiene una inscripción activa.");
+                    "PATIENT_ALREADY_ENROLLED: el paciente ya tiene una inscripción activa."
+                );
             }
             catch
             {
@@ -181,83 +225,114 @@ public sealed class ProgramRepository(
     }
 
     public async Task<ProgramEnrollment> PauseAsync(
-        Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default)
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
     {
         var now = DateTime.UtcNow;
-        var updated = await dbContext.ProgramEnrollments
-            .Where(e => e.Id == enrollmentId && e.Status == ProgramEnrollmentStatus.Active)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(e => e.Status, ProgramEnrollmentStatus.Paused)
-                .SetProperty(e => e.PausedAt, now)
-                .SetProperty(e => e.UpdatedBy, actorId)
-                .SetProperty(e => e.UpdatedAt, now), ct);
+        var updated = await dbContext
+            .ProgramEnrollments.Where(e =>
+                e.Id == enrollmentId && e.Status == ProgramEnrollmentStatus.Active
+            )
+            .ExecuteUpdateAsync(
+                s =>
+                    s.SetProperty(e => e.Status, ProgramEnrollmentStatus.Paused)
+                        .SetProperty(e => e.PausedAt, now)
+                        .SetProperty(e => e.UpdatedBy, actorId)
+                        .SetProperty(e => e.UpdatedAt, now),
+                ct
+            );
 
         if (updated == 0)
         {
             await EnsureEnrollmentExistsAsync(enrollmentId, ct);
             throw new BusinessRuleViolationException(
-                "INVALID_ENROLLMENT_STATE: solo se puede pausar una inscripción activa.");
+                "INVALID_ENROLLMENT_STATE: solo se puede pausar una inscripción activa."
+            );
         }
 
-        return await dbContext.ProgramEnrollments
-            .AsNoTracking()
+        return await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .SingleAsync(e => e.Id == enrollmentId, ct);
     }
 
     public async Task<ProgramEnrollment> ResumeAsync(
-        Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default)
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
     {
         var now = DateTime.UtcNow;
-        var updated = await dbContext.ProgramEnrollments
-            .Where(e => e.Id == enrollmentId && e.Status == ProgramEnrollmentStatus.Paused)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(e => e.Status, ProgramEnrollmentStatus.Active)
-                .SetProperty(e => e.PausedAt, (DateTime?)null)
-                .SetProperty(e => e.UpdatedBy, actorId)
-                .SetProperty(e => e.UpdatedAt, now), ct);
+        var updated = await dbContext
+            .ProgramEnrollments.Where(e =>
+                e.Id == enrollmentId && e.Status == ProgramEnrollmentStatus.Paused
+            )
+            .ExecuteUpdateAsync(
+                s =>
+                    s.SetProperty(e => e.Status, ProgramEnrollmentStatus.Active)
+                        .SetProperty(e => e.PausedAt, (DateTime?)null)
+                        .SetProperty(e => e.UpdatedBy, actorId)
+                        .SetProperty(e => e.UpdatedAt, now),
+                ct
+            );
 
         if (updated == 0)
         {
             await EnsureEnrollmentExistsAsync(enrollmentId, ct);
             throw new BusinessRuleViolationException(
-                "INVALID_ENROLLMENT_STATE: solo se puede reanudar una inscripción pausada.");
+                "INVALID_ENROLLMENT_STATE: solo se puede reanudar una inscripción pausada."
+            );
         }
 
-        return await dbContext.ProgramEnrollments
-            .AsNoTracking()
+        return await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .SingleAsync(e => e.Id == enrollmentId, ct);
     }
 
     public async Task<ProgramEnrollment> WithdrawAsync(
-        Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default)
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
     {
         var now = DateTime.UtcNow;
-        var updated = await dbContext.ProgramEnrollments
-            .Where(e => e.Id == enrollmentId
+        var updated = await dbContext
+            .ProgramEnrollments.Where(e =>
+                e.Id == enrollmentId
                 && e.Status != ProgramEnrollmentStatus.Completed
-                && e.Status != ProgramEnrollmentStatus.Withdrawn)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(e => e.Status, ProgramEnrollmentStatus.Withdrawn)
-                .SetProperty(e => e.WithdrawnAt, now)
-                .SetProperty(e => e.UpdatedBy, actorId)
-                .SetProperty(e => e.UpdatedAt, now), ct);
+                && e.Status != ProgramEnrollmentStatus.Withdrawn
+            )
+            .ExecuteUpdateAsync(
+                s =>
+                    s.SetProperty(e => e.Status, ProgramEnrollmentStatus.Withdrawn)
+                        .SetProperty(e => e.WithdrawnAt, now)
+                        .SetProperty(e => e.UpdatedBy, actorId)
+                        .SetProperty(e => e.UpdatedAt, now),
+                ct
+            );
 
         if (updated == 0)
         {
             await EnsureEnrollmentExistsAsync(enrollmentId, ct);
             throw new BusinessRuleViolationException(
-                "INVALID_ENROLLMENT_STATE: la inscripción ya está retirada o completada.");
+                "INVALID_ENROLLMENT_STATE: la inscripción ya está retirada o completada."
+            );
         }
 
-        return await dbContext.ProgramEnrollments
-            .AsNoTracking()
+        return await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .SingleAsync(e => e.Id == enrollmentId, ct);
     }
 
     // ---------------------------------------------------------------- Lecturas de inscripciones
 
-    public async Task<ProgramEnrollmentDto?> GetEnrollmentAsync(Guid enrollmentId, CancellationToken ct = default)
-        => await dbContext.ProgramEnrollments.AsNoTracking()
+    public async Task<ProgramEnrollmentDto?> GetEnrollmentAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.Id == enrollmentId)
             .Select(e => new ProgramEnrollmentDto(
                 e.Id,
@@ -269,18 +344,28 @@ public sealed class ProgramRepository(
                 e.StartLocalDate,
                 e.CurrentWeekNumber,
                 (int?)e.Template!.TotalWeeks ?? 0,
-                (int?)e.XpLedgerEntries
-                    .Where(x => x.ValidatedBy != null || x.Rule == null || !x.Rule.RequiresValidation)
-                    .OrderByDescending(x => x.BalanceAfter)
-                    .Select(x => (int?)x.BalanceAfter)
-                    .FirstOrDefault() ?? 0,
+                (int?)
+                    e
+                        .XpLedgerEntries.Where(x =>
+                            x.ValidatedBy != null || x.Rule == null || !x.Rule.RequiresValidation
+                        )
+                        .OrderByDescending(x => x.BalanceAfter)
+                        .Select(x => (int?)x.BalanceAfter)
+                        .FirstOrDefault()
+                    ?? 0,
                 (int?)e.StreakState!.CurrentStreak ?? 0,
                 (int?)e.StreakState.LongestStreak ?? 0,
                 (int?)e.StreakState.FreezesRemaining ?? 0,
                 e.CompletedAt,
                 e.PausedAt,
                 e.WithdrawnAt,
-                e.CreatedAt))
+                e.CreatedAt,
+                e.Patient != null ? (e.Patient.FirstName + " " + e.Patient.LastName).Trim() : null,
+                e.Patient != null
+                    ? (e.Patient.DocumentNumber ?? e.Patient.MedicalRecordNumber)
+                    : null,
+                e.Template != null ? e.Template.Name : null
+            ))
             .FirstOrDefaultAsync(ct);
 
     public async Task<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)> ListEnrollmentsAsync(
@@ -288,13 +373,22 @@ public sealed class ProgramRepository(
         ProgramEnrollmentStatus? status,
         int page,
         int pageSize,
-        CancellationToken ct = default)
+        IReadOnlyList<Guid>? scopedPatientIds = null,
+        CancellationToken ct = default
+    )
     {
         var query = dbContext.ProgramEnrollments.AsNoTracking().AsQueryable();
 
         if (patientId.HasValue)
         {
             query = query.Where(e => e.PatientId == patientId.Value);
+        }
+
+        // T-81: scoping del actor — solo inscripciones de pacientes visibles.
+        // Lista vacía nunca llega aquí (el handler la deniega antes).
+        if (scopedPatientIds is { Count: > 0 })
+        {
+            query = query.Where(e => scopedPatientIds.Contains(e.PatientId));
         }
 
         if (status.HasValue)
@@ -315,18 +409,28 @@ public sealed class ProgramRepository(
                 e.StartLocalDate,
                 e.CurrentWeekNumber,
                 (int?)e.Template!.TotalWeeks ?? 0,
-                (int?)e.XpLedgerEntries
-                    .Where(x => x.ValidatedBy != null || x.Rule == null || !x.Rule.RequiresValidation)
-                    .OrderByDescending(x => x.BalanceAfter)
-                    .Select(x => (int?)x.BalanceAfter)
-                    .FirstOrDefault() ?? 0,
+                (int?)
+                    e
+                        .XpLedgerEntries.Where(x =>
+                            x.ValidatedBy != null || x.Rule == null || !x.Rule.RequiresValidation
+                        )
+                        .OrderByDescending(x => x.BalanceAfter)
+                        .Select(x => (int?)x.BalanceAfter)
+                        .FirstOrDefault()
+                    ?? 0,
                 (int?)e.StreakState!.CurrentStreak ?? 0,
                 (int?)e.StreakState.LongestStreak ?? 0,
                 (int?)e.StreakState.FreezesRemaining ?? 0,
                 e.CompletedAt,
                 e.PausedAt,
                 e.WithdrawnAt,
-                e.CreatedAt))
+                e.CreatedAt,
+                e.Patient != null ? (e.Patient.FirstName + " " + e.Patient.LastName).Trim() : null,
+                e.Patient != null
+                    ? (e.Patient.DocumentNumber ?? e.Patient.MedicalRecordNumber)
+                    : null,
+                e.Template != null ? e.Template.Name : null
+            ))
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
             .ToListAsync(ct);
@@ -337,7 +441,9 @@ public sealed class ProgramRepository(
     // ---------------------------------------------------------------- Completación
 
     public async Task<CompleteTaskResult> CompleteTaskAsync(
-        CompleteTaskInput input, CancellationToken ct = default)
+        CompleteTaskInput input,
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -355,10 +461,15 @@ public sealed class ProgramRepository(
                 // completación mientras este esperaba el lock. Replay limpio.
                 await transaction.RollbackAsync(ct);
                 dbContext.ChangeTracker.Clear();
-                var winner = await dbContext.TaskCompletions.AsNoTracking()
-                    .FirstOrDefaultAsync(t => t.EnrollmentId == input.EnrollmentId
-                        && t.LocalDate == input.LocalDate
-                        && t.TaskCode == input.TaskCode, ct);
+                var winner = await dbContext
+                    .TaskCompletions.AsNoTracking()
+                    .FirstOrDefaultAsync(
+                        t =>
+                            t.EnrollmentId == input.EnrollmentId
+                            && t.LocalDate == input.LocalDate
+                            && t.TaskCode == input.TaskCode,
+                        ct
+                    );
                 if (winner is not null)
                 {
                     return await BuildReplayResultAsync(input.EnrollmentId, winner, ct);
@@ -374,33 +485,45 @@ public sealed class ProgramRepository(
         });
     }
 
-    private async Task<CompleteTaskResult> CompleteTaskCoreAsync(CompleteTaskInput input, CancellationToken ct)
+    private async Task<CompleteTaskResult> CompleteTaskCoreAsync(
+        CompleteTaskInput input,
+        CancellationToken ct
+    )
     {
         // 1. Bloqueo pesimista de la inscripción + validación de estado.
         //    Npgsql 10 ya no expone .ForUpdate(); el lock se toma por SQL
         //    directo (SELECT ... FOR UPDATE) dentro de la transacción.
-        var enrollment = await dbContext.ProgramEnrollments
-            .FromSqlInterpolated(
-                $"SELECT * FROM app.program_enrollments WHERE id = {input.EnrollmentId} FOR UPDATE")
-            .FirstOrDefaultAsync(ct)
+        var enrollment =
+            await dbContext
+                .ProgramEnrollments.FromSqlInterpolated(
+                    $"SELECT * FROM app.program_enrollments WHERE id = {input.EnrollmentId} FOR UPDATE"
+                )
+                .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException($"Inscripción {input.EnrollmentId} no encontrada.");
 
         if (enrollment.Status != ProgramEnrollmentStatus.Active)
         {
             throw new BusinessRuleViolationException(
-                "ENROLLMENT_INACTIVE: la inscripción no está activa.");
+                "ENROLLMENT_INACTIVE: la inscripción no está activa."
+            );
         }
 
-        var template = await dbContext.ProgramTemplates
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == enrollment.TemplateId, ct)
+        var template =
+            await dbContext
+                .ProgramTemplates.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.Id == enrollment.TemplateId, ct)
             ?? throw new NotFoundException($"Plantilla {enrollment.TemplateId} no encontrada.");
 
         // 2. Idempotencia (app-layer, dentro del lock): misma (inscripción, fecha, tarea).
-        var existing = await dbContext.TaskCompletions.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.EnrollmentId == input.EnrollmentId
-                && t.LocalDate == input.LocalDate
-                && t.TaskCode == input.TaskCode, ct);
+        var existing = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .FirstOrDefaultAsync(
+                t =>
+                    t.EnrollmentId == input.EnrollmentId
+                    && t.LocalDate == input.LocalDate
+                    && t.TaskCode == input.TaskCode,
+                ct
+            );
         if (existing is not null)
         {
             return await BuildReplayResultAsync(input.EnrollmentId, existing, ct);
@@ -409,11 +532,18 @@ public sealed class ProgramRepository(
         // 2b. Clave de idempotencia reutilizada con otra tarea/fecha → AC-04.
         if (!string.IsNullOrWhiteSpace(input.ClientRequestId))
         {
-            var sameKey = await dbContext.TaskCompletions.AsNoTracking()
-                .FirstOrDefaultAsync(t => t.EnrollmentId == input.EnrollmentId
-                    && t.ClientRequestId == input.ClientRequestId, ct);
-            if (sameKey is not null
-                && (sameKey.LocalDate != input.LocalDate || sameKey.TaskCode != input.TaskCode))
+            var sameKey = await dbContext
+                .TaskCompletions.AsNoTracking()
+                .FirstOrDefaultAsync(
+                    t =>
+                        t.EnrollmentId == input.EnrollmentId
+                        && t.ClientRequestId == input.ClientRequestId,
+                    ct
+                );
+            if (
+                sameKey is not null
+                && (sameKey.LocalDate != input.LocalDate || sameKey.TaskCode != input.TaskCode)
+            )
             {
                 var conflicted = await BuildReplayResultAsync(input.EnrollmentId, sameKey, ct);
                 return conflicted with { Outcome = CompleteTaskOutcome.IdempotencyKeyReused };
@@ -422,21 +552,26 @@ public sealed class ProgramRepository(
 
         // 3. Semana del programa para la fecha (auto-activación por rollover).
         var weekday = ToIsoWeekday(input.LocalDate);
-        var week = await dbContext.ProgramWeeks
-            .FirstOrDefaultAsync(w => w.EnrollmentId == enrollment.Id
+        var week = await dbContext.ProgramWeeks.FirstOrDefaultAsync(
+            w =>
+                w.EnrollmentId == enrollment.Id
                 && w.WeekStartDateLocal <= input.LocalDate
-                && input.LocalDate <= w.WeekEndDateLocal, ct);
+                && input.LocalDate <= w.WeekEndDateLocal,
+            ct
+        );
 
         if (week is null)
         {
             throw new UnprocessableEntityException(
-                "DATE_OUTSIDE_ACTIVE_WEEK: la fecha no pertenece a ninguna semana del programa.");
+                "DATE_OUTSIDE_ACTIVE_WEEK: la fecha no pertenece a ninguna semana del programa."
+            );
         }
 
         if (week.Status == ProgramWeekStatus.Completed)
         {
             throw new BusinessRuleViolationException(
-                "TASK_NOT_SCHEDULED: la semana ya fue completada.");
+                "TASK_NOT_SCHEDULED: la semana ya fue completada."
+            );
         }
 
         if (week.Status == ProgramWeekStatus.Locked)
@@ -446,18 +581,21 @@ public sealed class ProgramRepository(
 
         // 4. La tarea debe estar en el snapshot de la semana (SPEC §6.1).
         var snapshotTasks = ParseSnapshot(week.TasksSnapshot);
-        var scheduled = snapshotTasks.FirstOrDefault(t => t.Weekday == weekday
-            && t.TaskCode == input.TaskCode.ToString());
+        var scheduled = snapshotTasks.FirstOrDefault(t =>
+            t.Weekday == weekday && t.TaskCode == input.TaskCode.ToString()
+        );
         if (scheduled is null)
         {
             throw new BusinessRuleViolationException(
-                $"TASK_NOT_SCHEDULED: la tarea {input.TaskCode} no está programada para el día {weekday}.");
+                $"TASK_NOT_SCHEDULED: la tarea {input.TaskCode} no está programada para el día {weekday}."
+            );
         }
 
         // 5. Check-in diario (rollup).
-        var checkin = await dbContext.DailyCheckIns
-            .FirstOrDefaultAsync(c => c.EnrollmentId == enrollment.Id
-                && c.LocalDate == input.LocalDate, ct);
+        var checkin = await dbContext.DailyCheckIns.FirstOrDefaultAsync(
+            c => c.EnrollmentId == enrollment.Id && c.LocalDate == input.LocalDate,
+            ct
+        );
         if (checkin is null)
         {
             checkin = new DailyCheckIn
@@ -489,9 +627,12 @@ public sealed class ProgramRepository(
         Guid? emotionalRecordId = null;
         if (input.TaskCode == TaskCode.emocional)
         {
-            var emotional = await dbContext.EmotionalRecords
-                .FirstOrDefaultAsync(r => r.ProgramEnrollmentId == enrollment.Id
-                    && r.RecordedLocalDate == input.LocalDate, ct);
+            var emotional = await dbContext.EmotionalRecords.FirstOrDefaultAsync(
+                r =>
+                    r.ProgramEnrollmentId == enrollment.Id
+                    && r.RecordedLocalDate == input.LocalDate,
+                ct
+            );
             if (emotional is null)
             {
                 // SPEC §3.10: el registro emocional exige un mood_score real
@@ -501,7 +642,8 @@ public sealed class ProgramRepository(
                 if (!input.MoodScore.HasValue)
                 {
                     throw new UnprocessableEntityException(
-                        "MOOD_SCORE_REQUIRED: la tarea emocional requiere moodScore (1..5).");
+                        "MOOD_SCORE_REQUIRED: la tarea emocional requiere moodScore (1..5)."
+                    );
                 }
 
                 emotional = new EmotionalRecord
@@ -533,6 +675,45 @@ public sealed class ProgramRepository(
             emotionalRecordId = emotional.Id;
         }
 
+        // 7b. T-76: resolver content FKs ANTES de persistir TaskCompletion.
+        //     El resolvedor corre dentro de la transacción (consistente con el
+        //     FOR UPDATE del enrollment). Si no hay resolver (tests) o no hay
+        //     contenido activo, los FKs quedan null (el input los trae null
+        //     por defecto). XP se otorga siempre (default MVP: sin contenido
+        //     no bloquea la completación).
+        Guid? resolvedNutritionPlanId = input.NutritionPlanId;
+        short? resolvedNutritionPlanDayNumber = input.NutritionPlanDayNumber;
+        Guid? resolvedExerciseRoutineId = input.ExerciseRoutineId;
+
+        if (_programContentResolver is not null)
+        {
+            var resolution = await _programContentResolver.ResolveAsync(
+                enrollment.PatientId,
+                input.LocalDate,
+                ct
+            );
+
+            if (resolution is { })
+            {
+                // nut: nutrition_plan_id y day_number del resolvedor.
+                // Si el plan no tiene día para el weekday → ambos null (AC-13).
+                resolvedNutritionPlanId = resolution.NutritionPlanId;
+                resolvedNutritionPlanDayNumber = resolution.NutritionPlanDayNumber.HasValue
+                    ? (short?)resolution.NutritionPlanDayNumber.Value
+                    : null;
+
+                // ejercicio: exercise_routine_id del resolvedor.
+                resolvedExerciseRoutineId = resolution.ExerciseRoutineId;
+            }
+            else
+            {
+                // Sin contenido activo → FKs null.
+                resolvedNutritionPlanId = null;
+                resolvedNutritionPlanDayNumber = null;
+                resolvedExerciseRoutineId = null;
+            }
+        }
+
         // 7. Completación (puntos congelados del snapshot; la regla del
         // catálogo puede ajustarlos en el paso 8).
         var now = DateTime.UtcNow;
@@ -551,9 +732,12 @@ public sealed class ProgramRepository(
             ClientCompletedAt = input.ClientCompletedAt,
             SourceRefType = input.SourceRefType,
             ContentFingerprint = input.ContentFingerprint,
-            NutritionPlanId = input.NutritionPlanId,
-            NutritionPlanDayNumber = input.NutritionPlanDayNumber,
-            ExerciseRoutineId = input.ExerciseRoutineId,
+            // T-76: FKs de contenido resueltos por el resolvedor (o null si no
+            // hay contenido activo). Si el input ya traía valores, se preservan
+            // (backwards-compatible); si el resolvedor los calculó, prevalecen.
+            NutritionPlanId = resolvedNutritionPlanId,
+            NutritionPlanDayNumber = resolvedNutritionPlanDayNumber,
+            ExerciseRoutineId = resolvedExerciseRoutineId,
             MediaId = input.MediaId,
             VitalSignsBatchId = input.VitalSignsBatchId,
             NutribioticProductId = input.NutribioticProductId,
@@ -569,26 +753,33 @@ public sealed class ProgramRepository(
         // Sin regla o regla inactiva/vencida → fallback al comportamiento
         // actual (puntos del snapshot, sin límites, rule_code null).
         var (taskPoints, taskRuleCode, taskMultiplierUsed) = await ResolveXpAwardAsync(
-            enrollment.Id, enrollment.Timezone, XpRuleCodes.ForTask(input.TaskCode),
-            scheduled.Points, input.LocalDate, ct);
+            enrollment.Id,
+            enrollment.Timezone,
+            XpRuleCodes.ForTask(input.TaskCode),
+            scheduled.Points,
+            input.LocalDate,
+            ct
+        );
 
         completion.PointsAwarded = taskPoints;
 
         var balance = await CurrentBalanceAsync(enrollment.Id, ct);
         var newBalance = balance + taskPoints;
-        dbContext.XpLedgerEntries.Add(new XpLedgerEntry
-        {
-            Id = Guid.NewGuid(),
-            EnrollmentId = enrollment.Id,
-            Amount = taskPoints,
-            Reason = XpReason.TaskCompletion,
-            SourceRefType = input.SourceRefType,
-            SourceRefId = completion.Id,
-            RuleCode = taskRuleCode,
-            MultiplierUsed = taskMultiplierUsed,
-            BalanceAfter = newBalance,
-            AwardedAt = now,
-        });
+        dbContext.XpLedgerEntries.Add(
+            new XpLedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                EnrollmentId = enrollment.Id,
+                Amount = taskPoints,
+                Reason = XpReason.TaskCompletion,
+                SourceRefType = input.SourceRefType,
+                SourceRefId = completion.Id,
+                RuleCode = taskRuleCode,
+                MultiplierUsed = taskMultiplierUsed,
+                BalanceAfter = newBalance,
+                AwardedAt = now,
+            }
+        );
 
         await dbContext.SaveChangesAsync(ct);
 
@@ -596,12 +787,14 @@ public sealed class ProgramRepository(
         //    (SPEC §6.3); el bonus se otorga una única vez (dedupe parcial de
         //    xp_ledger con source_ref_id = daily_checkin.id).
         var scheduledForDay = snapshotTasks.Where(t => t.Weekday == weekday).ToList();
-        var completedForDay = await dbContext.TaskCompletions.AsNoTracking()
+        var completedForDay = await dbContext
+            .TaskCompletions.AsNoTracking()
             .Where(t => t.EnrollmentId == enrollment.Id && t.LocalDate == input.LocalDate)
             .Select(t => t.TaskCode.ToString())
             .ToListAsync(ct);
 
-        var isPerfect = scheduledForDay.Count > 0
+        var isPerfect =
+            scheduledForDay.Count > 0
             && scheduledForDay.All(t => completedForDay.Contains(t.TaskCode));
 
         // Umbral de racha configurable (SPEC §17, B): un día "cumple el umbral"
@@ -626,26 +819,34 @@ public sealed class ProgramRepository(
             // SPEC §14: el bonus de día perfecto también pasa por el catálogo
             // (regla DAY_BONUS, base 50 por defecto si no existe/está inactiva).
             var (bonusPoints, bonusRuleCode, bonusMultiplierUsed) = await ResolveXpAwardAsync(
-                enrollment.Id, enrollment.Timezone, XpRuleCodes.DayBonus, 50, input.LocalDate, ct);
+                enrollment.Id,
+                enrollment.Timezone,
+                XpRuleCodes.DayBonus,
+                50,
+                input.LocalDate,
+                ct
+            );
 
             checkin.IsPerfectDay = true;
             checkin.BonusAwarded = bonusPoints;
             newBalance += bonusPoints;
             dailyBonus = bonusPoints;
 
-            dbContext.XpLedgerEntries.Add(new XpLedgerEntry
-            {
-                Id = Guid.NewGuid(),
-                EnrollmentId = enrollment.Id,
-                Amount = bonusPoints,
-                Reason = XpReason.DailyBonus,
-                SourceRefType = "DailyBonus",
-                SourceRefId = checkin.Id,
-                RuleCode = bonusRuleCode,
-                MultiplierUsed = bonusMultiplierUsed,
-                BalanceAfter = newBalance,
-                AwardedAt = now,
-            });
+            dbContext.XpLedgerEntries.Add(
+                new XpLedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EnrollmentId = enrollment.Id,
+                    Amount = bonusPoints,
+                    Reason = XpReason.DailyBonus,
+                    SourceRefType = "DailyBonus",
+                    SourceRefId = checkin.Id,
+                    RuleCode = bonusRuleCode,
+                    MultiplierUsed = bonusMultiplierUsed,
+                    BalanceAfter = newBalance,
+                    AwardedAt = now,
+                }
+            );
 
             // Notificación gamificada de día perfecto (SPEC §20, C.5): best-
             // effort — el servicio nunca lanza ni rompe la transacción (AC-42).
@@ -657,7 +858,8 @@ public sealed class ProgramRepository(
                     "✅ Día perfecto",
                     $"✅ Día perfecto · +{bonusPoints} XP",
                     "normal",
-                    ct);
+                    ct
+                );
             }
         }
 
@@ -668,7 +870,11 @@ public sealed class ProgramRepository(
         if (meetsThreshold)
         {
             (newStreak, streakGrewToday) = await UpdateStreakAsync(
-                enrollment.Id, input.LocalDate, template.EssentialTaskCodes, ct);
+                enrollment.Id,
+                input.LocalDate,
+                template.EssentialTaskCodes,
+                ct
+            );
         }
 
         // Flush del check-in recién actualizado: MaybeCompleteWeekAsync consulta
@@ -684,20 +890,32 @@ public sealed class ProgramRepository(
         if (streakGrewToday && newStreak > 0)
         {
             await AwardStreakMilestoneIfReachedAsync(
-                enrollment.Id, enrollment.PatientId, enrollment.Timezone, newStreak, input.LocalDate, ct);
+                enrollment.Id,
+                enrollment.PatientId,
+                enrollment.Timezone,
+                newStreak,
+                input.LocalDate,
+                ct
+            );
         }
 
-        // Racha propia del nutribiótico (SPEC §19, B — "Paso 7a"): la tarea
-        // nutribiotico mantiene su PROPIA racha consecutiva, independiente de
+        // Racha propia del nutracéutico (SPEC §19, B — "Paso 7a"): la tarea
+        // nutraceutico mantiene su PROPIA racha consecutiva, independiente de
         // la racha general (un día perdido la rompe; los congelamientos NO la
         // protegen — AC-38). Corre SOLO en la primera escritura de la tarea
         // (el replay idempotente ya retornó arriba), dentro de la transacción
         // con la inscripción bloqueada FOR UPDATE, y después del flush para
         // que el balance del libro mayor incluya la tarea y el bonus de día.
-        if (input.TaskCode == TaskCode.nutribiotico)
+        if (input.TaskCode == TaskCode.nutraceutico)
         {
             await UpdateNbStreakAsync(
-                enrollment.Id, enrollment.PatientId, enrollment.Timezone, input.LocalDate, completion.Id, ct);
+                enrollment.Id,
+                enrollment.PatientId,
+                enrollment.Timezone,
+                input.LocalDate,
+                completion.Id,
+                ct
+            );
         }
 
         // 10. Semana perfecta → avance (SPEC §6.7).
@@ -707,14 +925,16 @@ public sealed class ProgramRepository(
 
         // Notificación gamificada de subida de nivel (SPEC §20, C.4): se
         // compara el nivel ANTES y DESPUÉS de todos los otorgamientos del día
-        // (tarea + bonus de día perfecto + hitos de racha/nutribiótico). Corre
+        // (tarea + bonus de día perfecto + hitos de racha/nutracéutico). Corre
         // DESPUÉS del flush para que <see cref="CurrentBalanceAsync"/> vea el
         // libro mayor completo (las filas recién añadidas no están en BD hasta
         // el SaveChanges). Best-effort — nunca lanza (AC-42).
         if (_gamifiedNotificationService is not null)
         {
             var levelBefore = XpLevels.ForBalance(balance).Level;
-            var levelAfter = XpLevels.ForBalance(await CurrentBalanceAsync(enrollment.Id, ct)).Level;
+            var levelAfter = XpLevels
+                .ForBalance(await CurrentBalanceAsync(enrollment.Id, ct))
+                .Level;
             if (levelBefore != levelAfter)
             {
                 await _gamifiedNotificationService.NotifyAsync(
@@ -723,11 +943,19 @@ public sealed class ProgramRepository(
                     $"⭐ ¡Nivel {levelAfter}!",
                     $"⭐ ¡Subiste a Nivel {levelAfter}!",
                     "high",
-                    ct);
+                    ct
+                );
             }
         }
 
-        var streak = await dbContext.StreakStates.AsNoTracking()
+        // Motor de adaptaciones (SPEC §6.8, T-23): reglas deterministas
+        // evaluadas tras cada completación dentro de la misma transacción.
+        // El balance "anterior" es el previo a esta escritura; el actual lo
+        // relee el motor (incluye tarea + bonus + hitos del mismo flujo).
+        await EvaluateAdaptationsAsync(enrollment.Id, input.LocalDate, balance, ct);
+
+        var streak = await dbContext
+            .StreakStates.AsNoTracking()
             .FirstOrDefaultAsync(s => s.EnrollmentId == enrollment.Id, ct);
 
         return new CompleteTaskResult(
@@ -742,7 +970,8 @@ public sealed class ProgramRepository(
             checkin.TotalPoints + checkin.BonusAwarded,
             // Máximo del día: misma computación que el replay (SPEC §7.2: el
             // body del replay debe ser idéntico a la primera escritura).
-            ComputeDayPointsMax(scheduledForDay));
+            ComputeDayPointsMax(scheduledForDay)
+        );
     }
 
     // ---------------------------------------------------------------- Racha
@@ -769,20 +998,24 @@ public sealed class ProgramRepository(
         Guid enrollmentId,
         DateOnly today,
         IReadOnlyList<string> essentialTaskCodes,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var streak = await dbContext.StreakStates.AsNoTracking()
+        var streak = await dbContext
+            .StreakStates.AsNoTracking()
             .FirstOrDefaultAsync(s => s.EnrollmentId == enrollmentId, ct);
 
         if (streak is null)
         {
-            dbContext.StreakStates.Add(new StreakState
-            {
-                EnrollmentId = enrollmentId,
-                CurrentStreak = 1,
-                LongestStreak = 1,
-                LastActiveDate = today,
-            });
+            dbContext.StreakStates.Add(
+                new StreakState
+                {
+                    EnrollmentId = enrollmentId,
+                    CurrentStreak = 1,
+                    LongestStreak = 1,
+                    LastActiveDate = today,
+                }
+            );
             return (1, true);
         }
 
@@ -816,20 +1049,24 @@ public sealed class ProgramRepository(
             // completó al menos una tarea esencial de la plantilla. Sin tarea
             // esencial el congelamiento NO se consume (permanece en inventario)
             // y la racha se rompe (AC-32).
-            if (freezesRemaining > 0
-                && await HadEssentialTaskAsync(enrollmentId, missedDay, essentialTaskCodes, ct))
+            if (
+                freezesRemaining > 0
+                && await HadEssentialTaskAsync(enrollmentId, missedDay, essentialTaskCodes, ct)
+            )
             {
                 freezesRemaining -= 1;
                 freezesUsedTotal += 1;
-                dbContext.StreakFreezes.Add(new StreakFreeze
-                {
-                    Id = Guid.NewGuid(),
-                    EnrollmentId = enrollmentId,
-                    Kind = StreakFreezeKind.Consumed,
-                    UsedOnLocalDate = missedDay,
-                    GrantedReason = "StreakFreeze",
-                    CreatedAt = DateTime.UtcNow,
-                });
+                dbContext.StreakFreezes.Add(
+                    new StreakFreeze
+                    {
+                        Id = Guid.NewGuid(),
+                        EnrollmentId = enrollmentId,
+                        Kind = StreakFreezeKind.Consumed,
+                        UsedOnLocalDate = missedDay,
+                        GrantedReason = "StreakFreeze",
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
                 // La racha se preserva (no se incrementa hoy tras un quiebre).
             }
             else
@@ -851,33 +1088,40 @@ public sealed class ProgramRepository(
         // perfectos consecutivos"). Si un congelamiento se consumió preservando
         // la racha en un múltiplo (AC-09), no se re-otorga en el mismo valor:
         // el inventario sí decrementa.
-        if (streakGrewToday
+        if (
+            streakGrewToday
             && current > 0
             && current % _freezeGrantEveryPerfectDays == 0
-            && freezesRemaining < MaxFreezes)
+            && freezesRemaining < MaxFreezes
+        )
         {
             freezesRemaining += 1;
-            dbContext.StreakFreezes.Add(new StreakFreeze
-            {
-                Id = Guid.NewGuid(),
-                EnrollmentId = enrollmentId,
-                Kind = StreakFreezeKind.Granted,
-                GrantedAt = DateTime.UtcNow,
-                GrantedReason = "PerfectWeekBonus",
-                CreatedAt = DateTime.UtcNow,
-            });
+            dbContext.StreakFreezes.Add(
+                new StreakFreeze
+                {
+                    Id = Guid.NewGuid(),
+                    EnrollmentId = enrollmentId,
+                    Kind = StreakFreezeKind.Granted,
+                    GrantedAt = DateTime.UtcNow,
+                    GrantedReason = "PerfectWeekBonus",
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
 
-        await dbContext.StreakStates
-            .Where(s => s.EnrollmentId == enrollmentId)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.CurrentStreak, current)
-                .SetProperty(x => x.LongestStreak, longest)
-                .SetProperty(x => x.LastActiveDate, lastActive)
-                .SetProperty(x => x.FreezesRemaining, freezesRemaining)
-                .SetProperty(x => x.FreezesUsedTotal, freezesUsedTotal)
-                .SetProperty(x => x.LastBreakDate, lastBreak)
-                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+        await dbContext
+            .StreakStates.Where(s => s.EnrollmentId == enrollmentId)
+            .ExecuteUpdateAsync(
+                s =>
+                    s.SetProperty(x => x.CurrentStreak, current)
+                        .SetProperty(x => x.LongestStreak, longest)
+                        .SetProperty(x => x.LastActiveDate, lastActive)
+                        .SetProperty(x => x.FreezesRemaining, freezesRemaining)
+                        .SetProperty(x => x.FreezesUsedTotal, freezesUsedTotal)
+                        .SetProperty(x => x.LastBreakDate, lastBreak)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow),
+                ct
+            );
 
         return (current, streakGrewToday);
     }
@@ -887,22 +1131,31 @@ public sealed class ProgramRepository(
     /// ADRED): un día bajo el umbral solo puede rescatarse con un congelamiento
     /// si se completó al menos una tarea cuyo código está en el catálogo
     /// esencial de la plantilla (default <c>nut</c> / <c>ejercicio</c> /
-    /// <c>nutribiotico</c>). Lista esencial vacía = sin restricción
+    /// <c>nutraceutico</c>). Lista esencial vacía = sin restricción
     /// (comportamiento previo: cualquier día perdido puede rescatarse con
     /// congelamiento).
     /// </summary>
     private async Task<bool> HadEssentialTaskAsync(
-        Guid enrollmentId, DateOnly localDate, IReadOnlyList<string> essentialTaskCodes, CancellationToken ct)
+        Guid enrollmentId,
+        DateOnly localDate,
+        IReadOnlyList<string> essentialTaskCodes,
+        CancellationToken ct
+    )
     {
         if (essentialTaskCodes.Count == 0)
         {
             return true;
         }
 
-        return await dbContext.TaskCompletions.AsNoTracking()
-            .AnyAsync(t => t.EnrollmentId == enrollmentId
-                && t.LocalDate == localDate
-                && essentialTaskCodes.Contains(t.TaskCode.ToString()), ct);
+        return await dbContext
+            .TaskCompletions.AsNoTracking()
+            .AnyAsync(
+                t =>
+                    t.EnrollmentId == enrollmentId
+                    && t.LocalDate == localDate
+                    && essentialTaskCodes.Contains(t.TaskCode.ToString()),
+                ct
+            );
     }
 
     // ---------------------------------------------------------------- Semanas
@@ -919,7 +1172,8 @@ public sealed class ProgramRepository(
         ProgramTemplate template,
         ProgramWeek week,
         DateOnly localDate,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         // Rollover de semanas vencidas (end < fecha): se completan TODAS las
         // anteriores sin importar su estado (Locked o Active). La semana 1 nace
@@ -927,28 +1181,37 @@ public sealed class ProgramRepository(
         // al avanzar (SPEC §6.7); el filtro anterior (solo Locked) dejaba la
         // semana 1 colgada en Active y bloqueaba el avance con
         // DATE_OUTSIDE_ACTIVE_WEEK. Las ya Completed se excluyen (idempotencia).
-        await dbContext.ProgramWeeks
-            .Where(w => w.EnrollmentId == enrollment.Id
+        await dbContext
+            .ProgramWeeks.Where(w =>
+                w.EnrollmentId == enrollment.Id
                 && w.WeekNumber < week.WeekNumber
                 && w.WeekEndDateLocal < localDate
-                && w.Status != ProgramWeekStatus.Completed)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(w => w.Status, ProgramWeekStatus.Completed)
-                .SetProperty(w => w.CompletedAt, DateTime.UtcNow)
-                .SetProperty(w => w.UpdatedAt, DateTime.UtcNow), ct);
+                && w.Status != ProgramWeekStatus.Completed
+            )
+            .ExecuteUpdateAsync(
+                s =>
+                    s.SetProperty(w => w.Status, ProgramWeekStatus.Completed)
+                        .SetProperty(w => w.CompletedAt, DateTime.UtcNow)
+                        .SetProperty(w => w.UpdatedAt, DateTime.UtcNow),
+                ct
+            );
 
         // Defensa: solo cuentan como pendientes las semanas anteriores cuyo
         // rango aún no venció (WeekEndDateLocal >= fecha). Con semanas
         // contiguas esto no ocurre; protege contra saltos de fecha inválidos.
-        var priorIncomplete = await dbContext.ProgramWeeks
-            .AnyAsync(w => w.EnrollmentId == enrollment.Id
+        var priorIncomplete = await dbContext.ProgramWeeks.AnyAsync(
+            w =>
+                w.EnrollmentId == enrollment.Id
                 && w.WeekNumber < week.WeekNumber
                 && w.WeekEndDateLocal >= localDate
-                && w.Status != ProgramWeekStatus.Completed, ct);
+                && w.Status != ProgramWeekStatus.Completed,
+            ct
+        );
         if (priorIncomplete)
         {
             throw new UnprocessableEntityException(
-                "DATE_OUTSIDE_ACTIVE_WEEK: la fecha corresponde a una semana futura aún bloqueada.");
+                "DATE_OUTSIDE_ACTIVE_WEEK: la fecha corresponde a una semana futura aún bloqueada."
+            );
         }
 
         var now = DateTime.UtcNow;
@@ -971,9 +1234,11 @@ public sealed class ProgramRepository(
         ProgramEnrollment enrollment,
         ProgramTemplate template,
         ProgramWeek week,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var perfectWeekdays = await dbContext.DailyCheckIns.AsNoTracking()
+        var perfectWeekdays = await dbContext
+            .DailyCheckIns.AsNoTracking()
             .Where(c => c.ProgramWeekId == week.Id && c.IsPerfectDay)
             .Select(c => c.Weekday)
             .Distinct()
@@ -991,9 +1256,10 @@ public sealed class ProgramRepository(
 
         if (week.WeekNumber < template.TotalWeeks)
         {
-            var nextWeek = await dbContext.ProgramWeeks
-                .FirstOrDefaultAsync(w => w.EnrollmentId == enrollment.Id
-                    && w.WeekNumber == week.WeekNumber + 1, ct);
+            var nextWeek = await dbContext.ProgramWeeks.FirstOrDefaultAsync(
+                w => w.EnrollmentId == enrollment.Id && w.WeekNumber == week.WeekNumber + 1,
+                ct
+            );
             if (nextWeek is not null)
             {
                 nextWeek.Status = ProgramWeekStatus.Active;
@@ -1016,14 +1282,19 @@ public sealed class ProgramRepository(
     // ---------------------------------------------------------------- Lecturas
 
     public async Task<ProgramSnapshotDto?> GetSnapshotAsync(
-        Guid enrollmentId, DateOnly todayLocalDate, CancellationToken ct = default)
+        Guid enrollmentId,
+        DateOnly todayLocalDate,
+        CancellationToken ct = default
+    )
     {
         // Proyección única: inscripción + plantilla + racha + balance (sin N+1).
-        var row = await dbContext.ProgramEnrollments.AsNoTracking()
+        var row = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.Id == enrollmentId)
             .Select(e => new
             {
                 e.Id,
+                e.PatientId,
                 e.StartLocalDate,
                 e.CurrentWeekNumber,
                 TemplateId = e.Template!.Id,
@@ -1039,17 +1310,20 @@ public sealed class ProgramRepository(
                 FreezesRemaining = (int?)e.StreakState.FreezesRemaining,
                 MultiplierActive = (decimal?)e.StreakState.MultiplierActive,
                 MultiplierEndsAt = e.StreakState.MultiplierEndsAt,
-                // Racha propia del nutribiótico (SPEC §19, D): campos aditivos
+                // Racha propia del nutracéutico (SPEC §19, D): campos aditivos
                 // del snapshot para la UI del móvil (Paso 7a).
                 NbStreak = (int?)e.StreakState.NbCurrentStreak,
                 NbLongestStreak = (int?)e.StreakState.NbLongestStreak,
-                XpBalance = e.XpLedgerEntries
+                XpBalance = e
+                    .XpLedgerEntries
                     // Excluye las XP pendientes de validación (SPEC §15, E): una
                     // fila cuya regla requiere_validation = true y aún no tiene
                     // validated_by no cuenta en el total hasta aprobarse. Las
                     // CLINICAL_IMPROVE/STABLE/ALL_UP tienen validated_by null
                     // pero requires_validation = false → sí cuentan.
-                    .Where(x => x.ValidatedBy != null || x.Rule == null || !x.Rule.RequiresValidation)
+                    .Where(x =>
+                        x.ValidatedBy != null || x.Rule == null || !x.Rule.RequiresValidation
+                    )
                     .OrderByDescending(x => x.BalanceAfter)
                     .Select(x => (int?)x.BalanceAfter)
                     .FirstOrDefault(),
@@ -1061,9 +1335,12 @@ public sealed class ProgramRepository(
             return null;
         }
 
-        var week = await dbContext.ProgramWeeks.AsNoTracking()
-            .FirstOrDefaultAsync(w => w.EnrollmentId == enrollmentId
-                && w.WeekNumber == row.CurrentWeekNumber, ct);
+        var week = await dbContext
+            .ProgramWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(
+                w => w.EnrollmentId == enrollmentId && w.WeekNumber == row.CurrentWeekNumber,
+                ct
+            );
         if (week is null)
         {
             return null;
@@ -1076,9 +1353,15 @@ public sealed class ProgramRepository(
             .OrderBy(t => t.SortOrder)
             .ToList();
 
-        var todayCompletions = await dbContext.TaskCompletions.AsNoTracking()
+        var todayCompletions = await dbContext
+            .TaskCompletions.AsNoTracking()
             .Where(t => t.EnrollmentId == enrollmentId && t.LocalDate == todayLocalDate)
-            .Select(t => new { t.TaskCode, t.CompletedAt, t.MediaId })
+            .Select(t => new
+            {
+                t.TaskCode,
+                t.CompletedAt,
+                t.MediaId,
+            })
             .ToListAsync(ct);
 
         // Contenido multimedia del snapshot (SPEC §7.1): título/duración/
@@ -1093,7 +1376,8 @@ public sealed class ProgramRepository(
         // (template, weekday)); así el móvil ve el contenido del podcast del
         // día antes de completarlo. La completación (media_id real del cliente)
         // tiene prioridad sobre el fallback.
-        var fallbackByTask = await dbContext.WeeklyDayTemplates.AsNoTracking()
+        var fallbackByTask = await dbContext
+            .WeeklyDayTemplates.AsNoTracking()
             .Where(d => d.TemplateId == row.TemplateId && d.Weekday == weekday)
             .Select(d => new { TaskCode = d.TaskCode.ToString(), d.MediaId })
             .ToListAsync(ct);
@@ -1101,62 +1385,327 @@ public sealed class ProgramRepository(
         var mediaIds = todayCompletions
             .Where(c => c.MediaId.HasValue)
             .Select(c => c.MediaId!.Value)
-            .Concat(fallbackByTask
-                .Where(f => f.MediaId.HasValue)
-                .Select(f => f.MediaId!.Value))
+            .Concat(fallbackByTask.Where(f => f.MediaId.HasValue).Select(f => f.MediaId!.Value))
             .Distinct()
             .ToList();
-        var mediaById = mediaIds.Count == 0
-            ? new Dictionary<Guid, (string Title, int? DurationSecs, string? ThumbnailKey)>()
-            : (await dbContext.MediaItems.AsNoTracking()
-                .Where(m => mediaIds.Contains(m.Id) && m.Status == MediaStatus.Published)
-                .Select(m => new { m.Id, m.Title, m.DurationSecs, m.ThumbnailKey })
-                .ToListAsync(ct))
-                .ToDictionary(m => m.Id, m => (m.Title, m.DurationSecs, m.ThumbnailKey));
+        var mediaById =
+            mediaIds.Count == 0
+                ? new Dictionary<Guid, (string Title, string? Description, string Author, int? DurationSecs, string? ThumbnailKey, string StorageKey)>()
+                : (
+                    await dbContext
+                        .MediaItems.AsNoTracking()
+                        .Where(m => mediaIds.Contains(m.Id) && m.Status == MediaStatus.Published)
+                        .Select(m => new
+                        {
+                            m.Id,
+                            m.Title,
+                            m.Description,
+                            m.Author,
+                            m.DurationSecs,
+                            m.ThumbnailKey,
+                            m.StorageKey,
+                        })
+                        .ToListAsync(ct)
+                ).ToDictionary(m => m.Id, m => (m.Title, m.Description, m.Author, m.DurationSecs, m.ThumbnailKey, m.StorageKey));
 
         var fallbackMediaByTask = fallbackByTask
             .Where(f => f.MediaId.HasValue)
             .GroupBy(f => f.TaskCode)
             .ToDictionary(g => g.Key, g => g.First().MediaId!.Value);
 
-        var checkin = await dbContext.DailyCheckIns.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.EnrollmentId == enrollmentId
-                && c.LocalDate == todayLocalDate, ct);
+        // T-75: resolver contenido de nutrición y rutina para hoy.
+        // Una sola llamada al resolver (anti N+1): el resultado se reutiliza
+        // para todas las tareas nut/ejercicio del día.
+        ProgramContentResolution? contentResolution = null;
+        if (_programContentResolver is not null)
+        {
+            contentResolution = await _programContentResolver.ResolveAsync(
+                patientId: row.PatientId,
+                localDate: todayLocalDate,
+                ct
+            );
+        }
+
+        // Pre-cargar nombres de plan/rutina para el contenido del snapshot
+        // (anti N+1: batch por IDs resueltos).
+        string? resolvedPlanName = null;
+        int? resolvedCalorieTarget = null;
+        decimal? resolvedProteinTarget = null;
+        decimal? resolvedCarbsTarget = null;
+        decimal? resolvedFatTarget = null;
+        decimal? resolvedFiberTarget = null;
+        IReadOnlyList<NutritionMealDto>? resolvedMeals = null;
+
+        string? resolvedRoutineName = null;
+        IReadOnlyList<ExerciseItemDto>? resolvedExercises = null;
+
+        if (contentResolution is { })
+        {
+            if (contentResolution.NutritionPlanId is { } planId)
+            {
+                var dayNumber = contentResolution.NutritionPlanDayNumber ?? 1;
+
+                var planData = await dbContext
+                    .NutritionPlans.AsNoTracking()
+                    .Where(p => p.Id == planId)
+                    .Select(p => new
+                    {
+                        p.Name,
+                        p.DailyCalorieTarget,
+                        p.DailyProteinTarget,
+                        p.DailyCarbsTarget,
+                        p.DailyFatTarget,
+                        p.DailyFiberTarget,
+                        Meals = dbContext.NutritionPlanDays
+                            .AsNoTracking()
+                            .Where(d => d.PlanId == planId && d.DayNumber == dayNumber)
+                            .OrderBy(d => d.SortOrder)
+                            .Select(d => new NutritionMealDto(
+                                d.MealType.ToString(),
+                                d.Description,
+                                d.Foods,
+                                d.Calories,
+                                d.ProteinG,
+                                d.CarbsG,
+                                d.FatG,
+                                d.FiberG,
+                                d.WaterMl,
+                                d.Notes,
+                                d.SortOrder
+                            ))
+                            .ToList()
+                    })
+                    .FirstOrDefaultAsync(ct);
+
+                resolvedPlanName = planData?.Name;
+                resolvedCalorieTarget = planData?.DailyCalorieTarget;
+                resolvedProteinTarget = planData?.DailyProteinTarget;
+                resolvedCarbsTarget = planData?.DailyCarbsTarget;
+                resolvedFatTarget = planData?.DailyFatTarget;
+                resolvedFiberTarget = planData?.DailyFiberTarget;
+                resolvedMeals = planData?.Meals;
+            }
+            if (contentResolution.ExerciseRoutineId is { } routineId)
+            {
+                var routineData = await dbContext
+                    .ExerciseRoutines.AsNoTracking()
+                    .Where(r => r.Id == routineId)
+                    .Select(r => new
+                    {
+                        r.Name,
+                        Exercises = r.Exercises
+                            .OrderBy(e => e.SortOrder)
+                            .Select(e => new ExerciseItemDto(
+                                e.Name,
+                                e.Description,
+                                e.Sets,
+                                e.Repetitions,
+                                e.DurationSecs,
+                                e.RestSeconds,
+                                e.TargetMuscle,
+                                e.Equipment,
+                                e.Tips,
+                                e.SortOrder
+                            ))
+                            .ToList()
+                    })
+                    .FirstOrDefaultAsync(ct);
+
+                resolvedRoutineName = routineData?.Name;
+                resolvedExercises = routineData?.Exercises;
+            }
+        }
+
+        RecentVitalsDto? recentVitals = null;
+        var latestVital = await dbContext
+            .VitalSigns.AsNoTracking()
+            .Where(v => v.PatientId == row.PatientId)
+            .OrderByDescending(v => v.MeasuredAt)
+            .Select(v => new
+            {
+                v.HeartRate,
+                v.Systolic,
+                v.Diastolic,
+                v.O2Saturation,
+                v.WeightKg,
+                v.TemperatureC,
+                v.MeasuredAt,
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (latestVital is not null)
+        {
+            recentVitals = new RecentVitalsDto(
+                HeartRate: latestVital.HeartRate,
+                Systolic: latestVital.Systolic,
+                Diastolic: latestVital.Diastolic,
+                O2Saturation: latestVital.O2Saturation,
+                Glucose: null,
+                WeightKg: latestVital.WeightKg,
+                TemperatureC: latestVital.TemperatureC,
+                RecordedAt: latestVital.MeasuredAt
+            );
+        }
+
+        var checkin = await dbContext
+            .DailyCheckIns.AsNoTracking()
+            .FirstOrDefaultAsync(
+                c => c.EnrollmentId == enrollmentId && c.LocalDate == todayLocalDate,
+                ct
+            );
 
         var calendar = await BuildCalendarDaysAsync(
-            enrollmentId, todayLocalDate.AddDays(-6), todayLocalDate, todayLocalDate, ct);
+            enrollmentId,
+            todayLocalDate.AddDays(-6),
+            todayLocalDate,
+            todayLocalDate,
+            ct
+        );
 
-        var todayTasks = todayScheduled.Select(t =>
-        {
-            var done = todayCompletions.FirstOrDefault(c => c.TaskCode.ToString() == t.TaskCode);
-            var catalog = ProgramTaskCatalog.For(Enum.Parse<TaskCode>(t.TaskCode));
-
-            TodayTaskContentDto? content = null;
-            if (done?.MediaId is { } mediaId)
+        var todayTasks = todayScheduled
+            .Select(t =>
             {
-                content = mediaById.TryGetValue(mediaId, out var media)
-                    ? new TodayTaskContentDto(mediaId, media.Title, media.DurationSecs, media.ThumbnailKey)
-                    : new TodayTaskContentDto(mediaId, null, null, null);
-            }
-            else if (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fallbackMediaId))
-            {
-                // Tarea PENDIENTE con fallback de plantilla (SPEC §4.4/§7.1):
-                // muestra el contenido multimedia del día (podcast) aunque aún
-                // no se complete.
-                content = mediaById.TryGetValue(fallbackMediaId, out var media)
-                    ? new TodayTaskContentDto(fallbackMediaId, media.Title, media.DurationSecs, media.ThumbnailKey)
-                    : new TodayTaskContentDto(fallbackMediaId, null, null, null);
-            }
+                var done = todayCompletions.FirstOrDefault(c =>
+                    c.TaskCode.ToString() == t.TaskCode
+                );
+                var catalog = ProgramTaskCatalog.For(Enum.Parse<TaskCode>(t.TaskCode));
+                var taskCode = Enum.Parse<TaskCode>(t.TaskCode);
 
-            return new TodayTaskDto(
-                Enum.Parse<TaskCode>(t.TaskCode),
-                catalog.Title,
-                catalog.Short,
-                t.Points,
-                done is null ? "Pending" : "Completed",
-                done?.CompletedAt,
-                content);
-        }).ToList();
+                TodayTaskContentDto? content = null;
+                bool contentUnavailable = false;
+
+                if (taskCode == TaskCode.podcast)
+                {
+                    var activeMediaId = done?.MediaId ?? (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fbId) ? fbId : (Guid?)null);
+                    if (activeMediaId.HasValue && mediaById.TryGetValue(activeMediaId.Value, out var media))
+                    {
+                        var duration = media.DurationSecs ?? 480;
+                        var defaultChapters = new List<PodcastChapterDto>
+                        {
+                            new(0, "Por qué la racha importa"),
+                            new((int)(duration * 0.2), "Insulina y horarios"),
+                            new((int)(duration * 0.55), "El circuito de 12 minutos"),
+                            new((int)(duration * 0.8), "Reto de hoy"),
+                        };
+                        var defaultTakeaways = new List<string>
+                        {
+                            "Misma hora · mismo ritual diario",
+                            "Proteína en cada comida principal",
+                            "12 minutos bastan si son diarios",
+                        };
+
+                        content = new TodayTaskContentDto(
+                            MediaId: activeMediaId.Value,
+                            Title: media.Title,
+                            DurationSecs: media.DurationSecs,
+                            ThumbnailUrl: media.ThumbnailKey,
+                            Author: media.Author,
+                            Description: media.Description,
+                            MediaUrl: media.StorageKey,
+                            Chapters: defaultChapters,
+                            Takeaways: defaultTakeaways,
+                            ContentUnavailable: false
+                        );
+                    }
+                    else if (activeMediaId.HasValue)
+                    {
+                        content = new TodayTaskContentDto(activeMediaId.Value, null, null, null);
+                    }
+                }
+                else if (taskCode == TaskCode.nut)
+                {
+                    // T-75: nut → campos nutritionPlan* del resolvedor.
+                    if (contentResolution is { NutritionPlanId: { } planId })
+                    {
+                        content = new TodayTaskContentDto(
+                            MediaId: null,
+                            Title: resolvedPlanName,
+                            DurationSecs: null,
+                            ThumbnailUrl: null,
+                            NutritionPlanId: planId,
+                            NutritionPlanName: resolvedPlanName,
+                            NutritionPlanDayNumber: contentResolution.NutritionPlanDayNumber,
+                            DailyCalorieTarget: resolvedCalorieTarget,
+                            DailyProteinTarget: resolvedProteinTarget,
+                            DailyCarbsTarget: resolvedCarbsTarget,
+                            DailyFatTarget: resolvedFatTarget,
+                            DailyFiberTarget: resolvedFiberTarget,
+                            NutritionMeals: resolvedMeals,
+                            ExerciseRoutineId: null,
+                            ExerciseRoutineName: null,
+                            ContentUnavailable: false
+                        );
+                    }
+                    else
+                    {
+                        // Sin plan activo para hoy → contentUnavailable.
+                        contentUnavailable = true;
+                        content = new TodayTaskContentDto(
+                            MediaId: null,
+                            Title: null,
+                            DurationSecs: null,
+                            ThumbnailUrl: null,
+                            ContentUnavailable: true
+                        );
+                    }
+                }
+                else if (taskCode == TaskCode.ejercicio)
+                {
+                    // T-75: ejercicio → campos exerciseRoutine* del resolvedor.
+                    if (contentResolution is { ExerciseRoutineId: { } routineId })
+                    {
+                        content = new TodayTaskContentDto(
+                            MediaId: null,
+                            Title: resolvedRoutineName,
+                            DurationSecs: null,
+                            ThumbnailUrl: null,
+                            NutritionPlanId: null,
+                            NutritionPlanName: null,
+                            NutritionPlanDayNumber: null,
+                            ExerciseRoutineId: routineId,
+                            ExerciseRoutineName: resolvedRoutineName,
+                            ContentUnavailable: false,
+                            Exercises: resolvedExercises
+                        );
+                    }
+                    else
+                    {
+                        // Sin rutina activa para hoy → contentUnavailable.
+                        contentUnavailable = true;
+                        content = new TodayTaskContentDto(
+                            MediaId: null,
+                            Title: null,
+                            DurationSecs: null,
+                            ThumbnailUrl: null,
+                            ContentUnavailable: true
+                        );
+                    }
+                }
+
+                else if (taskCode == TaskCode.vitals)
+                {
+                    content = new TodayTaskContentDto(
+                        MediaId: null,
+                        Title: null,
+                        DurationSecs: null,
+                        ThumbnailUrl: null,
+                        RecentVitals: recentVitals,
+                        ContentUnavailable: false
+                    );
+                }
+
+                return new TodayTaskDto(
+                    taskCode,
+                    catalog.Title,
+                    catalog.Short,
+                    t.Points,
+                    done is null ? "Pending" : "Completed",
+                    done?.CompletedAt,
+                    content,
+                    contentUnavailable
+                );
+            })
+            .ToList();
 
         var xpBalance = row.XpBalance ?? 0;
         var level = XpLevels.ForBalance(xpBalance);
@@ -1178,7 +1727,7 @@ public sealed class ProgramRepository(
             ? 0
             : (int)Math.Floor((multiplierEndsAt.Value - now).TotalHours);
 
-        // Próximo hito de la racha del nutribiótico (SPEC §19, D): el primer
+        // Próximo hito de la racha del nutracéutico (SPEC §19, D): el primer
         // hito de la tabla (7/14/30/60/90) por encima de la racha actual; null
         // cuando ya se llegó a 90 (no hay hito siguiente). La lectura nunca
         // escribe.
@@ -1187,6 +1736,62 @@ public sealed class ProgramRepository(
         var nextNbMilestone = FindNextNbMilestone(nbStreak) is { } next
             ? new NbNextMilestoneDto(next.Days, next.BaseXp, next.Days - nbStreak)
             : null;
+
+        // Historial de 7 días del nutribiótico para la semana actual
+        var weekStart = week.WeekStartDateLocal;
+        var weekEnd = week.WeekEndDateLocal;
+        var nbCompletionsThisWeek = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .Where(c => c.EnrollmentId == enrollmentId
+                     && c.TaskCode == TaskCode.nutraceutico
+                     && c.LocalDate >= weekStart
+                     && c.LocalDate <= weekEnd)
+            .Select(c => c.LocalDate)
+            .ToListAsync(ct);
+
+        var nbCompletedDatesSet = nbCompletionsThisWeek.ToHashSet();
+        var nbWeekDays = new List<bool>(7);
+        for (var d = 0; d < 7; d++)
+        {
+            var date = weekStart.AddDays(d);
+            nbWeekDays.Add(nbCompletedDatesSet.Contains(date));
+        }
+
+        // Cofres de racha (módulo "cofres"): definiciones del catálogo
+        // STREAK_* (ordenadas por día) cruzadas con los otorgamientos reales
+        // del libro mayor (source_ref_type = 'streak_milestone'). XP mostrada:
+        // el monto real del libro mayor para cofres otorgados; base_xp de la
+        // regla activa (o fallback de semilla) para los pendientes. Dos
+        // queries indexadas adicionales, AsNoTracking; la lectura nunca
+        // escribe.
+        var streakRuleCodes = StreakMilestones.Select(m => m.RuleCode).ToList();
+        var streakRules = await dbContext
+            .XpRules.AsNoTracking()
+            .Where(r => streakRuleCodes.Contains(r.Code) && r.Active)
+            .ToDictionaryAsync(r => r.Code, r => r, ct);
+        var streakMilestoneGrants = await dbContext
+            .XpLedgerEntries.AsNoTracking()
+            .Where(x => x.EnrollmentId == enrollmentId
+                     && x.SourceRefType == StreakMilestoneSourceRefType)
+            .Select(x => new { x.Reason, x.Amount, x.AwardedAt })
+            .ToListAsync(ct);
+        var grantsByReason = streakMilestoneGrants
+            .GroupBy(x => x.Reason)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var streakChests = new List<StreakChestDto>(StreakMilestones.Count);
+        foreach (var milestone in StreakMilestones)
+        {
+            var catalogXp = streakRules.TryGetValue(milestone.RuleCode, out var rule)
+                && rule.BaseXp is { } ruleXp
+                ? ruleXp
+                : milestone.BaseXp;
+            streakChests.Add(
+                grantsByReason.TryGetValue(milestone.Reason, out var grant)
+                    ? new StreakChestDto(milestone.Day, grant.Amount, true, grant.AwardedAt)
+                    : new StreakChestDto(milestone.Day, catalogXp, false)
+            );
+        }
 
         return new ProgramSnapshotDto(
             enrollmentId,
@@ -1200,7 +1805,8 @@ public sealed class ProgramRepository(
                 week.WeekStartDateLocal,
                 week.WeekEndDateLocal,
                 row.TemplateStreakMinTasks,
-                row.TemplateEssentialTaskCodes),
+                row.TemplateEssentialTaskCodes
+            ),
             todayLocalDate,
             todayTasks,
             (checkin?.TotalPoints ?? 0) + (checkin?.BonusAwarded ?? 0),
@@ -1217,14 +1823,22 @@ public sealed class ProgramRepository(
                 multiplierRemainingHours,
                 nbStreak,
                 nbLongestStreak,
-                nextNbMilestone),
+                nextNbMilestone,
+                nbWeekDays
+            ),
             nextMilestone,
-            calendar);
+            calendar,
+            streakChests
+        );
     }
 
-    public async Task<DateOnly?> GetPatientLocalTodayAsync(Guid enrollmentId, CancellationToken ct = default)
+    public async Task<DateOnly?> GetPatientLocalTodayAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    )
     {
-        var timezone = await dbContext.ProgramEnrollments.AsNoTracking()
+        var timezone = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.Id == enrollmentId)
             .Select(e => (string?)e.Timezone)
             .FirstOrDefaultAsync(ct);
@@ -1233,20 +1847,39 @@ public sealed class ProgramRepository(
     }
 
     public async Task<ProgramCalendarDto> GetCalendarAsync(
-        Guid enrollmentId, DateOnly from, DateOnly to, CancellationToken ct = default)
+        Guid enrollmentId,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct = default
+    )
     {
-        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
-            .Where(e => e.Id == enrollmentId)
-            .Select(e => new { e.StartLocalDate, e.Timezone, TotalWeeks = e.Template!.TotalWeeks })
-            .FirstOrDefaultAsync(ct)
+        var enrollment =
+            await dbContext
+                .ProgramEnrollments.AsNoTracking()
+                .Where(e => e.Id == enrollmentId)
+                .Select(e => new
+                {
+                    e.StartLocalDate,
+                    e.Timezone,
+                    TotalWeeks = e.Template!.TotalWeeks,
+                })
+                .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException($"Inscripción {enrollmentId} no encontrada.");
 
-        var checkins = await dbContext.DailyCheckIns.AsNoTracking()
+        var checkins = await dbContext
+            .DailyCheckIns.AsNoTracking()
             .Where(c => c.EnrollmentId == enrollmentId && c.LocalDate >= from && c.LocalDate <= to)
-            .Select(c => new { c.LocalDate, c.IsPerfectDay, c.TotalPoints, c.BonusAwarded })
+            .Select(c => new
+            {
+                c.LocalDate,
+                c.IsPerfectDay,
+                c.TotalPoints,
+                c.BonusAwarded,
+            })
             .ToListAsync(ct);
 
-        var completions = await dbContext.TaskCompletions.AsNoTracking()
+        var completions = await dbContext
+            .TaskCompletions.AsNoTracking()
             .Where(t => t.EnrollmentId == enrollmentId && t.LocalDate >= from && t.LocalDate <= to)
             .OrderBy(t => t.LocalDate)
             .ThenBy(t => t.TaskCode)
@@ -1289,37 +1922,53 @@ public sealed class ProgramRepository(
             var points = (checkin?.TotalPoints ?? 0) + (checkin?.BonusAwarded ?? 0);
             totalXp += points;
 
-            days.Add(new CalendarDayDetailDto(
-                date,
-                ToIsoWeekday(date),
-                weekNumber,
-                checkin?.IsPerfectDay ?? false,
-                points,
-                checkin?.BonusAwarded ?? 0,
-                dayCodes));
+            days.Add(
+                new CalendarDayDetailDto(
+                    date,
+                    ToIsoWeekday(date),
+                    weekNumber,
+                    checkin?.IsPerfectDay ?? false,
+                    points,
+                    checkin?.BonusAwarded ?? 0,
+                    dayCodes
+                )
+            );
         }
 
         return new ProgramCalendarDto(
             from,
             to,
             days,
-            new CalendarSummaryDto(perfectDays, missedDays, totalXp));
+            new CalendarSummaryDto(perfectDays, missedDays, totalXp)
+        );
     }
 
-    public async Task<ProgramPathDto> GetPathAsync(Guid enrollmentId, CancellationToken ct = default)
+    public async Task<ProgramPathDto> GetPathAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    )
     {
-        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
-            .Where(e => e.Id == enrollmentId)
-            .Select(e => new { e.StartLocalDate, TotalWeeks = e.Template!.TotalWeeks })
-            .FirstOrDefaultAsync(ct)
+        var enrollment =
+            await dbContext
+                .ProgramEnrollments.AsNoTracking()
+                .Where(e => e.Id == enrollmentId)
+                .Select(e => new { e.StartLocalDate, TotalWeeks = e.Template!.TotalWeeks })
+                .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException($"Inscripción {enrollmentId} no encontrada.");
 
-        var weeks = await dbContext.ProgramWeeks.AsNoTracking()
+        var weeks = await dbContext
+            .ProgramWeeks.AsNoTracking()
             .Where(w => w.EnrollmentId == enrollmentId)
-            .Select(w => new { w.Id, w.WeekNumber, w.Status })
+            .Select(w => new
+            {
+                w.Id,
+                w.WeekNumber,
+                w.Status,
+            })
             .ToListAsync(ct);
 
-        var weekRollups = await dbContext.DailyCheckIns.AsNoTracking()
+        var weekRollups = await dbContext
+            .DailyCheckIns.AsNoTracking()
             .Where(c => c.EnrollmentId == enrollmentId)
             .GroupBy(c => c.ProgramWeekId)
             .Select(g => new
@@ -1351,8 +2000,16 @@ public sealed class ProgramRepository(
                 }
             }
 
-            result.Add(new ProgramPathWeekDto(
-                weekNumber, status, isPerfectWeek, points, start, start.AddDays(6)));
+            result.Add(
+                new ProgramPathWeekDto(
+                    weekNumber,
+                    status,
+                    isPerfectWeek,
+                    points,
+                    start,
+                    start.AddDays(6)
+                )
+            );
         }
 
         return new ProgramPathDto(result);
@@ -1361,7 +2018,12 @@ public sealed class ProgramRepository(
     // ---------------------------------------------------------------- Plantillas
 
     public async Task<(IReadOnlyList<ProgramTemplate> Items, int Total)> ListTemplatesAsync(
-        string? search, string? status, int page, int pageSize, CancellationToken ct = default)
+        string? search,
+        string? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
         var query = dbContext.ProgramTemplates.AsNoTracking().AsQueryable();
 
@@ -1370,8 +2032,10 @@ public sealed class ProgramRepository(
             query = query.Where(t => t.Name.Contains(search) || t.Code.Contains(search));
         }
 
-        if (!string.IsNullOrWhiteSpace(status)
-            && Enum.TryParse<TemplateStatus>(status, ignoreCase: true, out var parsedStatus))
+        if (
+            !string.IsNullOrWhiteSpace(status)
+            && Enum.TryParse<TemplateStatus>(status, ignoreCase: true, out var parsedStatus)
+        )
         {
             query = query.Where(t => t.Status == parsedStatus);
         }
@@ -1386,20 +2050,26 @@ public sealed class ProgramRepository(
         return (items, total);
     }
 
-    public async Task<ProgramTemplate?> GetTemplateAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.ProgramTemplates.AsNoTracking()
+    public async Task<ProgramTemplate?> GetTemplateAsync(Guid id, CancellationToken ct = default) =>
+        await dbContext
+            .ProgramTemplates.AsNoTracking()
             .Include(t => t.DayTemplates.OrderBy(d => d.Weekday).ThenBy(d => d.SortOrder))
             .FirstOrDefaultAsync(t => t.Id == id, ct);
 
-    public async Task<ProgramTemplate?> GetTemplateByCodeAsync(string code, CancellationToken ct = default)
-        => await dbContext.ProgramTemplates.AsNoTracking()
+    public async Task<ProgramTemplate?> GetTemplateByCodeAsync(
+        string code,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .ProgramTemplates.AsNoTracking()
             .FirstOrDefaultAsync(t => t.Code == code, ct);
 
     public async Task<ProgramTemplate> UpsertTemplateAsync(
         ProgramTemplate template,
         IReadOnlyList<WeeklyDayTemplate> dayTemplates,
         Guid? actorId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -1407,8 +2077,8 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var existing = await dbContext.ProgramTemplates
-                    .Include(t => t.DayTemplates)
+                var existing = await dbContext
+                    .ProgramTemplates.Include(t => t.DayTemplates)
                     .FirstOrDefaultAsync(t => t.Id == template.Id, ct);
 
                 var now = DateTime.UtcNow;
@@ -1447,7 +2117,8 @@ public sealed class ProgramRepository(
             {
                 await transaction.RollbackAsync(ct);
                 throw new BusinessRuleViolationException(
-                    "TEMPLATE_CODE_EXISTS: ya existe una plantilla con ese código.");
+                    "TEMPLATE_CODE_EXISTS: ya existe una plantilla con ese código."
+                );
             }
             catch
             {
@@ -1461,7 +2132,8 @@ public sealed class ProgramRepository(
         Guid templateId,
         IReadOnlyList<WeeklyDayTemplate> tasks,
         Guid? actorId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -1469,16 +2141,16 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var exists = await dbContext.ProgramTemplates
-                    .AsNoTracking()
+                var exists = await dbContext
+                    .ProgramTemplates.AsNoTracking()
                     .AnyAsync(t => t.Id == templateId, ct);
                 if (!exists)
                 {
                     throw new NotFoundException($"Plantilla {templateId} no encontrada.");
                 }
 
-                await dbContext.WeeklyDayTemplates
-                    .Where(d => d.TemplateId == templateId)
+                await dbContext
+                    .WeeklyDayTemplates.Where(d => d.TemplateId == templateId)
                     .ExecuteDeleteAsync(ct);
 
                 AddDayTemplates(templateId, tasks, actorId);
@@ -1494,7 +2166,75 @@ public sealed class ProgramRepository(
         });
     }
 
-    private void AddDayTemplates(Guid templateId, IEnumerable<WeeklyDayTemplate> tasks, Guid? actorId)
+    public async Task<EnrollmentWeekDetailDto> ReplaceEnrollmentWeekTasksAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        IReadOnlyList<WeeklyDayTemplate> tasks,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var enrollment = await dbContext
+                    .ProgramEnrollments.AsNoTracking()
+                    .Include(e => e.Template)
+                    .FirstOrDefaultAsync(e => e.Id == enrollmentId, ct);
+        if (enrollment is null)
+        {
+            return null;
+        }
+
+                var totalWeeks = enrollment.Template?.TotalWeeks ?? 83;
+                if (weekNumber < 1 || weekNumber > totalWeeks)
+                {
+                    throw new UnprocessableEntityException(
+                        $"WEEK_NUMBER_OUT_OF_RANGE: el número de semana {weekNumber} está fuera del rango [1..{totalWeeks}]."
+                    );
+                }
+
+                var week = await dbContext.ProgramWeeks.FirstOrDefaultAsync(
+                    w => w.EnrollmentId == enrollmentId && w.WeekNumber == weekNumber,
+                    ct
+                );
+                if (week is null)
+                {
+                    throw new NotFoundException(
+                        $"Semana {weekNumber} de la inscripción {enrollmentId} no encontrada."
+                    );
+                }
+
+                var now = DateTime.UtcNow;
+                week.TasksSnapshot = BuildSnapshot(tasks);
+                week.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+
+                var detail = await GetEnrollmentWeekDetailAsync(
+                    enrollmentId,
+                    weekNumber,
+                    actorId ?? Guid.Empty,
+                    ct
+                );
+                return detail!;
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
+        });
+    }
+
+    private void AddDayTemplates(
+        Guid templateId,
+        IEnumerable<WeeklyDayTemplate> tasks,
+        Guid? actorId
+    )
     {
         foreach (var task in tasks)
         {
@@ -1512,8 +2252,16 @@ public sealed class ProgramRepository(
 
     // ---------------------------------------------------------------- Adaptaciones
 
-    public async Task<(IReadOnlyList<AdaptationRecommendation> Items, int Total)> ListAdaptationsAsync(
-        Guid? enrollmentId, AdaptationStatus? status, int page, int pageSize, CancellationToken ct = default)
+    public async Task<(
+        IReadOnlyList<AdaptationRecommendation> Items,
+        int Total
+    )> ListAdaptationsAsync(
+        Guid? enrollmentId,
+        AdaptationStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
         var query = dbContext.AdaptationRecommendations.AsNoTracking().AsQueryable();
 
@@ -1529,6 +2277,8 @@ public sealed class ProgramRepository(
 
         var total = await query.CountAsync(ct);
         var items = await query
+            .Include(a => a.Enrollment)
+                .ThenInclude(e => e!.Patient)
             .OrderByDescending(a => a.CreatedAt)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
@@ -1537,9 +2287,12 @@ public sealed class ProgramRepository(
         return (items, total);
     }
 
-    public async Task<AdaptationRecommendation?> GetAdaptationAsync(Guid id, CancellationToken ct = default)
-        => await dbContext.AdaptationRecommendations
-            .AsNoTracking()
+    public async Task<AdaptationRecommendation?> GetAdaptationAsync(
+        Guid id,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .AdaptationRecommendations.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Id == id, ct);
 
     /// <summary>
@@ -1556,7 +2309,8 @@ public sealed class ProgramRepository(
         AdaptationDecisionAction action,
         Guid? actorId = null,
         string? auditActionOnApply = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -1564,38 +2318,51 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var adaptation = await dbContext.AdaptationRecommendations
-                    .FirstOrDefaultAsync(a => a.Id == adaptationId, ct)
-                    ?? throw new NotFoundException($"Recomendación de adaptación {adaptationId} no encontrada.");
+                var adaptation =
+                    await dbContext.AdaptationRecommendations.FirstOrDefaultAsync(
+                        a => a.Id == adaptationId,
+                        ct
+                    )
+                    ?? throw new NotFoundException(
+                        $"Recomendación de adaptación {adaptationId} no encontrada."
+                    );
 
                 var now = DateTime.UtcNow;
                 switch (action)
                 {
-                    case AdaptationDecisionAction.Approve when adaptation.Status == AdaptationStatus.Pending:
+                    case AdaptationDecisionAction.Approve
+                        when adaptation.Status == AdaptationStatus.Pending:
                         adaptation.Status = AdaptationStatus.Approved;
                         adaptation.DecidedBy = actorId;
                         adaptation.DecidedAt = now;
                         break;
                     case AdaptationDecisionAction.Approve:
                         throw new BusinessRuleViolationException(
-                            "ADAPTATION_STATE: solo las recomendaciones Pending pueden aprobarse.");
-                    case AdaptationDecisionAction.Reject when adaptation.Status == AdaptationStatus.Pending:
+                            "ADAPTATION_STATE: solo las recomendaciones Pending pueden aprobarse."
+                        );
+                    case AdaptationDecisionAction.Reject
+                        when adaptation.Status == AdaptationStatus.Pending:
                         adaptation.Status = AdaptationStatus.Rejected;
                         adaptation.DecidedBy = actorId;
                         adaptation.DecidedAt = now;
                         break;
                     case AdaptationDecisionAction.Reject:
                         throw new BusinessRuleViolationException(
-                            "ADAPTATION_STATE: solo las recomendaciones Pending pueden rechazarse.");
-                    case AdaptationDecisionAction.Apply when adaptation.Status == AdaptationStatus.Approved:
+                            "ADAPTATION_STATE: solo las recomendaciones Pending pueden rechazarse."
+                        );
+                    case AdaptationDecisionAction.Apply
+                        when adaptation.Status == AdaptationStatus.Approved:
                         adaptation.Status = AdaptationStatus.Applied;
                         adaptation.AppliedAt = now;
                         break;
                     case AdaptationDecisionAction.Apply:
                         throw new BusinessRuleViolationException(
-                            "ADAPTATION_STATE: solo las recomendaciones Approved pueden aplicarse.");
+                            "ADAPTATION_STATE: solo las recomendaciones Approved pueden aplicarse."
+                        );
                     default:
-                        throw new BusinessRuleViolationException("ADAPTATION_STATE: transición no permitida.");
+                        throw new BusinessRuleViolationException(
+                            "ADAPTATION_STATE: transición no permitida."
+                        );
                 }
 
                 adaptation.UpdatedAt = now;
@@ -1604,12 +2371,20 @@ public sealed class ProgramRepository(
                 // AC-17: fila semántica en la misma transacción que la transición
                 // (ExecuteSqlInterpolatedAsync se enlista en la transacción activa).
                 // Si el commit falla, ni la transición ni la fila quedan a medias.
-                if (action == AdaptationDecisionAction.Apply
+                if (
+                    action == AdaptationDecisionAction.Apply
                     && adaptation.Status == AdaptationStatus.Applied
-                    && !string.IsNullOrWhiteSpace(auditActionOnApply))
+                    && !string.IsNullOrWhiteSpace(auditActionOnApply)
+                )
                 {
                     await WriteAuditRowAsync(
-                        auditActionOnApply, "app", "adaptation_recommendations", adaptation.Id, actorId, ct);
+                        auditActionOnApply,
+                        "app",
+                        "adaptation_recommendations",
+                        adaptation.Id,
+                        actorId,
+                        ct
+                    );
                 }
 
                 await transaction.CommitAsync(ct);
@@ -1637,18 +2412,161 @@ public sealed class ProgramRepository(
         AdaptationKind kind,
         Guid targetEntityId,
         Guid newRecommendationId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var now = DateTime.UtcNow;
-        return await dbContext.AdaptationRecommendations
-            .Where(a => a.EnrollmentId == enrollmentId
+        return await dbContext
+            .AdaptationRecommendations.Where(a =>
+                a.EnrollmentId == enrollmentId
                 && a.Kind == kind
                 && a.TargetEntityId == targetEntityId
                 && a.Status == AdaptationStatus.Pending
-                && a.Id != newRecommendationId)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(a => a.Status, AdaptationStatus.Superseded)
-                .SetProperty(a => a.UpdatedAt, now), ct);
+                && a.Id != newRecommendationId
+            )
+            .ExecuteUpdateAsync(
+                s =>
+                    s.SetProperty(a => a.Status, AdaptationStatus.Superseded)
+                        .SetProperty(a => a.UpdatedAt, now),
+                ct
+            );
+    }
+
+    /// <summary>
+    /// Motor de adaptaciones (SPEC §6.8, T-23): evalúa las reglas deterministas
+    /// tras cada completación y persiste las propuestas DENTRO de la misma
+    /// transacción de la escritura que las disparó.
+    ///
+    /// - Propuestas con aprobación clínica (<c>DifficultyChange</c>) → quedan
+    ///   <c>Pending</c> para la cola del ERP y superan las <c>Pending</c>
+    ///   previas del mismo (kind, target) (SPEC §5.6).
+    /// - Refrescos de contenido (<c>RequiresApproval = false</c>) → se
+    ///   auto-aplican (<c>Applied</c> + <c>applied_at</c>) y escriben la fila
+    ///   semántica <c>AdaptationApplied</c> en <c>audit.activity_logs</c> (AC-17)
+    ///   en la misma transacción.
+    /// - Dedupe temporal de 7 días por (kind, target, inscripción): una regla ya
+    ///   atendida no vuelve a dispararse en cada completación.
+    /// </summary>
+    private async Task EvaluateAdaptationsAsync(
+        Guid enrollmentId,
+        DateOnly todayLocalDate,
+        int previousBalance,
+        CancellationToken ct
+    )
+    {
+        // Ventana de 7 días calendario (incluye hoy): los días sin check-in
+        // entran como no perfectos/sin mood; el motor es una función pura.
+        var from = todayLocalDate.AddDays(-6);
+        var checkins = await dbContext
+            .DailyCheckIns.AsNoTracking()
+            .Where(c =>
+                c.EnrollmentId == enrollmentId
+                && c.LocalDate >= from
+                && c.LocalDate <= todayLocalDate
+            )
+            .Select(c => new
+            {
+                c.LocalDate,
+                c.IsPerfectDay,
+                c.MoodScore,
+            })
+            .ToListAsync(ct);
+
+        var window = new List<AdaptationDayWindow>(7);
+        for (var date = from; date <= todayLocalDate; date = date.AddDays(1))
+        {
+            var checkin = checkins.FirstOrDefault(c => c.LocalDate == date);
+            window.Add(
+                new AdaptationDayWindow(date, checkin?.IsPerfectDay ?? false, checkin?.MoodScore)
+            );
+        }
+
+        var currentBalance = await CurrentBalanceAsync(enrollmentId, ct);
+        var proposals = _programAdaptationEngine.Evaluate(
+            new AdaptationEvaluationInput(
+                enrollmentId,
+                todayLocalDate,
+                previousBalance,
+                currentBalance,
+                window
+            )
+        );
+
+        if (proposals.Count == 0)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        var dedupeWindowStart = now.AddDays(-7);
+
+        foreach (var proposal in proposals)
+        {
+            // Dedupe: la misma regla ya fue atendida recientemente.
+            var alreadyAttended = await dbContext
+                .AdaptationRecommendations.AsNoTracking()
+                .AnyAsync(
+                    a =>
+                        a.EnrollmentId == enrollmentId
+                        && a.Kind == proposal.Kind
+                        && a.TargetEntityId == proposal.TargetEntityId
+                        && a.CreatedAt >= dedupeWindowStart
+                        && a.Status != AdaptationStatus.Superseded
+                        && a.Status != AdaptationStatus.Rejected,
+                    ct
+                );
+            if (alreadyAttended)
+            {
+                continue;
+            }
+
+            var recommendation = new AdaptationRecommendation
+            {
+                Id = Guid.NewGuid(),
+                EnrollmentId = enrollmentId,
+                Kind = proposal.Kind,
+                TargetEntityType = proposal.TargetEntityType,
+                TargetEntityId = proposal.TargetEntityId,
+                Payload = proposal.Payload,
+                Reason = proposal.Reason,
+                Status = proposal.RequiresApproval
+                    ? AdaptationStatus.Pending
+                    : AdaptationStatus.Applied,
+                RequiresApproval = proposal.RequiresApproval,
+                RequestedBy = null, // motor de reglas: sin actor (auditoría)
+                AppliedAt = proposal.RequiresApproval ? null : now,
+                CreatedAt = now,
+            };
+            dbContext.AdaptationRecommendations.Add(recommendation);
+
+            // Las que requieren aprobación superan las Pending previas del
+            // mismo (kind, target) en la misma transacción (SPEC §5.6).
+            if (proposal.RequiresApproval)
+            {
+                await SupersedePendingAsync(
+                    enrollmentId,
+                    proposal.Kind,
+                    proposal.TargetEntityId,
+                    recommendation.Id,
+                    ct
+                );
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+
+            // AC-17: fila semántica en la misma transacción que la aplicación.
+            if (!proposal.RequiresApproval)
+            {
+                await WriteAuditRowAsync(
+                    "AdaptationApplied",
+                    "app",
+                    "adaptation_recommendations",
+                    recommendation.Id,
+                    null,
+                    ct
+                );
+            }
+        }
     }
 
     public async Task WriteAuditRowAsync(
@@ -1657,7 +2575,8 @@ public sealed class ProgramRepository(
         string tableName,
         Guid recordId,
         Guid? actorId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         // El trigger de auditoría cubre el DML de las tablas del módulo; esta
         // fila es un evento semántico explícito (AC-17) y se inserta por SQL
@@ -1673,20 +2592,29 @@ public sealed class ProgramRepository(
             VALUES
                 (now(), {action}, {schemaName}, {tableName}, {recordId.ToString()},
                  {actorType}, {actorId})
-            """, ct);
+            """,
+            ct
+        );
     }
 
     // ---------------------------------------------------------------- Helpers
 
     private async Task<CompleteTaskResult> BuildReplayResultAsync(
-        Guid enrollmentId, TaskCompletion existing, CancellationToken ct)
+        Guid enrollmentId,
+        TaskCompletion existing,
+        CancellationToken ct
+    )
     {
         var balance = await CurrentBalanceAsync(enrollmentId, ct);
-        var streak = await dbContext.StreakStates.AsNoTracking()
+        var streak = await dbContext
+            .StreakStates.AsNoTracking()
             .FirstOrDefaultAsync(s => s.EnrollmentId == enrollmentId, ct);
-        var checkin = await dbContext.DailyCheckIns.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.EnrollmentId == enrollmentId
-                && c.LocalDate == existing.LocalDate, ct);
+        var checkin = await dbContext
+            .DailyCheckIns.AsNoTracking()
+            .FirstOrDefaultAsync(
+                c => c.EnrollmentId == enrollmentId && c.LocalDate == existing.LocalDate,
+                ct
+            );
 
         var dayMax = await DayPointsMaxAsync(enrollmentId, existing.LocalDate, ct);
 
@@ -1700,30 +2628,43 @@ public sealed class ProgramRepository(
             streak?.CurrentStreak ?? 0,
             streak?.FreezesRemaining ?? 0,
             (checkin?.TotalPoints ?? 0) + (checkin?.BonusAwarded ?? 0),
-            dayMax);
+            dayMax
+        );
     }
 
-    private async Task<int> CurrentBalanceAsync(Guid enrollmentId, CancellationToken ct)
-        => await dbContext.XpLedgerEntries.AsNoTracking()
+    private async Task<int> CurrentBalanceAsync(Guid enrollmentId, CancellationToken ct) =>
+        await dbContext
+            .XpLedgerEntries.AsNoTracking()
             .Where(x => x.EnrollmentId == enrollmentId)
             .OrderByDescending(x => x.BalanceAfter)
             .Select(x => (int?)x.BalanceAfter)
-            .FirstOrDefaultAsync(ct) ?? 0;
+            .FirstOrDefaultAsync(ct)
+        ?? 0;
 
-    private async Task<int> DayPointsMaxAsync(Guid enrollmentId, DateOnly localDate, CancellationToken ct)
+    private async Task<int> DayPointsMaxAsync(
+        Guid enrollmentId,
+        DateOnly localDate,
+        CancellationToken ct
+    )
     {
-        var week = await dbContext.ProgramWeeks.AsNoTracking()
-            .FirstOrDefaultAsync(w => w.EnrollmentId == enrollmentId
-                && w.WeekStartDateLocal <= localDate
-                && localDate <= w.WeekEndDateLocal, ct);
+        var week = await dbContext
+            .ProgramWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(
+                w =>
+                    w.EnrollmentId == enrollmentId
+                    && w.WeekStartDateLocal <= localDate
+                    && localDate <= w.WeekEndDateLocal,
+                ct
+            );
         if (week is null)
         {
             return 0;
         }
 
         var weekday = ToIsoWeekday(localDate);
-        return ComputeDayPointsMax(ParseSnapshot(week.TasksSnapshot)
-            .Where(t => t.Weekday == weekday));
+        return ComputeDayPointsMax(
+            ParseSnapshot(week.TasksSnapshot).Where(t => t.Weekday == weekday)
+        );
     }
 
     /// <summary>
@@ -1732,8 +2673,8 @@ public sealed class ProgramRepository(
     /// la primera escritura y el replay (SPEC §7.2: 700 + 50 = 750) para que el
     /// body del replay sea idéntico al de la primera respuesta.
     /// </summary>
-    private static int ComputeDayPointsMax(IEnumerable<SnapshotTask> dayTasks)
-        => dayTasks.Sum(t => t.Points) + 50;
+    private static int ComputeDayPointsMax(IEnumerable<SnapshotTask> dayTasks) =>
+        dayTasks.Sum(t => t.Points) + 50;
 
     // ---------------------------------------------------------------- Catálogo de reglas XP (SPEC §14)
 
@@ -1749,11 +2690,16 @@ public sealed class ProgramRepository(
     private async Task<XpRule?> ResolveActiveRuleAsync(string ruleCode, CancellationToken ct)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        return await dbContext.XpRules.AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Code == ruleCode
-                && r.Active
-                && r.ValidFrom <= today
-                && (r.ValidUntil == null || r.ValidUntil >= today), ct);
+        return await dbContext
+            .XpRules.AsNoTracking()
+            .FirstOrDefaultAsync(
+                r =>
+                    r.Code == ruleCode
+                    && r.Active
+                    && r.ValidFrom <= today
+                    && (r.ValidUntil == null || r.ValidUntil >= today),
+                ct
+            );
     }
 
     /// <summary>
@@ -1783,7 +2729,8 @@ public sealed class ProgramRepository(
         string ruleCode,
         int defaultPoints,
         DateOnly localDate,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         // Multiplicador del paciente (SPEC §16, C.1): vigente → aplica a todo
         // otorgamiento; vencido/null → 1.0 con reset lazy (ExecuteUpdate en la
@@ -1814,29 +2761,43 @@ public sealed class ProgramRepository(
 
             if (rule.MaxPerDay.HasValue)
             {
-                var usedToday = await dbContext.XpLedgerEntries.AsNoTracking()
-                    .CountAsync(x => x.EnrollmentId == enrollmentId
-                        && x.RuleCode == rule.Code
-                        && x.AwardedAt >= dayStartUtc && x.AwardedAt < dayEndUtc, ct);
+                var usedToday = await dbContext
+                    .XpLedgerEntries.AsNoTracking()
+                    .CountAsync(
+                        x =>
+                            x.EnrollmentId == enrollmentId
+                            && x.RuleCode == rule.Code
+                            && x.AwardedAt >= dayStartUtc
+                            && x.AwardedAt < dayEndUtc,
+                        ct
+                    );
                 if (usedToday >= rule.MaxPerDay.Value)
                 {
                     throw new BusinessRuleViolationException(
-                        $"XP_DAILY_LIMIT_REACHED: la regla {rule.Code} permite máximo " +
-                        $"{rule.MaxPerDay.Value} otorgamiento(s) por día.");
+                        $"XP_DAILY_LIMIT_REACHED: la regla {rule.Code} permite máximo "
+                            + $"{rule.MaxPerDay.Value} otorgamiento(s) por día."
+                    );
                 }
             }
 
             if (rule.MaxPerWeek.HasValue)
             {
-                var usedThisWeek = await dbContext.XpLedgerEntries.AsNoTracking()
-                    .CountAsync(x => x.EnrollmentId == enrollmentId
-                        && x.RuleCode == rule.Code
-                        && x.AwardedAt >= weekStartUtc && x.AwardedAt < weekEndUtc, ct);
+                var usedThisWeek = await dbContext
+                    .XpLedgerEntries.AsNoTracking()
+                    .CountAsync(
+                        x =>
+                            x.EnrollmentId == enrollmentId
+                            && x.RuleCode == rule.Code
+                            && x.AwardedAt >= weekStartUtc
+                            && x.AwardedAt < weekEndUtc,
+                        ct
+                    );
                 if (usedThisWeek >= rule.MaxPerWeek.Value)
                 {
                     throw new BusinessRuleViolationException(
-                        $"XP_WEEKLY_LIMIT_REACHED: la regla {rule.Code} permite máximo " +
-                        $"{rule.MaxPerWeek.Value} otorgamiento(s) por semana.");
+                        $"XP_WEEKLY_LIMIT_REACHED: la regla {rule.Code} permite máximo "
+                            + $"{rule.MaxPerWeek.Value} otorgamiento(s) por semana."
+                    );
                 }
             }
         }
@@ -1853,9 +2814,13 @@ public sealed class ProgramRepository(
     /// valor almacenado (2.0). Solo se invoca dentro de transacciones de
     /// otorgamiento (completación con FOR UPDATE, XP clínica, hitos de racha).
     /// </summary>
-    private async Task<decimal> ResolvePatientMultiplierAsync(Guid enrollmentId, CancellationToken ct)
+    private async Task<decimal> ResolvePatientMultiplierAsync(
+        Guid enrollmentId,
+        CancellationToken ct
+    )
     {
-        var state = await dbContext.StreakStates.AsNoTracking()
+        var state = await dbContext
+            .StreakStates.AsNoTracking()
             .Where(s => s.EnrollmentId == enrollmentId)
             .Select(s => new { s.MultiplierActive, s.MultiplierEndsAt })
             .FirstOrDefaultAsync(ct);
@@ -1869,12 +2834,15 @@ public sealed class ProgramRepository(
         {
             // Reset lazy del multiplicador vencido (SPEC §16, C.1): el estado
             // vuelve a 1.0 sin esperar a que una lectura lo detecte.
-            await dbContext.StreakStates
-                .Where(s => s.EnrollmentId == enrollmentId)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(x => x.MultiplierActive, 1.0m)
-                    .SetProperty(x => x.MultiplierEndsAt, (DateTime?)null)
-                    .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+            await dbContext
+                .StreakStates.Where(s => s.EnrollmentId == enrollmentId)
+                .ExecuteUpdateAsync(
+                    s =>
+                        s.SetProperty(x => x.MultiplierActive, 1.0m)
+                            .SetProperty(x => x.MultiplierEndsAt, (DateTime?)null)
+                            .SetProperty(x => x.UpdatedAt, DateTime.UtcNow),
+                    ct
+                );
             return 1.0m;
         }
 
@@ -1884,23 +2852,29 @@ public sealed class ProgramRepository(
     // ------------------------------------------------------- Hitos de racha + multiplicador (SPEC §16)
 
     /// <summary>
-    /// Tabla de hitos de racha (SPEC §16, B): día hito → razón del libro mayor
-    /// (= código de regla), regla del catálogo, XP base (semilla §14.2) y
+    /// Tabla de hitos de racha (SPEC §16, B + catálogo extendido del módulo
+    /// "cofres"): día hito → razón del libro mayor (= código de regla), regla
+    /// del catálogo, XP base (semilla §14.2 + extendido 14/30/75/100) y
     /// duración en horas del multiplicador x2 activado al alcanzarlo (0 = el
     /// hito no activa multiplicador). Día 7 → sin multiplicador; 11 → 24h;
-    /// 22 → 48h; 50 → 72h.
+    /// 22 → 48h; 50 → 72h. Los hitos extendidos (14/30/75/100) NUNCA activan
+    /// multiplicador.
     /// </summary>
     private static readonly IReadOnlyList<StreakMilestone> StreakMilestones =
     [
         new(7, XpReason.STREAK_7, XpRuleCodes.Streak7, 100, 0),
         new(11, XpReason.STREAK_11, XpRuleCodes.Streak11, 200, 24),
+        new(14, XpReason.STREAK_14, XpRuleCodes.Streak14, 300, 0),
         new(22, XpReason.STREAK_22, XpRuleCodes.Streak22, 500, 48),
+        new(30, XpReason.STREAK_30, XpRuleCodes.Streak30, 800, 0),
         new(50, XpReason.STREAK_50, XpRuleCodes.Streak50, 1500, 72),
+        new(75, XpReason.STREAK_75, XpRuleCodes.Streak75, 2500, 0),
+        new(100, XpReason.STREAK_100, XpRuleCodes.Streak100, 5000, 0),
     ];
 
     /// <summary>Hito de racha cuyo día coincide exactamente con la racha actual (null si no es hito).</summary>
-    private static StreakMilestone? FindStreakMilestone(int streakDay)
-        => StreakMilestones.FirstOrDefault(m => m.Day == streakDay);
+    private static StreakMilestone? FindStreakMilestone(int streakDay) =>
+        StreakMilestones.FirstOrDefault(m => m.Day == streakDay);
 
     /// <summary>
     /// Motor de hitos de racha (SPEC §16, B): cuando la racha creció HOY hasta
@@ -1928,7 +2902,13 @@ public sealed class ProgramRepository(
     /// del libro mayor son atómicos con el resto del día perfecto.
     /// </summary>
     private async Task AwardStreakMilestoneIfReachedAsync(
-        Guid enrollmentId, Guid patientId, string timezone, int currentStreak, DateOnly localDate, CancellationToken ct)
+        Guid enrollmentId,
+        Guid patientId,
+        string timezone,
+        int currentStreak,
+        DateOnly localDate,
+        CancellationToken ct
+    )
     {
         var milestone = FindStreakMilestone(currentStreak);
         if (milestone is null)
@@ -1939,11 +2919,16 @@ public sealed class ProgramRepository(
         // Guardia de idempotencia compartida (SPEC §16, B.3): si la XP del
         // hito ya se otorgó en esta inscripción, tampoco se re-activa el
         // multiplicador.
-        var alreadyAwarded = await dbContext.XpLedgerEntries.AsNoTracking()
-            .AnyAsync(x => x.EnrollmentId == enrollmentId
-                && x.SourceRefType == StreakMilestoneSourceRefType
-                && x.SourceRefId == enrollmentId
-                && x.Reason == milestone.Reason, ct);
+        var alreadyAwarded = await dbContext
+            .XpLedgerEntries.AsNoTracking()
+            .AnyAsync(
+                x =>
+                    x.EnrollmentId == enrollmentId
+                    && x.SourceRefType == StreakMilestoneSourceRefType
+                    && x.SourceRefId == enrollmentId
+                    && x.Reason == milestone.Reason,
+                ct
+            );
         if (alreadyAwarded)
         {
             return;
@@ -1953,31 +2938,45 @@ public sealed class ProgramRepository(
 
         if (milestone.MultiplierHours > 0)
         {
-            await dbContext.StreakStates
-                .Where(s => s.EnrollmentId == enrollmentId)
-                .ExecuteUpdateAsync(s => s
-                    .SetProperty(x => x.MultiplierActive, 2.0m)
-                    .SetProperty(x => x.MultiplierEndsAt, now.AddHours(milestone.MultiplierHours))
-                    .SetProperty(x => x.UpdatedAt, now), ct);
+            await dbContext
+                .StreakStates.Where(s => s.EnrollmentId == enrollmentId)
+                .ExecuteUpdateAsync(
+                    s =>
+                        s.SetProperty(x => x.MultiplierActive, 2.0m)
+                            .SetProperty(
+                                x => x.MultiplierEndsAt,
+                                now.AddHours(milestone.MultiplierHours)
+                            )
+                            .SetProperty(x => x.UpdatedAt, now),
+                    ct
+                );
         }
 
         var (points, ruleCode, multiplierUsed) = await ResolveXpAwardAsync(
-            enrollmentId, timezone, milestone.RuleCode, milestone.BaseXp, localDate, ct);
+            enrollmentId,
+            timezone,
+            milestone.RuleCode,
+            milestone.BaseXp,
+            localDate,
+            ct
+        );
         var balance = await CurrentBalanceAsync(enrollmentId, ct);
 
-        dbContext.XpLedgerEntries.Add(new XpLedgerEntry
-        {
-            Id = Guid.NewGuid(),
-            EnrollmentId = enrollmentId,
-            Amount = points,
-            Reason = milestone.Reason,
-            SourceRefType = StreakMilestoneSourceRefType,
-            SourceRefId = enrollmentId,
-            RuleCode = ruleCode,
-            MultiplierUsed = multiplierUsed,
-            BalanceAfter = balance + points,
-            AwardedAt = now,
-        });
+        dbContext.XpLedgerEntries.Add(
+            new XpLedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                EnrollmentId = enrollmentId,
+                Amount = points,
+                Reason = milestone.Reason,
+                SourceRefType = StreakMilestoneSourceRefType,
+                SourceRefId = enrollmentId,
+                RuleCode = ruleCode,
+                MultiplierUsed = multiplierUsed,
+                BalanceAfter = balance + points,
+                AwardedAt = now,
+            }
+        );
 
         // Notificación gamificada del hito de racha (SPEC §20, C.1): best-
         // effort (nunca lanza, AC-42). En los hitos con multiplicador (11/22/50)
@@ -1985,9 +2984,10 @@ public sealed class ProgramRepository(
         // "multiplier_expiring" es FUTURO y necesita scheduler, no se implementa).
         if (_gamifiedNotificationService is not null)
         {
-            var message = milestone.MultiplierHours > 0
-                ? $"🏆 ¡{milestone.Day} días! +{points} XP · ¡x2 por {milestone.MultiplierHours}h!"
-                : $"🏆 ¡{milestone.Day} días! +{points} XP";
+            var message =
+                milestone.MultiplierHours > 0
+                    ? $"🏆 ¡{milestone.Day} días! +{points} XP · ¡x2 por {milestone.MultiplierHours}h!"
+                    : $"🏆 ¡{milestone.Day} días! +{points} XP";
 
             await _gamifiedNotificationService.NotifyAsync(
                 patientId,
@@ -1995,19 +2995,25 @@ public sealed class ProgramRepository(
                 $"🏆 ¡{milestone.Day} días!",
                 message,
                 "high",
-                ct);
+                ct
+            );
         }
     }
 
     private const string StreakMilestoneSourceRefType = "streak_milestone";
 
     private sealed record StreakMilestone(
-        int Day, XpReason Reason, string RuleCode, int BaseXp, int MultiplierHours);
+        int Day,
+        XpReason Reason,
+        string RuleCode,
+        int BaseXp,
+        int MultiplierHours
+    );
 
-    // ------------------------------------------------- Racha propia del nutribiótico (SPEC §19, "Paso 7a")
+    // ------------------------------------------------- Racha propia del nutracéutico (SPEC §19, "Paso 7a")
 
     /// <summary>
-    /// Tabla de hitos de la racha propia del nutribiótico (SPEC §19, B): día
+    /// Tabla de hitos de la racha propia del nutracéutico (SPEC §19, B): día
     /// hito → razón del libro mayor (= código de regla) y XP base de la semilla
     /// §19.2 (<c>NB_STREAK_7/14/30/60/90</c>, categoría <c>nutriobiotic</c>,
     /// topes 1/día y 1/semana). A diferencia de los hitos de la racha general
@@ -2024,22 +3030,22 @@ public sealed class ProgramRepository(
         new(90, XpReason.NB_STREAK_90, XpRuleCodes.NbStreak90, 1000),
     ];
 
-    /// <summary>Hito de la racha del nutribiótico cuyo día coincide exactamente con la racha actual (null si no es hito).</summary>
-    private static NbMilestone? FindNbMilestone(short streakDay)
-        => NbMilestones.FirstOrDefault(m => m.Days == streakDay);
+    /// <summary>Hito de la racha del nutracéutico cuyo día coincide exactamente con la racha actual (null si no es hito).</summary>
+    private static NbMilestone? FindNbMilestone(short streakDay) =>
+        NbMilestones.FirstOrDefault(m => m.Days == streakDay);
 
-    /// <summary>Próximo hito de la racha del nutribiótico por encima de la racha actual (null si ya llegó a 90).</summary>
-    private static NbMilestone? FindNextNbMilestone(int currentStreak)
-        => NbMilestones.FirstOrDefault(m => m.Days > currentStreak);
+    /// <summary>Próximo hito de la racha del nutracéutico por encima de la racha actual (null si ya llegó a 90).</summary>
+    private static NbMilestone? FindNextNbMilestone(int currentStreak) =>
+        NbMilestones.FirstOrDefault(m => m.Days > currentStreak);
 
     /// <summary>
-    /// Motor de la racha propia del nutribiótico (SPEC §19, B): actualiza la
-    /// racha CONSECUTIVA de la tarea nutribiotico en <c>streak_states</c> y,
+    /// Motor de la racha propia del nutracéutico (SPEC §19, B): actualiza la
+    /// racha CONSECUTIVA de la tarea nutraceutico en <c>streak_states</c> y,
     /// si el nuevo conteo cae exactamente en un hito (7/14/30/60/90), otorga la
     /// XP del hito por el camino de resolución del catálogo.
     ///
     /// Reglas (SPEC §19):
-    /// 1. Consecutivo al último día con nutribiotico → <c>nb_current_streak + 1</c>;
+    /// 1. Consecutivo al último día con nutraceutico → <c>nb_current_streak + 1</c>;
     ///    cualquier hueco (día perdido) → se reinicia a 1. Los congelamientos
     ///    NO protegen esta racha (AC-38): es independiente de la racha general
     ///    y de su rescate (SPEC §17, C).
@@ -2065,11 +3071,18 @@ public sealed class ProgramRepository(
         string timezone,
         DateOnly today,
         Guid completionId,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var state = await dbContext.StreakStates.AsNoTracking()
+        var state = await dbContext
+            .StreakStates.AsNoTracking()
             .Where(s => s.EnrollmentId == enrollmentId)
-            .Select(s => new { s.NbCurrentStreak, s.NbLongestStreak, s.NbLastCompletedDate })
+            .Select(s => new
+            {
+                s.NbCurrentStreak,
+                s.NbLongestStreak,
+                s.NbLastCompletedDate,
+            })
             .FirstOrDefaultAsync(ct);
 
         if (state is null)
@@ -2078,22 +3091,26 @@ public sealed class ProgramRepository(
             return;
         }
 
-        // Consecutivo vs reinicio: la racha del nutribiótico NO distingue
+        // Consecutivo vs reinicio: la racha del nutracéutico NO distingue
         // días perfectos ni usa congelamientos — solo pregunta si ayer se
         // completó la tarea. Un día perdido rompe la corrida (AC-38).
-        var newCount = state.NbLastCompletedDate == today.AddDays(-1)
-            ? (short)(state.NbCurrentStreak + 1)
-            : (short)1;
+        var newCount =
+            state.NbLastCompletedDate == today.AddDays(-1)
+                ? (short)(state.NbCurrentStreak + 1)
+                : (short)1;
 
         var newLongest = Math.Max(state.NbLongestStreak, newCount);
 
-        await dbContext.StreakStates
-            .Where(s => s.EnrollmentId == enrollmentId)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.NbCurrentStreak, newCount)
-                .SetProperty(x => x.NbLongestStreak, newLongest)
-                .SetProperty(x => x.NbLastCompletedDate, today)
-                .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+        await dbContext
+            .StreakStates.Where(s => s.EnrollmentId == enrollmentId)
+            .ExecuteUpdateAsync(
+                s =>
+                    s.SetProperty(x => x.NbCurrentStreak, newCount)
+                        .SetProperty(x => x.NbLongestStreak, newLongest)
+                        .SetProperty(x => x.NbLastCompletedDate, today)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow),
+                ct
+            );
 
         var milestone = FindNbMilestone(newCount);
         if (milestone is null)
@@ -2111,7 +3128,13 @@ public sealed class ProgramRepository(
         try
         {
             (points, ruleCode, multiplierUsed) = await ResolveXpAwardAsync(
-                enrollmentId, timezone, milestone.RuleCode, milestone.BaseXp, today, ct);
+                enrollmentId,
+                timezone,
+                milestone.RuleCode,
+                milestone.BaseXp,
+                today,
+                ct
+            );
         }
         catch (BusinessRuleViolationException ex) when (IsXpLimitViolation(ex))
         {
@@ -2124,21 +3147,23 @@ public sealed class ProgramRepository(
         }
 
         var balance = await CurrentBalanceAsync(enrollmentId, ct);
-        dbContext.XpLedgerEntries.Add(new XpLedgerEntry
-        {
-            Id = Guid.NewGuid(),
-            EnrollmentId = enrollmentId,
-            Amount = points,
-            Reason = milestone.Reason,
-            SourceRefType = NbMilestoneSourceRefType,
-            SourceRefId = completionId,
-            RuleCode = ruleCode,
-            MultiplierUsed = multiplierUsed,
-            BalanceAfter = balance + points,
-            AwardedAt = DateTime.UtcNow,
-        });
+        dbContext.XpLedgerEntries.Add(
+            new XpLedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                EnrollmentId = enrollmentId,
+                Amount = points,
+                Reason = milestone.Reason,
+                SourceRefType = NbMilestoneSourceRefType,
+                SourceRefId = completionId,
+                RuleCode = ruleCode,
+                MultiplierUsed = multiplierUsed,
+                BalanceAfter = balance + points,
+                AwardedAt = DateTime.UtcNow,
+            }
+        );
 
-        // Notificación gamificada del hito de la racha del nutribiótico
+        // Notificación gamificada del hito de la racha del nutracéutico
         // (SPEC §20, C.3): best-effort (nunca lanza, AC-42).
         if (_gamifiedNotificationService is not null)
         {
@@ -2148,7 +3173,8 @@ public sealed class ProgramRepository(
                 "💊 ¡Nutriobiótico!",
                 $"💊 ¡{milestone.Days} días tomando tu Nutriobiótico!",
                 "high",
-                ct);
+                ct
+            );
         }
     }
 
@@ -2157,19 +3183,51 @@ public sealed class ProgramRepository(
     /// <summary>
     /// Los topes anti-fraude del catálogo (SPEC §14.3) rechazan con 409 un
     /// otorgamiento que excede <c>max_per_day</c>/<c>max_per_week</c>. Para los
-    /// hitos del nutribiótico ese rechazo es un "no-otorgar" esperado (nueva
+    /// hitos del nutracéutico ese rechazo es un "no-otorgar" esperado (nueva
     /// corrida dentro de la misma semana, SPEC §19, B.4), no un error de la
     /// completación.
     /// </summary>
-    private static bool IsXpLimitViolation(BusinessRuleViolationException ex)
-        => ex.Message.StartsWith("XP_DAILY_LIMIT_REACHED")
-            || ex.Message.StartsWith("XP_WEEKLY_LIMIT_REACHED");
+    private static bool IsXpLimitViolation(BusinessRuleViolationException ex) =>
+        ex.Message.StartsWith("XP_DAILY_LIMIT_REACHED")
+        || ex.Message.StartsWith("XP_WEEKLY_LIMIT_REACHED");
 
     private sealed record NbMilestone(int Days, XpReason Reason, string RuleCode, int BaseXp);
 
-    private async Task<JsonElement> BuildSnapshotFromTemplateAsync(Guid templateId, CancellationToken ct)
+    // --- T-77: Helpers para el configurador de contenido ---
+
+    public async Task<(string Code, string Name)?> GetPlanNameAsync(
+        Guid planId,
+        CancellationToken ct = default
+    )
     {
-        var days = await dbContext.WeeklyDayTemplates.AsNoTracking()
+        var name = await dbContext
+            .NutritionPlans.AsNoTracking()
+            .Where(p => p.Id == planId)
+            .Select(p => (string?)p.Name)
+            .FirstOrDefaultAsync(ct);
+        return name is not null ? (name, name) : null;
+    }
+
+    public async Task<(string Code, string Name)?> GetRoutineNameAsync(
+        Guid routineId,
+        CancellationToken ct = default
+    )
+    {
+        var name = await dbContext
+            .ExerciseRoutines.AsNoTracking()
+            .Where(r => r.Id == routineId)
+            .Select(r => (string?)r.Name)
+            .FirstOrDefaultAsync(ct);
+        return name is not null ? (name, name) : null;
+    }
+
+    private async Task<JsonElement> BuildSnapshotFromTemplateAsync(
+        Guid templateId,
+        CancellationToken ct
+    )
+    {
+        var days = await dbContext
+            .WeeklyDayTemplates.AsNoTracking()
             .Where(d => d.TemplateId == templateId)
             .OrderBy(d => d.Weekday)
             .ThenBy(d => d.SortOrder)
@@ -2178,17 +3236,22 @@ public sealed class ProgramRepository(
     }
 
     /// <summary>Serialize el snapshot con el shape de la SPEC §3.4 (jsonb).</summary>
-    private static JsonElement BuildSnapshot(IEnumerable<WeeklyDayTemplate> days)
-        => JsonSerializer.SerializeToElement(days.Select(d => new
-        {
-            weekday = (int)d.Weekday,
-            task_code = d.TaskCode.ToString(),
-            points = d.Points,
-            sort_order = d.SortOrder,
-        }));
+    private static JsonElement BuildSnapshot(IEnumerable<WeeklyDayTemplate> days) =>
+        JsonSerializer.SerializeToElement(
+            days.Select(d => new
+            {
+                weekday = (int)d.Weekday,
+                task_code = d.TaskCode.ToString(),
+                points = d.Points,
+                sort_order = d.SortOrder,
+                routine_id = d.RoutineId,
+                nutrition_plan_id = d.NutritionPlanId,
+                media_id = d.MediaId,
+            })
+        );
 
-    private static JsonElement EmptySnapshot()
-        => JsonSerializer.SerializeToElement(Array.Empty<object>());
+    private static JsonElement EmptySnapshot() =>
+        JsonSerializer.SerializeToElement(Array.Empty<object>());
 
     private static IReadOnlyList<SnapshotTask> ParseSnapshot(JsonElement snapshot)
     {
@@ -2200,25 +3263,63 @@ public sealed class ProgramRepository(
 
         foreach (var item in snapshot.EnumerateArray())
         {
-            result.Add(new SnapshotTask(
-                (short)item.GetProperty("weekday").GetInt32(),
-                item.GetProperty("task_code").GetString() ?? string.Empty,
-                item.GetProperty("points").GetInt32(),
-                item.GetProperty("sort_order").GetInt32()));
+            Guid? routineId =
+                item.TryGetProperty("routine_id", out var rProp)
+                && rProp.ValueKind == JsonValueKind.String
+                && Guid.TryParse(rProp.GetString(), out var rGuid)
+                    ? rGuid
+                    : null;
+            Guid? nutPlanId =
+                item.TryGetProperty("nutrition_plan_id", out var nProp)
+                && nProp.ValueKind == JsonValueKind.String
+                && Guid.TryParse(nProp.GetString(), out var nGuid)
+                    ? nGuid
+                    : null;
+            Guid? mediaId =
+                item.TryGetProperty("media_id", out var mProp)
+                && mProp.ValueKind == JsonValueKind.String
+                && Guid.TryParse(mProp.GetString(), out var mGuid)
+                    ? mGuid
+                    : null;
+
+            result.Add(
+                new SnapshotTask(
+                    (short)item.GetProperty("weekday").GetInt32(),
+                    item.GetProperty("task_code").GetString() ?? string.Empty,
+                    item.GetProperty("points").GetInt32(),
+                    item.GetProperty("sort_order").GetInt32(),
+                    routineId,
+                    nutPlanId,
+                    mediaId
+                )
+            );
         }
 
         return result;
     }
 
     private async Task<IReadOnlyList<CalendarDayDto>> BuildCalendarDaysAsync(
-        Guid enrollmentId, DateOnly from, DateOnly to, DateOnly today, CancellationToken ct)
+        Guid enrollmentId,
+        DateOnly from,
+        DateOnly to,
+        DateOnly today,
+        CancellationToken ct
+    )
     {
-        var checkins = await dbContext.DailyCheckIns.AsNoTracking()
+        var checkins = await dbContext
+            .DailyCheckIns.AsNoTracking()
             .Where(c => c.EnrollmentId == enrollmentId && c.LocalDate >= from && c.LocalDate <= to)
-            .Select(c => new { c.LocalDate, c.IsPerfectDay, c.TotalPoints, c.BonusAwarded })
+            .Select(c => new
+            {
+                c.LocalDate,
+                c.IsPerfectDay,
+                c.TotalPoints,
+                c.BonusAwarded,
+            })
             .ToListAsync(ct);
 
-        var completedDates = await dbContext.TaskCompletions.AsNoTracking()
+        var completedDates = await dbContext
+            .TaskCompletions.AsNoTracking()
             .Where(t => t.EnrollmentId == enrollmentId && t.LocalDate >= from && t.LocalDate <= to)
             .Select(t => t.LocalDate)
             .Distinct()
@@ -2248,12 +3349,15 @@ public sealed class ProgramRepository(
                 status = "Pending";
             }
 
-            result.Add(new CalendarDayDto(
-                date,
-                ToIsoWeekday(date),
-                checkin?.IsPerfectDay ?? false,
-                (checkin?.TotalPoints ?? 0) + (checkin?.BonusAwarded ?? 0),
-                status));
+            result.Add(
+                new CalendarDayDto(
+                    date,
+                    ToIsoWeekday(date),
+                    checkin?.IsPerfectDay ?? false,
+                    (checkin?.TotalPoints ?? 0) + (checkin?.BonusAwarded ?? 0),
+                    status
+                )
+            );
         }
 
         return result;
@@ -2262,10 +3366,15 @@ public sealed class ProgramRepository(
     // ---------------------------------------------------------------- Motor de puntajes (SPEC §13)
 
     public async Task<HealthScoreDto?> GetOrComputeHealthScoreAsync(
-        Guid patientId, ScoreTrigger trigger, bool force = false,
-        DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
+        Guid patientId,
+        ScoreTrigger trigger,
+        bool force = false,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    )
     {
-        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
+        var enrollment = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => new EnrollmentWindow(e.Id, e.PatientId, e.Timezone))
@@ -2286,20 +3395,28 @@ public sealed class ProgramRepository(
         if (periodEndLocalDate is { } overrideEnd && overrideEnd > todayLocal)
         {
             throw new UnprocessableEntityException(
-                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura " +
-                $"(hoy local del paciente: {todayLocal:yyyy-MM-dd}).");
+                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura "
+                    + $"(hoy local del paciente: {todayLocal:yyyy-MM-dd})."
+            );
         }
 
         var periodEnd = periodEndLocalDate ?? todayLocal;
         var rollingStart = periodEnd.AddDays(-6);
         var week = await ResolveLatestWeekAsync(enrollment.EnrollmentId, ct);
-        var periodStart = week is not null && week.WeekStartDateLocal < rollingStart
-            ? week.WeekStartDateLocal
-            : rollingStart;
+        var periodStart =
+            week is not null && week.WeekStartDateLocal < rollingStart
+                ? week.WeekStartDateLocal
+                : rollingStart;
 
-        var existing = await dbContext.HealthScores.AsNoTracking()
-            .FirstOrDefaultAsync(h => h.PatientId == patientId
-                && h.PeriodStart == periodStart && h.PeriodEnd == periodEnd, ct);
+        var existing = await dbContext
+            .HealthScores.AsNoTracking()
+            .FirstOrDefaultAsync(
+                h =>
+                    h.PatientId == patientId
+                    && h.PeriodStart == periodStart
+                    && h.PeriodEnd == periodEnd,
+                ct
+            );
 
         // Fila fresca del período (period_end == hoy): cache hit, sin recalcular
         // (SPEC §13.3). force = recálculo manual clínico → siempre recalcula.
@@ -2314,8 +3431,10 @@ public sealed class ProgramRepository(
 
         // score_previous: el de la fila existente (historial conservado) o el
         // del período anterior persistido (la fila que NO es la actual).
-        var previousScore = existing?.ScorePrevious
-            ?? await dbContext.HealthScores.AsNoTracking()
+        var previousScore =
+            existing?.ScorePrevious
+            ?? await dbContext
+                .HealthScores.AsNoTracking()
                 .Where(h => h.PatientId == patientId && h.PeriodEnd < periodStart)
                 .OrderByDescending(h => h.PeriodEnd)
                 .Select(h => (int?)h.Score)
@@ -2343,23 +3462,25 @@ public sealed class ProgramRepository(
             }
             else
             {
-                dbContext.HealthScores.Add(new HealthScore
-                {
-                    Id = Guid.NewGuid(),
-                    PatientId = patientId,
-                    Score = result.Total,
-                    ScorePrevious = previousScore,
-                    ScoreAdherence = result.Adherence,
-                    ScoreClinical = result.Clinical,
-                    ScoreNutrition = result.Nutrition,
-                    ScorePsychology = result.Psychology,
-                    ScoreExercise = result.Exercise,
-                    Trend = trend,
-                    PeriodStart = periodStart,
-                    PeriodEnd = periodEnd,
-                    CalculatedAt = now,
-                    CreatedAt = now,
-                });
+                dbContext.HealthScores.Add(
+                    new HealthScore
+                    {
+                        Id = Guid.NewGuid(),
+                        PatientId = patientId,
+                        Score = result.Total,
+                        ScorePrevious = previousScore,
+                        ScoreAdherence = result.Adherence,
+                        ScoreClinical = result.Clinical,
+                        ScoreNutrition = result.Nutrition,
+                        ScorePsychology = result.Psychology,
+                        ScoreExercise = result.Exercise,
+                        Trend = trend,
+                        PeriodStart = periodStart,
+                        PeriodEnd = periodEnd,
+                        CalculatedAt = now,
+                        CreatedAt = now,
+                    }
+                );
                 try
                 {
                     await dbContext.SaveChangesAsync(ct);
@@ -2378,14 +3499,24 @@ public sealed class ProgramRepository(
             previousScore,
             trend.ToString(),
             new HealthScoreDimensionsDto(
-                result.Adherence, result.Clinical, result.Nutrition,
-                result.Psychology, result.Exercise));
+                result.Adherence,
+                result.Clinical,
+                result.Nutrition,
+                result.Psychology,
+                result.Exercise
+            )
+        );
     }
 
     public async Task<TransformationScoreDto?> GetOrComputeTransformationScoreAsync(
-        Guid patientId, ScoreTrigger trigger, bool force = false, CancellationToken ct = default)
+        Guid patientId,
+        ScoreTrigger trigger,
+        bool force = false,
+        CancellationToken ct = default
+    )
     {
-        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
+        var enrollment = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => new EnrollmentWindow(e.Id, e.PatientId, e.Timezone))
@@ -2404,7 +3535,8 @@ public sealed class ProgramRepository(
         }
 
         var weekNumber = week.WeekNumber;
-        var existing = await dbContext.TransformationScores.AsNoTracking()
+        var existing = await dbContext
+            .TransformationScores.AsNoTracking()
             .FirstOrDefaultAsync(t => t.PatientId == patientId && t.WeekNumber == weekNumber, ct);
 
         if (existing is not null && !force)
@@ -2413,13 +3545,24 @@ public sealed class ProgramRepository(
         }
 
         var indicators = await LoadTransformationIndicatorsAsync(
-            enrollment.PatientId, enrollment.Timezone, week.WeekStartDateLocal, week.WeekEndDateLocal, ct);
+            enrollment.PatientId,
+            enrollment.Timezone,
+            week.WeekStartDateLocal,
+            week.WeekEndDateLocal,
+            ct
+        );
         var context = new ScoreCalculationContext(
-            patientId, week.WeekStartDateLocal, week.WeekEndDateLocal, trigger);
+            patientId,
+            week.WeekStartDateLocal,
+            week.WeekEndDateLocal,
+            trigger
+        );
         var result = _transformationScoreCalculator.Calculate(indicators, context);
 
-        var previousScore = existing?.ScorePrevious
-            ?? await dbContext.TransformationScores.AsNoTracking()
+        var previousScore =
+            existing?.ScorePrevious
+            ?? await dbContext
+                .TransformationScores.AsNoTracking()
                 .Where(t => t.PatientId == patientId && t.WeekNumber < weekNumber)
                 .OrderByDescending(t => t.WeekNumber)
                 .Select(t => (int?)t.Score)
@@ -2444,47 +3587,69 @@ public sealed class ProgramRepository(
             }
             else
             {
-                dbContext.TransformationScores.Add(new TransformationScore
-                {
-                    Id = Guid.NewGuid(),
-                    PatientId = patientId,
-                    Score = result.Score,
-                    ScorePrevious = previousScore,
-                    WeekNumber = weekNumber,
-                    Detail = JsonSerializer.SerializeToElement(detail),
-                    OverallTrend = trend,
-                    CalculatedAt = now,
-                    CreatedAt = now,
-                });
+                dbContext.TransformationScores.Add(
+                    new TransformationScore
+                    {
+                        Id = Guid.NewGuid(),
+                        PatientId = patientId,
+                        Score = result.Score,
+                        ScorePrevious = previousScore,
+                        WeekNumber = weekNumber,
+                        Detail = JsonSerializer.SerializeToElement(detail),
+                        OverallTrend = trend,
+                        CalculatedAt = now,
+                        CreatedAt = now,
+                    }
+                );
                 await dbContext.SaveChangesAsync(ct);
             }
         });
 
         return new TransformationScoreDto(
-            result.Score, previousScore, trend.ToString(), weekNumber, detail);
+            result.Score,
+            previousScore,
+            trend.ToString(),
+            weekNumber,
+            detail
+        );
     }
 
     public async Task<IReadOnlyList<ClinicalBaselineDto>> ListClinicalBaselinesAsync(
-        Guid patientId, CancellationToken ct = default)
-        => await dbContext.ClinicalBaselines.AsNoTracking()
+        Guid patientId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .ClinicalBaselines.AsNoTracking()
             .Where(b => b.PatientId == patientId)
             .OrderBy(b => b.Metric!.Code)
             .Select(b => new ClinicalBaselineDto(
-                b.Id, b.PatientId, b.MetricId, b.Metric!.Code, b.Value, b.UnitId,
-                b.Unit!.Symbol, b.FavorableDirection, b.TargetValue, b.MeasuredAt,
-                b.SetBy, b.CreatedAt))
+                b.Id,
+                b.PatientId,
+                b.MetricId,
+                b.Metric!.Code,
+                b.Value,
+                b.UnitId,
+                b.Unit!.Symbol,
+                b.FavorableDirection,
+                b.TargetValue,
+                b.MeasuredAt,
+                b.SetBy,
+                b.CreatedAt
+            ))
             .ToListAsync(ct);
 
     public async Task<ClinicalBaselineDto> UpsertClinicalBaselineAsync(
         ClinicalBaselineWrite input,
         IReadOnlyList<string> callerRoles,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         // AC-22: set_by es obligatorio (nunca se infiere ni se auto-asigna).
         if (input.SetBy == Guid.Empty)
         {
             throw new UnprocessableEntityException(
-                "SET_BY_REQUIRED: la línea base clínica exige un set_by (usuario clínico de auth.users).");
+                "SET_BY_REQUIRED: la línea base clínica exige un set_by (usuario clínico de auth.users)."
+            );
         }
 
         // AC-22: el llamador debe tener un rol clínico; un paciente auto-
@@ -2492,18 +3657,22 @@ public sealed class ProgramRepository(
         if (!callerRoles.Any(role => ClinicianRoles.Contains(role)))
         {
             throw new ForbiddenException(
-                "BASELINE_SET_BY_REQUIRES_CLINICIAN: solo un clínico puede fijar una línea base " +
-                "(Physician, Nutritionist, Psychologist, ClinicalDirector o Admin).");
+                "BASELINE_SET_BY_REQUIRES_CLINICIAN: solo un clínico puede fijar una línea base "
+                    + "(Physician, Nutritionist, Psychologist, ClinicalDirector o Admin)."
+            );
         }
 
-        var metric = await dbContext.MeasurementMetrics.AsNoTracking()
-            .FirstOrDefaultAsync(m => m.Id == input.MetricId, ct)
+        var metric =
+            await dbContext
+                .MeasurementMetrics.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.Id == input.MetricId, ct)
             ?? throw new NotFoundException($"Métrica {input.MetricId} no encontrada.");
 
         if (input.Value <= 0m)
         {
             throw new UnprocessableEntityException(
-                "BASELINE_VALUE_MUST_BE_POSITIVE: el valor de la línea base debe ser mayor que 0.");
+                "BASELINE_VALUE_MUST_BE_POSITIVE: el valor de la línea base debe ser mayor que 0."
+            );
         }
 
         // target_value: positivo y dentro de límites razonables (rango de
@@ -2513,34 +3682,46 @@ public sealed class ProgramRepository(
             if (target <= 0m)
             {
                 throw new UnprocessableEntityException(
-                    "TARGET_VALUE_MUST_BE_POSITIVE: el target clínico debe ser mayor que 0.");
+                    "TARGET_VALUE_MUST_BE_POSITIVE: el target clínico debe ser mayor que 0."
+                );
             }
 
             if (target > 1_000_000m)
             {
                 throw new UnprocessableEntityException(
-                    "TARGET_VALUE_OUT_OF_BOUNDS: el target clínico excede los límites razonables.");
+                    "TARGET_VALUE_OUT_OF_BOUNDS: el target clínico excede los límites razonables."
+                );
             }
 
-            var range = await dbContext.MeasurementReferenceRanges.AsNoTracking()
-                .Where(r => r.MetricId == input.MetricId && r.IsActive
-                    && r.UnitId == input.UnitId && r.MinValue.HasValue && r.MaxValue.HasValue)
+            var range = await dbContext
+                .MeasurementReferenceRanges.AsNoTracking()
+                .Where(r =>
+                    r.MetricId == input.MetricId
+                    && r.IsActive
+                    && r.UnitId == input.UnitId
+                    && r.MinValue.HasValue
+                    && r.MaxValue.HasValue
+                )
                 .OrderByDescending(r => r.Priority)
                 .FirstOrDefaultAsync(ct);
-            if (range is not null
-                && (target < range.MinValue!.Value * 0.9m || target > range.MaxValue!.Value * 1.1m))
+            if (
+                range is not null
+                && (target < range.MinValue!.Value * 0.9m || target > range.MaxValue!.Value * 1.1m)
+            )
             {
                 throw new UnprocessableEntityException(
-                    "TARGET_VALUE_OUT_OF_BOUNDS: el target clínico está fuera de los límites razonables de la métrica.");
+                    "TARGET_VALUE_OUT_OF_BOUNDS: el target clínico está fuera de los límites razonables de la métrica."
+                );
             }
         }
 
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
-            var existing = await dbContext.ClinicalBaselines
-                .FirstOrDefaultAsync(b => b.PatientId == input.PatientId
-                    && b.MetricId == input.MetricId, ct);
+            var existing = await dbContext.ClinicalBaselines.FirstOrDefaultAsync(
+                b => b.PatientId == input.PatientId && b.MetricId == input.MetricId,
+                ct
+            );
 
             if (existing is not null)
             {
@@ -2572,20 +3753,37 @@ public sealed class ProgramRepository(
 
             await dbContext.SaveChangesAsync(ct);
 
-            return await dbContext.ClinicalBaselines.AsNoTracking()
+            return await dbContext
+                .ClinicalBaselines.AsNoTracking()
                 .Where(b => b.Id == existing.Id)
                 .Select(b => new ClinicalBaselineDto(
-                    b.Id, b.PatientId, b.MetricId, b.Metric!.Code, b.Value, b.UnitId,
-                    b.Unit!.Symbol, b.FavorableDirection, b.TargetValue, b.MeasuredAt,
-                    b.SetBy, b.CreatedAt))
+                    b.Id,
+                    b.PatientId,
+                    b.MetricId,
+                    b.Metric!.Code,
+                    b.Value,
+                    b.UnitId,
+                    b.Unit!.Symbol,
+                    b.FavorableDirection,
+                    b.TargetValue,
+                    b.MeasuredAt,
+                    b.SetBy,
+                    b.CreatedAt
+                ))
                 .FirstAsync(ct);
         });
     }
 
     public async Task<decimal?> GetLatestMeasurementAsync(
-        Guid patientId, Guid metricId, DateOnly fromDate, DateOnly toDate, CancellationToken ct = default)
+        Guid patientId,
+        Guid metricId,
+        DateOnly fromDate,
+        DateOnly toDate,
+        CancellationToken ct = default
+    )
     {
-        var timezone = await dbContext.ProgramEnrollments.AsNoTracking()
+        var timezone = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
             .Select(e => (string?)e.Timezone)
             .FirstOrDefaultAsync(ct);
@@ -2598,9 +3796,14 @@ public sealed class ProgramRepository(
         var fromUtc = LocalDateToUtcStart(fromDate, tz);
         var toExclusiveUtc = LocalDateToUtcStart(toDate.AddDays(1), tz);
 
-        return await dbContext.ClinicalMeasurements.AsNoTracking()
-            .Where(m => m.PatientId == patientId && m.MetricId == metricId
-                && m.ObservedAt >= fromUtc && m.ObservedAt < toExclusiveUtc)
+        return await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Where(m =>
+                m.PatientId == patientId
+                && m.MetricId == metricId
+                && m.ObservedAt >= fromUtc
+                && m.ObservedAt < toExclusiveUtc
+            )
             .OrderByDescending(m => m.ObservedAt)
             .Select(m => (decimal?)m.Value)
             .FirstOrDefaultAsync(ct);
@@ -2630,9 +3833,13 @@ public sealed class ProgramRepository(
     /// violación de unicidad (carrera) se omite (nunca doble XP).
     /// </summary>
     public async Task<ClinicalXpEvaluationResult> EvaluateClinicalXpAwardsAsync(
-        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    )
     {
-        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
+        var enrollment = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => new EnrollmentWindow(e.Id, e.PatientId, e.Timezone))
@@ -2649,20 +3856,28 @@ public sealed class ProgramRepository(
         if (periodEndLocalDate is { } overrideEnd && overrideEnd > todayLocal)
         {
             throw new UnprocessableEntityException(
-                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura " +
-                $"(hoy local del paciente: {todayLocal:yyyy-MM-dd}).");
+                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura "
+                    + $"(hoy local del paciente: {todayLocal:yyyy-MM-dd})."
+            );
         }
 
         var periodEnd = periodEndLocalDate ?? todayLocal;
         var rollingStart = periodEnd.AddDays(-6);
         var week = await ResolveLatestWeekAsync(enrollment.EnrollmentId, ct);
-        var periodStart = week is not null && week.WeekStartDateLocal < rollingStart
-            ? week.WeekStartDateLocal
-            : rollingStart;
+        var periodStart =
+            week is not null && week.WeekStartDateLocal < rollingStart
+                ? week.WeekStartDateLocal
+                : rollingStart;
 
-        var healthScore = await dbContext.HealthScores.AsNoTracking()
-            .FirstOrDefaultAsync(h => h.PatientId == patientId
-                && h.PeriodStart == periodStart && h.PeriodEnd == periodEnd, ct);
+        var healthScore = await dbContext
+            .HealthScores.AsNoTracking()
+            .FirstOrDefaultAsync(
+                h =>
+                    h.PatientId == patientId
+                    && h.PeriodStart == periodStart
+                    && h.PeriodEnd == periodEnd,
+                ct
+            );
         if (healthScore is null)
         {
             return ClinicalXpEvaluationResult.Empty;
@@ -2671,7 +3886,12 @@ public sealed class ProgramRepository(
         // Pares (línea base, medición más reciente del período) con el id y
         // nombre de la métrica (misma data que el calculador de Transformación).
         var indicators = await LoadClinicalPeriodIndicatorsAsync(
-            enrollment.PatientId, enrollment.Timezone, periodStart, periodEnd, ct);
+            enrollment.PatientId,
+            enrollment.Timezone,
+            periodStart,
+            periodEnd,
+            ct
+        );
         if (indicators.Count == 0)
         {
             return ClinicalXpEvaluationResult.Empty;
@@ -2693,7 +3913,8 @@ public sealed class ProgramRepository(
                 {
                     var delta = indicator.Current - indicator.Baseline;
                     // baseline > 0 siempre (validación de la línea base: value > 0).
-                    var deltaPct = indicator.Baseline == 0m ? 0m : delta / indicator.Baseline * 100m;
+                    var deltaPct =
+                        indicator.Baseline == 0m ? 0m : delta / indicator.Baseline * 100m;
                     var magnitude = Math.Abs(deltaPct);
                     var favorable = deltaPct * (int)indicator.FavorableDirection > 0m;
 
@@ -2716,23 +3937,34 @@ public sealed class ProgramRepository(
                         // Mejoría significativa: revisión pending (una por
                         // período × métrica, único (patient, health_score,
                         // metric)); NO se otorga XP hasta la decisión clínica.
-                        var exists = await dbContext.ClinicalXpReviews.AsNoTracking()
-                            .AnyAsync(r => r.PatientId == patientId
-                                && r.HealthScoreId == healthScore.Id
-                                && r.MetricId == indicator.MetricId, ct);
+                        var exists = await dbContext
+                            .ClinicalXpReviews.AsNoTracking()
+                            .AnyAsync(
+                                r =>
+                                    r.PatientId == patientId
+                                    && r.HealthScoreId == healthScore.Id
+                                    && r.MetricId == indicator.MetricId,
+                                ct
+                            );
                         if (!exists)
                         {
-                            dbContext.ClinicalXpReviews.Add(new ClinicalXpReview
-                            {
-                                Id = Guid.NewGuid(),
-                                PatientId = patientId,
-                                HealthScoreId = healthScore.Id,
-                                MetricId = indicator.MetricId,
-                                RuleCode = XpRuleCodes.ClinicalSignificant,
-                                DeltaPct = Math.Round(deltaPct, 3, MidpointRounding.AwayFromZero),
-                                Status = ClinicalXpReviewStatus.pending,
-                                CreatedAt = DateTime.UtcNow,
-                            });
+                            dbContext.ClinicalXpReviews.Add(
+                                new ClinicalXpReview
+                                {
+                                    Id = Guid.NewGuid(),
+                                    PatientId = patientId,
+                                    HealthScoreId = healthScore.Id,
+                                    MetricId = indicator.MetricId,
+                                    RuleCode = XpRuleCodes.ClinicalSignificant,
+                                    DeltaPct = Math.Round(
+                                        deltaPct,
+                                        3,
+                                        MidpointRounding.AwayFromZero
+                                    ),
+                                    Status = ClinicalXpReviewStatus.pending,
+                                    CreatedAt = DateTime.UtcNow,
+                                }
+                            );
                             reviewsCreated++;
                         }
                     }
@@ -2740,8 +3972,15 @@ public sealed class ProgramRepository(
                     {
                         // Mejoría favorable moderada: auto-otorga CLINICAL_IMPROVE.
                         var awarded = await AwardPeriodXpAsync(
-                            enrollment.EnrollmentId, enrollment.Timezone, healthScore.Id,
-                            XpRuleCodes.ClinicalImprove, XpReason.CLINICAL_IMPROVE, 50, null, ct);
+                            enrollment.EnrollmentId,
+                            enrollment.Timezone,
+                            healthScore.Id,
+                            XpRuleCodes.ClinicalImprove,
+                            XpReason.CLINICAL_IMPROVE,
+                            50,
+                            null,
+                            ct
+                        );
                         if (awarded > 0)
                         {
                             totalXp += awarded;
@@ -2752,8 +3991,15 @@ public sealed class ProgramRepository(
                     {
                         // Estable (< 1%): auto-otorga CLINICAL_STABLE.
                         var awarded = await AwardPeriodXpAsync(
-                            enrollment.EnrollmentId, enrollment.Timezone, healthScore.Id,
-                            XpRuleCodes.ClinicalStable, XpReason.CLINICAL_STABLE, 20, null, ct);
+                            enrollment.EnrollmentId,
+                            enrollment.Timezone,
+                            healthScore.Id,
+                            XpRuleCodes.ClinicalStable,
+                            XpReason.CLINICAL_STABLE,
+                            20,
+                            null,
+                            ct
+                        );
                         if (awarded > 0)
                         {
                             totalXp += awarded;
@@ -2768,8 +4014,15 @@ public sealed class ProgramRepository(
                 if (anyMeasuredMetric && allFavorable)
                 {
                     var awarded = await AwardPeriodXpAsync(
-                        enrollment.EnrollmentId, enrollment.Timezone, healthScore.Id,
-                        XpRuleCodes.ClinicalWeeklyAllUp, XpReason.CLINICAL_WEEKLY_ALL_UP, 150, null, ct);
+                        enrollment.EnrollmentId,
+                        enrollment.Timezone,
+                        healthScore.Id,
+                        XpRuleCodes.ClinicalWeeklyAllUp,
+                        XpReason.CLINICAL_WEEKLY_ALL_UP,
+                        150,
+                        null,
+                        ct
+                    );
                     if (awarded > 0)
                     {
                         totalXp += awarded;
@@ -2781,7 +4034,10 @@ public sealed class ProgramRepository(
                 await transaction.CommitAsync(ct);
 
                 return new ClinicalXpEvaluationResult(
-                    reviewsCreated, totalXp, awardedRules.Distinct().ToList());
+                    reviewsCreated,
+                    totalXp,
+                    awardedRules.Distinct().ToList()
+                );
             }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             {
@@ -2799,10 +4055,13 @@ public sealed class ProgramRepository(
         });
     }
 
-    public async Task<(IReadOnlyList<ClinicalReviewDto> Items, int Total)> ListPendingClinicalReviewsAsync(
-        int page, int pageSize, CancellationToken ct = default)
+    public async Task<(
+        IReadOnlyList<ClinicalReviewDto> Items,
+        int Total
+    )> ListPendingClinicalReviewsAsync(int page, int pageSize, CancellationToken ct = default)
     {
-        var query = dbContext.ClinicalXpReviews.AsNoTracking()
+        var query = dbContext
+            .ClinicalXpReviews.AsNoTracking()
             .Where(r => r.Status == ClinicalXpReviewStatus.pending);
 
         var total = await query.CountAsync(ct);
@@ -2811,13 +4070,34 @@ public sealed class ProgramRepository(
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
             .Select(r => new ClinicalReviewDto(
-                r.Id, r.PatientId, r.MetricId, r.Metric!.Code, r.Metric!.Name,
-                r.DeltaPct, r.RuleCode, r.Status,
-                r.HealthScore!.PeriodStart, r.HealthScore!.PeriodEnd,
-                r.CreatedAt, r.DecidedBy, r.DecidedAt))
+                r.Id,
+                r.PatientId,
+                r.MetricId,
+                r.Metric!.Code,
+                r.Metric!.Name,
+                r.DeltaPct,
+                r.RuleCode,
+                r.Status,
+                r.HealthScore!.PeriodStart,
+                r.HealthScore!.PeriodEnd,
+                r.CreatedAt,
+                r.DecidedBy,
+                r.DecidedAt
+            ))
             .ToListAsync(ct);
 
-        return (items, total);
+        // B3: Batch-resolve patient names
+        var patientIds = items.Select(r => r.PatientId).Distinct().ToList();
+        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+        var result = items.Select(r => r with
+        {
+            PatientName = patientNames.TryGetValue(r.PatientId, out var name) ? name : null
+        }).ToList();
+
+        return (result, total);
     }
 
     /// <summary>
@@ -2830,15 +4110,20 @@ public sealed class ProgramRepository(
     /// decidida → 409 <c>REVIEW_ALREADY_DECIDED</c>.
     /// </summary>
     public async Task<ClinicalReviewDto> DecideClinicalXpReviewAsync(
-        Guid reviewId, bool approve, Guid? actorId,
-        IReadOnlyList<string> callerRoles, CancellationToken ct = default)
+        Guid reviewId,
+        bool approve,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default
+    )
     {
         // Guardia AC-22: rol clínico obligatorio (nunca un paciente).
         if (actorId is null || !callerRoles.Any(role => ClinicianRoles.Contains(role)))
         {
             throw new ForbiddenException(
-                "CLINICAL_REVIEW_REQUIRES_CLINICIAN: solo un clínico puede decidir una " +
-                "revisión de XP (Physician, Nutritionist, Psychologist, ClinicalDirector o Admin).");
+                "CLINICAL_REVIEW_REQUIRES_CLINICIAN: solo un clínico puede decidir una "
+                    + "revisión de XP (Physician, Nutritionist, Psychologist, ClinicalDirector o Admin)."
+            );
         }
 
         var strategy = dbContext.Database.CreateExecutionStrategy();
@@ -2847,14 +4132,17 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var review = await dbContext.ClinicalXpReviews
-                    .FirstOrDefaultAsync(r => r.Id == reviewId, ct)
-                    ?? throw new NotFoundException($"Revisión clínica de XP {reviewId} no encontrada.");
+                var review =
+                    await dbContext.ClinicalXpReviews.FirstOrDefaultAsync(r => r.Id == reviewId, ct)
+                    ?? throw new NotFoundException(
+                        $"Revisión clínica de XP {reviewId} no encontrada."
+                    );
 
                 if (review.Status != ClinicalXpReviewStatus.pending)
                 {
                     throw new BusinessRuleViolationException(
-                        "REVIEW_ALREADY_DECIDED: la revisión clínica de XP ya fue decidida.");
+                        "REVIEW_ALREADY_DECIDED: la revisión clínica de XP ya fue decidida."
+                    );
                 }
 
                 var now = DateTime.UtcNow;
@@ -2870,9 +4158,12 @@ public sealed class ProgramRepository(
                     // Si ya no existe inscripción activa (p. ej. retirada tras
                     // crear la revisión), la revisión se aprueba igual pero sin
                     // XP: no hay libro mayor al que acreditar.
-                    var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
-                        .Where(e => e.PatientId == review.PatientId
-                            && e.Status == ProgramEnrollmentStatus.Active)
+                    var enrollment = await dbContext
+                        .ProgramEnrollments.AsNoTracking()
+                        .Where(e =>
+                            e.PatientId == review.PatientId
+                            && e.Status == ProgramEnrollmentStatus.Active
+                        )
                         .OrderByDescending(e => e.CreatedAt)
                         .Select(e => new EnrollmentWindow(e.Id, e.PatientId, e.Timezone))
                         .FirstOrDefaultAsync(ct);
@@ -2882,9 +4173,15 @@ public sealed class ProgramRepository(
                         // Otorgamiento validado: validated_by/validated_at =
                         // decisión del clínico (SPEC §15, E: cuenta en totales).
                         await AwardPeriodXpAsync(
-                            enrollment.EnrollmentId, enrollment.Timezone, review.HealthScoreId,
-                            XpRuleCodes.ClinicalSignificant, XpReason.CLINICAL_SIGNIFICANT, 100,
-                            actorId, ct);
+                            enrollment.EnrollmentId,
+                            enrollment.Timezone,
+                            review.HealthScoreId,
+                            XpRuleCodes.ClinicalSignificant,
+                            XpReason.CLINICAL_SIGNIFICANT,
+                            100,
+                            actorId,
+                            ct
+                        );
                     }
                 }
                 else
@@ -2895,14 +4192,33 @@ public sealed class ProgramRepository(
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                return await dbContext.ClinicalXpReviews.AsNoTracking()
+                var dto = await dbContext
+                    .ClinicalXpReviews.AsNoTracking()
                     .Where(r => r.Id == review.Id)
                     .Select(r => new ClinicalReviewDto(
-                        r.Id, r.PatientId, r.MetricId, r.Metric!.Code, r.Metric!.Name,
-                        r.DeltaPct, r.RuleCode, r.Status,
-                        r.HealthScore!.PeriodStart, r.HealthScore!.PeriodEnd,
-                        r.CreatedAt, r.DecidedBy, r.DecidedAt))
+                        r.Id,
+                        r.PatientId,
+                        r.MetricId,
+                        r.Metric!.Code,
+                        r.Metric!.Name,
+                        r.DeltaPct,
+                        r.RuleCode,
+                        r.Status,
+                        r.HealthScore!.PeriodStart,
+                        r.HealthScore!.PeriodEnd,
+                        r.CreatedAt,
+                        r.DecidedBy,
+                        r.DecidedAt
+                    ))
                     .FirstAsync(ct);
+
+                // B3: Resolve patient name
+                var patientName = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.Id == dto.PatientId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefaultAsync(ct);
+
+                return dto with { PatientName = patientName };
             }
             catch
             {
@@ -2969,7 +4285,11 @@ public sealed class ProgramRepository(
     /// en <c>CompleteTaskAsync</c>.
     /// </summary>
     public async Task<NutritionLogResultDto> LogNutritionAsync(
-        Guid patientId, MealCode mealCode, DateOnly? localDate = null, CancellationToken ct = default)
+        Guid patientId,
+        MealCode mealCode,
+        DateOnly? localDate = null,
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -2980,18 +4300,24 @@ public sealed class ProgramRepository(
                 // Inscripción activa del paciente, bloqueada FOR UPDATE (misma
                 // técnica que CompleteTaskCoreAsync: Npgsql 10 no expone
                 // .ForUpdate(); el lock se toma por SQL directo).
-                var enrollment = await dbContext.ProgramEnrollments
-                    .FromSqlInterpolated(
-                        $"SELECT * FROM app.program_enrollments WHERE patient_id = {patientId} AND status = 'Active' ORDER BY created_at DESC LIMIT 1 FOR UPDATE")
-                    .FirstOrDefaultAsync(ct)
+                var enrollment =
+                    await dbContext
+                        .ProgramEnrollments.FromSqlInterpolated(
+                            $"SELECT * FROM app.program_enrollments WHERE patient_id = {patientId} AND status = 'Active' ORDER BY created_at DESC LIMIT 1 FOR UPDATE"
+                        )
+                        .FirstOrDefaultAsync(ct)
                     ?? throw new NotFoundException(
-                        $"NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente {patientId}.");
+                        $"NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente {patientId}."
+                    );
 
                 // Plantilla de hábito del código de comida (des/alm/mer/cen/agua).
-                var template = await dbContext.HabitTemplates.AsNoTracking()
-                    .FirstOrDefaultAsync(t => t.Code == mealCode.ToString(), ct)
+                var template =
+                    await dbContext
+                        .HabitTemplates.AsNoTracking()
+                        .FirstOrDefaultAsync(t => t.Code == mealCode.ToString(), ct)
                     ?? throw new UnprocessableEntityException(
-                        $"MEAL_CODE_UNKNOWN: la plantilla de hábito {mealCode} no está sembrada.");
+                        $"MEAL_CODE_UNKNOWN: la plantilla de hábito {mealCode} no está sembrada."
+                    );
 
                 // Fecha local del paciente; una fecha futura es 422 INVALID_DATE
                 // (el repositorio es la autoridad del tiempo local, nunca
@@ -3001,20 +4327,28 @@ public sealed class ProgramRepository(
                 if (logDate > todayLocal)
                 {
                     throw new UnprocessableEntityException(
-                        $"INVALID_DATE: la fecha {logDate:yyyy-MM-dd} es futura " +
-                        $"(hoy local del paciente: {todayLocal:yyyy-MM-dd}).");
+                        $"INVALID_DATE: la fecha {logDate:yyyy-MM-dd} es futura "
+                            + $"(hoy local del paciente: {todayLocal:yyyy-MM-dd})."
+                    );
                 }
 
                 // Upsert idempotente (único por (paciente, plantilla, fecha)):
                 // si la comida/hidratación de esa fecha ya está registrada, es
                 // un intento duplicado → 409 HABIT_ALREADY_LOGGED.
-                var existing = await dbContext.HabitChecks.AsNoTracking()
-                    .FirstOrDefaultAsync(h => h.PatientId == patientId
-                        && h.HabitTemplateId == template.Id && h.LocalDate == logDate, ct);
+                var existing = await dbContext
+                    .HabitChecks.AsNoTracking()
+                    .FirstOrDefaultAsync(
+                        h =>
+                            h.PatientId == patientId
+                            && h.HabitTemplateId == template.Id
+                            && h.LocalDate == logDate,
+                        ct
+                    );
                 if (existing is not null)
                 {
                     throw new BusinessRuleViolationException(
-                        "HABIT_ALREADY_LOGGED: la comida/hidratación de esa fecha ya fue registrada.");
+                        "HABIT_ALREADY_LOGGED: la comida/hidratación de esa fecha ya fue registrada."
+                    );
                 }
 
                 var check = new HabitCheck
@@ -3033,32 +4367,52 @@ public sealed class ProgramRepository(
                 // ResolveXpAwardAsync aplica el multiplicador del paciente y
                 // los topes max_per_day/max_per_week (SPEC §14.3 + §16).
                 var isMeal = template.Category == "alimentacion";
-                var ruleCode = isMeal ? XpRuleCodes.NutritionMealComplete : XpRuleCodes.NutritionHydration;
-                var defaultPoints = isMeal ? NutritionMealDefaultPoints : NutritionHydrationDefaultPoints;
+                var ruleCode = isMeal
+                    ? XpRuleCodes.NutritionMealComplete
+                    : XpRuleCodes.NutritionHydration;
+                var defaultPoints = isMeal
+                    ? NutritionMealDefaultPoints
+                    : NutritionHydrationDefaultPoints;
                 var (points, resolvedRuleCode, multiplierUsed) = await ResolveXpAwardAsync(
-                    enrollment.Id, enrollment.Timezone, ruleCode, defaultPoints, logDate, ct);
+                    enrollment.Id,
+                    enrollment.Timezone,
+                    ruleCode,
+                    defaultPoints,
+                    logDate,
+                    ct
+                );
 
                 var balance = await CurrentBalanceAsync(enrollment.Id, ct);
                 var now = DateTime.UtcNow;
-                dbContext.XpLedgerEntries.Add(new XpLedgerEntry
-                {
-                    Id = Guid.NewGuid(),
-                    EnrollmentId = enrollment.Id,
-                    Amount = points,
-                    Reason = isMeal ? XpReason.NUTRITION_MEAL_COMPLETE : XpReason.NUTRITION_HYDRATION,
-                    SourceRefType = HabitLogSourceRefType,
-                    SourceRefId = check.Id,
-                    RuleCode = resolvedRuleCode,
-                    MultiplierUsed = multiplierUsed,
-                    BalanceAfter = balance + points,
-                    AwardedAt = now,
-                });
+                dbContext.XpLedgerEntries.Add(
+                    new XpLedgerEntry
+                    {
+                        Id = Guid.NewGuid(),
+                        EnrollmentId = enrollment.Id,
+                        Amount = points,
+                        Reason = isMeal
+                            ? XpReason.NUTRITION_MEAL_COMPLETE
+                            : XpReason.NUTRITION_HYDRATION,
+                        SourceRefType = HabitLogSourceRefType,
+                        SourceRefId = check.Id,
+                        RuleCode = resolvedRuleCode,
+                        MultiplierUsed = multiplierUsed,
+                        BalanceAfter = balance + points,
+                        AwardedAt = now,
+                    }
+                );
 
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
                 return new NutritionLogResultDto(
-                    check.Id, template.Code, logDate, check.IsDone, points, balance + points);
+                    check.Id,
+                    template.Code,
+                    logDate,
+                    check.IsDone,
+                    points,
+                    balance + points
+                );
             }
             catch (DbUpdateException ex) when (IsUniqueViolation(ex))
             {
@@ -3067,7 +4421,8 @@ public sealed class ProgramRepository(
                 // protegen; el duplicado se reporta con la misma semántica 409.
                 await transaction.RollbackAsync(ct);
                 throw new BusinessRuleViolationException(
-                    "HABIT_ALREADY_LOGGED: la comida/hidratación de esa fecha ya fue registrada.");
+                    "HABIT_ALREADY_LOGGED: la comida/hidratación de esa fecha ya fue registrada."
+                );
             }
             catch
             {
@@ -3102,9 +4457,13 @@ public sealed class ProgramRepository(
     /// <see cref="AwardPeriodXpAsync"/>.
     /// </summary>
     public async Task<NutritionWeeklyAwardsResult> EvaluateNutritionAwardsAsync(
-        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    )
     {
-        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
+        var enrollment = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => new EnrollmentWindow(e.Id, e.PatientId, e.Timezone))
@@ -3121,20 +4480,28 @@ public sealed class ProgramRepository(
         if (periodEndLocalDate is { } overrideEnd && overrideEnd > todayLocal)
         {
             throw new UnprocessableEntityException(
-                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura " +
-                $"(hoy local del paciente: {todayLocal:yyyy-MM-dd}).");
+                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura "
+                    + $"(hoy local del paciente: {todayLocal:yyyy-MM-dd})."
+            );
         }
 
         var periodEnd = periodEndLocalDate ?? todayLocal;
         var rollingStart = periodEnd.AddDays(-6);
         var week = await ResolveLatestWeekAsync(enrollment.EnrollmentId, ct);
-        var periodStart = week is not null && week.WeekStartDateLocal < rollingStart
-            ? week.WeekStartDateLocal
-            : rollingStart;
+        var periodStart =
+            week is not null && week.WeekStartDateLocal < rollingStart
+                ? week.WeekStartDateLocal
+                : rollingStart;
 
-        var healthScore = await dbContext.HealthScores.AsNoTracking()
-            .FirstOrDefaultAsync(h => h.PatientId == patientId
-                && h.PeriodStart == periodStart && h.PeriodEnd == periodEnd, ct);
+        var healthScore = await dbContext
+            .HealthScores.AsNoTracking()
+            .FirstOrDefaultAsync(
+                h =>
+                    h.PatientId == patientId
+                    && h.PeriodStart == periodStart
+                    && h.PeriodEnd == periodEnd,
+                ct
+            );
         if (healthScore is null)
         {
             return NutritionWeeklyAwardsResult.Empty;
@@ -3150,12 +4517,17 @@ public sealed class ProgramRepository(
             return NutritionWeeklyAwardsResult.Empty;
         }
 
-        var adherence = (int)Math.Round(
-            nutrition.Achieved * 100d / nutrition.Total, 0, MidpointRounding.AwayFromZero);
+        var adherence = (int)
+            Math.Round(
+                nutrition.Achieved * 100d / nutrition.Total,
+                0,
+                MidpointRounding.AwayFromZero
+            );
 
         // Adherencia del período anterior = dimensión de nutrición de la fila
         // previa de health_scores (el período anterior persistido, SPEC §18, C.3).
-        var previousAdherence = await dbContext.HealthScores.AsNoTracking()
+        var previousAdherence = await dbContext
+            .HealthScores.AsNoTracking()
             .Where(h => h.PatientId == patientId && h.PeriodEnd < periodStart)
             .OrderByDescending(h => h.PeriodEnd)
             .Select(h => (int?)h.ScoreNutrition)
@@ -3174,10 +4546,16 @@ public sealed class ProgramRepository(
                 if (adherence >= NutritionWeekThresholdPct)
                 {
                     var awarded = await AwardPeriodXpAsync(
-                        enrollment.EnrollmentId, enrollment.Timezone, healthScore.Id,
-                        XpRuleCodes.NutritionWeek85, XpReason.NUTRITION_WEEK_85,
-                        NutritionWeek85BaseXp, null, ct,
-                        sourceRefType: NutritionPeriodSourceRefType);
+                        enrollment.EnrollmentId,
+                        enrollment.Timezone,
+                        healthScore.Id,
+                        XpRuleCodes.NutritionWeek85,
+                        XpReason.NUTRITION_WEEK_85,
+                        NutritionWeek85BaseXp,
+                        null,
+                        ct,
+                        sourceRefType: NutritionPeriodSourceRefType
+                    );
                     if (awarded > 0)
                     {
                         totalXp += awarded;
@@ -3187,14 +4565,22 @@ public sealed class ProgramRepository(
 
                 // Recuperación: adherencia ≥ +20pp vs el período anterior
                 // (AC-36). Sin período anterior no hay recuperación que medir.
-                if (previousAdherence is not null
-                    && adherence - previousAdherence.Value >= NutritionRecoveryMinImprovementPct)
+                if (
+                    previousAdherence is not null
+                    && adherence - previousAdherence.Value >= NutritionRecoveryMinImprovementPct
+                )
                 {
                     var awarded = await AwardPeriodXpAsync(
-                        enrollment.EnrollmentId, enrollment.Timezone, healthScore.Id,
-                        XpRuleCodes.NutritionRecovery, XpReason.NUTRITION_RECOVERY,
-                        NutritionRecoveryBaseXp, null, ct,
-                        sourceRefType: NutritionPeriodSourceRefType);
+                        enrollment.EnrollmentId,
+                        enrollment.Timezone,
+                        healthScore.Id,
+                        XpRuleCodes.NutritionRecovery,
+                        XpReason.NUTRITION_RECOVERY,
+                        NutritionRecoveryBaseXp,
+                        null,
+                        ct,
+                        sourceRefType: NutritionPeriodSourceRefType
+                    );
                     if (awarded > 0)
                     {
                         totalXp += awarded;
@@ -3230,7 +4616,7 @@ public sealed class ProgramRepository(
     /// (SPEC §21, B.3 — WK_CLIN_GLUCOSE_HIGH). REQUIRES_CLINICAL_VALIDATION:
     /// umbral propuesto, pendiente de confirmación del comité clínico.
     /// </summary>
-    private const string GlucoseMetricCode = "glucose";
+    private const string GlucoseMetricCode = "glucose_fasting";
 
     /// <summary>
     /// Código canónico de la métrica de % grasa corporal (SPEC §21, B.4 —
@@ -3239,13 +4625,20 @@ public sealed class ProgramRepository(
     private const string BodyFatMetricCode = "body_fat";
 
     /// <summary>
+    /// Código canónico de la métrica de hemoglobina glicosilada.
+    /// </summary>
+    private const string Hba1cMetricCode = "hba1c";
+
+    /// <summary>
     /// Códigos de regla que el motor de detección considera "activas" para el
     /// dedupe AC-43: se omite la detección si ya existe una fila en cualquiera
     /// de estos estados con el mismo código del paciente.
     /// </summary>
     private static readonly WeaknessStatus[] ActiveWeaknessStatuses =
     [
-        WeaknessStatus.open, WeaknessStatus.acknowledged, WeaknessStatus.in_intervention,
+        WeaknessStatus.open,
+        WeaknessStatus.acknowledged,
+        WeaknessStatus.in_intervention,
     ];
 
     /// <summary>
@@ -3256,9 +4649,13 @@ public sealed class ProgramRepository(
     /// Devuelve null si el paciente no tiene inscripción activa.
     /// </summary>
     public async Task<PatientWeeklyData?> BuildPatientWeeklyDataAsync(
-        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    )
     {
-        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
+        var enrollment = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => new EnrollmentWindow(e.Id, e.PatientId, e.Timezone))
@@ -3272,55 +4669,82 @@ public sealed class ProgramRepository(
         if (periodEndLocalDate is { } overrideEnd && overrideEnd > todayLocal)
         {
             throw new UnprocessableEntityException(
-                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura " +
-                $"(hoy local del paciente: {todayLocal:yyyy-MM-dd}).");
+                $"INVALID_PERIOD: periodEndLocalDate {overrideEnd:yyyy-MM-dd} es futura "
+                    + $"(hoy local del paciente: {todayLocal:yyyy-MM-dd})."
+            );
         }
 
         var periodEnd = periodEndLocalDate ?? todayLocal;
         var rollingStart = periodEnd.AddDays(-6);
         var week = await ResolveLatestWeekAsync(enrollment.EnrollmentId, ct);
-        var periodStart = week is not null && week.WeekStartDateLocal < rollingStart
-            ? week.WeekStartDateLocal
-            : rollingStart;
+        var periodStart =
+            week is not null && week.WeekStartDateLocal < rollingStart
+                ? week.WeekStartDateLocal
+                : rollingStart;
 
         // Adherencia nutricional (SPEC §21, B.1/B.2): MISMA fuente que la
         // dimensión nutrition del Health Score y que los premios semanales de
         // SPEC §18 — reutiliza GetNutritionLogAsync, no duplica la query.
-        var nutrition = await GetNutritionLogAsync(enrollment.PatientId, periodStart, periodEnd, ct);
+        var nutrition = await GetNutritionLogAsync(
+            enrollment.PatientId,
+            periodStart,
+            periodEnd,
+            ct
+        );
         decimal? nutritionAdherence = null;
         if (nutrition is { Total: > 0 })
         {
             nutritionAdherence = Math.Round(
-                nutrition.Achieved * 100m / nutrition.Total, 0, MidpointRounding.AwayFromZero);
+                nutrition.Achieved * 100m / nutrition.Total,
+                0,
+                MidpointRounding.AwayFromZero
+            );
         }
 
         // Indicadores clínicos (glucosa + % grasa) desde líneas base y la
         // última medición del período (misma data que los calculadores).
-        var baselines = await dbContext.ClinicalBaselines.AsNoTracking()
+        var baselines = await dbContext
+            .ClinicalBaselines.AsNoTracking()
             .Where(b => b.PatientId == patientId)
-            .Select(b => new { b.MetricId, Code = b.Metric!.Code, b.Value })
+            .Select(b => new
+            {
+                b.MetricId,
+                Code = b.Metric!.Code,
+                b.Value,
+            })
             .ToListAsync(ct);
         var latestByMetric = await LoadLatestMeasurementPerMetricAsync(
-            enrollment.PatientId, enrollment.Timezone, periodStart, periodEnd, ct);
+            enrollment.PatientId,
+            enrollment.Timezone,
+            periodStart,
+            periodEnd,
+            ct
+        );
 
         decimal? glucoseCurrent = null;
         string? glucoseTrend = null;
         Guid? glucoseMetricId = null;
         var glucoseBaseline = baselines.FirstOrDefault(b => b.Code == GlucoseMetricCode);
-        if (glucoseBaseline is not null
-            && latestByMetric.TryGetValue(glucoseBaseline.MetricId, out var glucose))
+        if (
+            glucoseBaseline is not null
+            && latestByMetric.TryGetValue(glucoseBaseline.MetricId, out var glucose)
+        )
         {
             glucoseCurrent = glucose;
             glucoseMetricId = glucoseBaseline.MetricId;
-            glucoseTrend = glucose > glucoseBaseline.Value ? "up"
-                : glucose < glucoseBaseline.Value ? "down" : "stable";
+            glucoseTrend =
+                glucose > glucoseBaseline.Value ? "up"
+                : glucose < glucoseBaseline.Value ? "down"
+                : "stable";
         }
 
         decimal? bodyFatDelta = null;
         Guid? bodyFatMetricId = null;
         var bodyFatBaseline = baselines.FirstOrDefault(b => b.Code == BodyFatMetricCode);
-        if (bodyFatBaseline is not null
-            && latestByMetric.TryGetValue(bodyFatBaseline.MetricId, out var bodyFat))
+        if (
+            bodyFatBaseline is not null
+            && latestByMetric.TryGetValue(bodyFatBaseline.MetricId, out var bodyFat)
+        )
         {
             bodyFatDelta = bodyFat - bodyFatBaseline.Value;
             bodyFatMetricId = bodyFatBaseline.MetricId;
@@ -3330,9 +4754,13 @@ public sealed class ProgramRepository(
         // período — el módulo solo persiste mood 1..5, se escala ×2 a la escala
         // 1..10 del motor (documentado en SPEC §21, B.5).
         decimal? motivationScore = null;
-        var latestMood = await dbContext.EmotionalRecords.AsNoTracking()
-            .Where(r => r.PatientId == patientId
-                && r.RecordedLocalDate >= periodStart && r.RecordedLocalDate <= periodEnd)
+        var latestMood = await dbContext
+            .EmotionalRecords.AsNoTracking()
+            .Where(r =>
+                r.PatientId == patientId
+                && r.RecordedLocalDate >= periodStart
+                && r.RecordedLocalDate <= periodEnd
+            )
             .OrderByDescending(r => r.RecordedLocalDate)
             .Select(r => (short?)r.MoodScore)
             .FirstOrDefaultAsync(ct);
@@ -3351,9 +4779,11 @@ public sealed class ProgramRepository(
         // health_scores del período (persistida por POST /scores/calculate
         // justo antes de la detección, SPEC §13.4.1).
         decimal? weeklyAdherence = null;
-        var healthScoreAdherence = await dbContext.HealthScores.AsNoTracking()
-            .Where(h => h.PatientId == patientId
-                && h.PeriodStart == periodStart && h.PeriodEnd == periodEnd)
+        var healthScoreAdherence = await dbContext
+            .HealthScores.AsNoTracking()
+            .Where(h =>
+                h.PatientId == patientId && h.PeriodStart == periodStart && h.PeriodEnd == periodEnd
+            )
             .Select(h => (int?)h.ScoreAdherence)
             .FirstOrDefaultAsync(ct);
         if (healthScoreAdherence is { } adherence)
@@ -3361,12 +4791,16 @@ public sealed class ProgramRepository(
             weeklyAdherence = adherence;
         }
 
-        // Constancia del nutribiótico a 7 días (SPEC §21, B.9): días con la
+        // Constancia del nutracéutico a 7 días (SPEC §21, B.9): días con la
         // tarea completada en la ventana / 7.
-        var nbDays = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(t => t.EnrollmentId == enrollment.EnrollmentId
-                && t.TaskCode == TaskCode.nutribiotico
-                && t.LocalDate >= periodStart && t.LocalDate <= periodEnd)
+        var nbDays = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .Where(t =>
+                t.EnrollmentId == enrollment.EnrollmentId
+                && t.TaskCode == TaskCode.nutraceutico
+                && t.LocalDate >= periodStart
+                && t.LocalDate <= periodEnd
+            )
             .Select(t => t.LocalDate)
             .Distinct()
             .CountAsync(ct);
@@ -3374,16 +4808,23 @@ public sealed class ProgramRepository(
 
         // Cumplimiento de ejercicio (SPEC §21, B.10): días con la tarea en la
         // ventana / días del período.
-        var exerciseDays = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(t => t.EnrollmentId == enrollment.EnrollmentId
+        var exerciseDays = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .Where(t =>
+                t.EnrollmentId == enrollment.EnrollmentId
                 && t.TaskCode == TaskCode.ejercicio
-                && t.LocalDate >= periodStart && t.LocalDate <= periodEnd)
+                && t.LocalDate >= periodStart
+                && t.LocalDate <= periodEnd
+            )
             .Select(t => t.LocalDate)
             .Distinct()
             .CountAsync(ct);
         var dayCount = periodEnd.DayNumber - periodStart.DayNumber + 1;
         decimal? exerciseCompletionPct = Math.Round(
-            exerciseDays * 100m / dayCount, 0, MidpointRounding.AwayFromZero);
+            exerciseDays * 100m / dayCount,
+            0,
+            MidpointRounding.AwayFromZero
+        );
 
         return new PatientWeeklyData(
             enrollment.PatientId,
@@ -3398,7 +4839,8 @@ public sealed class ProgramRepository(
             avgSleepHours,
             weeklyAdherence,
             nbAdherence7d,
-            exerciseCompletionPct);
+            exerciseCompletionPct
+        );
     }
 
     /// <summary>
@@ -3411,45 +4853,48 @@ public sealed class ProgramRepository(
     /// filas nuevas se persistieron.
     /// </summary>
     public async Task<IReadOnlyList<Weakness>> PersistDetectedWeaknessesAsync(
-        Guid patientId, IReadOnlyList<WeaknessDescriptor> descriptors, CancellationToken ct = default)
+        Guid patientId,
+        IReadOnlyList<WeaknessDescriptor> descriptors,
+        CancellationToken ct = default
+    )
     {
         if (descriptors.Count == 0)
         {
             return [];
         }
 
-        var activeCodes = await dbContext.Weaknesses.AsNoTracking()
-            .Where(w => w.PatientId == patientId
-                && ActiveWeaknessStatuses.Contains(w.Status))
+        var activeCodes = await dbContext
+            .Weaknesses.AsNoTracking()
+            .Where(w => w.PatientId == patientId && ActiveWeaknessStatuses.Contains(w.Status))
             .Select(w => w.Code)
             .Distinct()
             .ToListAsync(ct);
 
-        var fresh = descriptors
-            .Where(d => !activeCodes.Contains(d.Code))
-            .ToList();
+        var fresh = descriptors.Where(d => !activeCodes.Contains(d.Code)).ToList();
         if (fresh.Count == 0)
         {
             return [];
         }
 
         var now = DateTime.UtcNow;
-        var newWeaknesses = fresh.Select(d => new Weakness
-        {
-            Id = Guid.NewGuid(),
-            PatientId = patientId,
-            Code = d.Code,
-            Category = d.Category,
-            Severity = d.Severity,
-            Title = d.Title,
-            Description = d.Description,
-            DetectedAt = now,
-            MetricId = d.MetricId,
-            IndicatorValue = d.IndicatorValue,
-            Source = WeaknessSource.ai,
-            Status = WeaknessStatus.open,
-            CreatedAt = now,
-        }).ToList();
+        var newWeaknesses = fresh
+            .Select(d => new Weakness
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientId,
+                Code = d.Code,
+                Category = d.Category,
+                Severity = d.Severity,
+                Title = d.Title,
+                Description = d.Description,
+                DetectedAt = now,
+                MetricId = d.MetricId,
+                IndicatorValue = d.IndicatorValue,
+                Source = WeaknessSource.ai,
+                Status = WeaknessStatus.open,
+                CreatedAt = now,
+            })
+            .ToList();
 
         dbContext.Weaknesses.AddRange(newWeaknesses);
         await dbContext.SaveChangesAsync(ct);
@@ -3465,19 +4910,28 @@ public sealed class ProgramRepository(
     /// de la consulta.
     /// </summary>
     public async Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListWeaknessesAsync(
-        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+        Guid patientId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Weaknesses.AsNoTracking()
-            .Where(w => w.PatientId == patientId);
+        var query = dbContext.Weaknesses.AsNoTracking().Where(w => w.PatientId == patientId);
 
         var total = await query.CountAsync(ct);
-        var items = await query
+        var entities = await query
             .OrderByDescending(w => w.DetectedAt)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
-            .Select(w => ToWeaknessDto(w))
             .ToListAsync(ct);
 
+        // B3: Resolve patient name (single patient query)
+        var patientName = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => p.Id == patientId)
+            .Select(p => (p.FirstName + " " + p.LastName).Trim())
+            .FirstOrDefaultAsync(ct);
+
+        var items = entities.Select(w => ToWeaknessDto(w) with { PatientName = patientName }).ToList();
         return (items, total);
     }
 
@@ -3488,20 +4942,369 @@ public sealed class ProgramRepository(
     /// semántica que las revisiones de XP pendientes).
     /// </summary>
     public async Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListOpenWeaknessesAsync(
-        int page, int pageSize, CancellationToken ct = default)
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Weaknesses.AsNoTracking()
-            .Where(w => w.Status == WeaknessStatus.open);
+        var query = dbContext.Weaknesses.AsNoTracking().Where(w => w.Status == WeaknessStatus.open);
 
         var total = await query.CountAsync(ct);
-        var items = await query
+        var entities = await query
             .OrderBy(w => w.DetectedAt)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
-            .Select(w => ToWeaknessDto(w))
             .ToListAsync(ct);
 
+        // B3: Batch-resolve patient names
+        var patientIds = entities.Select(w => w.PatientId).Distinct().ToList();
+        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+
+        var items = entities.Select(w => ToWeaknessDto(w) with
+        {
+            PatientName = patientNames.TryGetValue(w.PatientId, out var name) ? name : null
+        }).ToList();
         return (items, total);
+    }
+
+    /// <summary>
+    /// Tablas <c>app.*</c> del módulo programa que aparecen en la bitácora de
+    /// actividad. Cualquier otra tabla del log de auditoría se excluye.
+    /// </summary>
+    private static readonly string[] ActivityLogProgramTables =
+    [
+        "program_templates",
+        "weekly_day_templates",
+        "program_enrollments",
+        "program_weeks",
+        "daily_checkins",
+        "task_completions",
+        "xp_rules",
+        "xp_ledger",
+        "streak_states",
+        "streak_freezes",
+        "clinical_baselines",
+        "health_score_weights",
+        "health_scores",
+        "transformation_scores",
+        "clinical_xp_reviews",
+        "adaptation_recommendations",
+        "habit_templates",
+        "habit_checks",
+        "emotional_records",
+        "notifications",
+        "weaknesses",
+        "interventions",
+    ];
+
+    /// <summary>
+    /// Bitácora de actividad del módulo (ERP): lectura <c>AsNoTracking</c> del
+    /// log de auditoría trigger-based (<c>audit.activity_logs</c>) filtrada a
+    /// las tablas <c>app.*</c> del módulo. Paginación (clamp 1..100, convención
+    /// del módulo), filtros opcionales y orden descendente por
+    /// <c>occurred_at</c>. Nunca expone <c>old_data</c>/<c>new_data</c> (posible
+    /// PHI, convención §8.5). Un filtro de acción no reconocido se ignora
+    /// (leniente) y un filtro de tabla fuera del módulo devuelve vacío de forma
+    /// natural.
+    /// </summary>
+    public async Task<PaginatedActivityLogResult> ListActivityLogAsync(
+        int page,
+        int pageSize,
+        string? tableName,
+        string? action,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        string? actor,
+        CancellationToken ct = default
+    )
+    {
+        var effectivePage = Math.Max(1, page);
+        var effectivePageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = dbContext
+            .ActivityLogs.AsNoTracking()
+            .Where(x => x.SchemaName == "app" && ActivityLogProgramTables.Contains(x.TableName));
+
+        if (!string.IsNullOrWhiteSpace(tableName))
+        {
+            var tableFilter = tableName.Trim();
+            query = query.Where(x => x.TableName == tableFilter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(action)
+            && Enum.TryParse<AuditAction>(action.Trim(), ignoreCase: true, out var actionFilter))
+        {
+            query = query.Where(x => x.Action == actionFilter);
+        }
+
+        if (from is { } fromFilter)
+        {
+            query = query.Where(x => x.OccurredAt >= fromFilter);
+        }
+
+        if (to is { } toFilter)
+        {
+            query = query.Where(x => x.OccurredAt <= toFilter);
+        }
+
+        if (!string.IsNullOrWhiteSpace(actor))
+        {
+            var actorFilter = actor.Trim().ToLower();
+            query = query.Where(x => x.UserEmail != null && x.UserEmail!.ToLower().Contains(actorFilter));
+        }
+
+        var total = await query.CountAsync(ct);
+        var rows = await query
+            .OrderByDescending(x => x.OccurredAt)
+            .ThenByDescending(x => x.Id)
+            .Skip((effectivePage - 1) * effectivePageSize)
+            .Take(effectivePageSize)
+            .Select(x => new ActivityLogEntryDto(
+                x.Id,
+                x.OccurredAt,
+                x.Action.ToString(),
+                x.TableName,
+                x.RecordId,
+                x.ActorType.ToString(),
+                x.UserEmail,
+                x.UserRole))
+            .ToListAsync(ct);
+
+        return new PaginatedActivityLogResult(
+            rows,
+            total,
+            effectivePage,
+            effectivePageSize,
+            (int)Math.Ceiling(total / (double)effectivePageSize));
+    }
+
+    /// <inheritdoc />
+    public async IAsyncEnumerable<EnrollmentExportRow> StreamEnrollmentsForExportAsync(
+        Guid? clinicId,
+        DateTime? from,
+        DateTime? to,
+        IReadOnlyList<Guid>? scopedPatientIds,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var query = dbContext.ProgramEnrollments.AsNoTracking().AsQueryable();
+
+        if (clinicId.HasValue)
+        {
+            query = query.Where(e => e.Patient != null && e.Patient.ClinicId == clinicId.Value);
+        }
+
+        if (from.HasValue)
+        {
+            query = query.Where(e => e.CreatedAt >= from.Value);
+        }
+
+        if (to.HasValue)
+        {
+            query = query.Where(e => e.CreatedAt <= to.Value);
+        }
+
+        // T-81: scoping del actor (lista vacía = denegado → stream sin filas).
+        if (scopedPatientIds is { Count: > 0 })
+        {
+            query = query.Where(e => scopedPatientIds.Contains(e.PatientId));
+        }
+
+        var rows = query
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => new EnrollmentExportRow(
+                e.Id,
+                e.PatientId,
+                e.Patient != null ? (e.Patient.FirstName + " " + e.Patient.LastName).Trim() : null,
+                e.Patient != null ? e.Patient.DocumentNumber : null,
+                e.Status.ToString(),
+                e.Timezone,
+                e.StartLocalDate,
+                e.CurrentWeekNumber,
+                (int?)e.Template!.TotalWeeks ?? 0,
+                (int?)
+                    e
+                        .XpLedgerEntries.Where(x =>
+                            x.ValidatedBy != null || x.Rule == null || !x.Rule.RequiresValidation
+                        )
+                        .OrderByDescending(x => x.BalanceAfter)
+                        .Select(x => (int?)x.BalanceAfter)
+                        .FirstOrDefault()
+                    ?? 0,
+                (int?)e.StreakState!.CurrentStreak ?? 0,
+                (int?)e.StreakState.LongestStreak ?? 0,
+                (int?)e.StreakState.FreezesRemaining ?? 0,
+                e.CreatedAt))
+            .AsAsyncEnumerable();
+
+        await foreach (var row in rows.WithCancellation(ct))
+        {
+            yield return row;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<StreakReconciliationSummary> ReconcileStreaksAsync(CancellationToken ct = default)
+    {
+        // 1. Inscripciones activas con su config de racha (umbral) y timezone.
+        var enrollments = await dbContext
+            .ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Status == ProgramEnrollmentStatus.Active)
+            .Select(e => new
+            {
+                e.Id,
+                e.Timezone,
+                MinTasks = (int?)e.Template!.StreakMinTasks ?? 1,
+            })
+            .ToListAsync(ct);
+
+        // 2. Estados de racha actuales (PK = enrollment_id).
+        var states = await dbContext
+            .StreakStates.AsNoTracking()
+            .ToDictionaryAsync(s => s.EnrollmentId, ct);
+
+        // 3. Días que cumplen el umbral: conteo de completaciones por
+        //    (inscripción, fecha local) >= streak_min_tasks (set-based, sin N+1).
+        var completionCounts = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .GroupBy(t => new { t.EnrollmentId, t.LocalDate })
+            .Select(g => new { g.Key.EnrollmentId, g.Key.LocalDate, Count = g.Count() })
+            .ToListAsync(ct);
+
+        // 4. Días rescatados: congelamientos consumidos (cuentan para la racha).
+        var consumedFreezes = await dbContext
+            .StreakFreezes.AsNoTracking()
+            .Where(f => f.Kind == StreakFreezeKind.Consumed && f.UsedOnLocalDate != null)
+            .Select(f => new { f.EnrollmentId, Date = f.UsedOnLocalDate!.Value })
+            .ToListAsync(ct);
+
+        var scanned = 0;
+        var fixedRows = 0;
+        var discrepancies = new List<string>();
+
+        foreach (var enrollment in enrollments)
+        {
+            scanned++;
+            ct.ThrowIfCancellationRequested();
+
+            var qualifying = new HashSet<DateOnly>(
+                completionCounts
+                    .Where(c =>
+                        c.EnrollmentId == enrollment.Id
+                        && c.Count >= Math.Max(1, enrollment.MinTasks))
+                    .Select(c => c.LocalDate));
+            qualifying.UnionWith(
+                consumedFreezes
+                    .Where(f => f.EnrollmentId == enrollment.Id)
+                    .Select(f => f.Date));
+
+            var (expectedCurrent, expectedLongest) = ComputeStreakRuns(qualifying, enrollment.Timezone);
+            var expectedLast = qualifying.Count > 0 ? qualifying.Max() : (DateOnly?)null;
+
+            if (states.TryGetValue(enrollment.Id, out var state))
+            {
+                if (state.CurrentStreak == expectedCurrent
+                    && state.LongestStreak == expectedLongest
+                    && state.LastActiveDate == expectedLast)
+                {
+                    continue; // Sin desviación: idempotente.
+                }
+
+                discrepancies.Add(
+                    $"enrollment={enrollment.Id}: stored=(current={state.CurrentStreak}, "
+                    + $"longest={state.LongestStreak}, last={state.LastActiveDate?.ToString("yyyy-MM-dd") ?? "null"}) "
+                    + $"expected=(current={expectedCurrent}, longest={expectedLongest}, "
+                    + $"last={expectedLast?.ToString("yyyy-MM-dd") ?? "null"})");
+
+                var affected = await dbContext
+                    .StreakStates.Where(s => s.EnrollmentId == enrollment.Id)
+                    .ExecuteUpdateAsync(s => s
+                        .SetProperty(x => x.CurrentStreak, expectedCurrent)
+                        .SetProperty(x => x.LongestStreak, expectedLongest)
+                        .SetProperty(x => x.LastActiveDate, expectedLast)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow), ct);
+                if (affected > 0)
+                {
+                    fixedRows++;
+                }
+            }
+            else
+            {
+                // Sin fila de estado (creada en enroll; falta solo en BDs viejas):
+                // reconstruir. Carrera con enroll → violación única ignorada.
+                var newState = new StreakState
+                {
+                    EnrollmentId = enrollment.Id,
+                    CurrentStreak = expectedCurrent,
+                    LongestStreak = expectedLongest,
+                    LastActiveDate = expectedLast,
+                };
+                dbContext.StreakStates.Add(newState);
+                try
+                {
+                    await dbContext.SaveChangesAsync(ct);
+                    fixedRows++;
+                }
+                catch (DbUpdateException ex) when (IsUniqueViolation(ex))
+                {
+                    dbContext.Entry(newState).State = EntityState.Detached;
+                }
+            }
+        }
+
+        return new StreakReconciliationSummary(scanned, fixedRows, discrepancies);
+    }
+
+    /// <summary>
+    /// Corridas de días calificados consecutivos: la más larga de la historia
+    /// (longest) y la que termina en el último día calificado (current), válida
+    /// solo si ese día es hoy o ayer local — días perdidos posteriores ya
+    /// rompieron la racha.
+    /// </summary>
+    private static (int Current, int Longest) ComputeStreakRuns(
+        HashSet<DateOnly> qualifying, string timezone)
+    {
+        if (qualifying.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        var ordered = qualifying.OrderBy(d => d).ToList();
+
+        var longest = 1;
+        var run = 1;
+        for (var i = 1; i < ordered.Count; i++)
+        {
+            run = ordered[i].AddDays(-1) == ordered[i - 1] ? run + 1 : 1;
+            if (run > longest)
+            {
+                longest = run;
+            }
+        }
+
+        var today = PatientLocalToday(timezone);
+        var last = ordered[^1];
+        var current = 0;
+        if (last >= today.AddDays(-1))
+        {
+            // Corrida que termina en `last`: caminar hacia atrás.
+            current = 1;
+            for (var i = ordered.Count - 1; i > 0; i--)
+            {
+                if (ordered[i].AddDays(-1) == ordered[i - 1])
+                {
+                    current++;
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+
+        return (current, Math.Max(longest, current));
     }
 
     /// <summary>
@@ -3514,16 +5317,21 @@ public sealed class ProgramRepository(
     /// el mismo estado devuelve la fila sin error. Desconocida → 404.
     /// </summary>
     public async Task<WeaknessDto> UpdateWeaknessStatusAsync(
-        Guid weaknessId, WeaknessStatus status, Guid? actorId,
-        IReadOnlyList<string> callerRoles, CancellationToken ct = default)
+        Guid weaknessId,
+        WeaknessStatus status,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default
+    )
     {
         // Guardia AC-22: rol clínico obligatorio (nunca un paciente).
         if (actorId is null || !callerRoles.Any(role => ClinicianRoles.Contains(role)))
         {
             throw new ForbiddenException(
-                "WEAKNESS_STATUS_REQUIRES_CLINICIAN: solo un clínico puede cambiar el " +
-                "estado de una debilidad (Physician, Nutritionist, Psychologist, " +
-                "ClinicalDirector o Admin).");
+                "WEAKNESS_STATUS_REQUIRES_CLINICIAN: solo un clínico puede cambiar el "
+                    + "estado de una debilidad (Physician, Nutritionist, Psychologist, "
+                    + "ClinicalDirector o Admin)."
+            );
         }
 
         var strategy = dbContext.Database.CreateExecutionStrategy();
@@ -3532,8 +5340,8 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var weakness = await dbContext.Weaknesses
-                    .FirstOrDefaultAsync(w => w.Id == weaknessId, ct)
+                var weakness =
+                    await dbContext.Weaknesses.FirstOrDefaultAsync(w => w.Id == weaknessId, ct)
                     ?? throw new NotFoundException($"Debilidad {weaknessId} no encontrada.");
 
                 var now = DateTime.UtcNow;
@@ -3544,10 +5352,19 @@ public sealed class ProgramRepository(
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                return await dbContext.Weaknesses.AsNoTracking()
+                var dto = await dbContext
+                    .Weaknesses.AsNoTracking()
                     .Where(w => w.Id == weakness.Id)
                     .Select(w => ToWeaknessDto(w))
                     .FirstAsync(ct);
+
+                // B3: Resolve patient name
+                var patientName = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.Id == weakness.PatientId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefaultAsync(ct);
+
+                return dto with { PatientName = patientName };
             }
             catch
             {
@@ -3557,17 +5374,46 @@ public sealed class ProgramRepository(
         });
     }
 
-    private static WeaknessDto ToWeaknessDto(Weakness w) => new(
-        w.Id, w.PatientId, w.Code, w.Category.ToString(), w.Severity.ToString(),
-        w.Title, w.Description, w.DetectedAt, w.MetricId, w.IndicatorValue,
-        w.Source.ToString(), w.Status.ToString(), w.AssignedTo, w.ResolvedAt,
-        w.CreatedAt, w.UpdatedAt);
+    private static WeaknessDto ToWeaknessDto(Weakness w) =>
+        new(
+            w.Id,
+            w.PatientId,
+            w.Code,
+            w.Category.ToString(),
+            w.Severity.ToString(),
+            w.Title,
+            w.Description,
+            w.DetectedAt,
+            w.MetricId,
+            w.IndicatorValue,
+            w.Source.ToString(),
+            w.Status.ToString(),
+            w.AssignedTo,
+            w.ResolvedAt,
+            w.CreatedAt,
+            w.UpdatedAt
+        );
 
-    private static InterventionDto ToInterventionDto(Intervention i) => new(
-        i.Id, i.PatientId, i.WeaknessId, i.Type.ToString(), i.Title,
-        i.Description, i.Status.ToString(), i.Severity, i.AssignedTo,
-        i.RecommendedAt, i.AcceptedAt, i.CompletedAt, i.PatientAction,
-        i.Result, i.XpAwardedTotal, i.CreatedAt, i.UpdatedAt);
+    private static InterventionDto ToInterventionDto(Intervention i) =>
+        new(
+            i.Id,
+            i.PatientId,
+            i.WeaknessId,
+            i.Type.ToString(),
+            i.Title,
+            i.Description,
+            i.Status.ToString(),
+            i.Severity,
+            i.AssignedTo,
+            i.RecommendedAt,
+            i.AcceptedAt,
+            i.CompletedAt,
+            i.PatientAction,
+            i.Result,
+            i.XpAwardedTotal,
+            i.CreatedAt,
+            i.UpdatedAt
+        );
 
     // --- Intervenciones (SPEC §22, "Paso 7d") ---
 
@@ -3580,11 +5426,18 @@ public sealed class ProgramRepository(
     /// creada o la existente si ya había una.
     /// </summary>
     public async Task<Intervention> EnsureInterventionFromWeaknessAsync(
-        Guid patientId, Guid weaknessId, InterventionType type,
-        string title, string? description, Guid? actorId, CancellationToken ct = default)
+        Guid patientId,
+        Guid weaknessId,
+        InterventionType type,
+        string title,
+        string? description,
+        Guid? actorId,
+        CancellationToken ct = default
+    )
     {
         // Verificar si ya existe una intervención para esta debilidad (AC-46).
-        var existing = await dbContext.Interventions.AsNoTracking()
+        var existing = await dbContext
+            .Interventions.AsNoTracking()
             .FirstOrDefaultAsync(i => i.WeaknessId == weaknessId, ct);
         if (existing is not null)
         {
@@ -3600,10 +5453,14 @@ public sealed class ProgramRepository(
                 var now = DateTime.UtcNow;
 
                 // Transicionar la debilidad a in_intervention si estaba abierta.
-                var weakness = await dbContext.Weaknesses
-                    .FirstOrDefaultAsync(w => w.Id == weaknessId, ct);
-                if (weakness is not null
-                    && weakness.Status is WeaknessStatus.open or WeaknessStatus.acknowledged)
+                var weakness = await dbContext.Weaknesses.FirstOrDefaultAsync(
+                    w => w.Id == weaknessId,
+                    ct
+                );
+                if (
+                    weakness is not null
+                    && weakness.Status is WeaknessStatus.open or WeaknessStatus.acknowledged
+                )
                 {
                     weakness.Status = WeaknessStatus.in_intervention;
                     weakness.UpdatedAt = now;
@@ -3630,8 +5487,10 @@ public sealed class ProgramRepository(
                 // Otorgar WEAKNESS_ASSESS (+20) una vez por intervención.
                 // Necesitamos la inscripción activa del paciente para el
                 // otorgamiento de XP.
-                var enrollmentId = await dbContext.ProgramEnrollments
-                    .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
+                var enrollmentId = await dbContext
+                    .ProgramEnrollments.Where(e =>
+                        e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active
+                    )
                     .OrderByDescending(e => e.CreatedAt)
                     .Select(e => (Guid?)e.Id)
                     .FirstOrDefaultAsync(ct);
@@ -3639,9 +5498,15 @@ public sealed class ProgramRepository(
                 if (enrollmentId is not null)
                 {
                     var awardResult = await AwardInterventionXpAsync(
-                        enrollmentId.Value, intervention.Id,
-                        XpRuleCodes.WeaknessAssess, XpReason.WEAKNESS_ASSESS,
-                        20, validatedBy: null, sourceRefType: "intervention", ct);
+                        enrollmentId.Value,
+                        intervention.Id,
+                        XpRuleCodes.WeaknessAssess,
+                        XpReason.WEAKNESS_ASSESS,
+                        20,
+                        validatedBy: null,
+                        sourceRefType: "intervention",
+                        ct
+                    );
                     intervention.XpAwardedTotal += awardResult;
                 }
 
@@ -3663,19 +5528,28 @@ public sealed class ProgramRepository(
     /// <c>created_at</c> descendente.
     /// </summary>
     public async Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListInterventionsAsync(
-        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+        Guid patientId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Interventions.AsNoTracking()
-            .Where(i => i.PatientId == patientId);
+        var query = dbContext.Interventions.AsNoTracking().Where(i => i.PatientId == patientId);
 
         var total = await query.CountAsync(ct);
-        var items = await query
+        var entities = await query
             .OrderByDescending(i => i.CreatedAt)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
-            .Select(i => ToInterventionDto(i))
             .ToListAsync(ct);
 
+        // B3: Resolve patient name (single patient query)
+        var patientName = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => p.Id == patientId)
+            .Select(p => (p.FirstName + " " + p.LastName).Trim())
+            .FirstOrDefaultAsync(ct);
+
+        var items = entities.Select(i => ToInterventionDto(i) with { PatientName = patientName }).ToList();
         return (items, total);
     }
 
@@ -3685,19 +5559,33 @@ public sealed class ProgramRepository(
     /// ascendente (FIFO).
     /// </summary>
     public async Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListOpenInterventionsAsync(
-        int page, int pageSize, CancellationToken ct = default)
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
-        var query = dbContext.Interventions.AsNoTracking()
+        var query = dbContext
+            .Interventions.AsNoTracking()
             .Where(i => i.Status != InterventionStatus.completed);
 
         var total = await query.CountAsync(ct);
-        var items = await query
+        var entities = await query
             .OrderBy(i => i.CreatedAt)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
-            .Select(i => ToInterventionDto(i))
             .ToListAsync(ct);
 
+        // B3: Batch-resolve patient names
+        var patientIds = entities.Select(i => i.PatientId).Distinct().ToList();
+        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+
+        var items = entities.Select(i => ToInterventionDto(i) with
+        {
+            PatientName = patientNames.TryGetValue(i.PatientId, out var name) ? name : null
+        }).ToList();
         return (items, total);
     }
 
@@ -3709,7 +5597,10 @@ public sealed class ProgramRepository(
     /// al paciente. Estado inválido → 409.
     /// </summary>
     public async Task<InterventionDto> AcceptInterventionAsync(
-        Guid interventionId, Guid patientId, CancellationToken ct = default)
+        Guid interventionId,
+        Guid patientId,
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -3717,8 +5608,11 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var intervention = await dbContext.Interventions
-                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                var intervention =
+                    await dbContext.Interventions.FirstOrDefaultAsync(
+                        i => i.Id == interventionId,
+                        ct
+                    )
                     ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
 
                 if (intervention.PatientId != patientId)
@@ -3729,8 +5623,9 @@ public sealed class ProgramRepository(
                 if (intervention.Status != InterventionStatus.detected)
                 {
                     throw new BusinessRuleViolationException(
-                        $"INTERVENTION_WRONG_STATE: la intervención está en estado " +
-                        $"'{intervention.Status}' y solo puede aceptarse desde 'detected'.");
+                        $"INTERVENTION_WRONG_STATE: la intervención está en estado "
+                            + $"'{intervention.Status}' y solo puede aceptarse desde 'detected'."
+                    );
                 }
 
                 var now = DateTime.UtcNow;
@@ -3742,8 +5637,13 @@ public sealed class ProgramRepository(
                 var awardResult = await AwardInterventionXpAsync(
                     await GetEnrollmentIdForPatientAsync(patientId, ct),
                     intervention.Id,
-                    XpRuleCodes.IntervAccept, XpReason.INTERV_ACCEPT,
-                    15, validatedBy: null, sourceRefType: "intervention", ct);
+                    XpRuleCodes.IntervAccept,
+                    XpReason.INTERV_ACCEPT,
+                    15,
+                    validatedBy: null,
+                    sourceRefType: "intervention",
+                    ct
+                );
                 intervention.XpAwardedTotal += awardResult;
 
                 // Si es recovery_mission, también otorgar RECOVERY_MISSION (+50).
@@ -3752,18 +5652,32 @@ public sealed class ProgramRepository(
                     var recoveryResult = await AwardInterventionXpAsync(
                         await GetEnrollmentIdForPatientAsync(patientId, ct),
                         intervention.Id,
-                        XpRuleCodes.RecoveryMission, XpReason.RECOVERY_MISSION,
-                        50, validatedBy: null, sourceRefType: "intervention", ct);
+                        XpRuleCodes.RecoveryMission,
+                        XpReason.RECOVERY_MISSION,
+                        50,
+                        validatedBy: null,
+                        sourceRefType: "intervention",
+                        ct
+                    );
                     intervention.XpAwardedTotal += recoveryResult;
                 }
 
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                return await dbContext.Interventions.AsNoTracking()
+                var dto = await dbContext
+                    .Interventions.AsNoTracking()
                     .Where(i => i.Id == intervention.Id)
                     .Select(i => ToInterventionDto(i))
                     .FirstAsync(ct);
+
+                // B3: Resolve patient name
+                var patName = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.Id == intervention.PatientId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefaultAsync(ct);
+
+                return dto with { PatientName = patName };
             }
             catch
             {
@@ -3781,16 +5695,22 @@ public sealed class ProgramRepository(
     /// tras tele-asistencia confirmada. Estado inválido → 409.
     /// </summary>
     public async Task<InterventionDto> UpdateInterventionStatusAsync(
-        Guid interventionId, InterventionStatus status, Guid? actorId,
-        IReadOnlyList<string> callerRoles, string? result = null,
-        Guid? assignedTo = null, CancellationToken ct = default)
+        Guid interventionId,
+        InterventionStatus status,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        string? result = null,
+        Guid? assignedTo = null,
+        CancellationToken ct = default
+    )
     {
         // Guardia AC-22: rol clínico obligatorio.
         if (actorId is null || !callerRoles.Any(role => ClinicianRoles.Contains(role)))
         {
             throw new ForbiddenException(
-                "INTERVENTION_STATUS_REQUIRES_CLINICIAN: solo un clínico puede cambiar el " +
-                "estado de una intervención.");
+                "INTERVENTION_STATUS_REQUIRES_CLINICIAN: solo un clínico puede cambiar el "
+                    + "estado de una intervención."
+            );
         }
 
         var strategy = dbContext.Database.CreateExecutionStrategy();
@@ -3799,8 +5719,11 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var intervention = await dbContext.Interventions
-                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                var intervention =
+                    await dbContext.Interventions.FirstOrDefaultAsync(
+                        i => i.Id == interventionId,
+                        ct
+                    )
                     ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
 
                 var now = DateTime.UtcNow;
@@ -3809,16 +5732,18 @@ public sealed class ProgramRepository(
                 if (!IsValidInterventionTransition(intervention.Status, status))
                 {
                     throw new BusinessRuleViolationException(
-                        $"INTERVENTION_WRONG_STATE: transición de '{intervention.Status}' " +
-                        $"a '{status}' no es válida.");
+                        $"INTERVENTION_WRONG_STATE: transición de '{intervention.Status}' "
+                            + $"a '{status}' no es válida."
+                    );
                 }
 
                 // completed REQUIRES resultado.
                 if (status == InterventionStatus.completed && string.IsNullOrWhiteSpace(result))
                 {
                     throw new BusinessRuleViolationException(
-                        "INTERVENTION_COMPLETED_REQUIRES_RESULT: se requiere un resultado " +
-                        "al completar una intervención.");
+                        "INTERVENTION_COMPLETED_REQUIRES_RESULT: se requiere un resultado "
+                            + "al completar una intervención."
+                    );
                 }
 
                 intervention.Status = status;
@@ -3839,21 +5764,30 @@ public sealed class ProgramRepository(
                 if (status == InterventionStatus.completed)
                 {
                     var enrollmentId = await GetEnrollmentIdForPatientAsync(
-                        intervention.PatientId, ct);
+                        intervention.PatientId,
+                        ct
+                    );
 
                     var awardResult = await AwardInterventionXpAsync(
-                        enrollmentId, intervention.Id,
-                        XpRuleCodes.IntervComplete, XpReason.INTERV_COMPLETE,
-                        200, validatedBy: actorId, sourceRefType: "intervention", ct);
+                        enrollmentId,
+                        intervention.Id,
+                        XpRuleCodes.IntervComplete,
+                        XpReason.INTERV_COMPLETE,
+                        200,
+                        validatedBy: actorId,
+                        sourceRefType: "intervention",
+                        ct
+                    );
                     intervention.XpAwardedTotal += awardResult;
 
                     // Marcar la debilidad vinculada como resolved (AC-48).
                     if (intervention.WeaknessId.HasValue)
                     {
-                        var weakness = await dbContext.Weaknesses
-                            .FirstOrDefaultAsync(w => w.Id == intervention.WeaknessId.Value, ct);
-                        if (weakness is not null
-                            && weakness.Status != WeaknessStatus.resolved)
+                        var weakness = await dbContext.Weaknesses.FirstOrDefaultAsync(
+                            w => w.Id == intervention.WeaknessId.Value,
+                            ct
+                        );
+                        if (weakness is not null && weakness.Status != WeaknessStatus.resolved)
                         {
                             weakness.Status = WeaknessStatus.resolved;
                             weakness.ResolvedAt = now;
@@ -3865,10 +5799,19 @@ public sealed class ProgramRepository(
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                return await dbContext.Interventions.AsNoTracking()
+                var dto = await dbContext
+                    .Interventions.AsNoTracking()
                     .Where(i => i.Id == intervention.Id)
                     .Select(i => ToInterventionDto(i))
                     .FirstAsync(ct);
+
+                // B3: Resolve patient name
+                var patName = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.Id == intervention.PatientId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefaultAsync(ct);
+
+                return dto with { PatientName = patName };
             }
             catch
             {
@@ -3883,7 +5826,9 @@ public sealed class ProgramRepository(
     /// otorga <c>TELE_SCHEDULE</c> (+50) y fija una nota. No cambia el estado.
     /// </summary>
     public async Task<InterventionDto> MarkTeleScheduledAsync(
-        Guid interventionId, CancellationToken ct = default)
+        Guid interventionId,
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -3891,29 +5836,46 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var intervention = await dbContext.Interventions
-                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                var intervention =
+                    await dbContext.Interventions.FirstOrDefaultAsync(
+                        i => i.Id == interventionId,
+                        ct
+                    )
                     ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
 
                 var now = DateTime.UtcNow;
                 intervention.UpdatedAt = now;
 
                 // Otorgar TELE_SCHEDULE (+50).
-                var enrollmentId = await GetEnrollmentIdForPatientAsync(
-                    intervention.PatientId, ct);
+                var enrollmentId = await GetEnrollmentIdForPatientAsync(intervention.PatientId, ct);
                 var awardResult = await AwardInterventionXpAsync(
-                    enrollmentId, intervention.Id,
-                    XpRuleCodes.TeleSchedule, XpReason.TELE_SCHEDULE,
-                    50, validatedBy: null, sourceRefType: "intervention", ct);
+                    enrollmentId,
+                    intervention.Id,
+                    XpRuleCodes.TeleSchedule,
+                    XpReason.TELE_SCHEDULE,
+                    50,
+                    validatedBy: null,
+                    sourceRefType: "intervention",
+                    ct
+                );
                 intervention.XpAwardedTotal += awardResult;
 
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                return await dbContext.Interventions.AsNoTracking()
+                var dto = await dbContext
+                    .Interventions.AsNoTracking()
                     .Where(i => i.Id == intervention.Id)
                     .Select(i => ToInterventionDto(i))
                     .FirstAsync(ct);
+
+                // B3: Resolve patient name
+                var patName = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.Id == intervention.PatientId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefaultAsync(ct);
+
+                return dto with { PatientName = patName };
             }
             catch
             {
@@ -3929,7 +5891,10 @@ public sealed class ProgramRepository(
     /// clínico) y mueve la intervención a <c>in_progress</c>.
     /// </summary>
     public async Task<InterventionDto> MarkTeleAttendedAsync(
-        Guid interventionId, Guid clinicianId, CancellationToken ct = default)
+        Guid interventionId,
+        Guid clinicianId,
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -3937,8 +5902,11 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var intervention = await dbContext.Interventions
-                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                var intervention =
+                    await dbContext.Interventions.FirstOrDefaultAsync(
+                        i => i.Id == interventionId,
+                        ct
+                    )
                     ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
 
                 var now = DateTime.UtcNow;
@@ -3946,21 +5914,35 @@ public sealed class ProgramRepository(
                 intervention.UpdatedAt = now;
 
                 // Otorgar TELE_ATTEND (+100, validated_by = clinicianId).
-                var enrollmentId = await GetEnrollmentIdForPatientAsync(
-                    intervention.PatientId, ct);
+                var enrollmentId = await GetEnrollmentIdForPatientAsync(intervention.PatientId, ct);
                 var awardResult = await AwardInterventionXpAsync(
-                    enrollmentId, intervention.Id,
-                    XpRuleCodes.TeleAttend, XpReason.TELE_ATTEND,
-                    100, validatedBy: clinicianId, sourceRefType: "intervention", ct);
+                    enrollmentId,
+                    intervention.Id,
+                    XpRuleCodes.TeleAttend,
+                    XpReason.TELE_ATTEND,
+                    100,
+                    validatedBy: clinicianId,
+                    sourceRefType: "intervention",
+                    ct
+                );
                 intervention.XpAwardedTotal += awardResult;
 
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                return await dbContext.Interventions.AsNoTracking()
+                var dto = await dbContext
+                    .Interventions.AsNoTracking()
                     .Where(i => i.Id == intervention.Id)
                     .Select(i => ToInterventionDto(i))
                     .FirstAsync(ct);
+
+                // B3: Resolve patient name
+                var patName = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.Id == intervention.PatientId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefaultAsync(ct);
+
+                return dto with { PatientName = patName };
             }
             catch
             {
@@ -3976,7 +5958,9 @@ public sealed class ProgramRepository(
     /// <c>completed</c>.
     /// </summary>
     public async Task<InterventionDto> MarkTeleComplyAsync(
-        Guid interventionId, CancellationToken ct = default)
+        Guid interventionId,
+        CancellationToken ct = default
+    )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -3984,29 +5968,46 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var intervention = await dbContext.Interventions
-                    .FirstOrDefaultAsync(i => i.Id == interventionId, ct)
+                var intervention =
+                    await dbContext.Interventions.FirstOrDefaultAsync(
+                        i => i.Id == interventionId,
+                        ct
+                    )
                     ?? throw new NotFoundException($"Intervención {interventionId} no encontrada.");
 
                 var now = DateTime.UtcNow;
                 intervention.UpdatedAt = now;
 
                 // Otorgar TELE_COMPLY (+50).
-                var enrollmentId = await GetEnrollmentIdForPatientAsync(
-                    intervention.PatientId, ct);
+                var enrollmentId = await GetEnrollmentIdForPatientAsync(intervention.PatientId, ct);
                 var awardResult = await AwardInterventionXpAsync(
-                    enrollmentId, intervention.Id,
-                    XpRuleCodes.TeleComply, XpReason.TELE_COMPLY,
-                    50, validatedBy: null, sourceRefType: "intervention", ct);
+                    enrollmentId,
+                    intervention.Id,
+                    XpRuleCodes.TeleComply,
+                    XpReason.TELE_COMPLY,
+                    50,
+                    validatedBy: null,
+                    sourceRefType: "intervention",
+                    ct
+                );
                 intervention.XpAwardedTotal += awardResult;
 
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
 
-                return await dbContext.Interventions.AsNoTracking()
+                var dto = await dbContext
+                    .Interventions.AsNoTracking()
                     .Where(i => i.Id == intervention.Id)
                     .Select(i => ToInterventionDto(i))
                     .FirstAsync(ct);
+
+                // B3: Resolve patient name
+                var patName = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.Id == intervention.PatientId)
+                    .Select(p => (p.FirstName + " " + p.LastName).Trim())
+                    .FirstOrDefaultAsync(ct);
+
+                return dto with { PatientName = patName };
             }
             catch
             {
@@ -4022,10 +6023,15 @@ public sealed class ProgramRepository(
     /// otorgó — dedupe parcial).
     /// </summary>
     private async Task<int> AwardInterventionXpAsync(
-        Guid enrollmentId, Guid interventionId,
-        string ruleCode, XpReason reason,
-        int fallbackBaseXp, Guid? validatedBy,
-        string sourceRefType, CancellationToken ct)
+        Guid enrollmentId,
+        Guid interventionId,
+        string ruleCode,
+        XpReason reason,
+        int fallbackBaseXp,
+        Guid? validatedBy,
+        string sourceRefType,
+        CancellationToken ct
+    )
     {
         var rule = await ResolveActiveRuleAsync(ruleCode, ct);
         if (rule is null)
@@ -4034,11 +6040,16 @@ public sealed class ProgramRepository(
         }
 
         // Dedupe: ya otorgado para esta intervención y razón.
-        var alreadyAwarded = await dbContext.XpLedgerEntries.AsNoTracking()
-            .AnyAsync(x => x.EnrollmentId == enrollmentId
-                && x.SourceRefType == sourceRefType
-                && x.SourceRefId == interventionId
-                && x.Reason == reason, ct);
+        var alreadyAwarded = await dbContext
+            .XpLedgerEntries.AsNoTracking()
+            .AnyAsync(
+                x =>
+                    x.EnrollmentId == enrollmentId
+                    && x.SourceRefType == sourceRefType
+                    && x.SourceRefId == interventionId
+                    && x.Reason == reason,
+                ct
+            );
         if (alreadyAwarded)
         {
             return 0;
@@ -4050,21 +6061,23 @@ public sealed class ProgramRepository(
         var balance = await CurrentBalanceAsync(enrollmentId, ct);
         var now = DateTime.UtcNow;
 
-        dbContext.XpLedgerEntries.Add(new XpLedgerEntry
-        {
-            Id = Guid.NewGuid(),
-            EnrollmentId = enrollmentId,
-            Amount = total,
-            Reason = reason,
-            SourceRefType = sourceRefType,
-            SourceRefId = interventionId,
-            RuleCode = rule.Code,
-            MultiplierUsed = effectiveMultiplier,
-            BalanceAfter = balance + total,
-            AwardedAt = now,
-            ValidatedBy = validatedBy,
-            ValidatedAt = validatedBy is null ? null : now,
-        });
+        dbContext.XpLedgerEntries.Add(
+            new XpLedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                EnrollmentId = enrollmentId,
+                Amount = total,
+                Reason = reason,
+                SourceRefType = sourceRefType,
+                SourceRefId = interventionId,
+                RuleCode = rule.Code,
+                MultiplierUsed = effectiveMultiplier,
+                BalanceAfter = balance + total,
+                AwardedAt = now,
+                ValidatedBy = validatedBy,
+                ValidatedAt = validatedBy is null ? null : now,
+            }
+        );
 
         return total;
     }
@@ -4073,11 +6086,12 @@ public sealed class ProgramRepository(
     /// Resuelve la inscripción activa del paciente (una por paciente, misma
     /// resolución que <see cref="GetEnrollmentIdForPatientAsync"/>).
     /// </summary>
-    private async Task<Guid> GetEnrollmentIdForPatientAsync(
-        Guid patientId, CancellationToken ct)
+    private async Task<Guid> GetEnrollmentIdForPatientAsync(Guid patientId, CancellationToken ct)
     {
-        return await dbContext.ProgramEnrollments
-            .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
+        return await dbContext
+            .ProgramEnrollments.Where(e =>
+                e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active
+            )
             .OrderByDescending(e => e.CreatedAt)
             .Select(e => e.Id)
             .FirstOrDefaultAsync(ct);
@@ -4087,22 +6101,33 @@ public sealed class ProgramRepository(
     /// Valida la transición de estado de una intervención (SPEC §22, D).
     /// </summary>
     private static bool IsValidInterventionTransition(
-        InterventionStatus from, InterventionStatus to)
+        InterventionStatus from,
+        InterventionStatus to
+    )
     {
         return from switch
         {
-            InterventionStatus.detected => to is InterventionStatus.evaluated
-                or InterventionStatus.recommended or InterventionStatus.accepted,
-            InterventionStatus.evaluated => to is InterventionStatus.recommended
-                or InterventionStatus.in_progress or InterventionStatus.reevaluation,
-            InterventionStatus.recommended => to is InterventionStatus.accepted
-                or InterventionStatus.in_progress,
-            InterventionStatus.accepted => to is InterventionStatus.in_progress
-                or InterventionStatus.reevaluation,
-            InterventionStatus.in_progress => to is InterventionStatus.completed
-                or InterventionStatus.reevaluation,
-            InterventionStatus.reevaluation => to is InterventionStatus.evaluated
-                or InterventionStatus.recommended or InterventionStatus.completed,
+            InterventionStatus.detected => to
+                is InterventionStatus.evaluated
+                    or InterventionStatus.recommended
+                    or InterventionStatus.accepted,
+            InterventionStatus.evaluated => to
+                is InterventionStatus.recommended
+                    or InterventionStatus.in_progress
+                    or InterventionStatus.reevaluation,
+            InterventionStatus.recommended => to
+                is InterventionStatus.accepted
+                    or InterventionStatus.in_progress,
+            InterventionStatus.accepted => to
+                is InterventionStatus.in_progress
+                    or InterventionStatus.reevaluation,
+            InterventionStatus.in_progress => to
+                is InterventionStatus.completed
+                    or InterventionStatus.reevaluation,
+            InterventionStatus.reevaluation => to
+                is InterventionStatus.evaluated
+                    or InterventionStatus.recommended
+                    or InterventionStatus.completed,
             InterventionStatus.completed => false, // terminal
             _ => false,
         };
@@ -4115,9 +6140,15 @@ public sealed class ProgramRepository(
     /// de <c>app.clinical_xp_reviews</c> y su wire shape).
     /// </summary>
     private async Task<IReadOnlyList<ClinicalPeriodIndicator>> LoadClinicalPeriodIndicatorsAsync(
-        Guid patientId, string timezone, DateOnly from, DateOnly to, CancellationToken ct)
+        Guid patientId,
+        string timezone,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct
+    )
     {
-        var baselines = await dbContext.ClinicalBaselines.AsNoTracking()
+        var baselines = await dbContext
+            .ClinicalBaselines.AsNoTracking()
             .Where(b => b.PatientId == patientId)
             .Select(b => new
             {
@@ -4134,13 +6165,23 @@ public sealed class ProgramRepository(
         }
 
         var latestByMetric = await LoadLatestMeasurementPerMetricAsync(
-            patientId, timezone, from, to, ct);
+            patientId,
+            timezone,
+            from,
+            to,
+            ct
+        );
 
         return baselines
             .Where(b => latestByMetric.ContainsKey(b.MetricId))
             .Select(b => new ClinicalPeriodIndicator(
-                b.MetricId, b.Code, b.Name, b.Value, latestByMetric[b.MetricId],
-                b.FavorableDirection))
+                b.MetricId,
+                b.Code,
+                b.Name,
+                b.Value,
+                latestByMetric[b.MetricId],
+                b.FavorableDirection
+            ))
             .ToList();
     }
 
@@ -4168,7 +6209,8 @@ public sealed class ProgramRepository(
         int fallbackBaseXp,
         Guid? validatedBy,
         CancellationToken ct,
-        string sourceRefType = "clinical_period")
+        string sourceRefType = "clinical_period"
+    )
     {
         var rule = await ResolveActiveRuleAsync(ruleCode, ct);
         if (rule is null)
@@ -4180,11 +6222,16 @@ public sealed class ProgramRepository(
             return 0;
         }
 
-        var alreadyAwarded = await dbContext.XpLedgerEntries.AsNoTracking()
-            .AnyAsync(x => x.EnrollmentId == enrollmentId
-                && x.SourceRefType == sourceRefType
-                && x.SourceRefId == healthScoreId
-                && x.Reason == reason, ct);
+        var alreadyAwarded = await dbContext
+            .XpLedgerEntries.AsNoTracking()
+            .AnyAsync(
+                x =>
+                    x.EnrollmentId == enrollmentId
+                    && x.SourceRefType == sourceRefType
+                    && x.SourceRefId == healthScoreId
+                    && x.Reason == reason,
+                ct
+            );
         if (alreadyAwarded)
         {
             return 0;
@@ -4199,32 +6246,39 @@ public sealed class ProgramRepository(
         var balance = await CurrentBalanceAsync(enrollmentId, ct);
         var now = DateTime.UtcNow;
 
-        dbContext.XpLedgerEntries.Add(new XpLedgerEntry
-        {
-            Id = Guid.NewGuid(),
-            EnrollmentId = enrollmentId,
-            Amount = total,
-            Reason = reason,
-            SourceRefType = sourceRefType,
-            SourceRefId = healthScoreId,
-            RuleCode = rule.Code,
-            MultiplierUsed = effectiveMultiplier,
-            BalanceAfter = balance + total,
-            AwardedAt = now,
-            // ValidatedBy/ValidatedAt solo en la aprobación de una regla con
-            // requires_validation = true (CLINICAL_SIGNIFICANT). Las reglas
-            // sin validación (IMPROVE/STABLE/ALL_UP y las NUTRITION_*) quedan
-            // null y cuentan en los totales (SPEC §15, E).
-            ValidatedBy = validatedBy,
-            ValidatedAt = validatedBy is null ? null : now,
-        });
+        dbContext.XpLedgerEntries.Add(
+            new XpLedgerEntry
+            {
+                Id = Guid.NewGuid(),
+                EnrollmentId = enrollmentId,
+                Amount = total,
+                Reason = reason,
+                SourceRefType = sourceRefType,
+                SourceRefId = healthScoreId,
+                RuleCode = rule.Code,
+                MultiplierUsed = effectiveMultiplier,
+                BalanceAfter = balance + total,
+                AwardedAt = now,
+                // ValidatedBy/ValidatedAt solo en la aprobación de una regla con
+                // requires_validation = true (CLINICAL_SIGNIFICANT). Las reglas
+                // sin validación (IMPROVE/STABLE/ALL_UP y las NUTRITION_*) quedan
+                // null y cuentan en los totales (SPEC §15, E).
+                ValidatedBy = validatedBy,
+                ValidatedAt = validatedBy is null ? null : now,
+            }
+        );
 
         return total;
     }
 
     private sealed record ClinicalPeriodIndicator(
-        Guid MetricId, string MetricCode, string MetricName,
-        decimal Baseline, decimal Current, FavorableDirection FavorableDirection);
+        Guid MetricId,
+        string MetricCode,
+        string MetricName,
+        decimal Baseline,
+        decimal Current,
+        FavorableDirection FavorableDirection
+    );
 
     // ------------------------------------------------------- helpers del motor de puntajes
 
@@ -4234,40 +6288,70 @@ public sealed class ProgramRepository(
     /// emocionales, hábitos de alimentación, líneas base + mediciones y pesos.
     /// </summary>
     private async Task<HealthScoreInput> BuildHealthScoreInputAsync(
-        EnrollmentWindow enrollment, DateOnly periodStart, DateOnly periodEnd, CancellationToken ct)
+        EnrollmentWindow enrollment,
+        DateOnly periodStart,
+        DateOnly periodEnd,
+        CancellationToken ct
+    )
     {
-        var checkins = await dbContext.DailyCheckIns.AsNoTracking()
-            .Where(c => c.EnrollmentId == enrollment.EnrollmentId
-                && c.LocalDate >= periodStart && c.LocalDate <= periodEnd)
+        var checkins = await dbContext
+            .DailyCheckIns.AsNoTracking()
+            .Where(c =>
+                c.EnrollmentId == enrollment.EnrollmentId
+                && c.LocalDate >= periodStart
+                && c.LocalDate <= periodEnd
+            )
             .Select(c => new { c.LocalDate, c.IsPerfectDay })
             .ToListAsync(ct);
 
-        var consumedFreezeDates = await dbContext.StreakFreezes.AsNoTracking()
-            .Where(f => f.EnrollmentId == enrollment.EnrollmentId
+        var consumedFreezeDates = await dbContext
+            .StreakFreezes.AsNoTracking()
+            .Where(f =>
+                f.EnrollmentId == enrollment.EnrollmentId
                 && f.Kind == StreakFreezeKind.Consumed
-                && f.UsedOnLocalDate >= periodStart && f.UsedOnLocalDate <= periodEnd)
+                && f.UsedOnLocalDate >= periodStart
+                && f.UsedOnLocalDate <= periodEnd
+            )
             .Select(f => f.UsedOnLocalDate!.Value)
             .Distinct()
             .ToListAsync(ct);
 
-        var exerciseDays = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(t => t.EnrollmentId == enrollment.EnrollmentId
+        var exerciseDays = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .Where(t =>
+                t.EnrollmentId == enrollment.EnrollmentId
                 && t.TaskCode == TaskCode.ejercicio
-                && t.LocalDate >= periodStart && t.LocalDate <= periodEnd)
+                && t.LocalDate >= periodStart
+                && t.LocalDate <= periodEnd
+            )
             .Select(t => t.LocalDate)
             .Distinct()
             .CountAsync(ct);
 
-        var moodScores = await dbContext.EmotionalRecords.AsNoTracking()
-            .Where(r => r.PatientId == enrollment.PatientId
-                && r.RecordedLocalDate >= periodStart && r.RecordedLocalDate <= periodEnd)
+        var moodScores = await dbContext
+            .EmotionalRecords.AsNoTracking()
+            .Where(r =>
+                r.PatientId == enrollment.PatientId
+                && r.RecordedLocalDate >= periodStart
+                && r.RecordedLocalDate <= periodEnd
+            )
             .Select(r => r.MoodScore)
             .ToListAsync(ct);
 
-        var nutrition = await GetNutritionLogAsync(enrollment.PatientId, periodStart, periodEnd, ct);
+        var nutrition = await GetNutritionLogAsync(
+            enrollment.PatientId,
+            periodStart,
+            periodEnd,
+            ct
+        );
 
         var clinicalIndicators = await LoadClinicalIndicatorsAsync(
-            enrollment.PatientId, enrollment.Timezone, periodStart, periodEnd, ct);
+            enrollment.PatientId,
+            enrollment.Timezone,
+            periodStart,
+            periodEnd,
+            ct
+        );
 
         var weights = await LoadWeightsOrDefaultAsync(ct);
 
@@ -4296,7 +6380,14 @@ public sealed class ProgramRepository(
         }
 
         return new HealthScoreInput(
-            weights, days, clinicalIndicators, nutrition, moodScores, exerciseDays, days.Count);
+            weights,
+            days,
+            clinicalIndicators,
+            nutrition,
+            moodScores,
+            exerciseDays,
+            days.Count
+        );
     }
 
     /// <summary>
@@ -4309,22 +6400,31 @@ public sealed class ProgramRepository(
     /// <c>habit_templates(id, category)</c> con <c>category = 'alimentacion'</c>.
     /// </summary>
     private async Task<NutritionLog?> GetNutritionLogAsync(
-        Guid patientId, DateOnly from, DateOnly to, CancellationToken ct)
+        Guid patientId,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct
+    )
     {
         try
         {
-            var rows = await dbContext.Database.SqlQueryRaw<NutritionCountRow>(
-                """
-                SELECT
-                    COUNT(*) FILTER (WHERE h.is_done)::int AS "Achieved",
-                    COUNT(*)::int AS "Total"
-                FROM app.habit_checks h
-                INNER JOIN app.habit_templates ht ON ht.id = h.habit_template_id
-                WHERE h.patient_id = {0}
-                  AND h.local_date >= {1} AND h.local_date <= {2}
-                  AND ht.category = 'alimentacion'
-                """,
-                patientId, from, to).ToListAsync(ct);
+            var rows = await dbContext
+                .Database.SqlQueryRaw<NutritionCountRow>(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (WHERE h.is_done)::int AS "Achieved",
+                        COUNT(*)::int AS "Total"
+                    FROM app.habit_checks h
+                    INNER JOIN app.habit_templates ht ON ht.id = h.habit_template_id
+                    WHERE h.patient_id = {0}
+                      AND h.local_date >= {1} AND h.local_date <= {2}
+                      AND ht.category = 'alimentacion'
+                    """,
+                    patientId,
+                    from,
+                    to
+                )
+                .ToListAsync(ct);
 
             var row = rows.FirstOrDefault();
             return row is null ? null : new NutritionLog(row.Achieved, row.Total);
@@ -4341,9 +6441,15 @@ public sealed class ProgramRepository(
     /// Salud: una sola query set para la última medición por métrica (sin N+1).
     /// </summary>
     private async Task<IReadOnlyList<ClinicalIndicator>> LoadClinicalIndicatorsAsync(
-        Guid patientId, string timezone, DateOnly from, DateOnly to, CancellationToken ct)
+        Guid patientId,
+        string timezone,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct
+    )
     {
-        var baselines = await dbContext.ClinicalBaselines.AsNoTracking()
+        var baselines = await dbContext
+            .ClinicalBaselines.AsNoTracking()
             .Where(b => b.PatientId == patientId)
             .Select(b => new
             {
@@ -4359,7 +6465,12 @@ public sealed class ProgramRepository(
         }
 
         var latestByMetric = await LoadLatestMeasurementPerMetricAsync(
-            patientId, timezone, from, to, ct);
+            patientId,
+            timezone,
+            from,
+            to,
+            ct
+        );
         if (latestByMetric.Count == 0)
         {
             return [];
@@ -4368,7 +6479,11 @@ public sealed class ProgramRepository(
         return baselines
             .Where(b => latestByMetric.ContainsKey(b.MetricId))
             .Select(b => new ClinicalIndicator(
-                b.Code, b.Value, latestByMetric[b.MetricId], b.FavorableDirection))
+                b.Code,
+                b.Value,
+                latestByMetric[b.MetricId],
+                b.FavorableDirection
+            ))
             .ToList();
     }
 
@@ -4378,9 +6493,15 @@ public sealed class ProgramRepository(
     /// de la semana por métrica (una query set).
     /// </summary>
     private async Task<IReadOnlyList<TransformationIndicator>> LoadTransformationIndicatorsAsync(
-        Guid patientId, string timezone, DateOnly from, DateOnly to, CancellationToken ct)
+        Guid patientId,
+        string timezone,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct
+    )
     {
-        var baselines = await dbContext.ClinicalBaselines.AsNoTracking()
+        var baselines = await dbContext
+            .ClinicalBaselines.AsNoTracking()
             .Where(b => b.PatientId == patientId)
             .Select(b => new
             {
@@ -4397,12 +6518,22 @@ public sealed class ProgramRepository(
         }
 
         var latestByMetric = await LoadLatestMeasurementPerMetricAsync(
-            patientId, timezone, from, to, ct);
+            patientId,
+            timezone,
+            from,
+            to,
+            ct
+        );
 
         return baselines
             .Where(b => latestByMetric.ContainsKey(b.MetricId))
             .Select(b => new TransformationIndicator(
-                b.Code, b.Value, latestByMetric[b.MetricId], b.Unit, b.FavorableDirection))
+                b.Code,
+                b.Value,
+                latestByMetric[b.MetricId],
+                b.Unit,
+                b.FavorableDirection
+            ))
             .ToList();
     }
 
@@ -4411,25 +6542,31 @@ public sealed class ProgramRepository(
     /// UTC por la zona del paciente). Una sola query agrupada (sin N+1).
     /// </summary>
     private async Task<Dictionary<Guid, decimal>> LoadLatestMeasurementPerMetricAsync(
-        Guid patientId, string timezone, DateOnly from, DateOnly to, CancellationToken ct)
+        Guid patientId,
+        string timezone,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct
+    )
     {
         var tz = ResolveTimeZone(timezone);
         var fromUtc = LocalDateToUtcStart(from, tz);
         var toExclusiveUtc = LocalDateToUtcStart(to.AddDays(1), tz);
 
-        var latest = await dbContext.ClinicalMeasurements.AsNoTracking()
-            .Where(m => m.PatientId == patientId
-                && m.ObservedAt >= fromUtc && m.ObservedAt < toExclusiveUtc)
+        var latest = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Where(m =>
+                m.PatientId == patientId && m.ObservedAt >= fromUtc && m.ObservedAt < toExclusiveUtc
+            )
             .GroupBy(m => m.MetricId)
-            .Select(g => g
-                .OrderByDescending(m => m.ObservedAt)
-                .Select(m => new { m.MetricId, m.Value })
-                .FirstOrDefault())
+            .Select(g =>
+                g.OrderByDescending(m => m.ObservedAt)
+                    .Select(m => new { m.MetricId, m.Value })
+                    .FirstOrDefault()
+            )
             .ToListAsync(ct);
 
-        return latest
-            .Where(x => x is not null)
-            .ToDictionary(x => x!.MetricId, x => x!.Value);
+        return latest.Where(x => x is not null).ToDictionary(x => x!.MetricId, x => x!.Value);
     }
 
     /// <summary>
@@ -4439,7 +6576,8 @@ public sealed class ProgramRepository(
     /// </summary>
     private async Task<IReadOnlyList<ScoreWeight>> LoadWeightsOrDefaultAsync(CancellationToken ct)
     {
-        var weights = await dbContext.HealthScoreWeights.AsNoTracking()
+        var weights = await dbContext
+            .HealthScoreWeights.AsNoTracking()
             .Select(w => new ScoreWeight(w.Dimension, w.Weight))
             .ToListAsync(ct);
         return weights.Count == 0 ? DefaultWeights : weights;
@@ -4454,11 +6592,14 @@ public sealed class ProgramRepository(
         new(ScoreDimension.exercise, 0.10m),
     ];
 
-    private static readonly HashSet<string> ClinicianRoles =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "Physician", "Nutritionist", "Psychologist", "ClinicalDirector", "Admin",
-        };
+    private static readonly HashSet<string> ClinicianRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Physician",
+        "Nutritionist",
+        "Psychologist",
+        "ClinicalDirector",
+        "Admin",
+    };
 
     /// <summary>
     /// Semana vigente de la inscripción (SPEC §13.2): la semana
@@ -4469,7 +6610,8 @@ public sealed class ProgramRepository(
     /// </summary>
     private async Task<ProgramWeek?> ResolveLatestWeekAsync(Guid enrollmentId, CancellationToken ct)
     {
-        var currentWeekNumber = await dbContext.ProgramEnrollments.AsNoTracking()
+        var currentWeekNumber = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .Where(e => e.Id == enrollmentId)
             .Select(e => (int?)e.CurrentWeekNumber)
             .FirstOrDefaultAsync(ct);
@@ -4478,38 +6620,52 @@ public sealed class ProgramRepository(
             return null;
         }
 
-        return await dbContext.ProgramWeeks.AsNoTracking()
+        return await dbContext
+            .ProgramWeeks.AsNoTracking()
             .Where(w => w.EnrollmentId == enrollmentId && w.WeekNumber <= currentWeekNumber)
             .OrderByDescending(w => w.WeekNumber)
             .FirstOrDefaultAsync(ct);
     }
 
-    private static HealthScoreDto ToHealthScoreDto(HealthScore h) => new(
-        h.Score,
-        h.ScorePrevious,
-        h.Trend.ToString(),
-        new HealthScoreDimensionsDto(
-            h.ScoreAdherence, h.ScoreClinical, h.ScoreNutrition,
-            h.ScorePsychology, h.ScoreExercise));
+    private static HealthScoreDto ToHealthScoreDto(HealthScore h) =>
+        new(
+            h.Score,
+            h.ScorePrevious,
+            h.Trend.ToString(),
+            new HealthScoreDimensionsDto(
+                h.ScoreAdherence,
+                h.ScoreClinical,
+                h.ScoreNutrition,
+                h.ScorePsychology,
+                h.ScoreExercise
+            )
+        );
 
     private static TransformationScoreDto ToTransformationScoreDto(TransformationScore t)
     {
-        var detail = t.Detail.ValueKind == JsonValueKind.Object
-            ? JsonSerializer.Deserialize<Dictionary<string, IndicatorDetailDto>>(t.Detail.GetRawText())
-                ?? new Dictionary<string, IndicatorDetailDto>()
-            : new Dictionary<string, IndicatorDetailDto>();
+        var detail =
+            t.Detail.ValueKind == JsonValueKind.Object
+                ? JsonSerializer.Deserialize<Dictionary<string, IndicatorDetailDto>>(
+                    t.Detail.GetRawText()
+                ) ?? new Dictionary<string, IndicatorDetailDto>()
+                : new Dictionary<string, IndicatorDetailDto>();
 
         return new TransformationScoreDto(
-            t.Score, t.ScorePrevious, t.OverallTrend.ToString(), t.WeekNumber, detail);
+            t.Score,
+            t.ScorePrevious,
+            t.OverallTrend.ToString(),
+            t.WeekNumber,
+            detail
+        );
     }
 
-    private static IndicatorDetailDto ToIndicatorDetailDto(TransformationIndicatorScore s) => new(
-        s.Baseline, s.Current, s.Unit, s.Delta, s.DeltaPct, s.Favorable, s.Score);
+    private static IndicatorDetailDto ToIndicatorDetailDto(TransformationIndicatorScore s) =>
+        new(s.Baseline, s.Current, s.Unit, s.Delta, s.DeltaPct, s.Favorable, s.Score);
 
-    private static ScoreTrend DeriveTrend(int current, int? previous)
-        => previous is null || current == previous
-            ? ScoreTrend.stable
-            : current > previous ? ScoreTrend.up : ScoreTrend.down;
+    private static ScoreTrend DeriveTrend(int current, int? previous) =>
+        previous is null || current == previous ? ScoreTrend.stable
+        : current > previous ? ScoreTrend.up
+        : ScoreTrend.down;
 
     private static TimeZoneInfo ResolveTimeZone(string timezone)
     {
@@ -4543,8 +6699,8 @@ public sealed class ProgramRepository(
 
     private async Task EnsureEnrollmentExistsAsync(Guid enrollmentId, CancellationToken ct)
     {
-        var exists = await dbContext.ProgramEnrollments
-            .AsNoTracking()
+        var exists = await dbContext
+            .ProgramEnrollments.AsNoTracking()
             .AnyAsync(e => e.Id == enrollmentId, ct);
         if (!exists)
         {
@@ -4552,9 +6708,311 @@ public sealed class ProgramRepository(
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<EnrollmentWeekDetailDto?> GetEnrollmentWeekDetailAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        Guid clinicianUserId,
+        CancellationToken ct
+    )
+    {
+        // 1. Cargar inscripción (404 si no existe).
+        var enrollment = await GetEnrollmentAsync(enrollmentId, ct);
+        if (enrollment is null)
+        {
+            return null;
+        }
+
+        // 2. Scoping clínico (T-81): se aplica en la capa API vía
+        //    IProgramActorContext.ActorScopedToEnrollmentAsync (guardia del
+        //    endpoint GET /enrollments/{id}/week/{n}); aquí solo se calcula el
+        //    detalle de la inscripción ya autorizada.
+
+        // 3. Cargar la semana del programa (404 si no existe).
+        var week = await dbContext
+            .ProgramWeeks.AsNoTracking()
+            .FirstOrDefaultAsync(
+                w => w.EnrollmentId == enrollmentId && w.WeekNumber == weekNumber,
+                ct
+            );
+
+        if (week is null)
+        {
+            return null;
+        }
+
+        // 4. Parsear tasks_snapshot jsonb → agrupar por weekday.
+        //    Fallback: si el snapshot está vacío (inscripciones viejas creadas
+        //    antes de que la plantilla tuviera DayTemplates), cargar las tareas
+        //    actuales de la plantilla directamente.
+        var snapshotTasks = ParseSnapshot(week.TasksSnapshot);
+        if (snapshotTasks.Count == 0)
+        {
+            var templateDays = await dbContext
+                .WeeklyDayTemplates.AsNoTracking()
+                .Where(d => d.TemplateId == enrollment.TemplateId)
+                .OrderBy(d => d.Weekday)
+                .ThenBy(d => d.SortOrder)
+                .ToListAsync(ct);
+            snapshotTasks = templateDays
+                .Select(d => new SnapshotTask(
+                    d.Weekday,
+                    d.TaskCode.ToString(),
+                    d.Points,
+                    d.SortOrder,
+                    d.RoutineId,
+                    d.NutritionPlanId,
+                    d.MediaId
+                ))
+                .ToList();
+        }
+        var tasksByWeekday = snapshotTasks
+            .GroupBy(t => t.Weekday)
+            .ToDictionary(g => g.Key, g => g.OrderBy(t => t.SortOrder).ToList());
+
+        // 5. Query task_completions para la ventana [weekStart, weekEnd].
+        var completions = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .Where(tc =>
+                tc.EnrollmentId == enrollmentId
+                && tc.LocalDate >= week.WeekStartDateLocal
+                && tc.LocalDate <= week.WeekEndDateLocal
+            )
+            .Select(tc => new
+            {
+                tc.LocalDate,
+                tc.TaskCode,
+                tc.PointsAwarded,
+                tc.CompletedAt,
+            })
+            .ToListAsync(ct);
+
+        var completionsLookup = completions.ToDictionary(
+            c => (c.LocalDate, TaskCode: c.TaskCode.ToString()),
+            c => new { c.PointsAwarded, c.CompletedAt }
+        );
+
+        // 6. Query daily_checkins para la ventana.
+        var checkins = await dbContext
+            .DailyCheckIns.AsNoTracking()
+            .Where(ci =>
+                ci.EnrollmentId == enrollmentId
+                && ci.LocalDate >= week.WeekStartDateLocal
+                && ci.LocalDate <= week.WeekEndDateLocal
+            )
+            .Select(ci => new
+            {
+                ci.LocalDate,
+                ci.TotalPoints,
+                ci.BonusAwarded,
+                ci.IsPerfectDay,
+            })
+            .ToListAsync(ct);
+
+        var checkinsLookup = checkins.ToDictionary(ci => ci.LocalDate, ci => ci);
+
+        // 7. Resolver contenido activo (plan/rutina) al inicio de la semana.
+        EnrollmentWeekContentRef? planRef = null;
+        EnrollmentWeekContentRef? routineRef = null;
+        string? routineDetailText = null;
+        string? planDetailText = null;
+
+        if (programContentResolver is not null)
+        {
+            var contentResolution = await programContentResolver.ResolveAsync(
+                enrollment.PatientId,
+                week.WeekStartDateLocal,
+                ct
+            );
+
+            if (contentResolution?.NutritionPlanId is { } planId)
+            {
+                var plan = await dbContext
+                    .NutritionPlans.AsNoTracking()
+                    .Where(p => p.Id == planId)
+                    .Select(p => new { p.Name, p.Description })
+                    .FirstOrDefaultAsync(ct);
+                if (plan is not null)
+                {
+                    planRef = new EnrollmentWeekContentRef(planId, plan.Name);
+                    planDetailText = plan.Description;
+                }
+            }
+
+            if (contentResolution?.ExerciseRoutineId is { } routineId)
+            {
+                var routine = await dbContext
+                    .ExerciseRoutines.AsNoTracking()
+                    .Where(r => r.Id == routineId)
+                    .Select(r => new
+                    {
+                        r.Name,
+                        r.TargetMuscles,
+                        r.Category,
+                    })
+                    .FirstOrDefaultAsync(ct);
+                if (routine is not null)
+                {
+                    routineRef = new EnrollmentWeekContentRef(routineId, routine.Name);
+                    routineDetailText = !string.IsNullOrWhiteSpace(routine.TargetMuscles)
+                        ? routine.TargetMuscles
+                        : routine.Category.ToString();
+                }
+            }
+        }
+
+        // 8. Construir días: iterar las 7 fechas de la semana.
+        var days = new List<EnrollmentWeekDayDto>(7);
+        for (
+            var date = week.WeekStartDateLocal;
+            date <= week.WeekEndDateLocal;
+            date = date.AddDays(1)
+        )
+        {
+            var weekday = ToIsoWeekday(date);
+            var dayLabel = EnrollmentWeekTaskLabels.DayLabel(weekday);
+
+            var scheduled = tasksByWeekday.TryGetValue(weekday, out var tasks) ? tasks : [];
+
+            var maxPoints = scheduled.Sum(t => t.Points);
+
+            var dayTasks = new List<EnrollmentWeekTaskDto>(scheduled.Count);
+            foreach (var task in scheduled)
+            {
+                var taskCode = task.TaskCode;
+                var taskLabel = EnrollmentWeekTaskLabels.TaskLabel(taskCode);
+
+                var completed = completionsLookup.TryGetValue((date, taskCode), out var completion);
+
+                Guid? contentRefId = null;
+                string? contentName = null;
+                string? detailText = null;
+
+                if (string.Equals(taskCode, "ejercicio", StringComparison.OrdinalIgnoreCase))
+                {
+                    var activeRoutineId = task.RoutineId ?? routineRef?.Id;
+                    if (activeRoutineId is { } rId)
+                    {
+                        contentRefId = rId;
+                        if (task.RoutineId is not null)
+                        {
+                            var r = await dbContext
+                                .ExerciseRoutines.AsNoTracking()
+                                .Where(x => x.Id == rId)
+                                .Select(x => new
+                                {
+                                    x.Name,
+                                    x.TargetMuscles,
+                                    x.Category,
+                                })
+                                .FirstOrDefaultAsync(ct);
+                            if (r is not null)
+                            {
+                                contentName = r.Name;
+                                detailText = !string.IsNullOrWhiteSpace(r.TargetMuscles)
+                                    ? r.TargetMuscles
+                                    : r.Category.ToString();
+                            }
+                        }
+                        else if (routineRef is not null)
+                        {
+                            contentName = routineRef.Name;
+                            detailText = routineDetailText;
+                        }
+                    }
+                }
+                else if (string.Equals(taskCode, "nut", StringComparison.OrdinalIgnoreCase))
+                {
+                    var activePlanId = task.NutritionPlanId ?? planRef?.Id;
+                    if (activePlanId is { } pId)
+                    {
+                        contentRefId = pId;
+                        if (task.NutritionPlanId is not null)
+                        {
+                            var p = await dbContext
+                                .NutritionPlans.AsNoTracking()
+                                .Where(x => x.Id == pId)
+                                .Select(x => new { x.Name, x.Description })
+                                .FirstOrDefaultAsync(ct);
+                            if (p is not null)
+                            {
+                                contentName = p.Name;
+                                detailText = p.Description;
+                            }
+                        }
+                        else if (planRef is not null)
+                        {
+                            contentName = planRef.Name;
+                            detailText = planDetailText;
+                        }
+                    }
+                }
+                else if (string.Equals(taskCode, "podcast", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (task.MediaId is { } mId)
+                    {
+                        contentRefId = mId;
+                        var m = await dbContext
+                            .MediaItems.AsNoTracking()
+                            .Where(x => x.Id == mId)
+                            .Select(x => new { x.Title, x.Author })
+                            .FirstOrDefaultAsync(ct);
+                        if (m is not null)
+                        {
+                            contentName = m.Title;
+                            detailText = m.Author;
+                        }
+                    }
+                }
+
+                dayTasks.Add(
+                    new EnrollmentWeekTaskDto(
+                        TaskCode: taskCode,
+                        TaskLabel: taskLabel,
+                        Points: completed && completion is not null ? completion.PointsAwarded : 0,
+                        ScheduledPoints: task.Points,
+                        Status: completed ? "completed" : "pending",
+                        CompletedAt: completed && completion is not null
+                            ? completion.CompletedAt
+                            : null,
+                        ContentRefId: contentRefId,
+                        ContentName: contentName,
+                        DetailText: detailText
+                    )
+                );
+            }
+
+            var hasCheckin = checkinsLookup.TryGetValue(date, out var checkin);
+            var totalPoints = hasCheckin && checkin is not null ? checkin.TotalPoints : 0;
+            var bonusAwarded = hasCheckin && checkin is not null ? checkin.BonusAwarded : 0;
+            var isPerfectDay = hasCheckin && checkin is not null && checkin.IsPerfectDay;
+
+            days.Add(
+                new EnrollmentWeekDayDto(
+                    LocalDate: date,
+                    Weekday: weekday,
+                    DayLabel: dayLabel,
+                    IsPerfectDay: isPerfectDay,
+                    TotalPoints: totalPoints,
+                    MaxPoints: maxPoints,
+                    BonusAwarded: bonusAwarded,
+                    Tasks: dayTasks
+                )
+            );
+        }
+
+        return new EnrollmentWeekDetailDto(
+            WeekNumber: week.WeekNumber,
+            WeekStartDateLocal: week.WeekStartDateLocal,
+            WeekEndDateLocal: week.WeekEndDateLocal,
+            NutritionPlan: planRef,
+            ExerciseRoutine: routineRef,
+            Days: days
+        );
+    }
+
     /// <summary>Lunes = 1 … Domingo = 7 (mismo índice que NutritionPlanDay).</summary>
-    private static short ToIsoWeekday(DateOnly date)
-        => (short)(((int)date.DayOfWeek + 6) % 7 + 1);
+    private static short ToIsoWeekday(DateOnly date) => (short)(((int)date.DayOfWeek + 6) % 7 + 1);
 
     /// <summary>
     /// Fecha local de hoy del paciente desde su zona IANA. Fallback a UTC si la
@@ -4573,8 +7031,1044 @@ public sealed class ProgramRepository(
         }
     }
 
-    private static bool IsUniqueViolation(DbUpdateException ex)
-        => ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+    private static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
-    private sealed record SnapshotTask(short Weekday, string TaskCode, int Points, int SortOrder);
+    private sealed record SnapshotTask(
+        short Weekday,
+        string TaskCode,
+        int Points,
+        int SortOrder,
+        Guid? RoutineId = null,
+        Guid? NutritionPlanId = null,
+        Guid? MediaId = null
+    );
+
+    // ===================== ERP Gamificación (SPEC §23) =====================
+
+    /// <summary>Inicio ISO de la semana que contiene <paramref name="date"/>.</summary>
+    private static DateOnly ErpWeekStart(DateOnly date)
+    {
+        var dayOfWeek = ((int)date.DayOfWeek + 6) % 7; // Mon=0..Sun=6
+        return date.AddDays(-dayOfWeek);
+    }
+
+    /// <summary>Fecha local hace 30 días (para evolución).</summary>
+    private static DateOnly Erp30DaysAgo(DateOnly today) => today.AddDays(-30);
+
+    /// <summary>
+    /// Bucket labels para distribución de rachas.
+    /// </summary>
+    private static readonly ErpStreakBucket[] ErpStreakBuckets =
+    [
+        new("0-3", 0),
+        new("4-7", 0),
+        new("8-14", 0),
+        new("15-21", 0),
+        new("22+", 0),
+    ];
+
+    private static int ErpStreakBucketIndex(int streak) => streak switch
+    {
+        <= 3 => 0,
+        <= 7 => 1,
+        <= 14 => 2,
+        <= 21 => 3,
+        _ => 4,
+    };
+
+    /// <summary>Dashboard ERP del monitoreo comunitario (SPEC §23, AC-50).</summary>
+    public async Task<ProgramErpDashboardDto> GetErpDashboardAsync(CancellationToken ct = default)
+    {
+        var today = PatientLocalToday(configuration["Program:DefaultTimezone"] ?? "America/Bogota");
+        var weekStart = ErpWeekStart(today);
+        var today30 = Erp30DaysAgo(today);
+
+        // Active enrollments + patients for name resolution
+        var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Status == ProgramEnrollmentStatus.Active)
+            .Select(e => new { e.Id, e.PatientId, e.CurrentWeekNumber, e.StartLocalDate })
+            .ToListAsync(ct);
+
+        var patientIds = activeEnrollments.Select(e => e.PatientId).Distinct().ToList();
+        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+
+        string Name(Guid id) => patientNames.TryGetValue(id, out var n) ? n : "Paciente";
+
+        var enrollmentIds = activeEnrollments.Select(e => e.Id).ToList();
+
+        // Adherencia global hoy: tareas completadas hoy / tareas programadas hoy
+        var todayTaskCount = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
+            .CountAsync(ct);
+        var todayWeekday = ToIsoWeekday(today);
+        var activeWeekSnapshots = await dbContext.ProgramWeeks.AsNoTracking()
+            .Where(w => enrollmentIds.Contains(w.EnrollmentId) && w.Status == ProgramWeekStatus.Active)
+            .Select(w => w.TasksSnapshot)
+            .ToListAsync(ct);
+        var todayScheduledCount = activeWeekSnapshots
+            .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
+            .Sum(s => ParseSnapshot(s).Count(t => t.Weekday == todayWeekday));
+        var adherenceGlobalHoy = todayScheduledCount > 0
+            ? Math.Round((decimal)todayTaskCount / todayScheduledCount * 100, 1)
+            : 0m;
+
+        // XP semana
+        var weekStartUtc = DateTime.SpecifyKind(weekStart.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var xpSemana = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => enrollmentIds.Contains(x.EnrollmentId) && x.AwardedAt >= weekStartUtc)
+            .SumAsync(x => x.Amount, ct);
+
+        // Pacientes racha > 7
+        var pacientesRachaGt7 = await dbContext.StreakStates.AsNoTracking()
+            .Where(s => enrollmentIds.Contains(s.EnrollmentId) && s.CurrentStreak > 7)
+            .CountAsync(ct);
+
+        // En riesgo (streak = 0)
+        var enRiesgo = await dbContext.StreakStates.AsNoTracking()
+            .Where(s => enrollmentIds.Contains(s.EnrollmentId) && s.CurrentStreak == 0)
+            .CountAsync(ct);
+
+        // Adherencia por misión hoy
+        var todayCheckins = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
+            .GroupBy(tc => tc.TaskCode)
+            .Select(g => new { Code = g.Key.ToString(), Count = g.Count() })
+            .ToListAsync(ct);
+        var scheduledPerMission = activeWeekSnapshots
+            .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
+            .SelectMany(s => ParseSnapshot(s))
+            .Where(t => t.Weekday == todayWeekday)
+            .GroupBy(t => t.TaskCode)
+            .Select(g => new { Code = g.Key, Count = g.Count() })
+            .ToList();
+
+        var missionLookup = scheduledPerMission.ToDictionary(m => m.Code, m => m.Count);
+        var completedLookup = todayCheckins.ToDictionary(m => m.Code, m => m.Count);
+        var allMissionCodes = missionLookup.Keys.Union(completedLookup.Keys).Distinct().ToList();
+        var adherenciaPorMision = allMissionCodes.Select(code =>
+        {
+            var total = missionLookup.GetValueOrDefault(code, 0);
+            var completed = completedLookup.GetValueOrDefault(code, 0);
+            return new ErpMissionAdherence(code, completed, total, total > 0 ? Math.Round((decimal)completed / total * 100, 1) : 0m);
+        }).ToList();
+
+        // Distribución de rachas
+        var streakValues = await dbContext.StreakStates.AsNoTracking()
+            .Where(s => enrollmentIds.Contains(s.EnrollmentId))
+            .Select(s => s.CurrentStreak)
+            .ToListAsync(ct);
+        var buckets = ErpStreakBuckets.Select(b => new ErpStreakBucket(b.Label, 0)).ToArray();
+        foreach (var s in streakValues)
+        {
+            buckets[ErpStreakBucketIndex(s)] = buckets[ErpStreakBucketIndex(s)] with { Count = buckets[ErpStreakBucketIndex(s)].Count + 1 };
+        }
+
+        // XP por categoría
+        var xpByCategoryRaw = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+            .GroupBy(x => x.Reason)
+            .Select(g => new { Reason = g.Key, Total = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+        var xpByCategory = xpByCategoryRaw
+            .Select(x => new ErpXpByCategory(x.Reason.ToString(), x.Total))
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+        // Evolución 30 días
+        var evolucion30 = new List<ErpDailyAdherence>();
+        for (var d = today30; d <= today; d = d.AddDays(1))
+        {
+            var dayCompleted = await dbContext.TaskCompletions.AsNoTracking()
+                .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == d)
+                .CountAsync(ct);
+            var dayWeekday = ToIsoWeekday(d);
+            var dayScheduled = activeWeekSnapshots
+                .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
+                .Sum(s => ParseSnapshot(s).Count(t => t.Weekday == dayWeekday));
+            var pct = dayScheduled > 0 ? Math.Round((decimal)dayCompleted / dayScheduled * 100, 1) : 0m;
+            evolucion30.Add(new ErpDailyAdherence(d, pct));
+        }
+
+        // Top 5 leaderboard
+        var leaderboardData = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+            .GroupBy(x => x.EnrollmentId)
+            .Select(g => new { EnrollmentId = g.Key, Xp = g.Sum(x => x.Amount) })
+            .OrderByDescending(x => x.Xp)
+            .Take(5)
+            .ToListAsync(ct);
+        var top5EnrollmentIds = leaderboardData.Select(x => x.EnrollmentId).ToList();
+        var top5Streaks = await dbContext.StreakStates.AsNoTracking()
+            .Where(s => top5EnrollmentIds.Contains(s.EnrollmentId))
+            .Select(s => new { s.EnrollmentId, s.CurrentStreak })
+            .ToDictionaryAsync(s => s.EnrollmentId, s => s.CurrentStreak, ct);
+        var top5Totals = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => top5EnrollmentIds.Contains(tc.EnrollmentId))
+            .GroupBy(tc => tc.EnrollmentId)
+            .Select(g => new { EnrollmentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.EnrollmentId, x => x.Count, ct);
+        var top5 = new List<ErpLeaderboardEntry>();
+        var rank = 1;
+        foreach (var entry in leaderboardData)
+        {
+            var enroll = activeEnrollments.FirstOrDefault(e => e.Id == entry.EnrollmentId);
+            var daysElapsed = Math.Max(1, today.DayNumber - (enroll?.StartLocalDate ?? today).DayNumber + 1);
+            var adherence = Math.Round(
+                (decimal)top5Totals.GetValueOrDefault(entry.EnrollmentId, 0) / (daysElapsed * 6) * 100, 1);
+            top5.Add(new ErpLeaderboardEntry(
+                rank++,
+                enroll?.PatientId ?? Guid.Empty,
+                Name(enroll?.PatientId ?? Guid.Empty),
+                entry.EnrollmentId,
+                entry.Xp,
+                adherence,
+                top5Streaks.GetValueOrDefault(entry.EnrollmentId, 0)));
+        }
+
+        // Trends (improved/worsened) - compare current week vs previous
+        var allEnrollTrends = new List<ErpPatientTrend>();
+        var allScores = await dbContext.HealthScores.AsNoTracking()
+            .Where(h => patientIds.Contains(h.PatientId))
+            .OrderByDescending(h => h.PeriodEnd)
+            .ToListAsync(ct);
+        var trends = allScores
+            .GroupBy(h => h.PatientId)
+            .Select(g => g.Take(2).ToList())
+            .ToList();
+        foreach (var pair in trends)
+        {
+            if (pair.Count < 2) continue;
+            var current = pair[0];
+            var previous = pair[1];
+            var delta = previous.Score > 0
+                ? Math.Round((decimal)(current.Score - previous.Score) / previous.Score * 100, 1)
+                : 0m;
+            allEnrollTrends.Add(new ErpPatientTrend(
+                current.PatientId,
+                Name(current.PatientId),
+                activeEnrollments.FirstOrDefault(e => e.PatientId == current.PatientId)?.Id ?? Guid.Empty,
+                delta,
+                current.Score,
+                previous.Score));
+        }
+
+        // Clinical aggregates: latest measurement per patient per metric for BMI/HbA1c/body_fat
+        var clinicalMetricCodes = new[] { "bmi", Hba1cMetricCode, BodyFatMetricCode };
+        var latestClinicalByPatient = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
+                m => m.MetricId,
+                metric => metric.Id,
+                (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
+            .Where(x => patientIds.Contains(x.PatientId) && clinicalMetricCodes.Contains(x.Code))
+            .GroupBy(x => new { x.PatientId, x.Code })
+            .Select(g => g.OrderByDescending(x => x.ObservedAt).First())
+            .ToListAsync(ct);
+
+        decimal? bmiPromedio = null;
+        decimal? hba1cPromedio = null;
+        decimal? bodyFatPromedio = null;
+        var pacientesBmiGe30 = 0;
+        var pacientesHba1cGe7 = 0;
+        var pacientesBodyFatAlto = 0;
+
+        var bmiValues = latestClinicalByPatient.Where(x => x.Code == "bmi").ToList();
+        if (bmiValues.Count > 0)
+        {
+            bmiPromedio = Math.Round(bmiValues.Average(x => x.Value), 1);
+            pacientesBmiGe30 = bmiValues.Count(x => x.Value >= 30m);
+        }
+
+        var hba1cValues = latestClinicalByPatient.Where(x => x.Code == Hba1cMetricCode).ToList();
+        if (hba1cValues.Count > 0)
+        {
+            hba1cPromedio = Math.Round(hba1cValues.Average(x => x.Value), 1);
+            pacientesHba1cGe7 = hba1cValues.Count(x => x.Value >= 7.0m);
+        }
+
+        var bodyFatValues = latestClinicalByPatient.Where(x => x.Code == BodyFatMetricCode).ToList();
+        if (bodyFatValues.Count > 0)
+        {
+            bodyFatPromedio = Math.Round(bodyFatValues.Average(x => x.Value), 1);
+            pacientesBodyFatAlto = bodyFatValues.Count(x => x.Value >= 25m);
+        }
+
+        // --- B1.1: Distribución de semanas por fase ---
+        var distribucionSemanas = new[]
+        {
+            new ErpPhaseBucket("Orientación (S1-4)", 0),
+            new ErpPhaseBucket("Adaptación (S5-12)", 0),
+            new ErpPhaseBucket("Activa (S13-30)", 0),
+            new ErpPhaseBucket("Transformación (S31-50)", 0),
+            new ErpPhaseBucket("Mantenimiento (S51-83)", 0),
+        };
+        foreach (var e in activeEnrollments)
+        {
+            var idx = e.CurrentWeekNumber switch
+            {
+                <= 4 => 0,
+                <= 12 => 1,
+                <= 30 => 2,
+                <= 50 => 3,
+                _ => 4,
+            };
+            distribucionSemanas[idx] = distribucionSemanas[idx] with
+            {
+                Count = distribucionSemanas[idx].Count + 1
+            };
+        }
+
+        // --- B1.2: Evolución XP 30 días (XP validado) ---
+        var xp30DayStartUtc = DateTime.SpecifyKind(today30.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+        var xp30ValidatedRaw = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => enrollmentIds.Contains(x.EnrollmentId)
+                && x.AwardedAt >= xp30DayStartUtc
+                && (x.Rule == null || !x.Rule.RequiresValidation || x.ValidatedBy != null))
+            .GroupBy(x => x.AwardedAt.Date)
+            .Select(g => new { Day = g.Key, Total = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+        var xp30ByDay = xp30ValidatedRaw.ToDictionary(x => DateOnly.FromDateTime(x.Day), x => x.Total);
+        var evolucionXp30d = new List<ErpDailyValue>();
+        for (var d = today30; d <= today; d = d.AddDays(1))
+        {
+            evolucionXp30d.Add(new ErpDailyValue(d, xp30ByDay.GetValueOrDefault(d, 0)));
+        }
+
+        // --- B1.3: Evolución clínica 30 días (promedio diario BMI/HbA1c/body_fat) ---
+        var clinicalMetricCodes30 = new[] { "bmi", Hba1cMetricCode, BodyFatMetricCode };
+        var clinical30Raw = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
+                m => m.MetricId,
+                metric => metric.Id,
+                (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
+            .Where(x => patientIds.Contains(x.PatientId) && clinicalMetricCodes30.Contains(x.Code))
+            .ToListAsync(ct);
+        // Group by (patient, metric, local-day) → take latest per patient per metric per day
+        var clinical30WithDay = clinical30Raw
+            .Select(x => new { x.PatientId, x.Code, x.Value, x.ObservedAt, LocalDay = DateOnly.FromDateTime(x.ObservedAt.Date) })
+            .ToList();
+        var clinical30LatestPerPatient = clinical30WithDay
+            .GroupBy(x => new { x.PatientId, x.Code, x.LocalDay })
+            .Select(g => g.OrderByDescending(x => x.ObservedAt).First())
+            .ToList();
+        // Group by day → average across patients
+        var clinical30ByDay = clinical30LatestPerPatient
+            .GroupBy(x => x.LocalDay)
+            .ToDictionary(
+                g => g.Key,
+                g => (
+                    BmiAvg: g.Where(x => x.Code == "bmi").Select(x => x.Value as decimal?).DefaultIfEmpty(null).Average(),
+                    Hba1cAvg: g.Where(x => x.Code == Hba1cMetricCode).Select(x => x.Value as decimal?).DefaultIfEmpty(null).Average(),
+                    BodyFatAvg: g.Where(x => x.Code == BodyFatMetricCode).Select(x => x.Value as decimal?).DefaultIfEmpty(null).Average()));
+        var evolucionClinica30d = new List<ErpClinicalDailyAvg>();
+        for (var d = today30; d <= today; d = d.AddDays(1))
+        {
+            if (clinical30ByDay.TryGetValue(d, out var dayAvg))
+            {
+                evolucionClinica30d.Add(new ErpClinicalDailyAvg(
+                    d,
+                    dayAvg.BmiAvg.HasValue ? Math.Round(dayAvg.BmiAvg.Value, 1) : null,
+                    dayAvg.Hba1cAvg.HasValue ? Math.Round(dayAvg.Hba1cAvg.Value, 1) : null,
+                    dayAvg.BodyFatAvg.HasValue ? Math.Round(dayAvg.BodyFatAvg.Value, 1) : null));
+            }
+            else
+            {
+                evolucionClinica30d.Add(new ErpClinicalDailyAvg(d, null, null, null));
+            }
+        }
+
+        return new ProgramErpDashboardDto(
+            new ErpDashboardKpis(
+                adherenceGlobalHoy, xpSemana, pacientesRachaGt7, enRiesgo, activeEnrollments.Count,
+                bmiPromedio, hba1cPromedio, bodyFatPromedio,
+                pacientesBmiGe30, pacientesHba1cGe7, pacientesBodyFatAlto),
+            adherenciaPorMision,
+            buckets,
+            xpByCategory,
+            evolucion30,
+            allEnrollTrends.Where(t => t.DeltaPct > 0).OrderByDescending(t => t.DeltaPct).ToList(),
+            allEnrollTrends.Where(t => t.DeltaPct < 0).OrderBy(t => t.DeltaPct).ToList(),
+            top5,
+            distribucionSemanas,
+            evolucionXp30d,
+            evolucionClinica30d);
+    }
+
+    /// <summary>Vista de hoy para el ERP (SPEC §23, AC-51).</summary>
+    public async Task<ProgramErpTodayDto> GetErpTodayAsync(CancellationToken ct = default)
+    {
+        var today = PatientLocalToday(configuration["Program:DefaultTimezone"] ?? "America/Bogota");
+
+        var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Status == ProgramEnrollmentStatus.Active)
+            .Select(e => new { e.Id, e.PatientId, e.CurrentWeekNumber })
+            .ToListAsync(ct);
+
+        var patientIds = activeEnrollments.Select(e => e.PatientId).Distinct().ToList();
+        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+
+        string Name(Guid id) => patientNames.TryGetValue(id, out var n) ? n : "Paciente";
+        var enrollmentIds = activeEnrollments.Select(e => e.Id).ToList();
+
+        // Mission KPIs
+        var todayCompleted = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
+            .GroupBy(tc => tc.TaskCode)
+            .Select(g => new { Code = g.Key.ToString(), Count = g.Count() })
+            .ToListAsync(ct);
+        var todayWeekday = ToIsoWeekday(today);
+        var activeWeekSnapshots = await dbContext.ProgramWeeks.AsNoTracking()
+            .Where(w => enrollmentIds.Contains(w.EnrollmentId) && w.Status == ProgramWeekStatus.Active)
+            .Select(w => w.TasksSnapshot)
+            .ToListAsync(ct);
+        var scheduledPerMission = activeWeekSnapshots
+            .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
+            .SelectMany(s => ParseSnapshot(s))
+            .Where(t => t.Weekday == todayWeekday)
+            .GroupBy(t => t.TaskCode)
+            .Select(g => new { Code = g.Key, Count = g.Count() })
+            .ToList();
+        var missionLookup = scheduledPerMission.ToDictionary(m => m.Code, m => m.Count);
+        var completedLookup = todayCompleted.ToDictionary(m => m.Code, m => m.Count);
+        var allCodes = missionLookup.Keys.Union(completedLookup.Keys).Distinct().ToList();
+        var missionKpis = allCodes.Select(code =>
+        {
+            var total = missionLookup.GetValueOrDefault(code, 0);
+            var completed = completedLookup.GetValueOrDefault(code, 0);
+            return new ErpTodayMissionKpi(code, completed, total, total > 0 ? Math.Round((decimal)completed / total * 100, 1) : 0m);
+        }).ToList();
+
+        // Feed: recent completions today
+        var recentCompletions = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
+            .OrderByDescending(tc => tc.CompletedAt)
+            .Take(20)
+            .ToListAsync(ct);
+        var enrollmentPatientMap = activeEnrollments.ToDictionary(e => e.Id, e => e.PatientId);
+        var feedEntries = recentCompletions.Select(tc =>
+        {
+            var pid = enrollmentPatientMap.TryGetValue(tc.EnrollmentId, out var p) ? p : Guid.Empty;
+            return new ErpTodayFeedEntry(
+                tc.Id, pid, Name(pid),
+                tc.TaskCode.ToString(), tc.PointsAwarded, tc.CompletedAt);
+        }).ToList();
+
+        // Pendientes críticos: enrollments with 0 completions today
+        var completedEnrollIds = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
+            .Select(tc => tc.EnrollmentId)
+            .Distinct()
+            .ToListAsync(ct);
+        var pendientes = activeEnrollments
+            .Where(e => !completedEnrollIds.Contains(e.Id))
+            .Select(e => new ErpCriticalPending(
+                e.PatientId, Name(e.PatientId), e.Id, e.CurrentWeekNumber, 6))
+            .ToList();
+
+        // Heatmap: adherence by mission x day of current week.
+        // Denominador real por día laborable (tareas programadas ese weekday en
+        // las semanas activas), nunca un promedio partido entre 7.
+        var weekStart = ErpWeekStart(today);
+        var scheduledPerWeekday = activeWeekSnapshots
+            .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
+            .SelectMany(s => ParseSnapshot(s))
+            .GroupBy(t => (Weekday: t.Weekday, Code: t.TaskCode))
+            .ToDictionary(g => g.Key, g => g.Count());
+        var weekCompletions = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId)
+                && tc.LocalDate >= weekStart && tc.LocalDate < weekStart.AddDays(7))
+            .GroupBy(tc => new { tc.LocalDate, tc.TaskCode })
+            .Select(g => new { g.Key.LocalDate, g.Key.TaskCode, Count = g.Count() })
+            .ToListAsync(ct);
+        var completedByDay = weekCompletions
+            .Select(x => (Day: x.LocalDate, Code: x.TaskCode.ToString(), x.Count))
+            .ToDictionary(x => (x.Day, x.Code), x => x.Count);
+        var heatmap = new List<ErpHeatmapCell>();
+        foreach (var code in allCodes)
+        {
+            for (var i = 0; i < 7; i++)
+            {
+                var day = weekStart.AddDays(i);
+                var dayCompleted = completedByDay.GetValueOrDefault((day, code), 0);
+                var dayTotal = scheduledPerWeekday.GetValueOrDefault((ToIsoWeekday(day), code), 0);
+                heatmap.Add(new ErpHeatmapCell(code, i, dayTotal > 0 ? Math.Round((decimal)dayCompleted / dayTotal * 100, 1) : 0m));
+            }
+        }
+
+        return new ProgramErpTodayDto(missionKpis, feedEntries, pendientes, heatmap);
+    }
+
+    /// <summary>Vista de adherencia ERP con tabla paginada (SPEC §23, AC-52).</summary>
+    public async Task<ProgramErpAdherenciaDto> GetErpAdherenciaAsync(
+        int page, int pageSize,
+        string? search, string? sortBy, string? sortDir,
+        CancellationToken ct = default)
+    {
+        var today = PatientLocalToday(configuration["Program:DefaultTimezone"] ?? "America/Bogota");
+        var weekStart = ErpWeekStart(today);
+
+var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Status == ProgramEnrollmentStatus.Active)
+            .Select(e => new { e.Id, e.PatientId, e.CurrentWeekNumber, e.StartLocalDate })
+            .ToListAsync(ct);
+
+        var enrollmentIds = activeEnrollments.Select(e => e.Id).ToList();
+        var patientIds = activeEnrollments.Select(e => e.PatientId).Distinct().ToList();
+
+        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+
+        string Name(Guid id) => patientNames.TryGetValue(id, out var n) ? n : "Paciente";
+
+        // Tendencia 8 semanas: adherencia por semana × misión.
+        // Denominador = pacientes activos × días de la semana (semana en curso
+        // prorrateada por días transcurridos); se emiten las 6 misiones siempre
+        // para que las líneas del chart sean continuas.
+        var missionCodes = new[] { "podcast", "vitals", "nut", "ejercicio", "nutraceutico", "emocional" };
+        var weekCompletions8 = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId)
+                && tc.LocalDate >= weekStart.AddDays(-49) && tc.LocalDate <= weekStart.AddDays(6))
+            .GroupBy(tc => new { tc.LocalDate, tc.TaskCode })
+            .Select(g => new { g.Key.LocalDate, g.Key.TaskCode, Count = g.Count() })
+            .ToListAsync(ct);
+        var completionsByDay = weekCompletions8
+            .Select(x => (Day: x.LocalDate, Code: x.TaskCode.ToString(), x.Count))
+            .ToDictionary(x => (x.Day, x.Code), x => x.Count);
+        var activeCount = Math.Max(1, activeEnrollments.Count);
+        var tendencia8 = new List<ErpWeeklyMissionPct>();
+        for (var w = 7; w >= 0; w--)
+        {
+            var ws = weekStart.AddDays(-7 * w);
+            var elapsed = w == 0 ? Math.Max(1, today.DayNumber - ws.DayNumber + 1) : 7;
+            var denominator = activeCount * elapsed;
+            foreach (var code in missionCodes)
+            {
+                var count = 0;
+                for (var d = 0; d < elapsed; d++)
+                    count += completionsByDay.GetValueOrDefault((ws.AddDays(d), code), 0);
+                tendencia8.Add(new ErpWeeklyMissionPct(ws, code, Math.Round((decimal)count / denominator * 100, 1)));
+            }
+        }
+
+        // Ranking rachas
+        var streakData = await dbContext.StreakStates.AsNoTracking()
+            .Where(s => enrollmentIds.Contains(s.EnrollmentId))
+            .ToListAsync(ct);
+        var rankingRachas = streakData
+            .OrderByDescending(s => s.CurrentStreak)
+            .ThenByDescending(s => s.LongestStreak)
+            .Select((s, i) =>
+            {
+                var enroll = activeEnrollments.FirstOrDefault(e => e.Id == s.EnrollmentId);
+                return new ErpStreakRankingEntry(
+                    i + 1,
+                    enroll?.PatientId ?? Guid.Empty,
+                    Name(enroll?.PatientId ?? Guid.Empty),
+                    s.EnrollmentId,
+                    s.CurrentStreak,
+                    s.LongestStreak);
+            })
+            .ToList();
+
+        // Tabla paginada (set-based: conteos por tarea, XP, y tendencia semanal en 4 queries)
+        var countsPerTask = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId))
+            .GroupBy(tc => new { tc.EnrollmentId, tc.TaskCode })
+            .Select(g => new { g.Key.EnrollmentId, g.Key.TaskCode, Count = g.Count() })
+            .ToListAsync(ct);
+        var countsByEnrollmentTask = countsPerTask
+            .Select(x => (x.EnrollmentId, Code: x.TaskCode.ToString(), x.Count))
+            .ToDictionary(x => (x.EnrollmentId, x.Code), x => x.Count);
+        var totalsByEnrollment = countsPerTask.GroupBy(x => x.EnrollmentId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Count));
+        var xpMap = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+            .GroupBy(x => x.EnrollmentId)
+            .Select(g => new { EnrollmentId = g.Key, Xp = g.Sum(x => x.Amount) })
+            .ToDictionaryAsync(x => x.EnrollmentId, x => x.Xp, ct);
+        var thisWeekMap = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate >= weekStart)
+            .GroupBy(tc => tc.EnrollmentId)
+            .Select(g => new { EnrollmentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.EnrollmentId, x => x.Count, ct);
+        var prevWeekMap = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId)
+                && tc.LocalDate >= weekStart.AddDays(-7) && tc.LocalDate < weekStart)
+            .GroupBy(tc => tc.EnrollmentId)
+            .Select(g => new { EnrollmentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.EnrollmentId, x => x.Count, ct);
+
+        var tablaRows = new List<ErpAdherenciaRow>();
+        foreach (var enroll in activeEnrollments)
+        {
+            // Denominador real: días transcurridos desde el inicio de la inscripción
+            // (las 6 misiones se programan a diario en todas las semanas activas).
+            var daysElapsed = Math.Max(1, today.DayNumber - enroll.StartLocalDate.DayNumber + 1);
+            decimal TaskPct(string code) =>
+                Math.Round((decimal)countsByEnrollmentTask.GetValueOrDefault((enroll.Id, code), 0) / daysElapsed * 100, 1);
+            var streak = streakData.FirstOrDefault(s => s.EnrollmentId == enroll.Id);
+            var weekDelta = thisWeekMap.GetValueOrDefault(enroll.Id, 0) - prevWeekMap.GetValueOrDefault(enroll.Id, 0);
+            var trend = weekDelta >= 2 ? "up" : weekDelta <= -2 ? "down" : "stable";
+            tablaRows.Add(new ErpAdherenciaRow(
+                enroll.PatientId,
+                Name(enroll.PatientId),
+                enroll.Id,
+                enroll.CurrentWeekNumber,
+                streak?.CurrentStreak ?? 0,
+                streak?.LongestStreak ?? 0,
+                Math.Round((decimal)totalsByEnrollment.GetValueOrDefault(enroll.Id, 0) / (daysElapsed * 6) * 100, 1),
+                TaskPct("podcast"),
+                TaskPct("vitals"),
+                TaskPct("nut"),
+                TaskPct("ejercicio"),
+                TaskPct("nutraceutico"),
+                TaskPct("emocional"),
+                xpMap.GetValueOrDefault(enroll.Id, 0),
+                trend));
+        }
+
+        // Search filter
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            tablaRows = tablaRows.Where(r => r.PatientName.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+
+        // Sort
+        tablaRows = sortBy?.ToLowerInvariant() switch
+        {
+            "xp" => sortDir == "desc" ? tablaRows.OrderByDescending(r => r.Xp).ToList() : tablaRows.OrderBy(r => r.Xp).ToList(),
+            "streak" => sortDir == "desc" ? tablaRows.OrderByDescending(r => r.CurrentStreak).ToList() : tablaRows.OrderBy(r => r.CurrentStreak).ToList(),
+            "adherence" => sortDir == "desc" ? tablaRows.OrderByDescending(r => r.GlobalPct).ToList() : tablaRows.OrderBy(r => r.GlobalPct).ToList(),
+            _ => tablaRows,
+        };
+
+        var total = tablaRows.Count;
+        var paged = tablaRows.Skip((Math.Max(1, page) - 1) * pageSize).Take(pageSize).ToList();
+
+        return new ProgramErpAdherenciaDto(
+            tendencia8,
+            rankingRachas,
+            new PaginatedErpAdherenciaTabla(paged, total, page, pageSize, (int)Math.Ceiling((double)total / pageSize)));
+    }
+
+    /// <summary>Vista de cofres/rachas ERP (SPEC §23, AC-53).</summary>
+    public async Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default)    {
+        var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Status == ProgramEnrollmentStatus.Active)
+            .Select(e => new { e.Id, e.PatientId, e.CurrentWeekNumber, e.StartLocalDate })
+            .ToListAsync(ct);
+
+        var enrollmentIds = activeEnrollments.Select(e => e.Id).ToList();
+        var patientIds = activeEnrollments.Select(e => e.PatientId).Distinct().ToList();
+
+        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id))
+            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
+
+        string Name(Guid id) => patientNames.TryGetValue(id, out var n) ? n : "Paciente";
+
+        var streakData = await dbContext.StreakStates.AsNoTracking()
+            .Where(s => enrollmentIds.Contains(s.EnrollmentId))
+            .ToListAsync(ct);
+
+        // XP by category
+        var xpByCategoryRaw = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+            .GroupBy(x => x.Reason)
+            .Select(g => new { Reason = g.Key, Total = g.Sum(x => x.Amount) })
+            .ToListAsync(ct);
+        var xpByCategory = xpByCategoryRaw
+            .Select(x => new ErpXpByCategory(x.Reason.ToString(), x.Total))
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+        // Milestones
+        var milestoneCounts = new ErpMilestoneCounts(
+            streakData.Count(s => s.LongestStreak >= 7),
+            streakData.Count(s => s.LongestStreak >= 11),
+            streakData.Count(s => s.LongestStreak >= 22),
+            streakData.Count(s => s.LongestStreak >= 50),
+            streakData.Count(s => s.NbLongestStreak >= 7),
+            streakData.Count(s => s.NbLongestStreak >= 11),
+            streakData.Count(s => s.NbLongestStreak >= 22),
+            streakData.Count(s => s.NbLongestStreak >= 50));
+
+        // Table per patient
+        var tabla = new List<ErpCofresPatientRow>();
+        foreach (var enroll in activeEnrollments)
+        {
+            var streak = streakData.FirstOrDefault(s => s.EnrollmentId == enroll.Id);
+            var balance = await dbContext.XpLedgerEntries.AsNoTracking()
+                .Where(x => x.EnrollmentId == enroll.Id)
+                .OrderByDescending(x => x.BalanceAfter)
+                .Select(x => (int?)x.BalanceAfter)
+                .FirstOrDefaultAsync(ct) ?? 0;
+            var (level, nextLevelAt) = XpLevels.ForBalance(balance);
+
+            var pendingClinical = await dbContext.ClinicalXpReviews.AsNoTracking()
+                .Where(r => r.PatientId == enroll.PatientId && r.Status == ClinicalXpReviewStatus.pending)
+                .CountAsync(ct);
+
+            var nextMilestone = 0;
+            if (streak is not null)
+            {
+                var milestones = new[] { 7, 11, 22, 50 };
+                foreach (var m in milestones)
+                {
+                    if (streak.CurrentStreak < m) { nextMilestone = m - streak.CurrentStreak; break; }
+                }
+            }
+
+            tabla.Add(new ErpCofresPatientRow(
+                enroll.PatientId,
+                Name(enroll.PatientId),
+                streak?.CurrentStreak ?? 0,
+                balance,
+                level,
+                nextMilestone,
+                new ErpCofresHitos(
+                    streak?.LongestStreak >= 7,
+                    streak?.LongestStreak >= 11,
+                    streak?.LongestStreak >= 22,
+                    streak?.LongestStreak >= 50),
+                pendingClinical,
+                streak?.NbCurrentStreak ?? 0));
+        }
+
+        // --- B2: Próximos a desbloquear (racha dentro de 3 días de un hito STREAK_*) ---
+        var streakMilestones = new[] { 7, 11, 22, 50 };
+        var proximosADesbloquear = 0;
+        foreach (var enroll in activeEnrollments)
+        {
+            var streakForProx = streakData.FirstOrDefault(s => s.EnrollmentId == enroll.Id);
+            if (streakForProx is null || streakForProx.CurrentStreak >= 50) continue;
+            foreach (var m in streakMilestones)
+            {
+                var diff = m - streakForProx.CurrentStreak;
+                if (diff is >= 1 and <= 3) { proximosADesbloquear++; break; }
+            }
+        }
+
+        return new ProgramErpCofresDto(xpByCategory, milestoneCounts, tabla, proximosADesbloquear);
+    }
+
+    /// <summary>Perfil 360 de un paciente (SPEC §23, AC-54). Devuelve null si no tiene inscripción.</summary>
+    public async Task<PatientOverviewDto?> GetPatientOverviewAsync(Guid patientId, CancellationToken ct = default)
+    {
+        var enrollment = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (enrollment is null)
+        {
+            return null;
+        }
+
+        var patientName = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => p.Id == enrollment.PatientId)
+            .Select(p => (p.FirstName + " " + p.LastName).Trim())
+            .FirstOrDefaultAsync(ct) ?? "Paciente";
+
+        var template = await dbContext.ProgramTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == enrollment.TemplateId, ct);
+
+        var streak = await dbContext.StreakStates.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.EnrollmentId == enrollment.Id, ct);
+
+        var balance = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => x.EnrollmentId == enrollment.Id)
+            .OrderByDescending(x => x.BalanceAfter)
+            .Select(x => (int?)x.BalanceAfter)
+            .FirstOrDefaultAsync(ct) ?? 0;
+        var (level, nextLevelAt) = XpLevels.ForBalance(balance);
+
+        var today = PatientLocalToday(enrollment.Timezone);
+
+        // Tasks today from snapshot
+        IReadOnlyList<SnapshotTask> snapshotTasks = [];
+        var week = await dbContext.ProgramWeeks.AsNoTracking()
+            .Where(w => w.EnrollmentId == enrollment.Id && w.WeekNumber == enrollment.CurrentWeekNumber)
+            .FirstOrDefaultAsync(ct);
+        if (week?.TasksSnapshot.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            snapshotTasks = ParseSnapshot(week.TasksSnapshot);
+        }
+        var todayWeekday = ToIsoWeekday(today);
+        var tareasHoy = snapshotTasks
+            .Where(t => t.Weekday == todayWeekday)
+            .Select(t => t.TaskCode)
+            .Distinct()
+            .ToList();
+        var completedToday = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => tc.EnrollmentId == enrollment.Id && tc.LocalDate == today)
+            .Select(tc => tc.TaskCode.ToString())
+            .ToListAsync(ct);
+        var tareasHoyDto = tareasHoy.Select(code => new PatientOverviewTaskHoy(
+            code,
+            completedToday.Contains(code),
+            snapshotTasks.First(t => t.TaskCode == code).Points)).ToList();
+
+        // Mission adherence this week
+        var weekStart = ErpWeekStart(today);
+        var weekTasks = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => tc.EnrollmentId == enrollment.Id && tc.LocalDate >= weekStart && tc.LocalDate <= today)
+            .GroupBy(tc => tc.TaskCode)
+            .Select(g => new { Code = g.Key.ToString(), Count = g.Count() })
+            .ToListAsync(ct);
+        var adherenciaSemana = weekTasks.Select(w => new PatientOverviewMissionAdherence(
+            w.Code,
+            Math.Round((decimal)w.Count / Math.Max(1, 7) * 100, 1))).ToList();
+
+        // Weekly evolution (12 weeks)
+        var evolucion = new List<PatientOverviewWeeklyEvo>();
+        for (var w = 11; w >= 0; w--)
+        {
+            var ws = weekStart.AddDays(-7 * w);
+            var we = ws.AddDays(6);
+            var wsUtc = DateTime.SpecifyKind(ws.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+            var weUtc = DateTime.SpecifyKind(we.ToDateTime(TimeOnly.MaxValue), DateTimeKind.Utc);
+            var weekXp = await dbContext.XpLedgerEntries.AsNoTracking()
+                .Where(x => x.EnrollmentId == enrollment.Id && x.AwardedAt >= wsUtc && x.AwardedAt <= weUtc)
+                .SumAsync(x => x.Amount, ct);
+            evolucion.Add(new PatientOverviewWeeklyEvo(ws, 0m, weekXp));
+        }
+
+        // Scores
+        var healthScore = await dbContext.HealthScores.AsNoTracking()
+            .Where(h => h.PatientId == patientId)
+            .OrderByDescending(h => h.PeriodEnd)
+            .FirstOrDefaultAsync(ct);
+        var transformationScore = await dbContext.TransformationScores.AsNoTracking()
+            .Where(t => t.PatientId == patientId)
+            .OrderByDescending(t => t.WeekNumber)
+            .FirstOrDefaultAsync(ct);
+
+        PatientOverviewScores? scores = null;
+        if (healthScore is not null || transformationScore is not null)
+        {
+            PatientOverviewHealthScore? hs = null;
+            if (healthScore is not null)
+            {
+                hs = new PatientOverviewHealthScore(
+                    healthScore.Score,
+                    healthScore.ScoreAdherence,
+                    healthScore.ScoreClinical,
+                    healthScore.ScoreNutrition,
+                    healthScore.ScorePsychology,
+                    healthScore.ScoreExercise,
+                    healthScore.Trend.ToString());
+            }
+            PatientOverviewTransformationScore? ts = null;
+            if (transformationScore is not null)
+            {
+                var detailDict =
+                    transformationScore.Detail.ValueKind == JsonValueKind.Object
+                        ? JsonSerializer
+                            .Deserialize<Dictionary<string, PatientOverviewTransformationDetail>>(
+                                transformationScore.Detail.GetRawText()
+                            ) ?? new Dictionary<string, PatientOverviewTransformationDetail>()
+                        : new Dictionary<string, PatientOverviewTransformationDetail>();
+
+                ts = new PatientOverviewTransformationScore(
+                    transformationScore.Score,
+                    transformationScore.WeekNumber,
+                    transformationScore.OverallTrend.ToString(),
+                    transformationScore.ScorePrevious,
+                    detailDict);
+            }
+            scores = new PatientOverviewScores(hs, ts);
+        }
+
+        // Weaknesses
+        var weaknesses = await dbContext.Weaknesses.AsNoTracking()
+            .Where(w => w.PatientId == patientId)
+            .OrderByDescending(w => w.DetectedAt)
+            .Take(10)
+            .Select(w => new ErpWeaknessSummary(w.Id, w.Code, w.Title, w.Severity.ToString(), w.Status.ToString(), w.DetectedAt))
+            .ToListAsync(ct);
+
+        // Interventions
+        var interventions = await dbContext.Interventions.AsNoTracking()
+            .Where(i => i.PatientId == patientId)
+            .OrderByDescending(i => i.CreatedAt)
+            .Take(10)
+            .Select(i => new ErpInterventionSummary(i.Id, i.Type.ToString(), i.Title, i.Status.ToString(), i.Severity, i.CreatedAt))
+            .ToListAsync(ct);
+
+        // Pending adaptations
+        var pendingAdaptations = await dbContext.AdaptationRecommendations.AsNoTracking()
+            .Where(a => a.EnrollmentId == enrollment.Id && a.Status == AdaptationStatus.Pending)
+            .CountAsync(ct);
+
+        // Clinical reviews pending
+        var clinicalReviews = await dbContext.ClinicalXpReviews.AsNoTracking()
+            .Where(r => r.PatientId == patientId && r.Status == ClinicalXpReviewStatus.pending)
+            .OrderBy(r => r.CreatedAt)
+            .Take(10)
+            .Select(r => new ErpClinicalReviewSummary(r.Id, r.RuleCode, r.MetricId.ToString(), r.DeltaPct, r.CreatedAt))
+            .ToListAsync(ct);
+
+        // Daily checkins last 7
+        var checkins = await dbContext.DailyCheckIns.AsNoTracking()
+            .Where(c => c.EnrollmentId == enrollment.Id)
+            .OrderByDescending(c => c.LocalDate)
+            .Take(7)
+            .Select(c => new ErpDailyCheckinSummary(c.LocalDate, c.TotalPoints, c.BonusAwarded, c.IsPerfectDay, c.MoodScore))
+            .ToListAsync(ct);
+
+        // Clinical measurements block (mediciones_clinicas)
+        var clinicalMetricCodes = new[] { "bmi", Hba1cMetricCode, BodyFatMetricCode, GlucoseMetricCode };
+        var tz = ResolveTimeZone(enrollment.Timezone);
+
+        // Latest measurement per metric (client-side grouping to avoid EF translation failure on GroupBy+First)
+        var allFilteredLatest = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Where(m => m.PatientId == patientId)
+            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
+                m => m.MetricId,
+                metric => metric.Id,
+                (m, metric) => new { m, metric.Code })
+            .Where(x => clinicalMetricCodes.Contains(x.Code))
+            .Select(x => new { x.m, x.Code })
+            .ToListAsync(ct);
+        var latestMeasurements = allFilteredLatest
+            .GroupBy(x => x.Code)
+            .Select(g => g.OrderByDescending(x => x.m.ObservedAt).First())
+            .ToList();
+
+        // Baselines
+        var baselines = await dbContext
+            .ClinicalBaselines.AsNoTracking()
+            .Where(b => b.PatientId == patientId)
+            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
+                b => b.MetricId,
+                metric => metric.Id,
+                (b, metric) => new { b, metric.Code })
+            .Where(x => clinicalMetricCodes.Contains(x.Code))
+            .ToListAsync(ct);
+
+        // 12-week series
+        var twelveWeeksAgoUtc = LocalDateToUtcStart(today.AddDays(-84), tz);
+        var seriesData = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Where(m => m.PatientId == patientId && m.ObservedAt >= twelveWeeksAgoUtc)
+            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
+                m => m.MetricId,
+                metric => metric.Id,
+                (m, metric) => new { m, metric.Code })
+            .Where(x => clinicalMetricCodes.Contains(x.Code))
+            .Select(x => new { x.Code, x.m.ObservedAt, x.m.Value })
+            .OrderBy(x => x.ObservedAt)
+            .ToListAsync(ct);
+
+        var seriesByMetric = seriesData
+            .GroupBy(x => x.Code)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => new PatientOverviewMetricPoint(
+                    x.ObservedAt,
+                    x.Value)).ToList() as IReadOnlyList<PatientOverviewMetricPoint>);
+
+        // Unit code lookup for display (client-side dedup to avoid GroupBy+Join translation)
+        var distinctUnits = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Where(m => m.PatientId == patientId)
+            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
+                m => m.MetricId,
+                metric => metric.Id,
+                (m, metric) => new { metric.Code, metric.DefaultUnitId })
+            .Where(x => clinicalMetricCodes.Contains(x.Code))
+            .ToListAsync(ct);
+        var distinctByCode = distinctUnits
+            .GroupBy(x => x.Code)
+            .Select(g => g.First())
+            .ToList();
+        var unitCodes = new Dictionary<string, string>();
+        if (distinctByCode.Count > 0)
+        {
+            var unitMap = await dbContext.UnitOfMeasures.AsNoTracking()
+                .Where(u => distinctByCode.Select(d => d.DefaultUnitId).Contains(u.Id))
+                .ToDictionaryAsync(u => u.Id, u => u.Code, ct);
+            foreach (var d in distinctByCode)
+            {
+                if (unitMap.TryGetValue(d.DefaultUnitId, out var uc))
+                    unitCodes[d.Code] = uc;
+            }
+        }
+
+        var unitSymbolLookup = await dbContext
+            .UnitOfMeasures.AsNoTracking()
+            .Where(u => u.IsActive)
+            .ToDictionaryAsync(u => u.Code, u => u.Symbol, ct);
+
+        string? ResolveUnit(string? metricCode)
+        {
+            if (metricCode is null) return null;
+            return unitCodes.TryGetValue(metricCode, out var code)
+                && unitSymbolLookup.TryGetValue(code, out var sym) ? sym : null;
+        }
+
+        PatientOverviewMetricSnapshot? BuildSnapshot(string metricCode)
+        {
+            var latest = latestMeasurements.FirstOrDefault(x => x.Code == metricCode);
+            var baseline = baselines.FirstOrDefault(x => x.Code == metricCode);
+            var series = seriesByMetric.TryGetValue(metricCode, out var s) ? s : [];
+
+            decimal? deltaPct = null;
+            if (latest is not null && baseline is not null && baseline.b.Value != 0m)
+            {
+                deltaPct = Math.Round(
+                    (latest.m.Value - baseline.b.Value) / baseline.b.Value * 100m, 1);
+            }
+
+            return new PatientOverviewMetricSnapshot(
+                latest?.m.Value,
+                ResolveUnit(metricCode),
+                latest?.m.ObservedAt,
+                baseline?.b.Value,
+                deltaPct,
+                series);
+        }
+
+        var medicionesClinicas = new PatientOverviewClinicalMetricsDto(
+            BuildSnapshot("bmi"),
+            BuildSnapshot(Hba1cMetricCode),
+            BuildSnapshot(BodyFatMetricCode),
+            BuildSnapshot(GlucoseMetricCode));
+
+        return new PatientOverviewDto(
+            patientName,
+            new PatientOverviewEnrollment(
+                enrollment.Id, enrollment.TemplateId, template?.Name,
+                enrollment.Status.ToString(), enrollment.Timezone,
+                enrollment.CreatedAt, enrollment.CurrentWeekNumber, template?.TotalWeeks ?? 83),
+            streak is not null
+                ? new PatientOverviewStreak(streak.CurrentStreak, streak.LongestStreak, streak.FreezesRemaining,
+                    streak.NbCurrentStreak, streak.NbLongestStreak)
+                : null,
+            new PatientOverviewXp(balance, level, nextLevelAt),
+            tareasHoyDto,
+            adherenciaSemana,
+            evolucion,
+            scores,
+            weaknesses,
+            interventions,
+            pendingAdaptations,
+            clinicalReviews,
+            checkins,
+            medicionesClinicas);
+    }
 }

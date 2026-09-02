@@ -40,7 +40,7 @@ public sealed class ProgramTemplate
     /// <summary>
     /// Códigos de tarea que cuentan como "esenciales" para el rescate con
     /// congelamiento (SPEC §17, C; referencia ADRED: <c>nut</c>,
-    /// <c>ejercicio</c>, <c>nutribiotico</c>). Un día bajo el umbral solo puede
+    /// <c>ejercicio</c>, <c>nutraceutico</c>). Un día bajo el umbral solo puede
     /// rescatarse con un congelamiento si completó al menos una tarea esencial.
     /// Lista vacía = sin restricción (comportamiento previo). Se persiste como
     /// <c>jsonb</c>.

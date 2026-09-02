@@ -1,9 +1,13 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Erp;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
@@ -112,12 +116,18 @@ internal sealed class FakeProgramRepository : IProgramRepository
     }
 
     public Task<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)> ListEnrollmentsAsync(
-        Guid? patientId, ProgramEnrollmentStatus? status, int page, int pageSize, CancellationToken ct = default)
+        Guid? patientId, ProgramEnrollmentStatus? status, int page, int pageSize,
+        IReadOnlyList<Guid>? scopedPatientIds = null, CancellationToken ct = default)
     {
         var query = Enrollments.Values.AsEnumerable();
         if (patientId.HasValue)
         {
             query = query.Where(e => e.PatientId == patientId.Value);
+        }
+
+        if (scopedPatientIds is { Count: > 0 })
+        {
+            query = query.Where(e => scopedPatientIds.Contains(e.PatientId));
         }
 
         if (status.HasValue)
@@ -766,4 +776,94 @@ internal sealed class FakeProgramRepository : IProgramRepository
         i.Description, i.Status.ToString(), i.Severity, i.AssignedTo,
         i.RecommendedAt, i.AcceptedAt, i.CompletedAt, i.PatientAction,
         i.Result, i.XpAwardedTotal, i.CreatedAt, i.UpdatedAt);
+
+    // --- T-77: Helpers para el configurador de contenido ---
+
+    public Task<(string Code, string Name)?> GetPlanNameAsync(Guid planId, CancellationToken ct = default)
+        => Task.FromResult<(string Code, string Name)?>(("plan-code", "Plan Name"));
+
+    public Task<(string Code, string Name)?> GetRoutineNameAsync(Guid routineId, CancellationToken ct = default)
+        => Task.FromResult<(string Code, string Name)?>(("routine-code", "Routine Name"));
+
+    // --- Detalle de semana ---
+
+    public Task<EnrollmentWeekDetailDto?> GetEnrollmentWeekDetailAsync(
+        Guid enrollmentId,
+        int weekNumber,
+        Guid clinicianUserId,
+        CancellationToken ct = default)
+        => Task.FromResult<EnrollmentWeekDetailDto?>(null);
+
+    public Task<EnrollmentWeekDetailDto> ReplaceEnrollmentWeekTasksAsync(
+        Guid enrollmentId, int weekNumber, IReadOnlyList<WeeklyDayTemplate> tasks, Guid? actorId = null, CancellationToken ct = default)
+        => Task.FromResult(new EnrollmentWeekDetailDto(weekNumber, DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), null, null, []));
+
+    // --- ERP gamificación (SPEC §23) ---
+
+    public Task<ProgramErpDashboardDto> GetErpDashboardAsync(CancellationToken ct = default)
+        => Task.FromResult(new ProgramErpDashboardDto(
+            new ErpDashboardKpis(0, 0, 0, 0, 0, null, null, null, 0, 0, 0),
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            []));
+
+    public Task<ProgramErpTodayDto> GetErpTodayAsync(CancellationToken ct = default)
+        => Task.FromResult(new ProgramErpTodayDto([], [], [], []));
+
+    public Task<ProgramErpAdherenciaDto> GetErpAdherenciaAsync(
+        int page, int pageSize,
+        string? search, string? sortBy, string? sortDir,
+        CancellationToken ct = default)
+        => Task.FromResult(new ProgramErpAdherenciaDto(
+            [],
+            [],
+            new PaginatedErpAdherenciaTabla([], 0, page, pageSize, 0)));
+
+    public Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default)
+        => Task.FromResult(new ProgramErpCofresDto(
+            [],
+            new ErpMilestoneCounts(0, 0, 0, 0, 0, 0, 0, 0),
+            [],
+            0));
+
+    public Task<PatientOverviewDto?> GetPatientOverviewAsync(Guid patientId, CancellationToken ct = default)
+        => Task.FromResult<PatientOverviewDto?>(null);
+
+    // --- Bitácora de actividad (ERP) ---
+
+    public Task<PaginatedActivityLogResult> ListActivityLogAsync(
+        int page,
+        int pageSize,
+        string? tableName,
+        string? action,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        string? actor,
+        CancellationToken ct = default)
+        => Task.FromResult(new PaginatedActivityLogResult([], 0, Math.Max(1, page), Math.Clamp(pageSize, 1, 100), 0));
+
+    // --- Exporte CSV (B14) ---
+
+    public async IAsyncEnumerable<EnrollmentExportRow> StreamEnrollmentsForExportAsync(
+        Guid? clinicId,
+        DateTime? from,
+        DateTime? to,
+        IReadOnlyList<Guid>? scopedPatientIds,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    // --- Reconciliación de rachas (B12) ---
+
+    public Task<StreakReconciliationSummary> ReconcileStreaksAsync(CancellationToken ct = default)
+        => Task.FromResult(new StreakReconciliationSummary(0, 0, []));
 }

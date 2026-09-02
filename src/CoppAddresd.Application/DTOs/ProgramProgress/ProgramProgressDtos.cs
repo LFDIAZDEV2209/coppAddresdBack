@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 
 namespace CoppAddresd.Application.DTOs.ProgramProgress;
@@ -55,7 +56,15 @@ public sealed record CompleteTaskResult(
     int DayPoints,
     int DayPointsMax);
 
-/// <summary>Snapshot del programa para la home del móvil (SPEC §7.1).</summary>
+/// <summary>
+/// Snapshot del programa para la home del móvil (SPEC §7.1).
+/// <c>StreakChests</c> es un campo aditivo del módulo "cofres": definiciones
+/// del catálogo STREAK_* con su estado real de otorgamiento (null en
+/// respuestas previas → el móvil cae a sus definiciones de fallback). Para la
+/// UI de cofres el móvil DEBE preferir este campo sobre
+/// <c>NextMilestoneDays</c>, cuya semántica (múltiplos de 7) no corresponde a
+/// los hitos reales del catálogo.
+/// </summary>
 public sealed record ProgramSnapshotDto(
     Guid EnrollmentId,
     ProgramSnapshotTemplateDto Template,
@@ -67,7 +76,8 @@ public sealed record ProgramSnapshotDto(
     XpInfoDto Xp,
     StreakInfoDto Streak,
     int NextMilestoneDays,
-    IReadOnlyList<CalendarDayDto> Calendar);
+    IReadOnlyList<CalendarDayDto> Calendar,
+    IReadOnlyList<StreakChestDto>? StreakChests = null);
 
 /// <summary>
 /// Bloque de plantilla/semana actual del snapshot. <c>StreakMinTasks</c> y
@@ -95,6 +105,10 @@ public sealed record ProgramSnapshotTemplateDto(
 /// del día (SPEC §4.4 y §7.1). P1:
 /// <c>ThumbnailUrl</c> transporta la storage key de la miniatura; la forma
 /// final de URL (proxy local / presign S3) se resuelve en la capa API (B5).
+///
+/// T-75: <c>ContentUnavailable</c> es true cuando la tarea es nut/ejercicio
+/// y no hay asignación activa que cubra hoy (el móvil oculta el contenido y
+/// muestra un fallback).
 /// </summary>
 public sealed record TodayTaskDto(
     TaskCode TaskCode,
@@ -103,17 +117,77 @@ public sealed record TodayTaskDto(
     int Points,
     string Status,
     DateTime? CompletedAt,
-    TodayTaskContentDto? Content);
+    TodayTaskContentDto? Content,
+    bool ContentUnavailable = false);
+
+public sealed record PodcastChapterDto(int AtSeconds, string Label);
+
+public sealed record RecentVitalsDto(
+    int? HeartRate,
+    int? Systolic,
+    int? Diastolic,
+    int? O2Saturation,
+    decimal? Glucose,
+    decimal? WeightKg,
+    decimal? TemperatureC,
+    DateTime? RecordedAt);
+
+public sealed record NutritionMealDto(
+    string MealType,
+    string? Description,
+    string? Foods,
+    int? Calories,
+    decimal? ProteinG,
+    decimal? CarbsG,
+    decimal? FatG,
+    decimal? FiberG,
+    int? WaterMl,
+    string? Notes,
+    int SortOrder);
+
+public sealed record ExerciseItemDto(
+    string Name,
+    string? Description,
+    int? Sets,
+    int? Repetitions,
+    int? DurationSecs,
+    int? RestSeconds,
+    string? TargetMuscle,
+    string? Equipment,
+    string? Tips,
+    int SortOrder);
 
 /// <summary>
-/// Contenido multimedia de una tarea del día (podcast). La resolución la hace
-/// el repositorio en <c>GetSnapshotAsync</c> (una sola query set, sin N+1).
+/// Contenido resuelto para las misiones del día (SPEC §R3.1, §4.2, §4.3).
+///
+/// Soporta podcast (mediaId/title/durationSecs/thumbnailUrl/author/description/mediaUrl/chapters/takeaways),
+/// planes de nutrición y ejercicio (T-75/T-76) y últimos signos vitales. La resolución
+/// la hace el repositorio en <c>GetSnapshotAsync</c> (una sola query set, sin N+1).
 /// </summary>
 public sealed record TodayTaskContentDto(
     Guid? MediaId,
     string? Title,
     int? DurationSecs,
-    string? ThumbnailUrl);
+    string? ThumbnailUrl,
+    Guid? NutritionPlanId = null,
+    string? NutritionPlanName = null,
+    int? NutritionPlanDayNumber = null,
+    int? DailyCalorieTarget = null,
+    decimal? DailyProteinTarget = null,
+    decimal? DailyCarbsTarget = null,
+    decimal? DailyFatTarget = null,
+    decimal? DailyFiberTarget = null,
+    IReadOnlyList<NutritionMealDto>? NutritionMeals = null,
+    Guid? ExerciseRoutineId = null,
+    string? ExerciseRoutineName = null,
+    RecentVitalsDto? RecentVitals = null,
+    string? Author = null,
+    string? Description = null,
+    string? MediaUrl = null,
+    IReadOnlyList<PodcastChapterDto>? Chapters = null,
+    IReadOnlyList<string>? Takeaways = null,
+    bool ContentUnavailable = false,
+    IReadOnlyList<ExerciseItemDto>? Exercises = null);
 
 /// <summary>XP + nivel de gamificación (nunca métrica clínica, SPEC §6.15).</summary>
 public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
@@ -125,12 +199,11 @@ public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
 /// <c>MultiplierRemainingHours</c> son las horas restantes redondeadas hacia
 /// abajo (0 sin multiplicador).
 ///
-/// Campos aditivos de la racha propia del nutribiótico (SPEC §19, D — Paso 7a):
+/// Campos aditivos de la racha propia del nutracéutico (SPEC §19, D — Paso 7a):
 /// <c>NbStreak</c>/<c>NbLongestStreak</c> son la racha consecutiva de la tarea
-/// <c>nutribiotico</c> y su máximo histórico; <c>NbNextMilestone</c> es el
+/// <c>nutraceutico</c> y su máximo histórico; <c>NbNextMilestone</c> es el
 /// próximo hito <c>{ days, xp, daysRemaining }</c> por encima de la racha
-/// actual (null si ya llegó a 90). Con default para no romper los call sites
-/// existentes — los campos previos no cambian.
+/// actual (null si ya llegó a 90). <c>NbWeekDays</c> es el historial booleano de 7 días.
 /// </summary>
 public sealed record StreakInfoDto(
     int Current,
@@ -141,14 +214,31 @@ public sealed record StreakInfoDto(
     int MultiplierRemainingHours,
     int NbStreak = 0,
     int NbLongestStreak = 0,
-    NbNextMilestoneDto? NbNextMilestone = null);
+    NbNextMilestoneDto? NbNextMilestone = null,
+    IReadOnlyList<bool>? NbWeekDays = null);
 
 /// <summary>
-/// Próximo hito de la racha propia del nutribiótico (SPEC §19, D): días del
+/// Próximo hito de la racha propia del nutracéutico (SPEC §19, D): días del
 /// hito, XP base del catálogo (<c>app.xp_rules</c>) y días restantes para
 /// alcanzarlo. Null en el snapshot cuando la racha actual ya es ≥ 90.
 /// </summary>
 public sealed record NbNextMilestoneDto(int Days, int Xp, int DaysRemaining);
+
+/// <summary>
+/// Cofre de racha del snapshot (módulo "cofres"): definición del hito tomada
+/// del catálogo (<c>app.xp_rules</c>, reglas <c>STREAK_*</c> activas, XP
+/// <c>base_xp ?? fallback</c>) y su estado real de otorgamiento
+/// (<c>app.xp_ledger</c>, <c>source_ref_type = 'streak_milestone'</c>).
+/// El móvil renderiza el trail de cofres de ESTA verdad y nunca la deriva de
+/// <c>streak.current</c>: los hitos se otorgan UNA vez por inscripción, por lo
+/// que tras una rotura y regeneración de racha la derivación client-side
+/// mostraría como disponibles cofres ya pagados. Ordenado por <c>Days</c>.
+/// </summary>
+public sealed record StreakChestDto(
+    int Days,
+    int Xp,
+    bool Granted,
+    DateTime? GrantedAt = null);
 
 /// <summary>Día del mini calendario del snapshot (7 días).</summary>
 public sealed record CalendarDayDto(
@@ -214,7 +304,7 @@ public static class ProgramTaskCatalog
         TaskCode.vitals => ("Medir signos vitales", "FC · SpO2 · Glucosa · Peso"),
         TaskCode.nut => ("Cumplir plan nutricional", "Mediterráneo · 1,800 kcal"),
         TaskCode.ejercicio => ("Hacer ejercicio del día", "Circuito 12 min · Semana 12"),
-        TaskCode.nutribiotico => ("Tomar nutribiótico", "Dosis diaria matutina"),
+        TaskCode.nutraceutico => ("Tomar nutracéutico", "Dosis diaria matutina"),
         TaskCode.emocional => ("Evaluación emocional", "Estado psicológico · Semana 12"),
         _ => ("Tarea", ""),
     };
@@ -294,7 +384,9 @@ public sealed record WeeklyDayTemplateRequest(
     TaskCode TaskCode,
     int Points,
     int SortOrder = 0,
-    Guid? MediaId = null);
+    Guid? MediaId = null,
+    Guid? RoutineId = null,
+    Guid? NutritionPlanId = null);
 
 /// <summary>Fila por día de la semana de una plantilla (respuesta).</summary>
 public sealed record WeeklyDayTemplateDto(
@@ -377,7 +469,10 @@ public sealed record ProgramEnrollmentDto(
     DateTime? CompletedAt,
     DateTime? PausedAt,
     DateTime? WithdrawnAt,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string? PatientFullName = null,
+    string? PatientDocumentNumber = null,
+    string? TemplateName = null);
 
 /// <summary>Resultado paginado del listado de inscripciones (SPEC §7.5).</summary>
 public sealed record PaginatedEnrollmentsResult(
@@ -406,7 +501,8 @@ public sealed record AdaptationRecommendationDto(
     DateTime? DecidedAt,
     DateTime? AppliedAt,
     DateTime CreatedAt,
-    DateTime? UpdatedAt)
+    DateTime? UpdatedAt,
+    [property: JsonPropertyName("patient_name")] string? PatientName = null)
 {
     public static AdaptationRecommendationDto FromEntity(
         Domain.Entities.ProgramProgress.AdaptationRecommendation a) => new(
@@ -449,4 +545,120 @@ public sealed record XpRuleDto(
         r.Id, r.Code, r.Name, r.Category, r.BaseXp, r.Multiplier,
         r.MaxPerDay, r.MaxPerWeek, r.RequiresValidation, r.Active,
         r.ValidFrom, r.ValidUntil, r.CreatedAt, r.UpdatedAt);
+}
+
+// ===================== T-77: Endpoints del configurador =====================
+
+/// <summary>
+/// Respuesta de <c>GET /program/enrollments/{id}/content</c> (T-77): contenido
+/// de nutrición y ejercicio configurado por semana para la inscripción.
+/// </summary>
+public sealed record ProgramContentResponse(
+    Guid EnrollmentId,
+    Guid PatientId,
+    Guid TemplateId,
+    int TotalWeeks,
+    DateOnly StartLocalDate,
+    IReadOnlyList<ProgramContentWeekDto> Weeks);
+
+/// <summary>
+/// Contenido configurado para una semana del programa (T-77): plan de
+/// alimentación y rutina de ejercicio activos para la ventana de 7 días.
+/// </summary>
+public sealed record ProgramContentWeekDto(
+    int WeekNumber,
+    DateOnly WeekStartDateLocal,
+    DateOnly WeekEndDateLocal,
+    ProgramContentPlanRef? NutritionPlan,
+    ProgramContentRoutineRef? ExerciseRoutine);
+
+/// <summary>Referencia a un plan de alimentación (T-77).</summary>
+public sealed record ProgramContentPlanRef(Guid Id, string Code, string Name);
+
+/// <summary>Referencia a una rutina de ejercicio (T-77).</summary>
+public sealed record ProgramContentRoutineRef(Guid Id, string Code, string Name);
+
+/// <summary>
+/// Payload de <c>PUT /program/enrollments/{id}/content/week/{weekNumber}</c>
+/// (T-77): ambos campos opcionales; null o ausente = desasignar esa dimensión
+/// para la semana.
+/// </summary>
+public sealed record SetWeekContentRequest(
+    Guid? NutritionPlanId = null,
+    Guid? ExerciseRoutineId = null);
+
+// ===================== GET /enrollments/{id}/week/{weekNumber} =====================
+
+/// <summary>
+/// Respuesta de <c>GET /program/enrollments/{id}/week/{weekNumber}</c>:
+/// detalle de una semana con tareas, completaciones y contenido activo.
+/// </summary>
+public sealed record EnrollmentWeekDetailDto(
+    int WeekNumber,
+    DateOnly WeekStartDateLocal,
+    DateOnly WeekEndDateLocal,
+    EnrollmentWeekContentRef? NutritionPlan,
+    EnrollmentWeekContentRef? ExerciseRoutine,
+    IReadOnlyList<EnrollmentWeekDayDto> Days);
+
+/// <summary>Referencia a contenido activo de la semana (plan o rutina).</summary>
+public sealed record EnrollmentWeekContentRef(Guid Id, string Name);
+
+/// <summary>Día detallado dentro de una semana del programa.</summary>
+public sealed record EnrollmentWeekDayDto(
+    DateOnly LocalDate,
+    short Weekday,
+    string DayLabel,
+    bool IsPerfectDay,
+    int TotalPoints,
+    int MaxPoints,
+    int BonusAwarded,
+    IReadOnlyList<EnrollmentWeekTaskDto> Tasks);
+
+/// <summary>Tarea individual de un día (completada o pendiente) con metadatos de contenido resuelto.</summary>
+public sealed record EnrollmentWeekTaskDto(
+    string TaskCode,
+    string TaskLabel,
+    int Points,
+    int ScheduledPoints,
+    string Status,
+    DateTime? CompletedAt,
+    Guid? ContentRefId = null,
+    string? ContentName = null,
+    string? DetailText = null);
+
+/// <summary>
+/// Etiquetas en español neutro de las tareas del programa (SPEC §7.1).
+/// Usado por el endpoint de detalle de semana.
+/// </summary>
+public static class EnrollmentWeekTaskLabels
+{
+    private static readonly IReadOnlyDictionary<string, string> Labels =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["podcast"] = "Podcast",
+            ["vitals"] = "Signos vitales",
+            ["nut"] = "Plan nutricional",
+            ["ejercicio"] = "Ejercicio",
+            ["nutraceutico"] = "Nutracéutico",
+            ["emocional"] = "Evaluación emocional",
+        };
+
+    private static readonly IReadOnlyDictionary<short, string> DayLabels =
+        new Dictionary<short, string>
+        {
+            [1] = "Lunes",
+            [2] = "Martes",
+            [3] = "Miércoles",
+            [4] = "Jueves",
+            [5] = "Viernes",
+            [6] = "Sábado",
+            [7] = "Domingo",
+        };
+
+    public static string TaskLabel(string taskCode)
+        => Labels.TryGetValue(taskCode, out var label) ? label : taskCode;
+
+    public static string DayLabel(short weekday)
+        => DayLabels.TryGetValue(weekday, out var label) ? label : $"Día {weekday}";
 }

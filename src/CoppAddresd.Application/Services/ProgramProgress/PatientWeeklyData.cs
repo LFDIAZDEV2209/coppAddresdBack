@@ -27,7 +27,7 @@ namespace CoppAddresd.Application.Services.ProgramProgress;
 ///   <c>app.health_scores</c> del período (persistida por
 ///   <c>POST /scores/calculate</c> justo antes de la detección).
 /// - <c>NbAdherence7dPct</c>: días con <c>task_completions</c> de
-///   <c>nutribiotico</c> en los últimos 7 días / 7.
+///   <c>nutraceutico</c> en los últimos 7 días / 7.
 /// - <c>ExerciseCompletionPct</c>: días con <c>task_completions</c> de
 ///   <c>ejercicio</c> / días del período.
 ///
