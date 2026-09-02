@@ -200,7 +200,7 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         (TaskCode.vitals, 120),
         (TaskCode.nut, 150),
         (TaskCode.ejercicio, 150),
-        (TaskCode.nutribiotico, 80),
+        (TaskCode.nutraceutico, 80),
         (TaskCode.emocional, 120),
     ];
 
