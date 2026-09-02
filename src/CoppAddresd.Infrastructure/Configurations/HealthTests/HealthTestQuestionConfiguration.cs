@@ -41,6 +41,23 @@ public sealed class HealthTestQuestionConfiguration : IEntityTypeConfiguration<H
 
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
 
+        builder.Property(x => x.Unit).HasColumnName("unit").HasMaxLength(20);
+
+        builder.Property(x => x.MinValue).HasColumnName("min_value").HasColumnType("numeric");
+
+        builder.Property(x => x.MaxValue).HasColumnName("max_value").HasColumnType("numeric");
+
+        builder
+            .Property(x => x.DefaultValue)
+            .HasColumnName("default_value")
+            .HasColumnType("numeric");
+
+        builder.Property(x => x.MinLabel).HasColumnName("min_label").HasMaxLength(40);
+
+        builder.Property(x => x.MaxLabel).HasColumnName("max_label").HasMaxLength(40);
+
+        builder.Property(x => x.Hint).HasColumnName("hint");
+
         // Indexes
         builder.HasIndex(x => x.VersionId).HasDatabaseName("ix_health_test_questions_version_id");
 
