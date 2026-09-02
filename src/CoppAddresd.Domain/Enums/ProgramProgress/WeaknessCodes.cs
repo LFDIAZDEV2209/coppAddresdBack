@@ -34,7 +34,7 @@ public static class WeaknessCodes
     /// <summary>Adherencia semanal &lt; 50% (adherence, medium).</summary>
     public const string AdhLowStreak = "WK_ADH_LOW_STREAK";
 
-    /// <summary>Adherencia del nutribiótico a 7 días &lt; 70% (supplement, low).</summary>
+    /// <summary>Adherencia del nutracéutico a 7 días &lt; 70% (supplement, low).</summary>
     public const string AdhNbMissed = "WK_ADH_NB_MISSED";
 
     /// <summary>Cumplimiento de ejercicio &lt; 60% (exercise, low).</summary>

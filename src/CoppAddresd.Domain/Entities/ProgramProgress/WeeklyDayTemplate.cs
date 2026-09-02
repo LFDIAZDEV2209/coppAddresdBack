@@ -16,7 +16,7 @@ public sealed class WeeklyDayTemplate
     /// <summary>Día de la semana: 1 = lunes … 7 = domingo (mismo índice que NutritionPlanDay).</summary>
     public short Weekday { get; set; }
 
-    /// <summary>Código de tarea: podcast, vitals, nut, ejercicio, nutribiotico, emocional.</summary>
+    /// <summary>Código de tarea: podcast, vitals, nut, ejercicio, nutraceutico, emocional.</summary>
     public TaskCode TaskCode { get; set; }
 
     /// <summary>Puntos base que otorga esta tarea.</summary>

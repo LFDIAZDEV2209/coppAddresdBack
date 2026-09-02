@@ -60,7 +60,7 @@ public sealed class TaskCompletion
     /// <summary>Contenido del task <c>vitals</c>.</summary>
     public Guid? VitalSignsBatchId { get; set; }
 
-    /// <summary>Contenido del task <c>nutribiotico</c>.</summary>
+    /// <summary>Contenido del task <c>nutraceutico</c>.</summary>
     public Guid? NutribioticProductId { get; set; }
 
     /// <summary>Contenido del task <c>emocional</c>.</summary>
