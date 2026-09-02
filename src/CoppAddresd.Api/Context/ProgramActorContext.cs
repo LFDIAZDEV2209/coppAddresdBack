@@ -47,6 +47,23 @@ public interface IProgramActorContext
     /// no tiene perfil o la inscripción es de otro paciente (anti-IDOR, AC-11).
     /// </summary>
     Task<bool> EnrollmentBelongsToCurrentPatientAsync(Guid enrollmentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Scoping clínico del actor sobre una inscripción (T-81, SPEC §6.14):
+    /// TRUE si el actor es Admin/OrganizationAdmin/ClinicAdmin (alcance
+    /// org/clinic), el paciente dueño de la inscripción, o un profesional con
+    /// asignación activa en <c>app.patient_professionals</c>. Cualquier otro
+    /// caso → FALSE (el endpoint responde 404, nunca 403).
+    /// </summary>
+    Task<bool> ActorScopedToEnrollmentAsync(Guid enrollmentId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Ids de paciente visibles por el actor (T-81): <c>null</c> = sin filtro
+    /// (bypass para roles Admin/OrganizationAdmin/ClinicAdmin); lista con ids =
+    /// filtro IN (paciente: la propia; clínico: los asignados activos); lista
+    /// VACÍA = denegar (sin identidad conocida o clínico sin asignaciones).
+    /// </summary>
+    Task<IReadOnlyList<Guid>?> ResolveScopedPatientIdsAsync(CancellationToken ct = default);
 }
 
 /// <summary>
@@ -66,6 +83,22 @@ public sealed class ProgramActorContext(
     private bool _patientProfileResolved;
     private Guid? _activeEnrollmentId;
     private bool _activeEnrollmentResolved;
+    private readonly Dictionary<Guid, bool> _enrollmentScopeCache = new();
+    private IReadOnlyList<Guid>? _scopedPatientIds;
+    private bool _scopedPatientIdsResolved;
+    private Guid? _professionalId;
+    private bool _professionalResolved;
+
+    /// <summary>
+    /// Roles con alcance de administración org/clinic: NO se filtran por
+    /// patient_professionals (el IDOR a prevenir es entre clínicos, T-81).
+    /// </summary>
+    private static readonly HashSet<string> ScopeBypassRoles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Admin",
+        "OrganizationAdmin",
+        "ClinicAdmin",
+    };
 
     public Guid? UserId => currentContext.UserId;
 
@@ -115,6 +148,119 @@ public sealed class ProgramActorContext(
 
         return await dbContext.ProgramEnrollments.AsNoTracking()
             .AnyAsync(e => e.Id == enrollmentId && e.PatientId == patientId, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> ActorScopedToEnrollmentAsync(
+        Guid enrollmentId, CancellationToken ct = default)
+    {
+        if (_enrollmentScopeCache.TryGetValue(enrollmentId, out var cached))
+        {
+            return cached;
+        }
+
+        var patientId = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Id == enrollmentId)
+            .Select(e => (Guid?)e.PatientId)
+            .FirstOrDefaultAsync(ct);
+
+        // Inscripción inexistente → el llamador responde 404 igualmente.
+        var allowed = patientId is not null && await IsScopedToPatientAsync(patientId.Value, ct);
+        _enrollmentScopeCache[enrollmentId] = allowed;
+        return allowed;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<Guid>?> ResolveScopedPatientIdsAsync(CancellationToken ct = default)
+    {
+        if (_scopedPatientIdsResolved)
+        {
+            return _scopedPatientIds;
+        }
+
+        if (Roles.Any(role => ScopeBypassRoles.Contains(role)))
+        {
+            // Roles de administración con alcance org/clinic: SIN filtro (null).
+            _scopedPatientIds = null;
+        }
+        else if (await ResolvePatientProfileIdAsync(ct) is { } selfPatient)
+        {
+            // Paciente autenticado: solo su propio perfil.
+            _scopedPatientIds = [selfPatient];
+        }
+        else if (await ResolveProfessionalIdAsync(ct) is { } professionalId)
+        {
+            // Clínico: solo pacientes con asignación activa (patient_professionals).
+            // Lista VACÍA = clínico sin asignaciones → denegar.
+            _scopedPatientIds = await dbContext.PatientProfessionalAssignments.AsNoTracking()
+                .Where(pp => pp.ProfessionalId == professionalId && pp.Status == "Active")
+                .Select(pp => pp.PatientId)
+                .Distinct()
+                .ToListAsync(ct);
+        }
+        else
+        {
+            // Sin identidad conocida: denegar (lista vacía).
+            _scopedPatientIds = [];
+        }
+
+        _scopedPatientIdsResolved = true;
+        return _scopedPatientIds;
+    }
+
+    private async Task<bool> IsScopedToPatientAsync(Guid patientId, CancellationToken ct)
+    {
+        if (Roles.Any(role => ScopeBypassRoles.Contains(role)))
+        {
+            return true;
+        }
+
+        // El paciente autenticado siempre tiene alcance sobre su propio perfil.
+        var profileId = await ResolvePatientProfileIdAsync(ct);
+        if (profileId == patientId)
+        {
+            return true;
+        }
+
+        // Clínico: asignación activa en app.patient_professionals vía
+        // erp.employees.user_id → erp.professionals.employee_id.
+        var professionalId = await ResolveProfessionalIdAsync(ct);
+        if (professionalId is null)
+        {
+            return false;
+        }
+
+        return await dbContext.PatientProfessionalAssignments.AsNoTracking()
+            .AnyAsync(
+                pp => pp.ProfessionalId == professionalId
+                    && pp.PatientId == patientId
+                    && pp.Status == "Active",
+                ct);
+    }
+
+    private async Task<Guid?> ResolveProfessionalIdAsync(CancellationToken ct)
+    {
+        if (_professionalResolved)
+        {
+            return _professionalId;
+        }
+
+        if (UserId is not { } userId)
+        {
+            _professionalId = null;
+        }
+        else
+        {
+            _professionalId = await (
+                from employee in dbContext.Employees.AsNoTracking()
+                join professional in dbContext.Professionals.AsNoTracking()
+                    on employee.Id equals professional.EmployeeId
+                where employee.UserId == userId
+                select professional.Id).FirstOrDefaultAsync(ct);
+        }
+
+        _professionalResolved = true;
+        return _professionalId;
     }
 
     private async Task<Guid?> ResolvePatientProfileIdCoreAsync(CancellationToken ct)

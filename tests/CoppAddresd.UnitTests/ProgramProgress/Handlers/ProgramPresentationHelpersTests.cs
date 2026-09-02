@@ -16,7 +16,7 @@ public class ProgramPresentationHelpersTests
     [InlineData(TaskCode.vitals)]
     [InlineData(TaskCode.nut)]
     [InlineData(TaskCode.ejercicio)]
-    [InlineData(TaskCode.nutribiotico)]
+    [InlineData(TaskCode.nutraceutico)]
     [InlineData(TaskCode.emocional)]
     public void ProgramTaskCatalog_LasSeisTareas_TienenTituloYSub (TaskCode code)
     {

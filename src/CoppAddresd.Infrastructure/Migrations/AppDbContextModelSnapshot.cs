@@ -6840,9 +6840,17 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("media_id");
 
+                    b.Property<Guid?>("NutritionPlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("nutrition_plan_id");
+
                     b.Property<int>("Points")
                         .HasColumnType("integer")
                         .HasColumnName("points");
+
+                    b.Property<Guid?>("RoutineId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("routine_id");
 
                     b.Property<int>("SortOrder")
                         .ValueGeneratedOnAdd()

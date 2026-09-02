@@ -6,7 +6,7 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Queries.ListNotificat
 
 /// <summary>
 /// Centro de notificaciones gamificadas del paciente autenticado (SPEC §20, D):
-/// log de hitos de racha / racha del nutribiótico / subida de nivel / día
+/// log de hitos de racha / racha del nutracéutico / subida de nivel / día
 /// perfecto, paginado (default 20, orden descendente por fecha), con
 /// <c>readAt</c> por fila y el <c>unreadCount</c> total para el badge del móvil.
 ///

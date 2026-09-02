@@ -27,7 +27,8 @@ public sealed record InterventionDto(
     [property: JsonPropertyName("result")] string? Result,
     [property: JsonPropertyName("xpAwardedTotal")] int XpAwardedTotal,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
-    [property: JsonPropertyName("updatedAt")] DateTime? UpdatedAt);
+    [property: JsonPropertyName("updatedAt")] DateTime? UpdatedAt,
+    [property: JsonPropertyName("patient_name")] string? PatientName = null);
 
 /// <summary>
 /// Resultado paginado de una lista de intervenciones (SPEC §22, D): la lista de

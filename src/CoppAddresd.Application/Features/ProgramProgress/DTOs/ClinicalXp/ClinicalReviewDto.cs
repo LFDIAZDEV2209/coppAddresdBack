@@ -24,4 +24,5 @@ public sealed record ClinicalReviewDto(
     [property: JsonPropertyName("healthScorePeriodEnd")] DateOnly HealthScorePeriodEnd,
     [property: JsonPropertyName("createdAt")] DateTime CreatedAt,
     [property: JsonPropertyName("decidedBy")] Guid? DecidedBy,
-    [property: JsonPropertyName("decidedAt")] DateTime? DecidedAt);
+    [property: JsonPropertyName("decidedAt")] DateTime? DecidedAt,
+    [property: JsonPropertyName("patient_name")] string? PatientName = null);

@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Features.HealthTests.Scoring;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services;
 using CoppAddresd.Application.Services.ProgramProgress;
@@ -7,6 +8,7 @@ using CoppAddresd.Infrastructure.Cache;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
+using CoppAddresd.Infrastructure.Services.Email;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -110,6 +112,23 @@ public static class DependencyInjection
         // CalculateScoresCommandHandler.
         services.AddScoped<IWeaknessDetectionService, WeaknessDetectionService>();
 
+        // Resolvedor de contenido del programa (SPEC §4.2/§4.3/§6.10 — T-74):
+        // servicio de solo lectura que determina el plan de alimentación activo y
+        // la rutina de ejercicio activa para un paciente en una fecha local.
+        // Consume IWellnessRepository (ya registrado arriba).
+        services.AddScoped<IProgramContentResolver, ProgramContentResolver>();
+
+        // Motor de reglas de adaptación (SPEC §6.8, T-23): funciones puras y
+        // deterministas evaluadas por ProgramRepository tras cada completación
+        // (dentro de la misma transacción). Sin estado: Scoped por consistencia.
+        services.AddScoped<IProgramAdaptationEngine, ProgramAdaptationEngine>();
+
+        // Job de reconciliación de rachas (B12, T-28): orquesta la pasada de
+        // recálculo de streak_states. Lo consume el hosted service nocturno
+        // (ReconcileStreakHostedService en la API) y el disparo manual
+        // (POST /program/maintenance/reconcile-streaks).
+        services.AddScoped<ReconcileStreakJob>();
+
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).
         services.AddScoped<IClinicalMeasurementRepository, ClinicalMeasurementRepository>();
@@ -136,10 +155,32 @@ public static class DependencyInjection
         services.AddScoped<IPostalCodeLookupService, ZippopotamPostalCodeLookup>();
 
         AddObjectStorage(services, configuration);
+        AddEmailServices(services, configuration);
 
         AddDistributedCache(services, configuration);
 
         return services;
+    }
+
+    /// <summary>
+    /// Registra la implementación de <see cref="IEmailService"/> según <c>Email:Provider</c>
+    /// (por defecto, <c>Log</c> para desarrollo sin credenciales).
+    /// </summary>
+    private static void AddEmailServices(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
+
+        var provider = configuration["Email:Provider"] ?? "Log";
+
+        if (provider.Equals("Smtp", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddScoped<IEmailService, SmtpEmailService>();
+        }
+        else
+        {
+            // Default: Log (seguro para desarrollo sin credenciales)
+            services.AddScoped<IEmailService, LogEmailService>();
+        }
     }
 
     /// <summary>

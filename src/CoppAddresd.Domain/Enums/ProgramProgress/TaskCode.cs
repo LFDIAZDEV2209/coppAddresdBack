@@ -4,7 +4,7 @@ namespace CoppAddresd.Domain.Enums.ProgramProgress;
 /// Códigos de tarea que usa la app móvil. Los nombres del enum son
 /// exactamente los valores almacenados (varchar) y los que el cliente envía
 /// en el contrato de la API: <c>podcast</c>, <c>vitals</c>, <c>nut</c>,
-/// <c>ejercicio</c>, <c>nutribiotico</c>, <c>emocional</c>.
+/// <c>ejercicio</c>, <c>nutraceutico</c>, <c>emocional</c>.
 /// </summary>
 public enum TaskCode
 {
@@ -12,6 +12,6 @@ public enum TaskCode
     vitals = 2,
     nut = 3,
     ejercicio = 4,
-    nutribiotico = 5,
+    nutraceutico = 5,
     emocional = 6,
 }

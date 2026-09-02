@@ -86,9 +86,9 @@ public enum XpReason
     NUTRITION_RECOVERY = 15,
 
     /// <summary>
-    /// Hito de la racha propia del nutribiótico de 7 días (SPEC §19, B):
+    /// Hito de la racha propia del nutracéutico de 7 días (SPEC §19, B):
     /// <c>NB_STREAK_7</c> (50 base) se otorga cuando la racha CONSECUTIVA de la
-    /// tarea <c>nutribiotico</c> llega exactamente a 7. A diferencia de los
+    /// tarea <c>nutraceutico</c> llega exactamente a 7. A diferencia de los
     /// hitos de la racha general (SPEC §16, una vez por inscripción), cada
     /// corrida de 7 días re-otorga su hito al alcanzarlo (AC-39): el dedupe
     /// parcial usa <c>source_ref_type = 'nb_milestone'</c> con
@@ -99,16 +99,16 @@ public enum XpReason
     /// </summary>
     NB_STREAK_7 = 16,
 
-    /// <summary>Hito de la racha del nutribiótico de 14 días (<c>NB_STREAK_14</c>, 100 base, SPEC §19).</summary>
+    /// <summary>Hito de la racha del nutracéutico de 14 días (<c>NB_STREAK_14</c>, 100 base, SPEC §19).</summary>
     NB_STREAK_14 = 17,
 
-    /// <summary>Hito de la racha del nutribiótico de 30 días (<c>NB_STREAK_30</c>, 250 base, SPEC §19).</summary>
+    /// <summary>Hito de la racha del nutracéutico de 30 días (<c>NB_STREAK_30</c>, 250 base, SPEC §19).</summary>
     NB_STREAK_30 = 18,
 
-    /// <summary>Hito de la racha del nutribiótico de 60 días (<c>NB_STREAK_60</c>, 500 base, SPEC §19).</summary>
+    /// <summary>Hito de la racha del nutracéutico de 60 días (<c>NB_STREAK_60</c>, 500 base, SPEC §19).</summary>
     NB_STREAK_60 = 19,
 
-    /// <summary>Hito de la racha del nutribiótico de 90 días (<c>NB_STREAK_90</c>, 1000 base, SPEC §19).</summary>
+    /// <summary>Hito de la racha del nutracéutico de 90 días (<c>NB_STREAK_90</c>, 1000 base, SPEC §19).</summary>
     NB_STREAK_90 = 20,
 
     /// <summary>
@@ -161,4 +161,22 @@ public enum XpReason
     /// Sin validación requerida.
     /// </summary>
     RECOVERY_MISSION = 27,
+
+    // --- Hitos de racha del catálogo extendido (módulo "cofres"): misma
+    // mecánica que STREAK_7/11/22/50 (SPEC §16, B — UNA vez por inscripción,
+    // source_ref_type = 'streak_milestone', dedupe parcial por reason). Ninguno
+    // activa multiplicador x2 (el multiplicador queda exclusivamente en
+    // 11/22/50). Se persisten como string (HasConversion), sin migración.
+
+    /// <summary>Hito de racha de 14 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_14 = 28,
+
+    /// <summary>Hito de racha de 30 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_30 = 29,
+
+    /// <summary>Hito de racha de 75 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_75 = 30,
+
+    /// <summary>Hito de racha de 100 días (una vez por inscripción, sin multiplicador).</summary>
+    STREAK_100 = 31,
 }

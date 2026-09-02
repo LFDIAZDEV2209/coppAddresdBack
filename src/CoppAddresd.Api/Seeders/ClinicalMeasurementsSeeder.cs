@@ -52,6 +52,7 @@ public sealed class ClinicalMeasurementsSeeder(
         new("heart_rate", "Frecuencia cardíaca", "vital", "bpm"),
         new("bmi", "Índice de masa corporal", "body_comp", "kg_m2"),
         new("body_fat", "Porcentaje de grasa corporal", "body_comp", "pct"),
+        new("hba1c", "Hemoglobina glicosilada", "metabolic", "pct"),
     ];
 
     private static readonly IReadOnlyList<ReferenceRangeSeed> ReferenceRanges =
@@ -61,6 +62,7 @@ public sealed class ClinicalMeasurementsSeeder(
         new("diastolic_bp", null, null, null, 60m, 80m, "mmhg", 0),
         new("bmi", null, null, null, 18.5m, 24.9m, "kg_m2", 0),
         new("heart_rate", null, null, null, 60m, 100m, "bpm", 0),
+        new("hba1c", null, null, null, 4.0m, 5.6m, "pct", 0),
     ];
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
