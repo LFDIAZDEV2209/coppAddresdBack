@@ -1011,6 +1011,87 @@ public sealed class ProgramController(
     public async Task<ActionResult<ProgramErpDashboardDto>> GetErpDashboard(CancellationToken ct)
         => Ok(await mediator.Send(new GetErpDashboardQuery(), ct));
 
+    // ===================== ERP: Biometría (SPEC §06) =====================
+
+    /// <summary>
+    /// Resumen comunitario de Biometría: promedios de IMC/grasa/glucosa, distribuciones,
+    /// evolución semanal, ciudades y alertas. (SPEC §06, dashboard comunitario).
+    /// </summary>
+    [HttpGet("erp/biometria/community")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<BiometriaCommunityDto>> GetBiometriaCommunity(CancellationToken ct)
+        => Ok(await mediator.Send(new GetBiometriaCommunityQuery(), ct));
+
+    /// <summary>
+    /// Listado paginado de pacientes con indicadores de biometría (última medición por paciente).
+    /// Filtros: search, gender, imcCategory, glucosaCategory.
+    /// </summary>
+    [HttpGet("erp/biometria/patients")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<PaginatedResult<BiometriaPatientListItemDto>>> ListBiometriaPatients(
+        [FromQuery] string? search = null,
+        [FromQuery] string? gender = null,
+        [FromQuery] string? imcCategory = null,
+        [FromQuery] string? glucosaCategory = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var (items, total) = await mediator.Send(
+            new ListBiometriaPatientsQuery(search, gender, imcCategory, glucosaCategory, page, pageSize), ct);
+
+        var totalPages = (int)Math.Ceiling((double)total / Math.Clamp(pageSize, 1, 100));
+        return Ok(new PaginatedResult<BiometriaPatientListItemDto>(items, total, page, pageSize, totalPages));
+    }
+
+    /// <summary>
+    /// Detalle de biometría de un paciente: historial semanal, heatmap y datos exactos.
+    /// </summary>
+    [HttpGet("erp/biometria/patients/{id:guid}")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<BiometriaPatientDetailDto>> GetBiometriaPatient(Guid id, CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetBiometriaPatientQuery(id), ct);
+        if (result is null)
+        {
+            return NotFound(new { message = "Paciente sin inscripción activa" });
+        }
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Exporte CSV de biometría de pacientes (text/csv con headers).
+    /// </summary>
+    [HttpGet("erp/biometria/export/csv")]
+    [RequirePermission("Program.View")]
+    public async Task<IActionResult> ExportBiometriaCsv(CancellationToken ct)
+    {
+        Response.ContentType = "text/csv; charset=utf-8";
+        Response.Headers["Content-Disposition"] =
+            $"attachment; filename=biometria-pacientes-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv";
+
+        await Response.WriteAsync("\uFEFF", ct);
+        await Response.WriteAsync(
+            "patient_id,name,gender,age,city,weight,height,imc,imc_category,"
+            + "waist,hip,icc,pct_grasa,pct_grasa_category,glucosa,glucosa_category,"
+            + "week_number,streak,trend\n", ct);
+
+        var rows = mediator.CreateStream(new StreamBiometriaPatientsExportQuery(), ct);
+        await foreach (var row in rows.WithCancellation(ct))
+        {
+            await Response.WriteAsync(
+                $"{row.PatientId},{CsvCell(row.Name)},{row.Gender ?? ""},{row.Age?.ToString() ?? ""},"
+                + $"{CsvCell(row.City)},{row.Weight?.ToString() ?? ""},{row.Height?.ToString() ?? ""},"
+                + $"{row.Imc?.ToString() ?? ""},{CsvCell(row.ImcCategory)},"
+                + $"{row.Waist?.ToString() ?? ""},{row.Hip?.ToString() ?? ""},{row.Icc?.ToString() ?? ""},"
+                + $"{row.PctGrasa?.ToString() ?? ""},{CsvCell(row.PctGrasaCategory)},"
+                + $"{row.Glucosa?.ToString() ?? ""},{CsvCell(row.GlucosaCategory)},"
+                + $"{row.WeekNumber?.ToString() ?? ""},{row.Streak},{CsvCell(row.Trend)}\n", ct);
+        }
+
+        return new EmptyResult();
+    }
+
     /// <summary>
     /// Vista de hoy para el ERP (SPEC §23, AC-51): KPIs por misión, feed en vivo,
     /// pendientes críticos y heatmap semanal.
@@ -1163,6 +1244,21 @@ public sealed class ProgramController(
     /// <summary>Código de la plantilla por defecto (config, fallback <c>default-83w</c>).</summary>
     private string DefaultTemplateCode()
         => configuration[DefaultTemplateCodeKey] ?? DefaultTemplateCodeFallback;
+
+    /// <summary>Escapa un valor para celda CSV.</summary>
+    private static string CsvCell(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var needsQuotes = value.Contains(',')
+            || value.Contains('"')
+            || value.Contains('\n')
+            || value.Contains('\r');
+        return needsQuotes ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+    }
 }
 
 /// <summary>Payload de <c>POST /api/v1/program/tasks/complete</c> (SPEC §7.2).</summary>
