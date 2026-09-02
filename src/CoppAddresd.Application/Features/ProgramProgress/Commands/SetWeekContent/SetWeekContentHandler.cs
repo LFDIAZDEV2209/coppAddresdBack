@@ -40,6 +40,21 @@ public sealed class SetWeekContentHandler(
                 $"está fuera del rango [1..{enrollment.TotalWeeks}].");
         }
 
+        // T-82 (B18): el trim de asignaciones superpuestas + los upserts de las
+        // dos dimensiones corren dentro de UNA transacción explícita
+        // (convención §6.13): dos PUTs concurrentes a la misma semana no pueden
+        // dejar medias escrituras ni duplicados. Las validaciones de existencia
+        // de plan/rutina también van dentro (rollback total en excepción).
+        return await wellnessRepository.ExecuteInTransactionAsync(
+            async innerCt => await SetWeekContentCoreAsync(enrollment, request, innerCt),
+            ct);
+    }
+
+    private async Task<ProgramContentWeekDto> SetWeekContentCoreAsync(
+        ProgramEnrollmentDto enrollment,
+        SetWeekContentCommand request,
+        CancellationToken ct)
+    {
         var weekStart = enrollment.StartLocalDate.AddDays((request.WeekNumber - 1) * 7);
         var weekEnd = weekStart.AddDays(6);
         var now = DateTime.UtcNow;
