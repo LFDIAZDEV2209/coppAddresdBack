@@ -49,7 +49,7 @@ public class ProgramQueryHandlerTests
         new ProgramSnapshotTemplateDto(
             Guid.NewGuid(), "default-83w", "Programa 83 semanas", 83, 12,
             ProgramWeekStatus.Active, new DateOnly(2026, 9, 21), new DateOnly(2026, 9, 27),
-            1, ["nut", "ejercicio", "nutribiotico"]),
+            1, ["nut", "ejercicio", "nutraceutico"]),
         new DateOnly(2026, 9, 24),
         [
             new TodayTaskDto(TaskCode.podcast, "Escuchar podcast", "Biohacking · 8 min", 80,
@@ -108,7 +108,7 @@ public class ProgramQueryHandlerTests
         _repository.OnGetCalendar = (_, _) => Task.FromResult(new ProgramCalendarDto(
             from, to,
             [new CalendarDayDetailDto(new DateOnly(2026, 9, 1), 2, 10, true, 750, 50,
-                ["podcast", "vitals", "nut", "ejercicio", "nutribiotico", "emocional"])],
+                ["podcast", "vitals", "nut", "ejercicio", "nutraceutico", "emocional"])],
             new CalendarSummaryDto(18, 2, 1450)));
 
         var dto = await _calendarHandler.Handle(
