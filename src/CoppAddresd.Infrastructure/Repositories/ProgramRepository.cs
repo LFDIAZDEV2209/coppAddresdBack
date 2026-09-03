@@ -8138,16 +8138,18 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim(), p.Gender })
             .ToDictionaryAsync(p => p.Id, ct);
 
-        // Latest measurement per patient per metric
+        // Latest measurement per patient per metric (client-side grouping to avoid EF translation limits with GroupBy+First/Take)
         var biometriaMetrics = new[] { "bmi", BodyFatMetricCode, GlucoseMetricCode };
-        var latestByPatient = await dbContext.ClinicalMeasurements.AsNoTracking()
+        var allBiometriaRaw = await dbContext.ClinicalMeasurements.AsNoTracking()
             .Join(dbContext.MeasurementMetrics.AsNoTracking(),
                 m => m.MetricId, metric => metric.Id,
                 (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
             .Where(x => patientIds.Contains(x.PatientId) && biometriaMetrics.Contains(x.Code))
+            .ToListAsync(ct);
+        var latestByPatient = allBiometriaRaw
             .GroupBy(x => new { x.PatientId, x.Code })
             .Select(g => g.OrderByDescending(x => x.ObservedAt).First())
-            .ToListAsync(ct);
+            .ToList();
 
         var bmiByPatient = latestByPatient.Where(x => x.Code == "bmi").ToDictionary(x => x.PatientId, x => x.Value);
         var grasaByPatient = latestByPatient.Where(x => x.Code == BodyFatMetricCode).ToDictionary(x => x.PatientId, x => x.Value);
@@ -8159,14 +8161,11 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
         decimal? avgGlucosa = glucosaByPatient.Count > 0 ? Math.Round(glucosaByPatient.Values.Average(), 1) : null;
 
         // Improving count: patients with latest BMI < previous BMI (compare two most recent)
-        var allBmiRaw = await dbContext.ClinicalMeasurements.AsNoTracking()
-            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
-                m => m.MetricId, metric => metric.Id,
-                (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
-            .Where(x => patientIds.Contains(x.PatientId) && x.Code == "bmi")
-            .GroupBy(x => new { x.PatientId, x.Code })
+        var allBmiRaw = allBiometriaRaw
+            .Where(x => x.Code == "bmi")
+            .GroupBy(x => x.PatientId)
             .SelectMany(g => g.OrderByDescending(x => x.ObservedAt).Take(2))
-            .ToListAsync(ct);
+            .ToList();
         var improvingCount = allBmiRaw
             .GroupBy(x => x.PatientId)
             .Count(g =>
@@ -8228,16 +8227,11 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             var weekStartUtc = DateTime.SpecifyKind(weekStart.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
             var weekEndUtc = DateTime.SpecifyKind(weekEnd.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
 
-            var weekMeasurements = await dbContext.ClinicalMeasurements.AsNoTracking()
-                .Join(dbContext.MeasurementMetrics.AsNoTracking(),
-                    m => m.MetricId, metric => metric.Id,
-                    (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
-                .Where(x => patientIds.Contains(x.PatientId)
-                    && biometriaMetrics.Contains(x.Code)
-                    && x.ObservedAt >= weekStartUtc && x.ObservedAt < weekEndUtc)
+            var weekMeasurements = allBiometriaRaw
+                .Where(x => x.ObservedAt >= weekStartUtc && x.ObservedAt < weekEndUtc)
                 .GroupBy(x => new { x.PatientId, x.Code })
                 .Select(g => g.OrderByDescending(x => x.ObservedAt).First())
-                .ToListAsync(ct);
+                .ToList();
 
             var weekBmiVals = weekMeasurements.Where(x => x.Code == "bmi").Select(x => x.Value).ToList();
             var weekGrasaVals = weekMeasurements.Where(x => x.Code == BodyFatMetricCode).Select(x => x.Value).ToList();
@@ -8270,15 +8264,16 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             .ToListAsync(ct);
 
         var cityDetailMap = cityDetails.ToDictionary(c => c.Id);
+        var patientCityMap = await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => patientIds.Contains(p.Id) && p.CityId != null)
+            .Select(p => new { p.Id, CityId = p.CityId!.Value })
+            .ToDictionaryAsync(p => p.Id, p => p.CityId, ct);
         var cities = new List<BiometriaCityPoint>();
         foreach (var c in citiesRaw)
         {
             var detail = cityDetailMap.TryGetValue(c.CityId, out var cd) ? cd : null;
-            var cityPatientIds = activeEnrollments
-                .Where(e => patientIds.Contains(e.PatientId))
-                .Select(e => e.PatientId)
-                .ToList();
-            var cityBmiVals = bmiByPatient.Where(kv => kv.Key == c.CityId).Select(kv => kv.Value).ToList();
+            var cityPatientIds = patientCityMap.Where(kv => kv.Value == c.CityId).Select(kv => kv.Key).ToList();
+            var cityBmiVals = cityPatientIds.Where(pid => bmiByPatient.ContainsKey(pid)).Select(pid => bmiByPatient[pid]).ToList();
             cities.Add(new BiometriaCityPoint(
                 c.CityId, detail?.Name ?? "Desconocido", detail?.Code, c.Count,
                 cityBmiVals.Count > 0 ? Math.Round(cityBmiVals.Average(), 1) : null,
@@ -8338,14 +8333,16 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
         var waistCode = WaistMetricCode;
         var hipCode = HipMetricCode;
 
-        var measurements = await dbContext.ClinicalMeasurements.AsNoTracking()
+        var allIccRaw = await dbContext.ClinicalMeasurements.AsNoTracking()
             .Join(dbContext.MeasurementMetrics.AsNoTracking(),
                 m => m.MetricId, metric => metric.Id,
                 (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
             .Where(x => patientIds.Contains(x.PatientId) && (x.Code == waistCode || x.Code == hipCode))
+            .ToListAsync(ct);
+        var measurements = allIccRaw
             .GroupBy(x => new { x.PatientId, x.Code })
             .Select(g => g.OrderByDescending(x => x.ObservedAt).First())
-            .ToListAsync(ct);
+            .ToList();
 
         var waistByPatient = measurements.Where(x => x.Code == waistCode).ToDictionary(x => x.PatientId, x => x.Value);
         var hipByPatient = measurements.Where(x => x.Code == hipCode).ToDictionary(x => x.PatientId, x => x.Value);
@@ -8388,16 +8385,18 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
 
         var enrollmentStreaks = streaks.ToDictionary(s => s.EnrollmentId);
 
-        // Latest measurements per patient
+        // Latest measurements per patient (client-side grouping)
         var biometriaMetrics = new[] { "bmi", BodyFatMetricCode, GlucoseMetricCode, "weight", "height", WaistMetricCode, HipMetricCode };
-        var latestByPatient = await dbContext.ClinicalMeasurements.AsNoTracking()
+        var allLatestRaw = await dbContext.ClinicalMeasurements.AsNoTracking()
             .Join(dbContext.MeasurementMetrics.AsNoTracking(),
                 m => m.MetricId, metric => metric.Id,
                 (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
             .Where(x => patientIds.Contains(x.PatientId) && biometriaMetrics.Contains(x.Code))
+            .ToListAsync(ct);
+        var latestByPatient = allLatestRaw
             .GroupBy(x => new { x.PatientId, x.Code })
             .Select(g => g.OrderByDescending(x => x.ObservedAt).First())
-            .ToListAsync(ct);
+            .ToList();
 
         var metricByPatient = latestByPatient
             .GroupBy(x => x.PatientId)
