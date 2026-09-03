@@ -687,6 +687,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     {
         var query = dbContext
             .HealthTestAssignments.AsNoTracking()
+            .AsSplitQuery()
             .Include(a => a.Patient)
             .Include(a => a.Version!)
                 .ThenInclude(v => v.Instrument)
