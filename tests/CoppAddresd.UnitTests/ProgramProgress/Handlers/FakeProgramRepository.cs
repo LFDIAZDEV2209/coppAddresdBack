@@ -10,6 +10,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services.ProgramProgress;
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 
@@ -36,6 +37,15 @@ internal sealed class FakeProgramRepository : IProgramRepository
     /// <summary>Resultados devueltos por <c>CompleteTaskAsync</c> (para aserciones no tautológicas).</summary>
     public List<CompleteTaskResult> CompletedTaskResults { get; } = [];
 
+    /// <summary>Entradas del libro mayor de XP (para <c>GetXpLedgerPageAsync</c>).</summary>
+    public List<XpLedgerEntry> XpLedgerEntries { get; } = [];
+
+    /// <summary>
+    /// Métricas del catálogo clínico (para <c>ListClinicalMetricsAsync</c>):
+    /// la navegación <c>DefaultUnit</c> se setea directamente en el test.
+    /// </summary>
+    public List<MeasurementMetric> Metrics { get; } = [];
+
     public List<(string Action, string SchemaName, string TableName, Guid RecordId, Guid? ActorId)> AuditRows { get; } = [];
 
     /// <summary>"Hoy" local del paciente que devuelve <c>GetPatientLocalTodayAsync</c> (null = inscripción inexistente).</summary>
@@ -52,6 +62,12 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public Func<Guid, CancellationToken, Task<ProgramPathDto>>? OnGetPath { get; set; }
 
     public Func<Guid, CancellationToken, Task<ProgramEnrollmentDto?>>? OnGetEnrollment { get; set; }
+
+    /// <summary>Hook opcional para <c>ListClinicalBaselinesAsync</c> (TASK-05).</summary>
+    public Func<Guid, CancellationToken, Task<IReadOnlyList<ClinicalBaselineDto>>>? OnListClinicalBaselines { get; set; }
+
+    /// <summary>Hook opcional para <c>UpsertClinicalBaselineAsync</c> (TASK-05).</summary>
+    public Func<ClinicalBaselineWrite, IReadOnlyList<string>, CancellationToken, Task<ClinicalBaselineDto>>? OnUpsertClinicalBaseline { get; set; }
 
     // ------------------------------------------------------------ Inscripciones
 
@@ -159,6 +175,42 @@ internal sealed class FakeProgramRepository : IProgramRepository
                 CompleteTaskOutcome.Created, Guid.NewGuid(), 80, 80, false, 0, 0, 0, 80, 750);
         CompletedTaskResults.Add(result);
         return result;
+    }
+
+    // ------------------------------------------------------------ Libro mayor de XP (TASK-04)
+
+    public Func<Guid, int, int, CancellationToken, Task<(IReadOnlyList<XpLedgerEntry>, int)>>? OnGetXpLedgerPage { get; set; }
+
+    public Task<(IReadOnlyList<XpLedgerEntry> Entries, int Total)> GetXpLedgerPageAsync(
+        Guid enrollmentId, int page, int pageSize, CancellationToken ct = default)
+    {
+        if (OnGetXpLedgerPage is not null)
+        {
+            return OnGetXpLedgerPage(enrollmentId, page, pageSize, ct);
+        }
+
+        var query = XpLedgerEntries
+            .Where(e => e.EnrollmentId == enrollmentId)
+            .OrderByDescending(e => e.AwardedAt)
+            .ToList();
+        var total = query.Count;
+        var entries = query
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .ToList();
+
+        return Task.FromResult<(IReadOnlyList<XpLedgerEntry>, int)>((entries, total));
+    }
+
+    // ------------------------------------------------------------ Catálogo clínico (línea base)
+
+    public Task<IReadOnlyList<MeasurementMetric>> ListClinicalMetricsAsync(CancellationToken ct = default)
+    {
+        var items = Metrics
+            .Where(m => m.IsActive)
+            .OrderBy(m => m.Name)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<MeasurementMetric>>(items);
     }
 
     // ------------------------------------------------------------ Lecturas del paciente
@@ -357,12 +409,16 @@ internal sealed class FakeProgramRepository : IProgramRepository
 
     public Task<IReadOnlyList<ClinicalBaselineDto>> ListClinicalBaselinesAsync(
         Guid patientId, CancellationToken ct = default)
-        => Task.FromResult<IReadOnlyList<ClinicalBaselineDto>>([]);
+        => OnListClinicalBaselines is not null
+            ? OnListClinicalBaselines(patientId, ct)
+            : Task.FromResult<IReadOnlyList<ClinicalBaselineDto>>([]);
 
     public Task<ClinicalBaselineDto> UpsertClinicalBaselineAsync(
         ClinicalBaselineWrite input, IReadOnlyList<string> callerRoles, CancellationToken ct = default)
-        => throw new NotSupportedException(
-            "FakeProgramRepository no persiste líneas base: usa los tests de integración.");
+        => OnUpsertClinicalBaseline is not null
+            ? OnUpsertClinicalBaseline(input, callerRoles, ct)
+            : throw new NotSupportedException(
+                "FakeProgramRepository no persiste líneas base: usa los tests de integración.");
 
     public Task<decimal?> GetLatestMeasurementAsync(
         Guid patientId, Guid metricId, DateOnly fromDate, DateOnly toDate, CancellationToken ct = default)
@@ -405,16 +461,31 @@ internal sealed class FakeProgramRepository : IProgramRepository
     /// <summary>Resultado configurado para <c>LogNutritionAsync</c>.</summary>
     public NutritionLogResultDto? NutritionLogResult { get; set; }
 
+    /// <summary>Último intake recibido por <c>LogNutritionAsync</c> (passthrough).</summary>
+    public NutritionIntakePayload? LastNutritionIntake { get; private set; }
+
+    /// <summary>Último actor (JWT subject) recibido por <c>LogNutritionAsync</c>.</summary>
+    public Guid? LastNutritionActorId { get; private set; }
+
     /// <summary>Resultado configurado para <c>EvaluateNutritionAwardsAsync</c>.</summary>
     public NutritionWeeklyAwardsResult NutritionWeeklyAwards { get; set; } = NutritionWeeklyAwardsResult.Empty;
 
     public Task<NutritionLogResultDto> LogNutritionAsync(
-        Guid patientId, MealCode mealCode, DateOnly? localDate = null, CancellationToken ct = default)
-        => NutritionLogResult is not null
+        Guid patientId,
+        MealCode mealCode,
+        DateOnly? localDate = null,
+        NutritionIntakePayload? intake = null,
+        Guid? actorId = null,
+        CancellationToken ct = default)
+    {
+        LastNutritionIntake = intake;
+        LastNutritionActorId = actorId;
+        return NutritionLogResult is not null
             ? Task.FromResult(NutritionLogResult)
             : Task.FromResult(new NutritionLogResultDto(
                 Guid.NewGuid(), mealCode.ToString(), localDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
                 true, 0, 0));
+    }
 
     public Task<NutritionWeeklyAwardsResult> EvaluateNutritionAwardsAsync(
         Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)

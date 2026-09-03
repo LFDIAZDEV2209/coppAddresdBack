@@ -40,6 +40,8 @@ public sealed class ClinicalMeasurementsSeeder(
         new("bpm", "Latidos por minuto", "bpm"),
         new("pct", "Porcentaje", "%"),
         new("kg_m2", "Kilogramos por metro cuadrado", "kg/m²"),
+        // vital-signs-tracking: unidad para temperatura corporal.
+        new("celsius", "Grados Celsius", "°C"),
     ];
 
     private static readonly IReadOnlyList<MetricSeed> Metrics =
@@ -56,6 +58,9 @@ public sealed class ClinicalMeasurementsSeeder(
         new("waist", "Cintura", "body_comp", "cm"),
         new("hip", "Cadera", "body_comp", "cm"),
         new("wrist", "Muñeca", "body_comp", "cm"),
+        // vital-signs-tracking: métricas nuevas para el payload de signos vitales.
+        new("o2_saturation", "Saturación de oxígeno", "vital", "pct"),
+        new("temperature_c", "Temperatura corporal", "vital", "celsius"),
     ];
 
     private static readonly IReadOnlyList<ReferenceRangeSeed> ReferenceRanges =
@@ -66,6 +71,9 @@ public sealed class ClinicalMeasurementsSeeder(
         new("bmi", null, null, null, 18.5m, 24.9m, "kg_m2", 0),
         new("heart_rate", null, null, null, 60m, 100m, "bpm", 0),
         new("hba1c", null, null, null, 4.0m, 5.6m, "pct", 0),
+        // vital-signs-tracking: rango de referencia clínica para SpO2 (pendiente
+        // de validación del comité; no altera las reglas de debilidad/seguridad).
+        new("o2_saturation", null, null, null, 94m, 100m, "pct", 0),
     ];
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

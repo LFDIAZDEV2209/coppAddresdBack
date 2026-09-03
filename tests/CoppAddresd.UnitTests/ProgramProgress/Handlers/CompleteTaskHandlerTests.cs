@@ -163,6 +163,45 @@ public class CompleteTaskHandlerTests
         Assert.Contains("NO_ACTIVE_ENROLLMENT", ex.Message);
     }
 
+    [Fact]
+    public async Task Handle_VitalsConTodosLosCampos_MapeaVitalsAlInput()
+    {
+        // S1: el payload de signos vitales (6 campos) llega íntegro al input del
+        // repositorio; el handler solo orquesta, la persistencia es del repo.
+        var vitals = new VitalsPayload(72, 120, 80, 98, 130m, 70m, 36.5m, null);
+        var command = ValidCommand() with
+        {
+            TaskCode = TaskCode.vitals,
+            Vitals = vitals,
+        };
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        var input = Assert.Single(_repository.CompletedTaskInputs);
+        Assert.NotNull(input.Vitals);
+        Assert.Equal(72, input.Vitals!.HeartRate);
+        Assert.Equal(120, input.Vitals.Systolic);
+        Assert.Equal(80, input.Vitals.Diastolic);
+        Assert.Equal(98, input.Vitals.O2Saturation);
+        Assert.Equal(130m, input.Vitals.Glucose);
+        Assert.Equal(70m, input.Vitals.WeightKg);
+        Assert.Equal(36.5m, input.Vitals.TemperatureC);
+    }
+
+    [Fact]
+    public async Task Handle_TareaNoVitals_SinPayload_InputVitalsEsNull()
+    {
+        // S2: tarea no-vitals (podcast) sin payload → el input no trae Vitals
+        // (backwards compatible; el repositorio no crea mediciones).
+        var command = ValidCommand();
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        var input = Assert.Single(_repository.CompletedTaskInputs);
+        Assert.Null(input.Vitals);
+        Assert.Equal(TaskCode.podcast, input.TaskCode);
+    }
+
     private async Task<CompleteTaskResponseDto> RunWithResult(CompleteTaskResult result)
     {
         _repository.OnCompleteTask = (_, _) => Task.FromResult(result);
