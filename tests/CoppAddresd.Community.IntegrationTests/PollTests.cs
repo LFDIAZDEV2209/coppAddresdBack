@@ -23,7 +23,7 @@ public sealed class PollTests(CommunityTestDatabase dbFixture) : IDisposable
     {
         var profile = await CommunityTestData.SeedProfileAsync(
             _factory.Create(), Guid.NewGuid(), "Pollster", ct);
-        return profile.UserId;
+        return profile.UserId!.Value;
     }
 
     [Fact]

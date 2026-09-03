@@ -5,6 +5,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260902210640_AddNutritionIntakeLogs")]
+    partial class AddNutritionIntakeLogs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -7333,99 +7336,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("routine_exercises", "app");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosAlert", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<double?>("AccuracyMeters")
-                        .HasColumnType("double precision")
-                        .HasColumnName("accuracy_meters");
-
-                    b.Property<string>("ChannelResults")
-                        .IsRequired()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("channel_results");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at_utc")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("EmergencyContactEmail")
-                        .HasMaxLength(254)
-                        .HasColumnType("character varying(254)")
-                        .HasColumnName("emergency_contact_email");
-
-                    b.Property<string>("EmergencyContactName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("emergency_contact_name");
-
-                    b.Property<string>("EmergencyContactPhone")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("emergency_contact_phone");
-
-                    b.Property<string>("EmergencyContactRelationship")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("emergency_contact_relationship");
-
-                    b.Property<double?>("Latitude")
-                        .HasColumnType("double precision")
-                        .HasColumnName("latitude");
-
-                    b.Property<string>("LocationLabel")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("location_label");
-
-                    b.Property<double?>("Longitude")
-                        .HasColumnType("double precision")
-                        .HasColumnName("longitude");
-
-                    b.Property<string>("MessageText")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("message_text");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("patient_id");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("status");
-
-                    b.Property<DateTime>("TriggeredAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("triggered_at_utc")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("VitalsSnapshot")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("vitals_snapshot");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("ix_sos_alerts_status");
-
-                    b.HasIndex("PatientId", "TriggeredAtUtc")
-                        .IsDescending(false, true)
-                        .HasDatabaseName("ix_sos_alerts_patient_triggered_at");
-
-                    b.ToTable("sos_alerts", "sos");
-                });
-
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Specialty", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9069,15 +8979,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Media");
 
                     b.Navigation("Routine");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosAlert", b =>
-                {
-                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", null)
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.State", b =>

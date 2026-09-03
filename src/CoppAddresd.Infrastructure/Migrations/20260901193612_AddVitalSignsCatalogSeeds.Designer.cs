@@ -5,6 +5,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901193612_AddVitalSignsCatalogSeeds")]
+    partial class AddVitalSignsCatalogSeeds
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2477,37 +2480,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("code");
 
-                    b.Property<decimal?>("DefaultValue")
-                        .HasColumnType("numeric")
-                        .HasColumnName("default_value");
-
-                    b.Property<string>("Hint")
-                        .HasColumnType("text")
-                        .HasColumnName("hint");
-
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
-
-                    b.Property<string>("MaxLabel")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("max_label");
-
-                    b.Property<decimal?>("MaxValue")
-                        .HasColumnType("numeric")
-                        .HasColumnName("max_value");
-
-                    b.Property<string>("MinLabel")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("min_label");
-
-                    b.Property<decimal?>("MinValue")
-                        .HasColumnType("numeric")
-                        .HasColumnName("min_value");
 
                     b.Property<string>("ScoringDirection")
                         .IsRequired()
@@ -2538,11 +2515,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasDefaultValue("scale")
                         .HasColumnName("type");
-
-                    b.Property<string>("Unit")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("unit");
 
                     b.Property<Guid>("VersionId")
                         .HasColumnType("uuid")
@@ -6099,104 +6071,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.NutritionIntakeLog", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<int?>("Calories")
-                        .HasColumnType("integer")
-                        .HasColumnName("calories");
-
-                    b.Property<decimal?>("CarbsG")
-                        .HasPrecision(8, 2)
-                        .HasColumnType("numeric(8,2)")
-                        .HasColumnName("carbs_g");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<decimal?>("FatG")
-                        .HasPrecision(8, 2)
-                        .HasColumnType("numeric(8,2)")
-                        .HasColumnName("fat_g");
-
-                    b.Property<decimal?>("FiberG")
-                        .HasPrecision(8, 2)
-                        .HasColumnType("numeric(8,2)")
-                        .HasColumnName("fiber_g");
-
-                    b.Property<Guid?>("FoodAnalysisId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("food_analysis_id");
-
-                    b.Property<Guid>("HabitCheckId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("habit_check_id");
-
-                    b.Property<DateOnly>("LocalDate")
-                        .HasColumnType("date")
-                        .HasColumnName("local_date");
-
-                    b.Property<string>("MealCode")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasColumnName("meal_code");
-
-                    b.Property<short?>("NutritionPlanDayNumber")
-                        .HasColumnType("smallint")
-                        .HasColumnName("nutrition_plan_day_number");
-
-                    b.Property<Guid?>("NutritionPlanId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("nutrition_plan_id");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("patient_id");
-
-                    b.Property<decimal?>("ProteinG")
-                        .HasPrecision(8, 2)
-                        .HasColumnType("numeric(8,2)")
-                        .HasColumnName("protein_g");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("manual")
-                        .HasColumnName("source");
-
-                    b.Property<int?>("WaterMl")
-                        .HasColumnType("integer")
-                        .HasColumnName("water_ml");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FoodAnalysisId");
-
-                    b.HasIndex("HabitCheckId");
-
-                    b.HasIndex("NutritionPlanId");
-
-                    b.HasIndex("PatientId", "LocalDate")
-                        .HasDatabaseName("ix_intake_logs_patient_date");
-
-                    b.HasIndex("PatientId", "LocalDate", "MealCode")
-                        .IsUnique()
-                        .HasDatabaseName("uq_intake_logs_patient_date_meal");
-
-                    b.ToTable("nutrition_intake_logs", "app");
-                });
-
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7331,99 +7205,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_routine_exercises_routine_sort");
 
                     b.ToTable("routine_exercises", "app");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosAlert", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<double?>("AccuracyMeters")
-                        .HasColumnType("double precision")
-                        .HasColumnName("accuracy_meters");
-
-                    b.Property<string>("ChannelResults")
-                        .IsRequired()
-                        .HasColumnType("jsonb")
-                        .HasColumnName("channel_results");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at_utc")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("EmergencyContactEmail")
-                        .HasMaxLength(254)
-                        .HasColumnType("character varying(254)")
-                        .HasColumnName("emergency_contact_email");
-
-                    b.Property<string>("EmergencyContactName")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("emergency_contact_name");
-
-                    b.Property<string>("EmergencyContactPhone")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("emergency_contact_phone");
-
-                    b.Property<string>("EmergencyContactRelationship")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("emergency_contact_relationship");
-
-                    b.Property<double?>("Latitude")
-                        .HasColumnType("double precision")
-                        .HasColumnName("latitude");
-
-                    b.Property<string>("LocationLabel")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("location_label");
-
-                    b.Property<double?>("Longitude")
-                        .HasColumnType("double precision")
-                        .HasColumnName("longitude");
-
-                    b.Property<string>("MessageText")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("message_text");
-
-                    b.Property<Guid>("PatientId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("patient_id");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("status");
-
-                    b.Property<DateTime>("TriggeredAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("triggered_at_utc")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<string>("VitalsSnapshot")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("vitals_snapshot");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("ix_sos_alerts_status");
-
-                    b.HasIndex("PatientId", "TriggeredAtUtc")
-                        .IsDescending(false, true)
-                        .HasDatabaseName("ix_sos_alerts_patient_triggered_at");
-
-                    b.ToTable("sos_alerts", "sos");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Specialty", b =>
@@ -8817,36 +8598,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Weakness");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.NutritionIntakeLog", b =>
-                {
-                    b.HasOne("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis", null)
-                        .WithMany()
-                        .HasForeignKey("FoodAnalysisId")
-                        .HasPrincipalKey("AnalysisId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.HabitCheck", "HabitCheck")
-                        .WithMany()
-                        .HasForeignKey("HabitCheckId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("CoppAddresd.Domain.Entities.NutritionPlan", null)
-                        .WithMany()
-                        .HasForeignKey("NutritionPlanId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("HabitCheck");
-
-                    b.Navigation("Patient");
-                });
-
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
@@ -9069,15 +8820,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Media");
 
                     b.Navigation("Routine");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosAlert", b =>
-                {
-                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", null)
-                        .WithMany()
-                        .HasForeignKey("PatientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.State", b =>
