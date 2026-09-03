@@ -6,6 +6,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.ArchiveTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkEnrollPatients;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.CalculateScores;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.CompleteTask;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.CreateBaseline;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.CreateTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.DecideAdaptation;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.DecideClinicalReview;
@@ -19,6 +20,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmen
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceWeekdayTasks;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ResumeEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.SetWeekContent;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.SetWeekContentRange;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateXpRule;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.WithdrawEnrollment;
@@ -47,6 +49,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.GetProgramContent
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetScores;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetSnapshot;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetTemplate;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetBaselines;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListAdaptations;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListClinicalReviews;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListEnrollments;
@@ -54,9 +57,11 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.ListNotifications
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListProgramActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListTemplates;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListXpRules;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetEnrollmentWeek;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.Erp;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetXpLedger;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using MediatR;
@@ -112,6 +117,20 @@ public sealed class ProgramController(
         return Ok(await ResolveThumbnailUrlsAsync(snapshot, ct));
     }
 
+    /// <summary>
+    /// Snapshot del programa de un paciente específico visto desde el ERP
+    /// (TASK-05b): recibe el <c>enrollmentId</c> directo (el clínico elige qué
+    /// paciente ver, sin pasar por la identidad del JWT). Requiere
+    /// <c>Program.View</c>. Inscripción inexistente → 404 (el handler lanza
+    /// <c>NotFoundException</c>, que el middleware global mapea a 404).
+    /// </summary>
+    [HttpGet("enrollments/{id:guid}/snapshot")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<ProgramSnapshotDto>> GetEnrollmentSnapshot(
+        Guid id,
+        CancellationToken ct)
+        => Ok(await ResolveThumbnailUrlsAsync(await mediator.Send(new GetSnapshotQuery(id), ct), ct));
+
     // ===================== PACIENTE: completar tarea =====================
 
     /// <summary>
@@ -139,7 +158,8 @@ public sealed class ProgramController(
             request.MoodScore,
             request.Barriers,
             request.ContentFingerprint,
-            ActorId: actorContext.UserId), ct);
+            ActorId: actorContext.UserId,
+            Vitals: request.Vitals), ct);
 
         logger.LogInformation(
             "Program.CompleteTask: enrollment={EnrollmentId} fecha={LocalDate} tarea={TaskCode} actor={ActorId}",
@@ -406,6 +426,96 @@ public sealed class ProgramController(
         return new EmptyResult();
     }
 
+    /// <summary>
+    /// Detalle de una inscripción por id (ERP, TASK-10): el shape completo del
+    /// listado con <c>currentLevel</c> derivado de la XP. Requiere
+    /// <c>Program.View</c>; inscripción inexistente → 404 (anti-IDOR).
+    /// </summary>
+    [HttpGet("enrollments/{id:guid}")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<ProgramEnrollmentDto>> GetEnrollment(Guid id, CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetEnrollmentQuery(id), ct);
+        return result is null
+            ? NotFound(new { message = "Inscripción no encontrada" })
+            : Ok(result);
+    }
+
+    /// <summary>
+    /// Historial de XP (libro mayor) de una inscripción (ERP, TASK-04).
+    /// Paginado, orden descendente por fecha de otorgamiento. Requiere
+    /// <c>Program.View</c>; inscripción inexistente → 404.
+    /// </summary>
+    [HttpGet("enrollments/{id:guid}/xp-ledger")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<PaginatedXpLedgerResult>> GetXpLedger(
+        Guid id,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default)
+    {
+        var result = await mediator.Send(new GetXpLedgerQuery(id, page, pageSize), ct);
+        if (result is null)
+        {
+            return NotFound(new { message = "Inscripción no encontrada" });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Lista las líneas base clínicas de la inscripción (ERP, TASK-05, SPEC
+    /// §13.1.2): resuelve el paciente de la inscripción y devuelve sus líneas
+    /// base. Requiere <c>Program.View</c>; inscripción inexistente → 404.
+    /// </summary>
+    [HttpGet("enrollments/{id:guid}/baselines")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<IReadOnlyList<ClinicalBaselineDto>>> GetBaselines(
+        Guid id,
+        CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetBaselinesQuery(id), ct);
+        if (result is null)
+        {
+            return NotFound(new { message = "Inscripción no encontrada" });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Registra una línea base clínica (ERP, TASK-05, SPEC §13.1.2): requiere
+    /// <c>Program.Edit</c> + rol clínico del actor (AC-22 — sin rol clínico →
+    /// 403; la guardia la enforcea el repositorio vía
+    /// <c>UpsertClinicalBaselineAsync</c>). UPSERT por
+    /// <c>(patient_id, metric_id)</c>.
+    /// </summary>
+    [HttpPost("enrollments/{id:guid}/baselines")]
+    [RequirePermission("Program.Edit")]
+    public async Task<ActionResult<ClinicalBaselineDto>> CreateBaseline(
+        Guid id,
+        [FromBody] CreateBaselineRequest request,
+        CancellationToken ct)
+    {
+        if (actorContext.UserId is not { } userId)
+        {
+            return Unauthorized(new { message = "Usuario no identificado." });
+        }
+
+        var result = await mediator.Send(new CreateBaselineCommand(
+            id,
+            request.MetricId,
+            request.Value,
+            request.UnitId,
+            request.FavorableDirection,
+            request.MeasuredAt,
+            request.TargetValue,
+            userId,
+            actorContext.Roles), ct);
+
+        return Ok(result);
+    }
+
     // ===================== CLÍNICO/ERP: contenido por semana (T-77) =====================
 
     /// <summary>
@@ -457,6 +567,22 @@ public sealed class ProgramController(
             id, weekNumber, request.NutritionPlanId, request.ExerciseRoutineId,
             actorContext.UserId), ct));
     }
+
+    /// <summary>
+    /// Asigna el mismo contenido (plan/rutina) a un rango de semanas de la
+    /// inscripción (ERP, TASK-13b, UC-C2): el handler reusa
+    /// <see cref="SetWeekContentCommand"/> semana a semana en
+    /// <c>[fromWeek..toWeek]</c>. Requiere <c>Program.Edit</c>.
+    /// </summary>
+    [HttpPut("enrollments/{id:guid}/content/range")]
+    [RequirePermission("Program.Edit")]
+    public async Task<ActionResult<IReadOnlyList<ProgramContentWeekDto>>> SetWeekContentRange(
+        Guid id,
+        [FromBody] SetWeekContentRangeRequest request,
+        CancellationToken ct)
+        => Ok(await mediator.Send(new SetWeekContentRangeCommand(
+            id, request.FromWeek, request.ToWeek,
+            request.NutritionPlanId, request.ExerciseRoutineId, actorContext.UserId), ct));
 
     /// <summary>
     /// Detalle de una semana específica de una inscripción (tareas programadas,
@@ -771,7 +897,7 @@ public sealed class ProgramController(
         }
 
         var result = await mediator.Send(new LogNutritionCommand(
-            patientId.Value, request.MealCode, request.LocalDate, actorContext.UserId), ct);
+            patientId.Value, request.MealCode, request.LocalDate, actorContext.UserId, request.Intake), ct);
 
         logger.LogInformation(
             "Program.NutritionLog: meal={MealCode} fecha={LocalDate} xpAwarded={XpAwarded}",
@@ -1174,7 +1300,8 @@ public sealed record CompleteTaskRequest(
     DateTime? ClientCompletedAt,
     short? MoodScore,
     string? Barriers,
-    string? ContentFingerprint);
+    string? ContentFingerprint,
+    VitalsPayload? Vitals = null);
 
 /// <summary>
 /// Payload de inscripción (<c>POST /enrollments</c> clínico y
@@ -1196,6 +1323,30 @@ public sealed record BulkEnrollRequest(
     Guid? TemplateId,
     string Timezone,
     DateOnly? StartLocalDate);
+
+/// <summary>
+/// Payload de <c>POST /api/v1/program/enrollments/{id}/baselines</c>
+/// (ERP, TASK-05): métrica del catálogo, valor con su unidad, dirección
+/// favorable, fecha local de medición y target clínico opcional.
+/// </summary>
+public sealed record CreateBaselineRequest(
+    Guid MetricId,
+    decimal Value,
+    Guid UnitId,
+    FavorableDirection FavorableDirection,
+    DateOnly MeasuredAt,
+    decimal? TargetValue);
+
+/// <summary>
+/// Payload de <c>PUT /api/v1/program/enrollments/{id}/content/range</c>
+/// (ERP, TASK-13b): aplica el mismo plan/rutina (o desasigna, si ambos son
+/// null) a todas las semanas de <c>[fromWeek..toWeek]</c>.
+/// </summary>
+public sealed record SetWeekContentRangeRequest(
+    int FromWeek,
+    int ToWeek,
+    Guid? NutritionPlanId,
+    Guid? ExerciseRoutineId);
 
 /// <summary>Payload de creación de plantilla (SPEC §7.6).</summary>
 public sealed record CreateTemplateRequest(
@@ -1252,6 +1403,12 @@ public sealed record DecideClinicalReviewRequest(bool Approve);
 /// <c>mealCode</c> es la comida/hidratación del móvil
 /// (<c>des</c>/<c>alm</c>/<c>mer</c>/<c>cen</c>/<c>agua</c>) y
 /// <c>localDate</c> opcional es la fecha local del paciente (por defecto, el
-/// hoy local; una fecha futura → 422 <c>INVALID_DATE</c>).
+/// hoy local; una fecha futura → 422 <c>INVALID_DATE</c>). <c>Intake</c> es el
+/// bloque opcional de macros/hidratación (SPEC nutrition-intake-adherence):
+/// clientes viejos sin el campo siguen funcionando. El cliente nunca envía
+/// contexto de plan (se resuelve server-side).
 /// </summary>
-public sealed record LogNutritionRequest(MealCode MealCode, DateOnly? LocalDate);
+public sealed record LogNutritionRequest(
+    MealCode MealCode,
+    DateOnly? LocalDate,
+    NutritionIntakePayload? Intake = null);

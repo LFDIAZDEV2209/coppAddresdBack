@@ -17,6 +17,23 @@ public enum CompleteTaskOutcome
 }
 
 /// <summary>
+/// Payload opcional de signos vitales enviado por la tarea "vitals" del móvil
+/// (SPEC vital-signs-tracking). Todos los campos son nullable: un payload sin
+/// valores no altera el comportamiento de completación (backwards compatible).
+/// Los tipos espejan <see cref="RecentVitalsDto"/> (int para fc/pa/spo2; decimal
+/// para glu/peso/temp).
+/// </summary>
+public sealed record VitalsPayload(
+    int? HeartRate,
+    int? Systolic,
+    int? Diastolic,
+    int? O2Saturation,
+    decimal? Glucose,
+    decimal? WeightKg,
+    decimal? TemperatureC,
+    DateTime? MeasuredAt);
+
+/// <summary>
 /// Entrada de la persistencia de una tarea completada. Los FKs de contenido
 /// resueltos en runtime los calcula el handler (B4) y se persisten tal cual:
 /// una por código de tarea, solo la que corresponde (SPEC §3.6, decisión 15).
@@ -37,7 +54,10 @@ public sealed record CompleteTaskInput(
     Guid? MediaId = null,
     Guid? VitalSignsBatchId = null,
     Guid? NutribioticProductId = null,
-    Guid? EmotionalRecordId = null);
+    Guid? EmotionalRecordId = null,
+    // vital-signs-tracking: payload opcional y actor que registra las mediciones.
+    VitalsPayload? Vitals = null,
+    Guid? ActorId = null);
 
 /// <summary>
 /// Resultado tipado de <c>CompleteTaskAsync</c> (shape del response de
@@ -158,6 +178,29 @@ public sealed record ExerciseItemDto(
     int SortOrder);
 
 /// <summary>
+/// Log de intake nutricional de hoy expuesto en el snapshot del contenido
+/// <c>nut</c> (SPEC nutrition-intake-adherence): una fila por comida/
+/// hidratación registrada, con sus macros opcionales y el origen
+/// (<c>manual</c>/<c>ai_photo</c>). Para la tarea <c>nut</c> la lista SIEMPRE
+/// está materializada (<c>[]</c> cuando no hay logs, nunca null); null solo
+/// queda como default del DTO compartido para tareas no-<c>nut</c>. Es la
+/// fuente de verdad server-side del progreso nutricional del móvil
+/// (<c>mealsLogged</c>/<c>todayNutritionLogged</c>).
+/// </summary>
+public sealed record NutritionIntakeLogDto(
+    [property: System.Text.Json.Serialization.JsonPropertyName("mealCode")] string MealCode,
+    [property: System.Text.Json.Serialization.JsonPropertyName("localDate")] DateOnly LocalDate,
+    [property: System.Text.Json.Serialization.JsonPropertyName("calories")] int? Calories,
+    [property: System.Text.Json.Serialization.JsonPropertyName("proteinG")] decimal? ProteinG,
+    [property: System.Text.Json.Serialization.JsonPropertyName("carbsG")] decimal? CarbsG,
+    [property: System.Text.Json.Serialization.JsonPropertyName("fatG")] decimal? FatG,
+    [property: System.Text.Json.Serialization.JsonPropertyName("fiberG")] decimal? FiberG,
+    [property: System.Text.Json.Serialization.JsonPropertyName("waterMl")] int? WaterMl,
+    [property: System.Text.Json.Serialization.JsonPropertyName("source")] string Source,
+    [property: System.Text.Json.Serialization.JsonPropertyName("foodAnalysisId")] Guid? FoodAnalysisId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("createdAt")] DateTime CreatedAt);
+
+/// <summary>
 /// Contenido resuelto para las misiones del día (SPEC §R3.1, §4.2, §4.3).
 ///
 /// Soporta podcast (mediaId/title/durationSecs/thumbnailUrl/author/description/mediaUrl/chapters/takeaways),
@@ -187,7 +230,8 @@ public sealed record TodayTaskContentDto(
     IReadOnlyList<PodcastChapterDto>? Chapters = null,
     IReadOnlyList<string>? Takeaways = null,
     bool ContentUnavailable = false,
-    IReadOnlyList<ExerciseItemDto>? Exercises = null);
+    IReadOnlyList<ExerciseItemDto>? Exercises = null,
+    IReadOnlyList<NutritionIntakeLogDto>? NutritionIntakeLogs = null);
 
 /// <summary>XP + nivel de gamificación (nunca métrica clínica, SPEC §6.15).</summary>
 public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
@@ -472,7 +516,8 @@ public sealed record ProgramEnrollmentDto(
     DateTime CreatedAt,
     string? PatientFullName = null,
     string? PatientDocumentNumber = null,
-    string? TemplateName = null);
+    string? TemplateName = null,
+    string? CurrentLevel = null);
 
 /// <summary>Resultado paginado del listado de inscripciones (SPEC §7.5).</summary>
 public sealed record PaginatedEnrollmentsResult(
@@ -586,6 +631,53 @@ public sealed record ProgramContentRoutineRef(Guid Id, string Code, string Name)
 public sealed record SetWeekContentRequest(
     Guid? NutritionPlanId = null,
     Guid? ExerciseRoutineId = null);
+
+// ===================== GET /catalogs/clinical-metrics (catálogo ERP) =====================
+
+/// <summary>
+/// Métrica clínica del catálogo para la línea base (ERP, GET
+/// /catalogs/clinical-metrics): espejo de <c>app.measurement_metrics</c> con su
+/// unidad por defecto resuelta (<c>app.unit_of_measures</c>). El frontend usa
+/// estos ids REALES al crear líneas base (POST /enrollments/{id}/baselines),
+/// que el backend valida contra las mismas filas.
+/// </summary>
+public sealed record ClinicalMetricDto(
+    Guid Id,
+    string Code,
+    string Name,
+    Guid DefaultUnitId,
+    string DefaultUnitSymbol);
+
+// ===================== GET /enrollments/{id}/xp-ledger (TASK-04) =====================
+
+/// <summary>
+/// Entrada del libro mayor de XP de una inscripción (ERP, TASK-04):
+/// espejo de <c>app.xp_ledger_entries</c> con el <c>Reason</c> del enum
+/// <c>XpReason</c> serializado como string (mismo wire que el resto del
+/// módulo). Append-only: nunca se edita ni elimina.
+/// </summary>
+public sealed record XpLedgerEntryDto(
+    Guid Id,
+    Guid EnrollmentId,
+    int Amount,
+    string Reason,
+    string? SourceRefType,
+    Guid? SourceRefId,
+    string? RuleCode,
+    int BalanceAfter,
+    DateTime AwardedAt,
+    Guid? GrantedBy,
+    Guid? ValidatedBy,
+    DateTime? ValidatedAt,
+    decimal? MultiplierUsed);
+
+/// <summary>Resultado paginado del libro mayor de XP (orden descendente por <c>AwardedAt</c>).</summary>
+public sealed record PaginatedXpLedgerResult(
+    IReadOnlyList<XpLedgerEntryDto> Data,
+    int Total,
+    int Page,
+    int PageSize,
+    int TotalPages);
 
 // ===================== GET /enrollments/{id}/week/{weekNumber} =====================
 
