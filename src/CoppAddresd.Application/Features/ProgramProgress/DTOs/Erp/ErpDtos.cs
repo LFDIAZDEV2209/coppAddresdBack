@@ -401,7 +401,8 @@ public sealed record WeeklyBiometria(
 
 public sealed record HeatmapDay(
     [property: JsonPropertyName("day_index")] int DayIndex,
-    [property: JsonPropertyName("completed")] bool Completed);
+    [property: JsonPropertyName("completed")] bool Completed,
+    [property: JsonPropertyName("date")] DateOnly Date);
 
 public sealed record BiometriaExacta(
     [property: JsonPropertyName("weight")] decimal? Weight,
