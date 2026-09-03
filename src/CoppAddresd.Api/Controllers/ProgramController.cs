@@ -1159,12 +1159,16 @@ public sealed class ProgramController(
         [FromQuery] string? gender = null,
         [FromQuery] string? imcCategory = null,
         [FromQuery] string? glucosaCategory = null,
+        [FromQuery] string? grasaCategory = null,
+        [FromQuery] string? trend = null,
+        [FromQuery] Guid? cityId = null,
+        [FromQuery] string? stateAbbr = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default)
     {
         var (items, total) = await mediator.Send(
-            new ListBiometriaPatientsQuery(search, gender, imcCategory, glucosaCategory, page, pageSize), ct);
+            new ListBiometriaPatientsQuery(search, gender, imcCategory, glucosaCategory, grasaCategory, trend, cityId, stateAbbr, page, pageSize), ct);
 
         var totalPages = (int)Math.Ceiling((double)total / Math.Clamp(pageSize, 1, 100));
         return Ok(new PaginatedResult<BiometriaPatientListItemDto>(items, total, page, pageSize, totalPages));

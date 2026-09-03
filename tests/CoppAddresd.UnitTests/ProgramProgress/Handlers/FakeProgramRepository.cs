@@ -948,6 +948,8 @@ internal sealed class FakeProgramRepository : IProgramRepository
 
     public Task<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)> ListBiometriaPatientsAsync(
         string? search, string? gender, string? imcCategory, string? glucosaCategory,
+        string? grasaCategory, string? trend,
+        Guid? cityId, string? stateAbbr,
         int page, int pageSize, CancellationToken ct = default)
         => Task.FromResult<(IReadOnlyList<BiometriaPatientListItemDto>, int)>(([], 0));
 

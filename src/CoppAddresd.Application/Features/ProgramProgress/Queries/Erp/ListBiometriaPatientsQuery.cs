@@ -10,6 +10,10 @@ public sealed record ListBiometriaPatientsQuery(
     string? Gender,
     string? ImcCategory,
     string? GlucosaCategory,
+    string? GrasaCategory,
+    string? Trend,
+    Guid? CityId,
+    string? StateAbbr,
     int Page,
     int PageSize) : IRequest<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)>;
 
@@ -20,5 +24,7 @@ public sealed class ListBiometriaPatientsQueryHandler(IProgramRepository reposit
         ListBiometriaPatientsQuery request, CancellationToken ct)
         => repository.ListBiometriaPatientsAsync(
             request.Search, request.Gender, request.ImcCategory, request.GlucosaCategory,
+            request.GrasaCategory, request.Trend,
+            request.CityId, request.StateAbbr,
             request.Page, request.PageSize, ct);
 }

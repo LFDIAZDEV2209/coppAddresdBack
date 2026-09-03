@@ -8771,6 +8771,8 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
     /// <summary>Listado paginado de pacientes con indicadores de biometría.</summary>
     public async Task<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)> ListBiometriaPatientsAsync(
         string? search, string? gender, string? imcCategory, string? glucosaCategory,
+        string? grasaCategory, string? trend,
+        Guid? cityId, string? stateAbbr,
         int page, int pageSize, CancellationToken ct = default)
     {
         var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
@@ -8816,6 +8818,20 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
 
         var iccValues = await GetIccByPatientAsync(patientIds, ct);
 
+        // Trend: compare two most recent BMI values per patient
+        var trendByPatient = allLatestRaw
+            .Where(x => x.Code == "bmi")
+            .GroupBy(x => x.PatientId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var ordered = g.OrderByDescending(x => x.ObservedAt).ToList();
+                    if (ordered.Count < 2) return "estable";
+                    var delta = ordered[0].Value - ordered[1].Value;
+                    return delta < -0.3m ? "mejorando" : delta > 0.3m ? "empeorando" : "estable";
+                });
+
         // Build list
         var allItems = new List<BiometriaPatientListItemDto>();
         foreach (var enroll in activeEnrollments)
@@ -8854,7 +8870,7 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
                 glucosa > 0 ? ClassifyGlucosa(glucosa) : null,
                 enroll.CurrentWeekNumber,
                 streak?.CurrentStreak ?? 0,
-                null));
+                trendByPatient.GetValueOrDefault(enroll.PatientId)));
         }
 
         // Apply filters
@@ -8865,15 +8881,63 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
         }
         if (!string.IsNullOrWhiteSpace(gender))
         {
-            allItems = allItems.Where(i => i.Gender != null && i.Gender.Equals(gender, StringComparison.OrdinalIgnoreCase)).ToList();
+            var gNorm = gender.Trim().ToLowerInvariant() switch
+            {
+                "male" or "masculino" or "m" or "hombre" => "male",
+                "female" or "femenino" or "f" or "mujer" => "female",
+                _ => gender.Trim().ToLowerInvariant(),
+            };
+            string Canon(string s) => s.Trim().ToLowerInvariant() switch
+            {
+                "male" or "masculino" or "m" or "hombre" => "male",
+                "female" or "femenino" or "f" or "mujer" => "female",
+                _ => s.Trim().ToLowerInvariant(),
+            };
+            allItems = allItems.Where(i => i.Gender != null && Canon(i.Gender) == gNorm).ToList();
         }
         if (!string.IsNullOrWhiteSpace(imcCategory))
         {
-            allItems = allItems.Where(i => i.ImcCategory != null && i.ImcCategory.Equals(imcCategory, StringComparison.OrdinalIgnoreCase)).ToList();
+            allItems = allItems.Where(i => i.ImcCategory != null && i.ImcCategory.StartsWith(imcCategory, StringComparison.OrdinalIgnoreCase)).ToList();
         }
         if (!string.IsNullOrWhiteSpace(glucosaCategory))
         {
             allItems = allItems.Where(i => i.GlucosaCategory != null && i.GlucosaCategory.Equals(glucosaCategory, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+        if (cityId.HasValue)
+        {
+            allItems = allItems.Where(i =>
+            {
+                if (!patientMap.TryGetValue(i.PatientId, out var pd2)) return false;
+                return pd2.CityId.HasValue && pd2.CityId.Value == cityId.Value;
+            }).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(stateAbbr))
+        {
+            var targetState = stateAbbr.Trim().ToUpperInvariant();
+            // City -> State.Code mapping for current page's patients (small set ≤ active enrollments)
+            var cityIds = patientData.Where(p => p.CityId.HasValue).Select(p => p.CityId!.Value).Distinct().ToList();
+            var cityStateMapLocal = await dbContext.Cities.AsNoTracking()
+                .Where(c => cityIds.Contains(c.Id))
+                .Select(c => new { c.Id, StateCode = c.State != null ? c.State.Code : null })
+                .ToDictionaryAsync(c => c.Id, c => c.StateCode, ct);
+            allItems = allItems.Where(i =>
+            {
+                if (!patientMap.TryGetValue(i.PatientId, out var pd2) || !pd2.CityId.HasValue) return false;
+                if (!cityStateMapLocal.TryGetValue(pd2.CityId.Value, out var code) || string.IsNullOrWhiteSpace(code)) return false;
+                return code.Equals(targetState, StringComparison.OrdinalIgnoreCase);
+            }).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(grasaCategory))
+        {
+            var gNorm = grasaCategory.Trim().ToLowerInvariant();
+            allItems = allItems.Where(i => i.PctGrasaCategory != null
+                && string.Equals(i.PctGrasaCategory.Trim().ToLowerInvariant(), gNorm, StringComparison.OrdinalIgnoreCase)).ToList();
+        }
+        if (!string.IsNullOrWhiteSpace(trend))
+        {
+            var tNorm = trend.Trim().ToLowerInvariant();
+            allItems = allItems.Where(i => i.Trend != null
+                && string.Equals(i.Trend.Trim().ToLowerInvariant(), tNorm, StringComparison.OrdinalIgnoreCase)).ToList();
         }
 
         var total = allItems.Count;
@@ -8974,20 +9038,21 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             }
         }
 
-        // Adherence heatmap: last 7 days of task completions
+        // Adherence heatmap: last 28 days of task completions (7×4)
         var today = PatientLocalToday(configuration["Program:DefaultTimezone"] ?? "America/Bogota");
-        var sevenDaysAgo = today.AddDays(-6);
+        var heatmapStart = today.AddDays(-27);
         var completions = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(tc => tc.EnrollmentId == enrollment.Id && tc.LocalDate >= sevenDaysAgo && tc.LocalDate <= today)
+            .Where(tc => tc.EnrollmentId == enrollment.Id && tc.LocalDate >= heatmapStart && tc.LocalDate <= today)
             .Select(tc => tc.LocalDate)
             .Distinct()
             .ToListAsync(ct);
         var completionSet = completions.ToHashSet();
 
         var heatmap = new List<HeatmapDay>();
-        for (var d = 0; d < 7; d++)
+        for (var d = 0; d < 28; d++)
         {
-            heatmap.Add(new HeatmapDay(d, completionSet.Contains(sevenDaysAgo.AddDays(d))));
+            var date = heatmapStart.AddDays(d);
+            heatmap.Add(new HeatmapDay(d, completionSet.Contains(date), date));
         }
 
         // Biometría exacta (latest per metric)
@@ -9032,7 +9097,7 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
     public async IAsyncEnumerable<BiometriaPatientListItemDto> StreamBiometriaPatientsForExportAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        var (items, _) = await ListBiometriaPatientsAsync(null, null, null, null, 1, int.MaxValue, ct);
+        var (items, _) = await ListBiometriaPatientsAsync(null, null, null, null, null, null, null, null, 1, int.MaxValue, ct);
         foreach (var item in items)
         {
             yield return item;

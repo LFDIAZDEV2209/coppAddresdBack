@@ -674,6 +674,10 @@ public interface IProgramRepository
         string? gender,
         string? imcCategory,
         string? glucosaCategory,
+        string? grasaCategory,
+        string? trend,
+        Guid? cityId,
+        string? stateAbbr,
         int page,
         int pageSize,
         CancellationToken ct = default);
