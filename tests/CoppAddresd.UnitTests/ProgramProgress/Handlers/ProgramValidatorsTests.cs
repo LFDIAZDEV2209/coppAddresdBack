@@ -58,7 +58,75 @@ public class ProgramValidatorsTests
         // paciente (SPEC §6.11). Aquí solo se valida la forma del payload.
         var validator = new CompleteTaskCommandValidator();
         var command = new CompleteTaskCommand(
-            Guid.NewGuid(), Today.AddDays(1), TaskCode.podcast, null, null, null, null, null);
+            Guid.NewGuid(), Today, TaskCode.podcast, null, null, null, null, null);
+
+        var result = validator.Validate(command);
+
+        Assert.True(result.IsValid);
+    }
+
+    // --------------------------------------------------- Vitals (vital-signs-tracking)
+
+    [Fact]
+    public void CompleteTask_VitalsValidos_EsValido()
+    {
+        // S1: payload con los 6 campos en rango → sin errores de validación.
+        var validator = new CompleteTaskCommandValidator();
+        var command = new CompleteTaskCommand(
+            Guid.NewGuid(), Today, TaskCode.vitals, null, null, null, null, null,
+            Vitals: new VitalsPayload(72, 120, 80, 98, 130m, 70m, 36.5m, null));
+
+        var result = validator.Validate(command);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Theory]
+    [InlineData(10, "heartRate")]   // < 20
+    [InlineData(300, "heartRate")]  // > 250
+    [InlineData(40, "systolic")]    // < 50
+    [InlineData(300, "systolic")]   // > 260
+    [InlineData(10, "diastolic")]   // < 20
+    [InlineData(200, "diastolic")]  // > 180
+    [InlineData(20, "o2Saturation")] // < 30
+    [InlineData(101, "o2Saturation")] // > 100
+    [InlineData(5, "glucose")]      // < 10
+    [InlineData(2000, "glucose")]   // > 1000
+    [InlineData(0, "weightKg")]     // < 1
+    [InlineData(600, "weightKg")]   // > 500
+    [InlineData(20, "temperatureC")] // < 30
+    [InlineData(50, "temperatureC")] // > 45
+    public void CompleteTask_VitalsFueraDeRango_EsInvalido(decimal value, string field)
+    {
+        // Validador: valor implausible en cualquier campo → 422 (no pasa la validación).
+        var validator = new CompleteTaskCommandValidator();
+        var vitals = field switch
+        {
+            "heartRate" => new VitalsPayload((int?)value, null, null, null, null, null, null, null),
+            "systolic" => new VitalsPayload(null, (int?)value, null, null, null, null, null, null),
+            "diastolic" => new VitalsPayload(null, null, (int?)value, null, null, null, null, null),
+            "o2Saturation" => new VitalsPayload(null, null, null, (int?)value, null, null, null, null),
+            "glucose" => new VitalsPayload(null, null, null, null, value, null, null, null),
+            "weightKg" => new VitalsPayload(null, null, null, null, null, value, null, null),
+            "temperatureC" => new VitalsPayload(null, null, null, null, null, null, value, null),
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+        var command = new CompleteTaskCommand(
+            Guid.NewGuid(), Today, TaskCode.vitals, null, null, null, null, null, Vitals: vitals);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.ErrorMessage.Contains(field));
+    }
+
+    [Fact]
+    public void CompleteTask_SinVitals_EsValidoAunqueSeaTareaVitals()
+    {
+        // S2: tarea vitals sin payload → no se valida ningún rango (comportamiento hoy).
+        var validator = new CompleteTaskCommandValidator();
+        var command = new CompleteTaskCommand(
+            Guid.NewGuid(), Today, TaskCode.vitals, null, null, null, null, null);
 
         var result = validator.Validate(command);
 

@@ -289,6 +289,30 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         return NoContent();
     }
 
+    /// <summary>
+    /// Mediciones clínicas del paciente (ERP, solo lectura): lista plana
+    /// ordenada por observación descendente. Alcance por
+    /// <see cref="ResolvePatientScopeAsync"/> (403 sin Patients.View/ViewOwn) +
+    /// accesibilidad (404 para pacientes desconocidos, de otra clínica o no
+    /// asignados). El agrupado por <c>batchId</c> es responsabilidad del
+    /// frontend; sin mediciones responde 200 [].
+    /// </summary>
+    [HttpGet("{id:guid}/measurements")]
+    public async Task<ActionResult<IReadOnlyList<PatientMeasurementDto>>> Measurements(
+        Guid id,
+        CancellationToken ct
+    )
+    {
+        var (allowed, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
+        if (!allowed)
+            return Forbid();
+
+        if (!await CanAccessPatientAsync(id, ownProfessionalId, ct))
+            return NotFound(new { message = "Paciente no encontrado" });
+
+        return Ok(await mediator.Send(new ListPatientMeasurementsQuery(id), ct));
+    }
+
     // --- Helpers de alcance de datos ---
 
     /// <summary>
