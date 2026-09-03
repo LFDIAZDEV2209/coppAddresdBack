@@ -9,6 +9,7 @@ using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Services.ProgramProgress;
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 
@@ -386,11 +387,21 @@ public interface IProgramRepository
     /// parcial <c>('habit_log', habit_check.id, reason)</c> como backstop de
     /// carrera). Paciente sin inscripción activa → 404
     /// <c>NO_ACTIVE_ENROLLMENT</c>.
+    ///
+    /// Con <paramref name="intake"/> (SPEC nutrition-intake-adherence) además
+    /// persiste la fila de <c>app.nutrition_intake_logs</c> anclada al
+    /// <c>habit_check</c> de la misma transacción, resuelve el plan-day activo
+    /// server-side (referencia null sin plan) y verifica la ownership del
+    /// <c>foodAnalysisId</c> contra el <paramref name="actorId"/> (subject del
+    /// JWT, D6): análisis inexistente o de otro usuario → 422
+    /// <c>FOOD_ANALYSIS_*</c>; análisis anónimo → aceptado en v1.
     /// </summary>
     Task<NutritionLogResultDto> LogNutritionAsync(
         Guid patientId,
         MealCode mealCode,
         DateOnly? localDate = null,
+        NutritionIntakePayload? intake = null,
+        Guid? actorId = null,
         CancellationToken ct = default);
 
     /// <summary>
@@ -682,4 +693,29 @@ public interface IProgramRepository
     /// <c>daily_checkins.is_perfect_day</c> ni el inventario de congelamientos.
     /// </summary>
     Task<StreakReconciliationSummary> ReconcileStreaksAsync(CancellationToken ct = default);
+
+    // --- Catálogo clínico (línea base, ERP) ---
+
+    /// <summary>
+    /// Métricas clínicas activas del catálogo (<c>app.measurement_metrics</c>)
+    /// con su unidad por defecto resuelta (<c>app.unit_of_measures</c>).
+    /// Alimenta el selector de la línea base del ERP (GET
+    /// /catalogs/clinical-metrics): el POST /enrollments/{id}/baselines valida
+    /// metricId/unitId contra estas filas reales.
+    /// </summary>
+    Task<IReadOnlyList<MeasurementMetric>> ListClinicalMetricsAsync(CancellationToken ct = default);
+
+    // --- Libro mayor de XP (TASK-04, ERP) ---
+
+    /// <summary>
+    /// Página del libro mayor de XP de una inscripción (TASK-04): entradas de
+    /// <c>app.xp_ledger_entries</c> ordenadas descendente por <c>AwardedAt</c>
+    /// (append-only). Devuelve las entradas de la página y el total de la
+    /// inscripción para calcular <c>totalPages</c>.
+    /// </summary>
+    Task<(IReadOnlyList<XpLedgerEntry> Entries, int Total)> GetXpLedgerPageAsync(
+        Guid enrollmentId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default);
 }

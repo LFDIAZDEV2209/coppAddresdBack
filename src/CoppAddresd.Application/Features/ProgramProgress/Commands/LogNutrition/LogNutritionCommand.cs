@@ -29,7 +29,8 @@ public sealed record LogNutritionCommand(
     Guid PatientId,
     MealCode MealCode,
     DateOnly? LocalDate = null,
-    Guid? ActorId = null) : IRequest<NutritionLogResultDto>;
+    Guid? ActorId = null,
+    NutritionIntakePayload? Intake = null) : IRequest<NutritionLogResultDto>;
 
 /// <summary>
 /// Validación de forma del payload (SPEC §18, B): el <c>mealCode</c> es un
@@ -49,6 +50,13 @@ public sealed class LogNutritionCommandValidator : AbstractValidator<LogNutritio
         RuleFor(x => x.MealCode)
             .IsInEnum()
             .WithMessage("Código de comida/hidratación inválido (des/alm/mer/cen/agua).");
+
+        // Intake enriquecido opcional (SPEC nutrition-intake-adherence): los
+        // rangos 0–5000 los valida NutritionIntakePayloadValidator; un intake
+        // null (shape anterior) sigue siendo válido.
+        RuleFor(x => x.Intake)
+            .SetValidator(new NutritionIntakePayloadValidator())
+            .When(x => x.Intake is not null);
     }
 }
 
@@ -65,7 +73,12 @@ public sealed class LogNutritionCommandHandler(
     public async Task<NutritionLogResultDto> Handle(LogNutritionCommand request, CancellationToken ct)
     {
         var result = await repository.LogNutritionAsync(
-            request.PatientId, request.MealCode, request.LocalDate, ct);
+            request.PatientId,
+            request.MealCode,
+            request.LocalDate,
+            request.Intake,
+            request.ActorId,
+            ct);
 
         logger.LogInformation(
             "Program.NutritionLogged: patient={PatientId} meal={MealCode} fecha={LocalDate} " +
