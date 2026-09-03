@@ -1,4 +1,7 @@
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.Catalogs;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListClinicalMetrics;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -85,4 +88,14 @@ public class CatalogsController(IMediator mediator) : ControllerBase
         [FromQuery] int limit = 30,
         CancellationToken ct = default)
         => Ok(await mediator.Send(new SearchAllergensQuery(search, limit), ct));
+
+    /// <summary>
+    /// Catálogo de métricas clínicas activas con su unidad por defecto (ERP,
+    /// selector de la línea base). Los ids son reales de BD: el POST
+    /// /enrollments/{id}/baselines valida contra estas filas. Requiere Program.View.
+    /// </summary>
+    [HttpGet("clinical-metrics")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<IReadOnlyList<ClinicalMetricDto>>> ClinicalMetrics(CancellationToken ct)
+        => Ok(await mediator.Send(new ListClinicalMetricsQuery(), ct));
 }

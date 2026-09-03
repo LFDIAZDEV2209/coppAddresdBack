@@ -87,6 +87,24 @@ public sealed class ExceptionHandlingMiddleware(
                 "Conflict",
                 ex.Message);
         }
+        catch (NutritionEvidenceRequiredException ex)
+        {
+            // D3 (SPEC nutrition-intake-adherence): el gate de adherencia
+            // nutricional exige evidencia de TODAS las comidas del plan-day.
+            // Catch ANTES del base UnprocessableEntityException (:90) para
+            // escribir los códigos faltantes en errors.missingMealCodes.
+            logger.LogWarning(ex, "Evidencia nutricional faltante en {Method} {Path}",
+                context.Request.Method, context.Request.Path);
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status422UnprocessableEntity,
+                "Unprocessable Entity",
+                ex.Message,
+                new Dictionary<string, string[]>
+                {
+                    ["missingMealCodes"] = ex.MissingMealCodes.ToArray(),
+                });
+        }
         catch (UnprocessableEntityException ex)
         {
             logger.LogWarning(ex, "Payload semánticamente inválido en {Method} {Path}",

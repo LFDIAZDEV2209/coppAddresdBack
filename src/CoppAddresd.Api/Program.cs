@@ -52,6 +52,9 @@ builder.Services.AddHostedService<AgentCatalogSeeder>();
 // Seed del catálogo de mediciones clínicas (unidades, métricas y rangos).
 builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
 
+// Seed de Biometría: mediciones clínicas (weight/height/waist/hip/wrist) y datos demográficos.
+builder.Services.AddHostedService<BiometriaSeeder>();
+
 // Seed de reglas de seguridad clínica para la generación de planes con IA.
 builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
 

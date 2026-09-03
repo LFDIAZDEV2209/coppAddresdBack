@@ -53,7 +53,7 @@ public sealed class ErpFeaturesTests(CommunityTestDatabase dbFixture) : IDisposa
         var sender = new RecordingTopicEventSender();
 
         var result = await new CommunityMutation().AwardXp(
-            profile.Id, 500, "Racha destacada", db, sender, CancellationToken.None);
+            profile.Id, 500, "Racha destacada", db, sender, HttpAs(Guid.NewGuid()), CancellationToken.None);
 
         Assert.Single(result);
         var reloaded = await db.Profiles.FirstAsync(p => p.Id == profile.Id, CancellationToken.None);
@@ -71,7 +71,7 @@ public sealed class ErpFeaturesTests(CommunityTestDatabase dbFixture) : IDisposa
         var b = await CommunityTestData.SeedProfileAsync(db, Guid.NewGuid(), "B", CancellationToken.None);
         var sender = new RecordingTopicEventSender();
 
-        var result = await new CommunityMutation().AwardXpToAll(100, "Bonus", db, sender, CancellationToken.None);
+        var result = await new CommunityMutation().AwardXpToAll(100, "Bonus", db, sender, HttpAs(Guid.NewGuid()), CancellationToken.None);
 
         Assert.Contains(result, p => p.DisplayName == "A");
         Assert.Contains(result, p => p.DisplayName == "B");
@@ -128,7 +128,7 @@ public sealed class ErpFeaturesTests(CommunityTestDatabase dbFixture) : IDisposa
         var sender = new RecordingTopicEventSender();
 
         var post = await new CommunityMutation().CreatePost(
-            "Hola", PostType.Imagen, PostDestination.CocinaSaludable, db, HttpAs(user), sender, CancellationToken.None);
+            "Hola", PostType.Imagen, PostDestination.CocinaSaludable, db, HttpAs(user), sender, null, CancellationToken.None);
 
         Assert.Equal(PostType.Imagen, post.Type);
         Assert.Equal(PostDestination.CocinaSaludable, post.Destination);
