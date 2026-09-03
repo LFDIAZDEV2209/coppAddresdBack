@@ -309,6 +309,132 @@ public sealed record PatientOverviewClinicalMetricsDto(
     [property: JsonPropertyName("body_fat")] PatientOverviewMetricSnapshot? BodyFat,
     [property: JsonPropertyName("glucose")] PatientOverviewMetricSnapshot? Glucose = null);
 
+// ===================== Biometría =====================
+
+public sealed record ImcBucket(
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("count")] int Count);
+
+public sealed record GrBodyFatBucket(
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("count")] int Count);
+
+public sealed record GrasaDistribution(
+    [property: JsonPropertyName("male")] IReadOnlyList<GrBodyFatBucket> Male,
+    [property: JsonPropertyName("female")] IReadOnlyList<GrBodyFatBucket> Female);
+
+public sealed record GlucosaBucket(
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("count")] int Count);
+
+public sealed record BiometriaWeeklyPoint(
+    [property: JsonPropertyName("week_start")] DateOnly WeekStart,
+    [property: JsonPropertyName("avg_imc")] decimal? AvgImc,
+    [property: JsonPropertyName("avg_grasa")] decimal? AvgGrasa,
+    [property: JsonPropertyName("avg_glucosa")] decimal? AvgGlucosa);
+
+public sealed record BiometriaCityPoint(
+    [property: JsonPropertyName("city_id")] Guid? CityId,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("state_abbr")] string? StateAbbr,
+    [property: JsonPropertyName("count")] int Count,
+    [property: JsonPropertyName("avg_imc")] decimal? AvgImc,
+    [property: JsonPropertyName("map_x")] decimal? MapX,
+    [property: JsonPropertyName("map_y")] decimal? MapY);
+
+public sealed record BiometriaAlert(
+    [property: JsonPropertyName("patient_id")] Guid PatientId,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("reason")] string Reason,
+    [property: JsonPropertyName("imc")] decimal? Imc,
+    [property: JsonPropertyName("glucosa")] decimal? Glucosa,
+    [property: JsonPropertyName("icc")] decimal? Icc);
+
+public sealed record BiometriaCommunityDto(
+    [property: JsonPropertyName("avg_imc")] decimal? AvgImc,
+    [property: JsonPropertyName("avg_grasa")] decimal? AvgGrasa,
+    [property: JsonPropertyName("avg_glucosa")] decimal? AvgGlucosa,
+    [property: JsonPropertyName("improving_count")] int ImprovingCount,
+    [property: JsonPropertyName("imc_distribution")] IReadOnlyList<ImcBucket> ImcDistribution,
+    [property: JsonPropertyName("grasa_distribution")] GrasaDistribution GrasaDistribution,
+    [property: JsonPropertyName("glucosa_distribution")] IReadOnlyList<GlucosaBucket> GlucosaDistribution,
+    [property: JsonPropertyName("evolution_weekly")] IReadOnlyList<BiometriaWeeklyPoint> EvolutionWeekly,
+    [property: JsonPropertyName("cities")] IReadOnlyList<BiometriaCityPoint> Cities,
+    [property: JsonPropertyName("alerts")] IReadOnlyList<BiometriaAlert> Alerts);
+
+// --- Biometría Patient List ---
+
+public sealed record BiometriaPatientListItemDto(
+    [property: JsonPropertyName("patient_id")] Guid PatientId,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("gender")] string? Gender,
+    [property: JsonPropertyName("age")] int? Age,
+    [property: JsonPropertyName("city")] string? City,
+    [property: JsonPropertyName("weight")] decimal? Weight,
+    [property: JsonPropertyName("height")] decimal? Height,
+    [property: JsonPropertyName("imc")] decimal? Imc,
+    [property: JsonPropertyName("imc_category")] string? ImcCategory,
+    [property: JsonPropertyName("waist")] decimal? Waist,
+    [property: JsonPropertyName("hip")] decimal? Hip,
+    [property: JsonPropertyName("icc")] decimal? Icc,
+    [property: JsonPropertyName("pct_grasa")] decimal? PctGrasa,
+    [property: JsonPropertyName("pct_grasa_category")] string? PctGrasaCategory,
+    [property: JsonPropertyName("glucosa")] decimal? Glucosa,
+    [property: JsonPropertyName("glucosa_category")] string? GlucosaCategory,
+    [property: JsonPropertyName("week_number")] int? WeekNumber,
+    [property: JsonPropertyName("streak")] int Streak,
+    [property: JsonPropertyName("trend")] string? Trend);
+
+public sealed record WeeklyBiometria(
+    [property: JsonPropertyName("week_start")] DateOnly WeekStart,
+    [property: JsonPropertyName("imc")] decimal? Imc,
+    [property: JsonPropertyName("grasa")] decimal? Grasa,
+    [property: JsonPropertyName("glucosa")] decimal? Glucosa,
+    [property: JsonPropertyName("weight")] decimal? Weight,
+    [property: JsonPropertyName("height")] decimal? Height,
+    [property: JsonPropertyName("waist")] decimal? Waist,
+    [property: JsonPropertyName("hip")] decimal? Hip,
+    [property: JsonPropertyName("icc")] decimal? Icc,
+    [property: JsonPropertyName("delta_imc")] decimal? DeltaImc,
+    [property: JsonPropertyName("delta_grasa")] decimal? DeltaGrasa,
+    [property: JsonPropertyName("delta_glucosa")] decimal? DeltaGlucosa);
+
+public sealed record HeatmapDay(
+    [property: JsonPropertyName("day_index")] int DayIndex,
+    [property: JsonPropertyName("completed")] bool Completed,
+    [property: JsonPropertyName("date")] DateOnly Date);
+
+public sealed record BiometriaExacta(
+    [property: JsonPropertyName("weight")] decimal? Weight,
+    [property: JsonPropertyName("height")] decimal? Height,
+    [property: JsonPropertyName("waist")] decimal? Waist,
+    [property: JsonPropertyName("hip")] decimal? Hip,
+    [property: JsonPropertyName("wrist")] decimal? Wrist,
+    [property: JsonPropertyName("icc")] decimal? Icc,
+    [property: JsonPropertyName("pct_grasa")] decimal? PctGrasa,
+    [property: JsonPropertyName("pct_magra")] decimal? PctMagra);
+
+public sealed record BiometriaPatientDetailDto(
+    [property: JsonPropertyName("patient_id")] Guid PatientId,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("gender")] string? Gender,
+    [property: JsonPropertyName("age")] int? Age,
+    [property: JsonPropertyName("imc")] decimal? Imc,
+    [property: JsonPropertyName("imc_category")] string? ImcCategory,
+    [property: JsonPropertyName("trend")] string? Trend,
+    [property: JsonPropertyName("historial_semanal")] IReadOnlyList<WeeklyBiometria> HistorialSemanal,
+    [property: JsonPropertyName("adherence_heatmap")] IReadOnlyList<HeatmapDay> AdherenceHeatmap,
+    [property: JsonPropertyName("biometria_exacta")] BiometriaExacta? BiometriaExacta);
+
+// ===================== Paginated Result =====================
+
+public sealed record PaginatedResult<T>(
+    [property: JsonPropertyName("data")] IReadOnlyList<T> Data,
+    [property: JsonPropertyName("total")] int Total,
+    [property: JsonPropertyName("page")] int Page,
+    [property: JsonPropertyName("pageSize")] int PageSize,
+    [property: JsonPropertyName("totalPages")] int TotalPages);
+
 public sealed record PatientOverviewDto(
     [property: JsonPropertyName("patient_name")] string PatientName,
     [property: JsonPropertyName("enrollment")] PatientOverviewEnrollment? Enrollment,

@@ -55,6 +55,9 @@ public sealed class ClinicalMeasurementsSeeder(
         new("bmi", "Índice de masa corporal", "body_comp", "kg_m2"),
         new("body_fat", "Porcentaje de grasa corporal", "body_comp", "pct"),
         new("hba1c", "Hemoglobina glicosilada", "metabolic", "pct"),
+        new("waist", "Cintura", "body_comp", "cm"),
+        new("hip", "Cadera", "body_comp", "cm"),
+        new("wrist", "Muñeca", "body_comp", "cm"),
         // vital-signs-tracking: métricas nuevas para el payload de signos vitales.
         new("o2_saturation", "Saturación de oxígeno", "vital", "pct"),
         new("temperature_c", "Temperatura corporal", "vital", "celsius"),
