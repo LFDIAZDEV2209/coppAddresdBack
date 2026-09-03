@@ -217,7 +217,8 @@ FROM (VALUES
     ('mmhg', 'Milímetros de mercurio', 'mmHg'),
     ('bpm', 'Latidos por minuto', 'bpm'),
     ('pct', 'Porcentaje', '%'),
-    ('kg_m2', 'Kilogramos por metro cuadrado', 'kg/m²')
+    ('kg_m2', 'Kilogramos por metro cuadrado', 'kg/m²'),
+    ('celsius', 'Grados Celsius', '°C')
 ) AS u(code, name, symbol)
 ON CONFLICT (code) DO NOTHING;
 
@@ -232,7 +233,9 @@ FROM (VALUES
     ('diastolic_bp', 'Presión arterial diastólica', 'mmhg', 'vital'),
     ('heart_rate', 'Frecuencia cardíaca', 'bpm', 'vital'),
     ('bmi', 'Índice de masa corporal', 'kg_m2', 'body_comp'),
-    ('body_fat', 'Porcentaje de grasa corporal', 'pct', 'body_comp')
+    ('body_fat', 'Porcentaje de grasa corporal', 'pct', 'body_comp'),
+    ('o2_saturation', 'Saturación de oxígeno', 'pct', 'vital'),
+    ('temperature_c', 'Temperatura corporal', 'celsius', 'vital')
 ) AS m(code, name, unit_code, category)
 JOIN app.unit_of_measures u ON u.code = m.unit_code
 ON CONFLICT (code) DO NOTHING;
@@ -247,7 +250,8 @@ FROM (VALUES
     ('systolic_bp', NULL::int, NULL::int, NULL::text, 90.0, 120.0, 'mmhg', 0),
     ('diastolic_bp', NULL::int, NULL::int, NULL::text, 60.0, 80.0, 'mmhg', 0),
     ('bmi', NULL::int, NULL::int, NULL::text, 18.5, 24.9, 'kg_m2', 0),
-    ('heart_rate', NULL::int, NULL::int, NULL::text, 60.0, 100.0, 'bpm', 0)
+    ('heart_rate', NULL::int, NULL::int, NULL::text, 60.0, 100.0, 'bpm', 0),
+    ('o2_saturation', NULL::int, NULL::int, NULL::text, 94.0, 100.0, 'pct', 0)
 ) AS r(metric_code, age_min, age_max, gender, min_value, max_value, unit_code, priority)
 JOIN app.measurement_metrics met ON met.code = r.metric_code
 JOIN app.unit_of_measures u ON u.code = r.unit_code

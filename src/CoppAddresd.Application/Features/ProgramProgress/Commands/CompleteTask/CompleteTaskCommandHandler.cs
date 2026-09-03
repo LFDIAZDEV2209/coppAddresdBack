@@ -50,7 +50,9 @@ public sealed class CompleteTaskCommandHandler(
             request.ClientCompletedAt,
             request.MoodScore,
             request.Barriers,
-            request.ContentFingerprint);
+            request.ContentFingerprint,
+            Vitals: request.Vitals,
+            ActorId: request.ActorId);
 
         var result = await repository.CompleteTaskAsync(input, ct);
 

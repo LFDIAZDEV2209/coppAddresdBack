@@ -78,7 +78,10 @@ public sealed class TaskCompletion
 
     public MediaItem? Media { get; set; }
 
-    public VitalSign? VitalSignsBatch { get; set; }
+    // D2 (vital-signs-tracking): el lote de signos vitales se ancla a la
+    // medición clínica canónica (app.clinical_measurements), no al legacy
+    // app.vital_signs. El FK se retargetea en la migración correspondiente.
+    public ClinicalMeasurement? VitalSignsBatch { get; set; }
 
     public Product? NutribioticProduct { get; set; }
 

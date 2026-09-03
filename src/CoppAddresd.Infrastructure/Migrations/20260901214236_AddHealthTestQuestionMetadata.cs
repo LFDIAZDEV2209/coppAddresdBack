@@ -10,63 +10,16 @@ namespace CoppAddresd.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "unit",
-                schema: "app",
-                table: "health_test_questions",
-                type: "character varying(20)",
-                maxLength: 20,
-                nullable: true
-            );
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "min_value",
-                schema: "app",
-                table: "health_test_questions",
-                type: "numeric",
-                nullable: true
-            );
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "max_value",
-                schema: "app",
-                table: "health_test_questions",
-                type: "numeric",
-                nullable: true
-            );
-
-            migrationBuilder.AddColumn<decimal>(
-                name: "default_value",
-                schema: "app",
-                table: "health_test_questions",
-                type: "numeric",
-                nullable: true
-            );
-
-            migrationBuilder.AddColumn<string>(
-                name: "min_label",
-                schema: "app",
-                table: "health_test_questions",
-                type: "character varying(40)",
-                maxLength: 40,
-                nullable: true
-            );
-
-            migrationBuilder.AddColumn<string>(
-                name: "max_label",
-                schema: "app",
-                table: "health_test_questions",
-                type: "character varying(40)",
-                maxLength: 40,
-                nullable: true
-            );
-
-            migrationBuilder.AddColumn<string>(
-                name: "hint",
-                schema: "app",
-                table: "health_test_questions",
-                type: "text",
-                nullable: true
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS unit character varying(20);
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS min_value numeric;
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS max_value numeric;
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS default_value numeric;
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS min_label character varying(40);
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS max_label character varying(40);
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS hint text;
+                """
             );
         }
 

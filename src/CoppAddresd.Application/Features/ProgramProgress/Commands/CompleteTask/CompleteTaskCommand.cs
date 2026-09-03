@@ -19,7 +19,8 @@ public sealed record CompleteTaskCommand(
     short? MoodScore,
     string? Barriers,
     string? ContentFingerprint,
-    Guid? ActorId = null) : IRequest<CompleteTaskResponseDto>;
+    Guid? ActorId = null,
+    VitalsPayload? Vitals = null) : IRequest<CompleteTaskResponseDto>;
 
 /// <summary>
 /// Validación de input de <see cref="CompleteTaskCommand"/> (T-11). Reglas de
@@ -69,5 +70,40 @@ public sealed class CompleteTaskCommandValidator : AbstractValidator<CompleteTas
             .NotNull()
             .WithMessage("La tarea emocional requiere moodScore (1..5).")
             .When(x => x.TaskCode == TaskCode.emocional);
+
+        // Signos vitales (SPEC vital-signs-tracking): rangos plausibles por campo.
+        // Solo se valida el campo cuando el payload lo trae (null = no provisto).
+        // Un valor fuera de rango → 422 (ValidationException del pipeline).
+        When(x => x.Vitals is not null, () =>
+        {
+            RuleFor(x => x.Vitals!.HeartRate)
+                .InclusiveBetween(20, 250)
+                .When(x => x.Vitals!.HeartRate.HasValue)
+                .WithMessage("heartRate debe estar entre 20 y 250.");
+            RuleFor(x => x.Vitals!.Systolic)
+                .InclusiveBetween(50, 260)
+                .When(x => x.Vitals!.Systolic.HasValue)
+                .WithMessage("systolic debe estar entre 50 y 260.");
+            RuleFor(x => x.Vitals!.Diastolic)
+                .InclusiveBetween(20, 180)
+                .When(x => x.Vitals!.Diastolic.HasValue)
+                .WithMessage("diastolic debe estar entre 20 y 180.");
+            RuleFor(x => x.Vitals!.O2Saturation)
+                .InclusiveBetween(30, 100)
+                .When(x => x.Vitals!.O2Saturation.HasValue)
+                .WithMessage("o2Saturation debe estar entre 30 y 100.");
+            RuleFor(x => x.Vitals!.Glucose)
+                .InclusiveBetween(10, 1000)
+                .When(x => x.Vitals!.Glucose.HasValue)
+                .WithMessage("glucose debe estar entre 10 y 1000.");
+            RuleFor(x => x.Vitals!.WeightKg)
+                .InclusiveBetween(1, 500)
+                .When(x => x.Vitals!.WeightKg.HasValue)
+                .WithMessage("weightKg debe estar entre 1 y 500.");
+            RuleFor(x => x.Vitals!.TemperatureC)
+                .InclusiveBetween(30, 45)
+                .When(x => x.Vitals!.TemperatureC.HasValue)
+                .WithMessage("temperatureC debe estar entre 30 y 45.");
+        });
     }
 }
