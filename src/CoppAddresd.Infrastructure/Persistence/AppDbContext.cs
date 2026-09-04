@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
     public DbSet<PatientProfile> PatientProfiles => Set<PatientProfile>();
+    public DbSet<PatientDailyMetric> PatientDailyMetrics => Set<PatientDailyMetric>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
     public DbSet<PatientProfessionalAssignment> PatientProfessionalAssignments =>
         Set<PatientProfessionalAssignment>();
@@ -66,6 +67,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<InventoryExitLine> InventoryExitLines => Set<InventoryExitLine>();
     public DbSet<InventoryMovement> InventoryMovements => Set<InventoryMovement>();
     public DbSet<StoreItem> StoreItems => Set<StoreItem>();
+    public DbSet<InventoryDailyMetric> InventoryDailyMetrics => Set<InventoryDailyMetric>();
     public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
     public DbSet<LegalDocumentVersion> LegalDocumentVersions => Set<LegalDocumentVersion>();
 
@@ -115,6 +117,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HealthTestAlertRule> HealthTestAlertRules => Set<HealthTestAlertRule>();
     public DbSet<HealthTestAlert> HealthTestAlerts => Set<HealthTestAlert>();
     public DbSet<HealthTestComment> HealthTestComments => Set<HealthTestComment>();
+    public DbSet<HealthTestDailyMetric> HealthTestDailyMetrics => Set<HealthTestDailyMetric>();
 
     // Program Progress — Módulo de progreso
     public DbSet<ProgramTemplate> ProgramTemplates => Set<ProgramTemplate>();
@@ -130,6 +133,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         Set<AdaptationRecommendation>();
     public DbSet<EmotionalRecord> EmotionalRecords => Set<EmotionalRecord>();
     public DbSet<XpRule> XpRules => Set<XpRule>();
+    public DbSet<ProgramDailyMetric> ProgramDailyMetrics => Set<ProgramDailyMetric>();
 
     // Program Progress — Scores
     public DbSet<HealthScoreWeight> HealthScoreWeights => Set<HealthScoreWeight>();

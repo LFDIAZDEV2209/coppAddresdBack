@@ -29,6 +29,7 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<PostReport> PostReports => Set<PostReport>();
     public DbSet<CommentReport> CommentReports => Set<CommentReport>();
     public DbSet<Repost> Reposts => Set<Repost>();
+    public DbSet<CommunityDailyMetric> CommunityDailyMetrics => Set<CommunityDailyMetric>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
