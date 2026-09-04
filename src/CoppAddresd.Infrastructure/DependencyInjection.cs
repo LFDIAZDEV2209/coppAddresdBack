@@ -4,6 +4,7 @@ using CoppAddresd.Application.Services;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Enums.HealthTests;
 using CoppAddresd.Infrastructure.Cache;
+using CoppAddresd.Infrastructure.Metrics;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
@@ -134,6 +135,11 @@ public static class DependencyInjection
             }
         );
         services.AddScoped<IPostalCodeLookupService, ZippopotamPostalCodeLookup>();
+
+        // Analítica — Pre-agregación CQRS de inventario (Dashboard #6): cola en memoria
+        // + HostedService que drena eventos y hace upsert atómico sobre erp.inventory_daily_metrics.
+        services.AddSingleton<IInventoryMetricsQueue, InventoryMetricsQueue>();
+        services.AddHostedService<InventoryMetricsProcessorHostedService>();
 
         AddObjectStorage(services, configuration);
 

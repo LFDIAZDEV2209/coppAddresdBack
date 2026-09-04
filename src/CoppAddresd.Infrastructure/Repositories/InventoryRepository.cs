@@ -203,41 +203,129 @@ public sealed class InventoryRepository(AppDbContext dbContext) : IInventoryRepo
     public async Task<InventoryAnalyticsDto> GetAnalyticsAsync(
         DateOnly? dateFrom = null, DateOnly? dateTo = null, CancellationToken ct = default)
     {
+        // Estado actual del inventario: se calcula siempre desde Products
+        // (datos puntuales del catálogo, no del rollup).
         var products = await dbContext.Products.AsNoTracking().ToListAsync(ct);
 
         // Rango de fechas por defecto: últimos 30 días hasta hoy.
         var to = dateTo ?? DateOnly.FromDateTime(DateTime.Today);
         var from = dateFrom ?? to.AddDays(-29);
 
-        var fromDate = from.ToDateTime(TimeOnly.MinValue);
-        var toDate = to.AddDays(1).ToDateTime(TimeOnly.MinValue);
+        int entries, exits, unitsEntered, unitsExited;
+        IReadOnlyList<MovementSeriesPoint> series;
+        IReadOnlyList<TopMovingProduct> topMoving;
+        IReadOnlyList<CategoryValue> categoryValue;
 
-        // Las métricas de período se calculan sobre la fecha de la operación
-        // (entradas/salidas), no sobre la marca de auditoría del movimiento,
-        // para que el reporte sea coherente con las fechas seleccionadas.
-        var entries = await dbContext.InventoryEntries.AsNoTracking()
-            .Include(e => e.Lines)
-            .Where(e => e.Date >= fromDate && e.Date < toDate)
-            .ToListAsync(ct);
-        var exits = await dbContext.InventoryExits.AsNoTracking()
-            .Include(e => e.Lines)
-            .Where(e => e.Date >= fromDate && e.Date < toDate)
+        // ── FAST PATH: lee el rollup pre-agregado en O(1) ────────────────────
+        var rollupMetrics = await dbContext.InventoryDailyMetrics.AsNoTracking()
+            .Where(x => x.MetricDate >= from && x.MetricDate <= to)
             .ToListAsync(ct);
 
-        var unitsEntered = entries.Sum(e => e.Lines.Sum(l => l.Quantity));
-        var unitsExited = exits.Sum(e => e.Lines.Sum(l => l.Quantity));
+        if (rollupMetrics.Count > 0)
+        {
+            // Métricas de totales del período (dimension "total").
+            entries = (int)rollupMetrics
+                .Where(x => x.MetricKey == "entries_count" && x.DimensionKey == "total")
+                .Sum(x => x.TotalCount);
+            exits = (int)rollupMetrics
+                .Where(x => x.MetricKey == "exits_count" && x.DimensionKey == "total")
+                .Sum(x => x.TotalCount);
+            unitsEntered = (int)rollupMetrics
+                .Where(x => x.MetricKey == "units_entered" && x.DimensionKey == "total")
+                .Sum(x => x.TotalCount);
+            unitsExited = (int)rollupMetrics
+                .Where(x => x.MetricKey == "units_exited" && x.DimensionKey == "total")
+                .Sum(x => x.TotalCount);
 
-        var rangeDays = to.DayNumber - from.DayNumber + 1;
-        var series = BuildMovementSeries(entries, exits, from, rangeDays);
+            // Costos del período (almacenados en centavos). El DTO no los
+            // expone en Fase 1; se calculan para mantener el contrato del
+            // rollup disponible para la Fase 2 del dashboard.
+            var costEntered = rollupMetrics
+                .Where(x => x.MetricKey == "cost_entered" && x.DimensionKey == "total")
+                .Sum(x => x.TotalCount) / 100m;
+            var costExited = rollupMetrics
+                .Where(x => x.MetricKey == "cost_exited" && x.DimensionKey == "total")
+                .Sum(x => x.TotalCount) / 100m;
 
-        var topMoving = entries.SelectMany(e => e.Lines)
-            .Select(l => (Name: l.ProductName, Quantity: l.Quantity))
-            .Concat(exits.SelectMany(e => e.Lines).Select(l => (Name: l.ProductName, Quantity: l.Quantity)))
-            .GroupBy(m => m.Name)
-            .Select(g => new TopMovingProduct(g.Key, g.Sum(m => m.Quantity)))
-            .OrderByDescending(t => t.Quantity)
-            .Take(5)
-            .ToList();
+            // Serie temporal diaria desde el rollup (unidades por día).
+            var rangeDays = to.DayNumber - from.DayNumber + 1;
+            series = Enumerable.Range(0, rangeDays).Select(i =>
+            {
+                var day = from.AddDays(i);
+                var daysEntries = rollupMetrics
+                    .Where(x => x.MetricDate == day && x.MetricKey == "units_entered" && x.DimensionKey == "total")
+                    .Sum(x => (int)x.TotalCount);
+                var daysExits = rollupMetrics
+                    .Where(x => x.MetricDate == day && x.MetricKey == "units_exited" && x.DimensionKey == "total")
+                    .Sum(x => (int)x.TotalCount);
+                return new MovementSeriesPoint(day.ToString("MMM d"), daysEntries, daysExits);
+            }).ToList();
+
+            // Top moving products: unidades de entrada Y salida por producto
+            // (misma semántica que el fallback OLTP, que combina ambos lados).
+            topMoving = rollupMetrics
+                .Where(x => x.MetricKey is "product_entries" or "product_exits")
+                .GroupBy(x => x.DimensionKey)
+                .Select(g => new TopMovingProduct(g.Key, (int)g.Sum(x => x.TotalCount)))
+                .OrderByDescending(t => t.Quantity)
+                .Take(5)
+                .ToList();
+
+            // Valor por categoría (desde rollup: category_cost en centavos).
+            categoryValue = rollupMetrics
+                .Where(x => x.MetricKey == "category_cost")
+                .GroupBy(x => x.DimensionKey)
+                .Select(g => new CategoryValue(g.Key, g.Sum(x => x.TotalCount) / 100m))
+                .OrderByDescending(c => c.Value)
+                .ToList();
+        }
+        else
+        {
+            // ── FALLBACK OLTP (sistema recién iniciado, sin datos en rollup) ──
+            // (código original de cálculo en memoria; categoryValue alineado a la
+            // semántica del rollup category_cost — ver F3 del fix de dashboards)
+            var fromDate = from.ToDateTime(TimeOnly.MinValue);
+            var toDate = to.AddDays(1).ToDateTime(TimeOnly.MinValue);
+
+            // Las métricas de período se calculan sobre la fecha de la operación
+            // (entradas/salidas), no sobre la marca de auditoría del movimiento,
+            // para que el reporte sea coherente con las fechas seleccionadas.
+            var entriesList = await dbContext.InventoryEntries.AsNoTracking()
+                .Include(e => e.Lines)
+                .Where(e => e.Date >= fromDate && e.Date < toDate)
+                .ToListAsync(ct);
+            var exitsList = await dbContext.InventoryExits.AsNoTracking()
+                .Include(e => e.Lines)
+                .Where(e => e.Date >= fromDate && e.Date < toDate)
+                .ToListAsync(ct);
+
+            entries = entriesList.Count;
+            exits = exitsList.Count;
+            unitsEntered = entriesList.Sum(e => e.Lines.Sum(l => l.Quantity));
+            unitsExited = exitsList.Sum(e => e.Lines.Sum(l => l.Quantity));
+
+            var rangeDays = to.DayNumber - from.DayNumber + 1;
+            series = BuildMovementSeries(entriesList, exitsList, from, rangeDays);
+
+            topMoving = entriesList.SelectMany(e => e.Lines)
+                .Select(l => (Name: l.ProductName, Quantity: l.Quantity))
+                .Concat(exitsList.SelectMany(e => e.Lines).Select(l => (Name: l.ProductName, Quantity: l.Quantity)))
+                .GroupBy(m => m.Name)
+                .Select(g => new TopMovingProduct(g.Key, g.Sum(m => m.Quantity)))
+                .OrderByDescending(t => t.Quantity)
+                .Take(5)
+                .ToList();
+
+            // Valor por categoría: costo de las líneas de ENTRADA del período
+            // (misma semántica que category_cost del rollup: costo de mercancía
+            // ingresada por categoría, con la misma normalización de clave).
+            var productsById = products.ToDictionary(p => p.Id);
+            categoryValue = entriesList.SelectMany(e => e.Lines)
+                .GroupBy(l => ToCategoryDimensionKey(productsById, l.ProductId))
+                .Select(g => new CategoryValue(g.Key, g.Sum(l => l.UnitCost * l.Quantity)))
+                .OrderByDescending(c => c.Value)
+                .ToList();
+        }
 
         var today = DateOnly.FromDateTime(DateTime.Today);
 
@@ -251,16 +339,13 @@ public sealed class InventoryRepository(AppDbContext dbContext) : IInventoryRepo
                 DateOnly.FromDateTime(p.ExpirationDate.Value) > today),
             Expired: products.Count(p => p.ExpirationDate.HasValue &&
                 DateOnly.FromDateTime(p.ExpirationDate.Value) < today),
-            Entries: entries.Count,
-            Exits: exits.Count,
+            Entries: entries,
+            Exits: exits,
             UnitsEntered: unitsEntered,
             UnitsExited: unitsExited,
             MovementSeries: series,
             TopMoving: topMoving,
-            CategoryValue: products.GroupBy(p => p.Category)
-                .Select(g => new CategoryValue(g.Key, g.Sum(p => p.Stock * p.UnitCost)))
-                .OrderByDescending(c => c.Value)
-                .ToList(),
+            CategoryValue: categoryValue,
             Products: products.Select(ProductListItemDto.FromEntity).ToList());
     }
 
@@ -324,6 +409,21 @@ public sealed class InventoryRepository(AppDbContext dbContext) : IInventoryRepo
         var key = date.Year * 100 + date.Month;
         return (key, new DateTime(date.Year, date.Month, 1).ToString("MMM yyyy"));
     }
+
+    /// <summary>
+    /// Clave de dimensión de categoría con la MISMA normalización que el rollup
+    /// (category_cost): vacío → "general" y truncada a 64 chars (varchar(64)).
+    /// Sin esto, una categoría larga aparece distinta según el path activo.
+    /// </summary>
+    private static string ToCategoryDimensionKey(Dictionary<Guid, Product> productsById, Guid productId)
+    {
+        var category = productsById.TryGetValue(productId, out var product) ? product.Category : null;
+        if (string.IsNullOrWhiteSpace(category))
+            return "general";
+        return category.Length > MaxDimensionKeyLength ? category[..MaxDimensionKeyLength] : category;
+    }
+
+    private const int MaxDimensionKeyLength = 64;
 
     private async Task<Dictionary<Guid, Product>> LoadProductsForLinesAsync(
         IEnumerable<Guid> productIds, CancellationToken ct)

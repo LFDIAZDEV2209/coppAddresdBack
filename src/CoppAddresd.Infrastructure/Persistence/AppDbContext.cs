@@ -142,6 +142,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Program Progress — Intervenciones derivadas de debilidades (SPEC §22, "Paso 7d")
     public DbSet<Intervention> Interventions => Set<Intervention>();
 
+    // Analítica — Rollup diario de inventario (Dashboard #6, pre-agregación CQRS)
+    public DbSet<InventoryDailyMetric> InventoryDailyMetrics => Set<InventoryDailyMetric>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
