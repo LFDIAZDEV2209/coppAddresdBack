@@ -412,15 +412,19 @@ public class ActivateSosAlertCommandHandlerTests
         Assert.Contains("text message", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Copp Adresd", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("health platform", voiceScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("automated SOS alert from the Copp Adresd health platform", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("automated emergency call from the Copp Adresd health platform", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pressed the SOS", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Ana María Prueba", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("heart rate 140", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("blood pressure 160 over 110", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("oxygen 94 percent", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("I repeat", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("25.761700 north, 80.191800 west", voiceScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("plus 1 7 8 6 5 5 5 0 1 9 2", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Call 911 if needed", voiceScript, StringComparison.OrdinalIgnoreCase);
+
+        // Message text contains urgency line
+        Assert.Contains("URGENT:", result.MessageText);
+        Assert.Contains("Ana María Prueba", result.MessageText);
     }
 
     // ========================================================================

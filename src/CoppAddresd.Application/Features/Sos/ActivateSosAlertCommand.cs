@@ -167,10 +167,10 @@ public sealed class ActivateSosAlertCommandHandler(
     {
         var lines = new List<string>();
 
-        lines.Add("=== SOS ALERT - EMERGENCY ===");
-        lines.Add("");
-
         var fullName = BuildFullName(patient);
+        lines.Add("=== SOS ALERT - EMERGENCY ===");
+        lines.Add($"URGENT: {fullName} triggered the SOS emergency button on the device.");
+        lines.Add("");
         lines.Add($"Patient: {fullName}");
 
         if (patient.DateOfBirth is { } dob)
@@ -252,11 +252,12 @@ public sealed class ActivateSosAlertCommandHandler(
     {
         var pass = new List<string>();
 
+        var fullName = BuildFullName(patient);
+
         // Opening
-        pass.Add("This is an automated SOS alert from the Copp Adresd health platform. Please listen carefully.");
+        pass.Add($"This is an automated emergency call from the Copp Adresd health platform. {fullName} pressed the SOS emergency button on her device and may need urgent help. Please listen carefully.");
 
         // Patient identification
-        var fullName = BuildFullName(patient);
         var age = patient.DateOfBirth is { } dob ? CalculateAge(dob) : (int?)null;
         pass.Add(age is { } a
             ? $"The patient is {fullName}, {a} years old."
@@ -288,12 +289,6 @@ public sealed class ActivateSosAlertCommandHandler(
             pass.Add(locationWords);
         }
 
-        // Emergency contact
-        if (req.EmergencyContact is { } contact)
-        {
-            pass.Add($"Her emergency contact is {contact.Name}, {contact.Relationship}, reachable at {SpeakPhoneDigits(contact.Phone)}.");
-        }
-
         // Closing
         pass.Add($"If you are receiving this call, please call {emergencyNumber} if needed.");
 
@@ -309,17 +304,6 @@ public sealed class ActivateSosAlertCommandHandler(
             2 => $"{items[0]} and {items[1]}",
             _ => $"{string.Join(", ", items[..^1])}, and {items[^1]}"
         };
-
-    private static string SpeakPhoneDigits(string? phone)
-    {
-        if (string.IsNullOrWhiteSpace(phone))
-            return "unknown";
-        var digits = new string(phone.Where(char.IsDigit).ToArray());
-        if (digits.Length == 0)
-            return "unknown";
-        var prefix = phone.TrimStart().StartsWith("+") ? "plus " : "";
-        return prefix + string.Join(" ", digits.ToCharArray());
-    }
 
     private static string BuildFullName(PatientProfile patient)
     {
