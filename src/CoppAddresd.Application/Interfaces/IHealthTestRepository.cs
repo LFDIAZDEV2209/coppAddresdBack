@@ -309,6 +309,11 @@ public interface IHealthTestRepository
         CancellationToken ct = default
     );
 
+    // --- Geo / mapa ---
+    Task<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto> GetGeoAsync(
+        CancellationToken ct = default
+    );
+
     // --- Transacción multi-paso (submit) ---
     Task<int> SaveChangesAsync(CancellationToken ct = default);
     Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken ct = default);
