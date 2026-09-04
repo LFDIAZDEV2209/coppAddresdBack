@@ -47,11 +47,11 @@ public class ActivateSosAlertCommandHandlerTests
     }
 
     // ========================================================================
-    // (a) Mensaje contiene nombre + mapa y nunca "null"
+    // (a) Mensaje contiene nombre + ubicacion y nunca "null"
     // ========================================================================
 
     [Fact]
-    public async Task Handle_ConCoordenadas_MensajeContieneNombreYMapaLink()
+    public async Task Handle_ConCoordenadas_MensajeContieneNombreYUbicacion()
     {
         // Arrange
         var patientId = Guid.NewGuid();
@@ -82,8 +82,12 @@ public class ActivateSosAlertCommandHandlerTests
         Assert.Contains("María", result.MessageText);
         Assert.Contains("Elena", result.MessageText);
         Assert.Contains("González", result.MessageText);
-        Assert.Contains("https://maps.google.com/?q=4.711,-74.0721", result.MessageText);
-        Assert.Contains("15 metros", result.MessageText);
+        Assert.Contains("=== SOS ALERT - EMERGENCY ===", result.MessageText);
+        Assert.Contains("Address: Calle 100, Bogotá", result.MessageText);
+        Assert.Contains("Decimal: 4.711000, -74.072100", result.MessageText);
+        Assert.Contains("±15 m", result.MessageText);
+        Assert.Contains("DMS:", result.MessageText);
+        Assert.DoesNotContain("https://maps.google.com", result.MessageText);
         Assert.DoesNotContain("null", result.MessageText);
         Assert.Equal("911", result.EmergencyNumber);
     }
@@ -116,7 +120,7 @@ public class ActivateSosAlertCommandHandlerTests
 
         // Assert
         Assert.NotNull(result);
-        Assert.Contains("ubicacion no disponible", result.MessageText);
+        Assert.Contains("Location: not available", result.MessageText);
         Assert.DoesNotContain("null", result.MessageText);
     }
 
@@ -139,7 +143,7 @@ public class ActivateSosAlertCommandHandlerTests
         var request = new ActivateSosAlertRequest(
             Latitude: 1.0, Longitude: 2.0, AccuracyMeters: null,
             LocationLabel: null, Vitals: null, EmergencyContact: null,
-            Language: "en");
+            Language: "es");
 
         // Act
         var result = await _handler.Handle(
@@ -149,8 +153,8 @@ public class ActivateSosAlertCommandHandlerTests
         // Assert
         Assert.NotNull(result);
         Assert.DoesNotContain("null", result.MessageText);
-        Assert.DoesNotContain("Tipo sangre", result.MessageText);
-        Assert.DoesNotContain("Aseguradora", result.MessageText);
+        Assert.DoesNotContain("Blood type:", result.MessageText);
+        Assert.DoesNotContain("Insurer:", result.MessageText);
     }
 
     // ========================================================================
@@ -358,6 +362,60 @@ public class ActivateSosAlertCommandHandlerTests
         // Assert
         Assert.Null(result);
         await _sosAlertRepository.DidNotReceive().AddAsync(Arg.Any<SosAlert>(), Arg.Any<CancellationToken>());
+    }
+
+    // ========================================================================
+    // (g) Voice channel receives SHORT script, not the full message
+    // ========================================================================
+
+    [Fact]
+    public async Task Handle_ConContacto_VoiceRecibeScriptCorto()
+    {
+        // Arrange
+        var patientId = Guid.NewGuid();
+        var patient = CreatePatient(patientId, "Ana", "María", "Prueba");
+        _patientRepository.GetByIdAsync(patientId, Arg.Any<CancellationToken>()).Returns(patient);
+
+        _sosAlertRepository
+            .AddAsync(Arg.Any<SosAlert>(), Arg.Any<CancellationToken>())
+            .Returns(ci => ci.Arg<SosAlert>());
+
+        var request = new ActivateSosAlertRequest(
+            Latitude: 25.7617,
+            Longitude: -80.1918,
+            AccuracyMeters: 12.5,
+            LocationLabel: "Test HQ",
+            Vitals: new SosVitals(HeartRate: 140, Spo2: 94, BloodPressure: "160/110"),
+            EmergencyContact: new SosEmergencyContact("Pedro", "Esposo", "+17865550192", "pedro@test.com"),
+            Language: "es");
+
+        // Act
+        var result = await _handler.Handle(
+            new ActivateSosAlertCommand(patientId, request),
+            CancellationToken.None);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("Sent", result.Voice.Status);
+
+        // Capture the text sent to voiceCaller.CallAsync
+        var voiceArgs = _voiceCaller.Received(1).CallAsync(
+            Arg.Is<string>(p => p == "+17865550192"),
+            Arg.Any<string>(),
+            Arg.Is<string>(l => l == "en-US"),
+            Arg.Any<CancellationToken>());
+
+        // Retrieve the actual voice script by inspecting the call
+        var calls = _voiceCaller.ReceivedCalls();
+        var voiceScript = calls.First().GetArguments()[1].ToString()!;
+        Assert.DoesNotContain("http", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("text message", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Automated SOS emergency alert", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Ana María Prueba", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("heart rate 140", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("blood pressure 160/110", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("oxygen 94 percent", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Call 911 if needed", voiceScript, StringComparison.OrdinalIgnoreCase);
     }
 
     // ========================================================================

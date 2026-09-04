@@ -107,10 +107,13 @@ public sealed class ActivateSosAlertCommandHandler(
 
         await sosAlertRepository.AddAsync(alert, ct);
 
+        // ── Short TTS script (voice channel) ──
+        var voiceScript = BuildVoiceScript(patient, req, emergencyNumber);
+
         // ── Dispatch por canal (best-effort) ──
-        var smsResult = await DispatchSmsAsync(req.EmergencyContact, messageText, lang, ct);
-        var emailResult = await DispatchEmailAsync(req.EmergencyContact, patient, messageText, lang, ct);
-        var voiceResult = await DispatchVoiceAsync(req.EmergencyContact, messageText, lang, ct);
+        var smsResult = await DispatchSmsAsync(req.EmergencyContact, messageText, ct);
+        var emailResult = await DispatchEmailAsync(req.EmergencyContact, patient, messageText, ct);
+        var voiceResult = await DispatchVoiceAsync(req.EmergencyContact, voiceScript, ct);
 
         // ── Estado consolidado ──
         var statuses = new[] { smsResult.Status, emailResult.Status, voiceResult.Status };
@@ -153,170 +156,155 @@ public sealed class ActivateSosAlertCommandHandler(
     }
 
     // ========================================================================
-    // Construcción del mensaje de emergencia
+    // Construcción del mensaje de emergencia (English-only)
     // ========================================================================
 
     private static string BuildEmergencyMessage(
         PatientProfile patient,
         ActivateSosAlertRequest req,
-        string lang,
+        string _lang,
         string emergencyNumber)
     {
         var lines = new List<string>();
 
-        if (lang == "es")
+        lines.Add("=== SOS ALERT - EMERGENCY ===");
+        lines.Add("");
+
+        var fullName = BuildFullName(patient);
+        lines.Add($"Patient: {fullName}");
+
+        if (patient.DateOfBirth is { } dob)
         {
-            lines.Add("=== ALERTA SOS - EMERGENCIA ===");
-            lines.Add("");
-
-            // Datos del paciente
-            var fullName = BuildFullName(patient);
-            lines.Add($"Paciente: {fullName}");
-
-            if (patient.DateOfBirth is { } dob)
-            {
-                var age = CalculateAge(dob);
-                lines.Add($"Edad: {age} anios (nacimiento: {dob:dd/MM/yyyy})");
-            }
-
-            if (!string.IsNullOrWhiteSpace(patient.DocumentNumber))
-            {
-                lines.Add($"Documento: {patient.DocumentNumber}");
-            }
-
-            // Blood type + insurer
-            if (!string.IsNullOrWhiteSpace(patient.BloodType?.Code))
-            {
-                lines.Add($"Tipo sangre: {patient.BloodType.Code}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(patient.Insurer?.Name))
-            {
-                lines.Add($"Aseguradora: {patient.Insurer.Name}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(patient.MemberId))
-                lines.Add($"No. afiliado: {patient.MemberId}");
-
-            // Signos vitales
-            if (req.Vitals is { } vitals)
-            {
-                lines.Add("");
-                lines.Add("--- Signos Vitales ---");
-                if (vitals.HeartRate is { } hr)
-                    lines.Add($"Frecuencia Cardiaca: {hr} lpm");
-                if (vitals.Spo2 is { } spo2)
-                    lines.Add($"SpO2: {spo2}%");
-                if (!string.IsNullOrWhiteSpace(vitals.BloodPressure))
-                    lines.Add($"Presion Arterial: {vitals.BloodPressure}");
-            }
-
-            // Ubicacion
-            lines.Add("");
-            if (req.Latitude is { } lat && req.Longitude is { } lng)
-            {
-                var mapsUrl = $"https://maps.google.com/?q={lat},{lng}";
-                lines.Add($"Ubicacion: {mapsUrl}");
-                if (req.AccuracyMeters is { } acc)
-                    lines.Add($"Precision: {acc:F0} metros");
-            }
-            else
-            {
-                lines.Add("Ubicacion: ubicacion no disponible");
-            }
-
-            if (!string.IsNullOrWhiteSpace(req.LocationLabel))
-                lines.Add($"Referencia: {req.LocationLabel}");
-
-            // Contacto de emergencia
-            if (req.EmergencyContact is { } contact)
-            {
-                lines.Add("");
-                lines.Add("--- Contacto de Emergencia ---");
-                lines.Add($"{contact.Name} ({contact.Relationship})");
-                lines.Add($"Telefono: {contact.Phone}");
-                if (!string.IsNullOrWhiteSpace(contact.Email))
-                    lines.Add($"Email: {contact.Email}");
-            }
-
-            lines.Add("");
-            lines.Add($"Llamar al {emergencyNumber} si es necesario.");
+            var age = CalculateAge(dob);
+            lines.Add($"Age: {age} years (DOB: {dob:MM/dd/yyyy})");
         }
-        else // English
+
+        if (!string.IsNullOrWhiteSpace(patient.DocumentNumber))
         {
-            lines.Add("=== SOS ALERT - EMERGENCY ===");
-            lines.Add("");
-
-            var fullName = BuildFullName(patient);
-            lines.Add($"Patient: {fullName}");
-
-            if (patient.DateOfBirth is { } dob)
-            {
-                var age = CalculateAge(dob);
-                lines.Add($"Age: {age} years (DOB: {dob:MM/dd/yyyy})");
-            }
-
-            if (!string.IsNullOrWhiteSpace(patient.DocumentNumber))
-            {
-                lines.Add($"Document: {patient.DocumentNumber}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(patient.BloodType?.Code))
-            {
-                lines.Add($"Blood type: {patient.BloodType.Code}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(patient.Insurer?.Name))
-            {
-                lines.Add($"Insurer: {patient.Insurer.Name}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(patient.MemberId))
-                lines.Add($"Member ID: {patient.MemberId}");
-
-            if (req.Vitals is { } vitals)
-            {
-                lines.Add("");
-                lines.Add("--- Vital Signs ---");
-                if (vitals.HeartRate is { } hr)
-                    lines.Add($"Heart Rate: {hr} bpm");
-                if (vitals.Spo2 is { } spo2)
-                    lines.Add($"SpO2: {spo2}%");
-                if (!string.IsNullOrWhiteSpace(vitals.BloodPressure))
-                    lines.Add($"Blood Pressure: {vitals.BloodPressure}");
-            }
-
-            lines.Add("");
-            if (req.Latitude is { } lat && req.Longitude is { } lng)
-            {
-                var mapsUrl = $"https://maps.google.com/?q={lat},{lng}";
-                lines.Add($"Location: {mapsUrl}");
-                if (req.AccuracyMeters is { } acc)
-                    lines.Add($"Accuracy: {acc:F0} meters");
-            }
-            else
-            {
-                lines.Add("Location: not available");
-            }
-
-            if (!string.IsNullOrWhiteSpace(req.LocationLabel))
-                lines.Add($"Reference: {req.LocationLabel}");
-
-            if (req.EmergencyContact is { } contact)
-            {
-                lines.Add("");
-                lines.Add("--- Emergency Contact ---");
-                lines.Add($"{contact.Name} ({contact.Relationship})");
-                lines.Add($"Phone: {contact.Phone}");
-                if (!string.IsNullOrWhiteSpace(contact.Email))
-                    lines.Add($"Email: {contact.Email}");
-            }
-
-            lines.Add("");
-            lines.Add($"Call {emergencyNumber} if needed.");
+            lines.Add($"Document: {patient.DocumentNumber}");
         }
+
+        if (!string.IsNullOrWhiteSpace(patient.BloodType?.Code))
+        {
+            lines.Add($"Blood type: {patient.BloodType.Code}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(patient.Insurer?.Name))
+        {
+            lines.Add($"Insurer: {patient.Insurer.Name}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(patient.MemberId))
+            lines.Add($"Member ID: {patient.MemberId}");
+
+        // Vital Signs
+        if (req.Vitals is { } vitals)
+        {
+            lines.Add("");
+            lines.Add("--- Vital Signs ---");
+            if (vitals.HeartRate is { } hr)
+                lines.Add($"Heart Rate: {hr} bpm");
+            if (vitals.Spo2 is { } spo2)
+                lines.Add($"SpO2: {spo2}%");
+            if (!string.IsNullOrWhiteSpace(vitals.BloodPressure))
+                lines.Add($"Blood Pressure: {vitals.BloodPressure}");
+        }
+
+        // Location (no maps URL — address + decimal + DMS)
+        lines.Add("");
+        var hasAddress = !string.IsNullOrWhiteSpace(req.LocationLabel);
+        var hasCoords = req.Latitude is not null && req.Longitude is not null;
+
+        if (hasAddress || hasCoords)
+        {
+            if (hasAddress)
+                lines.Add($"Address: {req.LocationLabel}");
+
+            if (hasCoords)
+            {
+                var lat = req.Latitude!.Value;
+                var lng = req.Longitude!.Value;
+                lines.Add($"Decimal: {lat:F6}, {lng:F6}" +
+                          (req.AccuracyMeters is { } acc ? $" (±{acc:F0} m)" : ""));
+                lines.Add($"DMS: {ToDms(lat, isLat: true)}, {ToDms(lng, isLat: false)}");
+            }
+        }
+        else
+        {
+            lines.Add("Location: not available");
+        }
+
+        // Emergency Contact
+        if (req.EmergencyContact is { } contact)
+        {
+            lines.Add("");
+            lines.Add("--- Emergency Contact ---");
+            lines.Add($"{contact.Name} ({contact.Relationship})");
+            lines.Add($"Phone: {contact.Phone}");
+            if (!string.IsNullOrWhiteSpace(contact.Email))
+                lines.Add($"Email: {contact.Email}");
+        }
+
+        lines.Add("");
+        lines.Add($"Call {emergencyNumber} if needed.");
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    // ========================================================================
+    // Short voice-call script (spoken TTS — no URLs, ~60 seconds)
+    // ========================================================================
+
+    private static string BuildVoiceScript(
+        PatientProfile patient,
+        ActivateSosAlertRequest req,
+        string emergencyNumber)
+    {
+        var parts = new List<string>();
+
+        // Opening
+        parts.Add("This is an automated SOS emergency alert.");
+
+        // Patient identification
+        var fullName = BuildFullName(patient);
+        var age = patient.DateOfBirth is { } dob ? CalculateAge(dob) : (int?)null;
+        parts.Add(age is { } a
+            ? $"The patient is {fullName}, {a} years old."
+            : $"The patient is {fullName}.");
+
+        // Vital signs (spoken form)
+        if (req.Vitals is { } vitals)
+        {
+            var vitalsParts = new List<string>();
+            if (vitals.HeartRate is { } hr)
+                vitalsParts.Add($"heart rate {hr}");
+            if (!string.IsNullOrWhiteSpace(vitals.BloodPressure))
+                vitalsParts.Add($"blood pressure {vitals.BloodPressure}");
+            if (vitals.Spo2 is { } spo2)
+                vitalsParts.Add($"oxygen {spo2} percent");
+            if (vitalsParts.Count > 0)
+                parts.Add($"Vital signs: {string.Join(", ", vitalsParts)}.");
+        }
+
+        // Location (spoken decimal + accuracy; text message reference)
+        if (req.Latitude is { } lat && req.Longitude is { } lng)
+        {
+            var locationWords = $"location {lat:F6}, {lng:F6}";
+            if (req.AccuracyMeters is { } acc)
+                locationWords += $", accuracy plus or minus {acc:F0} meters";
+            parts.Add($"The {locationWords} has been sent by text message along with full medical information.");
+        }
+
+        // Emergency contact
+        if (req.EmergencyContact is { } contact)
+        {
+            parts.Add($"Emergency contact: {contact.Name}, {contact.Relationship}, phone {contact.Phone}.");
+        }
+
+        // Closing
+        parts.Add($"Call {emergencyNumber} if needed.");
+
+        return string.Join(" ", parts);
     }
 
     private static string BuildFullName(PatientProfile patient)
@@ -337,12 +325,28 @@ public sealed class ActivateSosAlertCommandHandler(
         return age;
     }
 
+    /// <summary>Convert decimal degrees to DMS string (e.g. "4°42'39.6\" N").</summary>
+    private static string ToDms(double decimalDegrees, bool isLat)
+    {
+        var absolute = Math.Abs(decimalDegrees);
+        var degrees = (int)absolute;
+        var minutesFull = (absolute - degrees) * 60;
+        var minutes = (int)minutesFull;
+        var seconds = (minutesFull - minutes) * 60;
+
+        var direction = isLat
+            ? (decimalDegrees >= 0 ? "N" : "S")
+            : (decimalDegrees >= 0 ? "E" : "W");
+
+        return $"{degrees}°{minutes}'{seconds:F1}\" {direction}";
+    }
+
     // ========================================================================
     // Dispatch por canal
     // ========================================================================
 
     private async Task<SosChannelResult> DispatchSmsAsync(
-        SosEmergencyContact? contact, string messageText, string lang, CancellationToken ct)
+        SosEmergencyContact? contact, string messageText, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(contact?.Phone))
             return new SosChannelResult("Skipped", "Sin telefono de contacto");
@@ -365,14 +369,12 @@ public sealed class ActivateSosAlertCommandHandler(
     }
 
     private async Task<SosChannelResult> DispatchEmailAsync(
-        SosEmergencyContact? contact, PatientProfile patient, string messageText, string lang, CancellationToken ct)
+        SosEmergencyContact? contact, PatientProfile patient, string messageText, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(contact?.Email))
             return new SosChannelResult("Skipped", "Sin email de contacto");
 
-        var subject = lang == "es"
-            ? $"ALERTA SOS - {patient.FirstName} {patient.LastName}"
-            : $"SOS ALERT - {patient.FirstName} {patient.LastName}";
+        var subject = $"SOS ALERT - {patient.FirstName} {patient.LastName}";
 
         try
         {
@@ -392,15 +394,14 @@ public sealed class ActivateSosAlertCommandHandler(
     }
 
     private async Task<SosChannelResult> DispatchVoiceAsync(
-        SosEmergencyContact? contact, string messageText, string lang, CancellationToken ct)
+        SosEmergencyContact? contact, string voiceScript, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(contact?.Phone))
             return new SosChannelResult("Skipped", "Sin telefono de contacto");
 
         try
         {
-            var ttsLanguage = lang == "es" ? "es-US" : "en-US";
-            await voiceCaller.CallAsync(contact!.Phone, messageText, ttsLanguage, ct);
+            await voiceCaller.CallAsync(contact!.Phone, voiceScript, "en-US", ct);
             return new SosChannelResult("Sent", null);
         }
         catch (InvalidOperationException)

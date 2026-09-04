@@ -98,9 +98,10 @@ public sealed class SosControllerTests(ProgramApiTestDb fixture) : IAsyncDisposa
         Assert.False(json.GetProperty("triggeredAt").GetString() is null);
 
         var messageText = json.GetProperty("messageText").GetString() ?? string.Empty;
-        Assert.Contains("ALERTA SOS - EMERGENCIA", messageText);
+        Assert.Contains("SOS ALERT - EMERGENCY", messageText);
         Assert.Contains("Ana Prueba", messageText);
-        Assert.Contains("Llamar al 911", messageText);
+        Assert.Contains("Call 911 if needed", messageText);
+        Assert.DoesNotContain("maps.google.com", messageText, StringComparison.OrdinalIgnoreCase);
 
         // Canales: proveedores Log reportan Sent (log + éxito simulado).
         Assert.Equal("Sent", json.GetProperty("sms").GetProperty("status").GetString());
