@@ -102,10 +102,10 @@ public sealed class SosControllerTests(ProgramApiTestDb fixture) : IAsyncDisposa
         Assert.Contains("Ana Prueba", messageText);
         Assert.Contains("Llamar al 911", messageText);
 
-        // Canales: Log SMS/voz se reportan Disabled, email simulado Sent.
-        Assert.Equal("Disabled", json.GetProperty("sms").GetProperty("status").GetString());
+        // Canales: proveedores Log reportan Sent (log + éxito simulado).
+        Assert.Equal("Sent", json.GetProperty("sms").GetProperty("status").GetString());
         Assert.Equal("Sent", json.GetProperty("email").GetProperty("status").GetString());
-        Assert.Equal("Disabled", json.GetProperty("voice").GetProperty("status").GetString());
+        Assert.Equal("Sent", json.GetProperty("voice").GetProperty("status").GetString());
 
         // Fila persistida con estado consolidado y resultados por canal.
         await using var verifyDb = fixture.CreateDbContext();
