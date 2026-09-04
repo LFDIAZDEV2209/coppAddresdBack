@@ -241,7 +241,8 @@ public sealed class ActivateSosAlertCommandHandler(
     }
 
     // ========================================================================
-    // Short voice-call script (spoken TTS — no URLs, ~60 seconds)
+    // Voice-call script (spoken TTS — connectors, TTS-friendly numbers,
+    // no URLs; the whole message is repeated once for clarity)
     // ========================================================================
 
     private static string BuildVoiceScript(
@@ -249,51 +250,75 @@ public sealed class ActivateSosAlertCommandHandler(
         ActivateSosAlertRequest req,
         string emergencyNumber)
     {
-        var parts = new List<string>();
+        var pass = new List<string>();
 
         // Opening
-        parts.Add("This is an automated SOS alert from the Copp Adresd health platform.");
+        pass.Add("This is an automated SOS alert from the Copp Adresd health platform. Please listen carefully.");
 
         // Patient identification
         var fullName = BuildFullName(patient);
         var age = patient.DateOfBirth is { } dob ? CalculateAge(dob) : (int?)null;
-        parts.Add(age is { } a
+        pass.Add(age is { } a
             ? $"The patient is {fullName}, {a} years old."
             : $"The patient is {fullName}.");
 
-        // Vital signs (spoken form)
+        // Vital signs (spoken form, TTS-friendly numbers)
         if (req.Vitals is { } vitals)
         {
             var vitalsParts = new List<string>();
             if (vitals.HeartRate is { } hr)
                 vitalsParts.Add($"heart rate {hr}");
             if (!string.IsNullOrWhiteSpace(vitals.BloodPressure))
-                vitalsParts.Add($"blood pressure {vitals.BloodPressure}");
+                vitalsParts.Add($"blood pressure {vitals.BloodPressure.Replace("/", " over ")}");
             if (vitals.Spo2 is { } spo2)
                 vitalsParts.Add($"oxygen {spo2} percent");
             if (vitalsParts.Count > 0)
-                parts.Add($"Vital signs: {string.Join(", ", vitalsParts)}.");
+                pass.Add($"Her vital signs are as follows: {JoinSpokenList(vitalsParts)}.");
         }
 
-        // Location (spoken decimal + accuracy; text message reference)
+        // Location (spoken decimal with hemisphere words + accuracy; text message reference)
         if (req.Latitude is { } lat && req.Longitude is { } lng)
         {
-            var locationWords = $"location {lat:F6}, {lng:F6}";
+            var ns = lat >= 0 ? "north" : "south";
+            var ew = lng >= 0 ? "east" : "west";
+            var locationWords = $"She is located at {Math.Abs(lat):F6} {ns}, {Math.Abs(lng):F6} {ew}";
             if (req.AccuracyMeters is { } acc)
-                locationWords += $", accuracy plus or minus {acc:F0} meters";
-            parts.Add($"The {locationWords} has been sent by text message along with full medical information.");
+                locationWords += $", accurate to within {acc:F0} meters";
+            locationWords += ". Her exact location and her full medical information have also been sent by text message.";
+            pass.Add(locationWords);
         }
 
         // Emergency contact
         if (req.EmergencyContact is { } contact)
         {
-            parts.Add($"Emergency contact: {contact.Name}, {contact.Relationship}, phone {contact.Phone}.");
+            pass.Add($"Her emergency contact is {contact.Name}, {contact.Relationship}, reachable at {SpeakPhoneDigits(contact.Phone)}.");
         }
 
         // Closing
-        parts.Add($"Call {emergencyNumber} if needed.");
+        pass.Add($"If you are receiving this call, please call {emergencyNumber} if needed.");
 
-        return string.Join(" ", parts);
+        // Repeat the whole message once — phone lines get noisy
+        var single = string.Join(" ", pass);
+        return $"{single} I repeat. {single}";
+    }
+
+    private static string JoinSpokenList(List<string> items) =>
+        items.Count switch
+        {
+            1 => items[0],
+            2 => $"{items[0]} and {items[1]}",
+            _ => $"{string.Join(", ", items[..^1])}, and {items[^1]}"
+        };
+
+    private static string SpeakPhoneDigits(string? phone)
+    {
+        if (string.IsNullOrWhiteSpace(phone))
+            return "unknown";
+        var digits = new string(phone.Where(char.IsDigit).ToArray());
+        if (digits.Length == 0)
+            return "unknown";
+        var prefix = phone.TrimStart().StartsWith("+") ? "plus " : "";
+        return prefix + string.Join(" ", digits.ToCharArray());
     }
 
     private static string BuildFullName(PatientProfile patient)
