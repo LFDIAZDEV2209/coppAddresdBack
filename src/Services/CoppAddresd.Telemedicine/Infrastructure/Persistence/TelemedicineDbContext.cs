@@ -23,6 +23,10 @@ public sealed class TelemedicineDbContext(DbContextOptions<TelemedicineDbContext
     public DbSet<TelemedicineSettings> Settings => Set<TelemedicineSettings>();
     public DbSet<TelemedicineWebhookEvent> WebhookEvents => Set<TelemedicineWebhookEvent>();
 
+    // Analítica — Rollups diarios de telemedicina (pre-agregación CQRS)
+    public DbSet<AppointmentDailyMetric> AppointmentDailyMetrics => Set<AppointmentDailyMetric>();
+    public DbSet<ProfessionalDailyStat> ProfessionalDailyStats => Set<ProfessionalDailyStat>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Todo el modelo de este servicio vive en el schema tele.

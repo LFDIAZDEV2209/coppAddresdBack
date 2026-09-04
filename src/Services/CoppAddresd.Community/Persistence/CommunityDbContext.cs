@@ -19,6 +19,9 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<ChatGroup> ChatGroups => Set<ChatGroup>();
     public DbSet<ChatGroupMember> ChatGroupMembers => Set<ChatGroupMember>();
 
+    // Analítica — Rollup diario de comunidad (pre-agregación CQRS)
+    public DbSet<CommunityDailyMetric> CommunityDailyMetrics => Set<CommunityDailyMetric>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CommunityDbContext).Assembly);

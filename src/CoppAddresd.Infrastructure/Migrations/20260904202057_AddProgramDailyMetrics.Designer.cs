@@ -5,6 +5,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904202057_AddProgramDailyMetrics")]
+    partial class AddProgramDailyMetrics
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1778,37 +1781,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_health_test_comments_patient_id");
 
                     b.ToTable("health_test_comments", "app");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestDailyMetric", b =>
-                {
-                    b.Property<DateOnly>("MetricDate")
-                        .HasColumnType("date");
-
-                    b.Property<Guid>("ClinicId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("MetricKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("DimensionKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("LastUpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("NOW()");
-
-                    b.Property<long>("TotalCount")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("MetricDate", "ClinicId", "MetricKey", "DimensionKey");
-
-                    b.HasIndex("ClinicId", "MetricKey", "MetricDate");
-
-                    b.ToTable("health_test_daily_metrics", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", b =>
@@ -3701,37 +3673,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_patient_allergies_patient_allergen");
 
                     b.ToTable("patient_allergies", "app");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientDailyMetric", b =>
-                {
-                    b.Property<DateOnly>("MetricDate")
-                        .HasColumnType("date");
-
-                    b.Property<Guid>("ClinicId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("MetricKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("DimensionKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("LastUpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("NOW()");
-
-                    b.Property<long>("TotalCount")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("MetricDate", "ClinicId", "MetricKey", "DimensionKey");
-
-                    b.HasIndex("ClinicId", "MetricKey", "MetricDate");
-
-                    b.ToTable("patient_daily_metrics", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientDiagnosis", b =>

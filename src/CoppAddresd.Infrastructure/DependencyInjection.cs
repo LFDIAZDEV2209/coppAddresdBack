@@ -141,6 +141,21 @@ public static class DependencyInjection
         services.AddSingleton<IInventoryMetricsQueue, InventoryMetricsQueue>();
         services.AddHostedService<InventoryMetricsProcessorHostedService>();
 
+        // Analítica — Pre-agregación CQRS del programa ANTARES: cola en memoria
+        // + HostedService que drena eventos y hace upsert atómico sobre app.program_daily_metrics.
+        services.AddSingleton<IProgramMetricsQueue, ProgramMetricsQueue>();
+        services.AddHostedService<ProgramMetricsProcessorHostedService>();
+
+        // Analítica — Pre-agregación CQRS de pacientes: cola en memoria
+        // + HostedService que drena eventos y hace upsert atómico sobre app.patient_daily_metrics.
+        services.AddSingleton<IPatientMetricsQueue, PatientMetricsQueue>();
+        services.AddHostedService<PatientMetricsProcessorHostedService>();
+
+        // Analítica — Pre-agregación CQRS de tests de salud: cola en memoria
+        // + HostedService que drena eventos y hace upsert atómico sobre app.health_test_daily_metrics.
+        services.AddSingleton<IHealthTestMetricsQueue, HealthTestMetricsQueue>();
+        services.AddHostedService<HealthTestMetricsProcessorHostedService>();
+
         AddObjectStorage(services, configuration);
 
         AddDistributedCache(services, configuration);

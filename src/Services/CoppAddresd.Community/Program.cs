@@ -3,6 +3,7 @@ using CoppAddresd.Community.GraphQL;
 using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.GraphQL.Subscriptions;
+using CoppAddresd.Community.Metrics;
 using CoppAddresd.Community.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -66,6 +67,11 @@ builder.Services
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
 
 builder.Services.AddHealthChecks();
+
+// Analítica — Pre-agregación CQRS de comunidad: cola en memoria + HostedService
+// que drena eventos y hace upsert atómico sobre community.community_daily_metrics.
+builder.Services.AddSingleton<ICommunityMetricsQueue, CommunityMetricsQueue>();
+builder.Services.AddHostedService<CommunityMetricsProcessorHostedService>();
 
 var app = builder.Build();
 

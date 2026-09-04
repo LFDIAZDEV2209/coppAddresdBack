@@ -145,6 +145,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Analítica — Rollup diario de inventario (Dashboard #6, pre-agregación CQRS)
     public DbSet<InventoryDailyMetric> InventoryDailyMetrics => Set<InventoryDailyMetric>();
 
+    // Analítica — Rollup diario del programa ANTARES (pre-agregación CQRS)
+    public DbSet<ProgramDailyMetric> ProgramDailyMetrics => Set<ProgramDailyMetric>();
+
+    // Analítica — Rollup diario de pacientes (pre-agregación CQRS)
+    public DbSet<PatientDailyMetric> PatientDailyMetrics => Set<PatientDailyMetric>();
+
+    // Analítica — Rollup diario de tests de salud (pre-agregación CQRS)
+    public DbSet<HealthTestDailyMetric> HealthTestDailyMetrics => Set<HealthTestDailyMetric>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);

@@ -3,6 +3,7 @@ using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Infrastructure.Cache;
 using CoppAddresd.Telemedicine.Infrastructure.Configuration;
 using CoppAddresd.Telemedicine.Infrastructure.Extensions;
+using CoppAddresd.Telemedicine.Infrastructure.Metrics;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
 using CoppAddresd.Telemedicine.Infrastructure.Repositories;
 using CoppAddresd.Telemedicine.Infrastructure.Security;
@@ -80,6 +81,12 @@ public static class DependencyInjection
         AddVideoProvider(services, configuration);
 
         AddDistributedCache(services, configuration);
+
+        // Analítica — Pre-agregación CQRS de telemedicina: cola en memoria
+        // + HostedService que drena eventos y hace upsert atómico sobre
+        // tele.appointment_daily_metrics y tele.professional_daily_stats.
+        services.AddSingleton<ITelemedicineMetricsQueue, TelemedicineMetricsQueue>();
+        services.AddHostedService<TelemedicineMetricsProcessorHostedService>();
 
         return services;
     }
