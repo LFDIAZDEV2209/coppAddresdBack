@@ -234,17 +234,6 @@ public sealed class ActivateSosAlertCommandHandler(
             lines.Add("Location: not available");
         }
 
-        // Emergency Contact
-        if (req.EmergencyContact is { } contact)
-        {
-            lines.Add("");
-            lines.Add("--- Emergency Contact ---");
-            lines.Add($"{contact.Name} ({contact.Relationship})");
-            lines.Add($"Phone: {contact.Phone}");
-            if (!string.IsNullOrWhiteSpace(contact.Email))
-                lines.Add($"Email: {contact.Email}");
-        }
-
         lines.Add("");
         lines.Add($"Call {emergencyNumber} if needed.");
 
@@ -263,7 +252,7 @@ public sealed class ActivateSosAlertCommandHandler(
         var parts = new List<string>();
 
         // Opening
-        parts.Add("This is an automated SOS emergency alert.");
+        parts.Add("This is an automated SOS alert from the Copp Adresd health platform.");
 
         // Patient identification
         var fullName = BuildFullName(patient);

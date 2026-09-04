@@ -410,7 +410,9 @@ public class ActivateSosAlertCommandHandlerTests
         var voiceScript = calls.First().GetArguments()[1].ToString()!;
         Assert.DoesNotContain("http", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("text message", voiceScript, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Automated SOS emergency alert", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Copp Adresd", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("health platform", voiceScript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("automated SOS alert from the Copp Adresd health platform", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Ana María Prueba", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("heart rate 140", voiceScript, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("blood pressure 160/110", voiceScript, StringComparison.OrdinalIgnoreCase);
