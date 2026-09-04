@@ -935,10 +935,23 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     public async Task<int> CountAssignmentsByStatusAsync(
         HealthTestAssignmentStatus status,
         CancellationToken ct = default
-    ) =>
-        await dbContext
+    )
+    {
+        var statusKey = status.ToString().ToLowerInvariant();
+        var preAggSum = await dbContext
+            .HealthTestDailyMetrics.AsNoTracking()
+            .Where(x => x.MetricKey == "assignments_count" && x.DimensionKey == statusKey && x.ClinicId == Guid.Empty)
+            .SumAsync(x => (int?)x.TotalCount, ct);
+
+        if (preAggSum.HasValue && preAggSum.Value > 0)
+        {
+            return preAggSum.Value;
+        }
+
+        return await dbContext
             .HealthTestAssignments.AsNoTracking()
             .CountAsync(x => x.Status == status, ct);
+    }
 
     public async Task<int> CountAssignmentsByStatusForPatientsAsync(
         HealthTestAssignmentStatus status,
@@ -952,13 +965,26 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     public async Task<int> CountEvaluationsBySeverityAsync(
         HealthTestSeverity severity,
         CancellationToken ct = default
-    ) =>
-        await dbContext
+    )
+    {
+        var severityKey = severity.ToString().ToLowerInvariant();
+        var preAggSum = await dbContext
+            .HealthTestDailyMetrics.AsNoTracking()
+            .Where(x => x.MetricKey == "severity_count" && x.DimensionKey == severityKey && x.ClinicId == Guid.Empty)
+            .SumAsync(x => (int?)x.TotalCount, ct);
+
+        if (preAggSum.HasValue && preAggSum.Value > 0)
+        {
+            return preAggSum.Value;
+        }
+
+        return await dbContext
             .HealthTestResults.AsNoTracking()
             .CountAsync(
                 x => x.Severity == severity && x.ResultType == HealthTestResultType.score,
                 ct
             );
+    }
 
     public async Task<int> CountEvaluationsBySeverityForPatientsAsync(
         HealthTestSeverity severity,
@@ -979,7 +1005,21 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     public async Task<int> CountAlertsByStatusAsync(
         HealthTestAlertStatus status,
         CancellationToken ct = default
-    ) => await dbContext.HealthTestAlerts.AsNoTracking().CountAsync(x => x.Status == status, ct);
+    )
+    {
+        var statusKey = status.ToString().ToLowerInvariant();
+        var preAggSum = await dbContext
+            .HealthTestDailyMetrics.AsNoTracking()
+            .Where(x => x.MetricKey == "alerts_count" && x.DimensionKey == statusKey && x.ClinicId == Guid.Empty)
+            .SumAsync(x => (int?)x.TotalCount, ct);
+
+        if (preAggSum.HasValue && preAggSum.Value > 0)
+        {
+            return preAggSum.Value;
+        }
+
+        return await dbContext.HealthTestAlerts.AsNoTracking().CountAsync(x => x.Status == status, ct);
+    }
 
     public async Task<int> CountAlertsByStatusForPatientsAsync(
         HealthTestAlertStatus status,
