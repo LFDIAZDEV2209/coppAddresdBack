@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
@@ -42,7 +43,8 @@ public sealed class ScheduleAppointmentCommandHandler(
     IAppointmentRepository appointments,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IAlertRepository alerts)
+    IAlertRepository alerts,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<ScheduleAppointmentCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(
@@ -80,6 +82,19 @@ public sealed class ScheduleAppointmentCommandHandler(
         };
 
         await appointments.AddAsync(appointment, ct);
+
+        // Métricas pre-agregadas CQRS en segundo plano (0ms impacto en escritura)
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(new AppointmentScheduledMetricEvent(
+                appointment.Id,
+                appointment.ProfessionalId,
+                appointment.ClinicId,
+                DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime),
+                appointment.ScheduledStart.UtcDateTime.Hour,
+                appointment.Status
+            ));
+        }
 
         // Bandeja: cita creada → al profesional asignado.
         if (AlertMaterializer.NewAppointment(

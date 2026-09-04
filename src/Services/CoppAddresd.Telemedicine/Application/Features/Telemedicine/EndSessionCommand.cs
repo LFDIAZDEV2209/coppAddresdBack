@@ -1,9 +1,11 @@
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
@@ -34,7 +36,8 @@ public sealed class EndSessionCommandHandler(
     IAppointmentRepository appointments,
     IVideoProvider videoProvider,
     IAppointmentReferenceDataService referenceData,
-    ILogger<EndSessionCommandHandler> logger)
+    ILogger<EndSessionCommandHandler> logger,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<EndSessionCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(EndSessionCommand request, CancellationToken ct)
@@ -84,10 +87,24 @@ public sealed class EndSessionCommandHandler(
                 room.UpdatedAt = now.UtcDateTime;
             }
 
+            var oldStatus = appointment.Status;
             appointment.Status = AppointmentStatus.Completed;
             appointment.UpdatedAt = now.UtcDateTime;
 
             await appointments.UpdateAsync(appointment, ct);
+
+            // Métricas pre-agregadas CQRS en segundo plano (0ms impacto en escritura)
+            if (metricsQueue != null)
+            {
+                await metricsQueue.EnqueueAsync(new AppointmentStatusChangedMetricEvent(
+                    appointment.Id,
+                    appointment.ProfessionalId,
+                    appointment.ClinicId,
+                    DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime),
+                    oldStatus,
+                    AppointmentStatus.Completed
+                ));
+            }
         }
 
         var dto = await AppointmentMapper.BuildDtosAsync([appointment], referenceData, ct);

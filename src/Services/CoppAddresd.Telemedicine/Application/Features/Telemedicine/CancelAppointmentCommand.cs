@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
@@ -42,7 +43,8 @@ public sealed class CancelAppointmentCommandValidator : AbstractValidator<Cancel
 public sealed class CancelAppointmentCommandHandler(
     IAppointmentRepository appointments,
     IAppointmentReferenceDataService referenceData,
-    IAlertRepository alerts
+    IAlertRepository alerts,
+    ITelemedicineMetricsQueue? metricsQueue = null
 ) : IRequestHandler<CancelAppointmentCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(CancelAppointmentCommand request, CancellationToken ct)
@@ -86,6 +88,7 @@ public sealed class CancelAppointmentCommandHandler(
             );
         }
 
+        var oldStatus = entity.Status;
         var now = DateTimeOffset.UtcNow;
 
         entity.Status = AppointmentStatus.Cancelled;
@@ -115,6 +118,19 @@ public sealed class CancelAppointmentCommandHandler(
         );
 
         await appointments.UpdateAsync(entity, ct);
+
+        // Métricas pre-agregadas CQRS en segundo plano (0ms impacto en escritura)
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(new AppointmentStatusChangedMetricEvent(
+                entity.Id,
+                entity.ProfessionalId,
+                entity.ClinicId,
+                DateOnly.FromDateTime(entity.ScheduledStart.UtcDateTime),
+                oldStatus,
+                AppointmentStatus.Cancelled
+            ));
+        }
 
         // Bandeja: cancelación → al profesional asignado.
         var professional = await referenceData.GetProfessionalAsync(entity.ProfessionalId, ct);

@@ -1,3 +1,4 @@
+using CoppAddresd.Api.Authorization;
 using CoppAddresd.Application.Features.Inventory;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -8,6 +9,7 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/inventory/analytics")]
 [Authorize]
+[RequirePermission("Inventory.View")]
 public class InventoryAnalyticsController(IMediator mediator) : ControllerBase
 {
     [HttpGet]

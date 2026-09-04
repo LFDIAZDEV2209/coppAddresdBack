@@ -27,13 +27,15 @@ public static class CommunityStats
     /// Nivel de riesgo de inactividad: &gt;14 días sin actividad ⇒ Alto; 7–14 días ⇒ Medio;
     /// menos de 7 días (o perfil nuevo sin actividad) ⇒ Bajo.
     /// </summary>
-    public static RiskLevel ComputeRiskLevel(DateTimeOffset? lastPostAt, DateTimeOffset? lastActiveAt)
+    /// <param name="now">Instante de referencia (para determinismo en tests). Si es null, usa <c>DateTimeOffset.UtcNow</c>.</param>
+    public static RiskLevel ComputeRiskLevel(DateTimeOffset? lastPostAt, DateTimeOffset? lastActiveAt, DateTimeOffset? now = null)
     {
         var last = MaxOrNull(lastPostAt, lastActiveAt);
         if (last is null)
             return RiskLevel.Bajo;
 
-        var days = (DateTimeOffset.UtcNow - last.Value).TotalDays;
+        var reference = now ?? DateTimeOffset.UtcNow;
+        var days = (reference - last.Value).TotalDays;
         if (days > 14)
             return RiskLevel.Alto;
         if (days >= 7)
