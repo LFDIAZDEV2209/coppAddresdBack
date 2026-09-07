@@ -22,6 +22,7 @@ namespace CoppAddresd.Api.Controllers;
 /// <c>HealthTests.Manage</c> (catálogo), <c>HealthTests.Assign</c> (asignación),
 /// <c>HealthTests.Review</c> (alertas), <c>HealthTests.View</c> (global) o
 /// <c>HealthTests.ViewOwn</c> (solo pacientes asignados al profesional del JWT).
+/// Fix prod 2026-09-07: force deploy para master endpoint (ya existe en local).
 /// </summary>
 [ApiController]
 [Route("api/v1/health-tests")]
