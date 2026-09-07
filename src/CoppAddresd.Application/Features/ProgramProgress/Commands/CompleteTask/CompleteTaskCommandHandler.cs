@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using CoppAddresd.Domain.Exceptions;
@@ -21,8 +22,15 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Commands.CompleteTask
 /// </summary>
 public sealed class CompleteTaskCommandHandler(
     IProgramRepository repository,
+    IProgramMetricsQueue? metricsQueue,
     ILogger<CompleteTaskCommandHandler> logger) : IRequestHandler<CompleteTaskCommand, CompleteTaskResponseDto>
 {
+    public CompleteTaskCommandHandler(
+        IProgramRepository repository,
+        ILogger<CompleteTaskCommandHandler> logger)
+        : this(repository, null, logger)
+    {
+    }
     public async Task<CompleteTaskResponseDto> Handle(CompleteTaskCommand request, CancellationToken ct)
     {
         if (request.TaskCode == TaskCode.emocional && !request.MoodScore.HasValue)
@@ -60,6 +68,18 @@ public sealed class CompleteTaskCommandHandler(
         {
             throw new BusinessRuleViolationException(
                 "IDEMPOTENCY_KEY_REUSED: la clave clientRequestId ya fue usada para otra tarea o fecha.");
+        }
+
+        if (result.Outcome == CompleteTaskOutcome.Created && metricsQueue is not null)
+        {
+            await metricsQueue.EnqueueAsync(
+                new TaskCompletedMetricEvent(request.LocalDate, request.TaskCode.ToString(), result.PointsAwarded), ct);
+
+            if (result.PointsAwarded > 0)
+            {
+                await metricsQueue.EnqueueAsync(
+                    new XpAwardedMetricEvent(request.LocalDate, $"TASK_{request.TaskCode}", result.PointsAwarded), ct);
+            }
         }
 
         logger.LogInformation(

@@ -19,12 +19,23 @@ public class StorageController(
     IObjectStorageService objectStorage,
     StorageSignatureService signatureService) : ControllerBase
 {
-    /// <summary>Almacena el body crudo bajo la clave indicada (semántica PUT de S3).</summary>
+    /// <summary>Almacena el body crudo bajo la clave indicada (semántica PUT de S3).
+    /// Acepta el header Bearer (requests de la app/gateway) o una URL firmada vía <c>exp</c>+<c>sig</c>.</summary>
     [HttpPut("{**key}")]
+    [AllowAnonymous]
     public async Task<IActionResult> Put(string key, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(key))
             return BadRequest(new { message = "La clave del objeto es requerida." });
+
+        var exp = Request.Query["exp"].ToString();
+        var sig = Request.Query["sig"].ToString();
+
+        var isSigned = signatureService.Validate(key, sig, exp, DateTimeOffset.UtcNow);
+        var hasBearer = User.Identity?.IsAuthenticated == true;
+
+        if (!isSigned && !hasBearer)
+            return Unauthorized(new { message = "Acceso denegado: se requiere una URL firmada o sesión." });
 
         var contentType = Request.ContentType;
         await objectStorage.PutObjectAsync(key, Request.Body, contentType, ct);

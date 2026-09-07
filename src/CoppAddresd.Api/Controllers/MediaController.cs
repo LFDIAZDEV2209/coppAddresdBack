@@ -1,3 +1,4 @@
+using CoppAddresd.Api.Security;
 using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums;
@@ -11,7 +12,10 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/[controller]")]
 [Authorize]
-public class MediaController(IMediator mediator, IObjectStorageService objectStorage) : ControllerBase
+public class MediaController(
+    IMediator mediator,
+    IObjectStorageService objectStorage,
+    StorageSignatureService? signatureService = null) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<MediaItemDto>>> List(
@@ -53,7 +57,9 @@ public class MediaController(IMediator mediator, IObjectStorageService objectSto
             request.SortOrder,
             request.Day,
             request.Month,
-            CurrentUserId());
+            CurrentUserId(),
+            request.Chapters,
+            request.Takeaways);
 
         var item = await mediator.Send(command, ct);
         return CreatedAtAction(nameof(GetById), new { id = item.Id }, item);
@@ -103,6 +109,14 @@ public class MediaController(IMediator mediator, IObjectStorageService objectSto
         var presignedUrl = await objectStorage.GetPreSignedUploadUrlAsync(
             storageKey, contentType, TimeSpan.FromSeconds(expiresIn), publicBaseUrl, ct);
 
+        if (!objectStorage.IsCloudStorage && signatureService is not null)
+        {
+            var expiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresIn);
+            var sig = signatureService.Sign(storageKey, expiresAt);
+            var separator = presignedUrl.Contains('?') ? '&' : '?';
+            presignedUrl += $"{separator}exp={expiresAt.ToUnixTimeSeconds()}&sig={sig}";
+        }
+
         return Ok(new UploadIntentResponse(storageKey, presignedUrl, expiresIn));
     }
 
@@ -128,7 +142,9 @@ public class MediaController(IMediator mediator, IObjectStorageService objectSto
             request.SortOrder,
             request.Day,
             request.Month,
-            CurrentUserId());
+            CurrentUserId(),
+            request.Chapters,
+            request.Takeaways);
 
         var updated = await mediator.Send(command, ct);
         if (updated is null)

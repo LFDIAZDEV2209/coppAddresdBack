@@ -22,7 +22,9 @@ public record CreateMediaItemCommand(
     int SortOrder,
     int Day,
     int Month,
-    Guid? CreatedBy = null)
+    Guid? CreatedBy = null,
+    IReadOnlyList<MediaChapterDto>? Chapters = null,
+    IReadOnlyList<string>? Takeaways = null)
     : IRequest<MediaItemDto>;
 
 public sealed class CreateMediaItemCommandHandler(
@@ -50,6 +52,10 @@ public sealed class CreateMediaItemCommandHandler(
             existing.SortOrder = request.SortOrder;
             existing.Day = request.Day;
             existing.Month = request.Month;
+            if (request.Chapters is not null)
+                existing.Chapters = request.Chapters.ToList();
+            if (request.Takeaways is not null)
+                existing.Takeaways = request.Takeaways.ToList();
             if (request.Status == MediaStatus.Published && existing.PublishedAt is null)
                 existing.PublishedAt = now;
             existing.Status = request.Status;
@@ -80,6 +86,8 @@ public sealed class CreateMediaItemCommandHandler(
             PublishedAt = request.Status == MediaStatus.Published ? now : null,
             CreatedAt = now,
             CreatedBy = request.CreatedBy,
+            Chapters = request.Chapters?.ToList() ?? [],
+            Takeaways = request.Takeaways?.ToList() ?? [],
         };
 
         await repository.AddAsync(entity, ct);

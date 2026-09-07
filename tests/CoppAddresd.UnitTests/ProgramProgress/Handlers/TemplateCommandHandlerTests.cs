@@ -80,6 +80,46 @@ public class TemplateCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_Crear_SinDias_Genera42TareasPorDefecto()
+    {
+        var command = new CreateTemplateCommand(
+            "default-auto", "Programa Auto", "Prueba sin días", 12);
+
+        var dto = await _createHandler.Handle(command, CancellationToken.None);
+
+        Assert.Equal("default-auto", dto.Code);
+        Assert.Equal(TemplateStatus.Draft, dto.Status);
+        Assert.Equal(42, dto.Days.Count); // 7 días × 6 tareas
+        Assert.Equal(12, dto.TotalWeeks);
+    }
+
+    [Fact]
+    public async Task Handle_Crear_ConTotalDays83_Calcula12Semanas()
+    {
+        var command = new CreateTemplateCommand(
+            "plan-83d", "Plan 83 días", "Prueba 83 días", TotalDays: 83);
+
+        var dto = await _createHandler.Handle(command, CancellationToken.None);
+
+        Assert.Equal("plan-83d", dto.Code);
+        Assert.Equal(12, dto.TotalWeeks); // ceil(83 / 7) = 12
+        Assert.Equal(42, dto.Days.Count);
+    }
+
+    [Fact]
+    public async Task Handle_Actualizar_SinDias_PreservaTareasExistentes()
+    {
+        var command = new UpdateTemplateCommand(
+            _templateId, "default-83w", "Programa 83 semanas actualizado", null, TotalDays: 83);
+
+        var dto = await _updateHandler.Handle(command, CancellationToken.None);
+
+        Assert.Equal("Programa 83 semanas actualizado", dto.Name);
+        Assert.Equal(12, dto.TotalWeeks); // ceil(83 / 7) = 12
+        Assert.Single(dto.Days); // Conservó el día existente de _templateId
+    }
+
+    [Fact]
     public async Task Handle_Actualizar_PreservaEstadoYVersion()
     {
         var command = new UpdateTemplateCommand(

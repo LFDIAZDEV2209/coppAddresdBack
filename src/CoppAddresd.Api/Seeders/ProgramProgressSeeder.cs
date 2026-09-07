@@ -85,9 +85,23 @@ public sealed class ProgramProgressSeeder(
         // pequeño y estable, independiente de la plantilla del programa).
         await SeedNutritionHabitTemplatesAsync(ct);
 
+        await SeedProgramTemplateAsync("program-coppaddresd-83-days", "Programa COPP-ADRESD (83 días / 12 semanas)", "Plantilla del programa de 83 días (12 semanas) para pacientes ANTARES.", 12, ct);
+        if (_defaultTemplateCode != "program-coppaddresd-83-days")
+        {
+            await SeedProgramTemplateAsync(_defaultTemplateCode, "Programa 83 semanas", "Plantilla integral por defecto del programa de 83 semanas (auto-sembrada).", 83, ct);
+        }
+    }
+
+    private async Task SeedProgramTemplateAsync(
+        string code,
+        string name,
+        string description,
+        int totalWeeks,
+        CancellationToken ct)
+    {
         var templateId = await WithContext(
             db => db.ProgramTemplates
-                .Where(x => x.Code == _defaultTemplateCode)
+                .Where(x => x.Code == code)
                 .Select(x => (Guid?)x.Id)
                 .FirstOrDefaultAsync(ct), ct);
 
@@ -100,12 +114,11 @@ public sealed class ProgramProgressSeeder(
             {
                 logger.LogInformation(
                     "Plantilla {Code} ya existe: {DayCount} filas en weekly_day_templates (seed omitido)",
-                    _defaultTemplateCode, dayCount);
+                    code, dayCount);
                 return;
             }
 
-            // Plantilla creada por una versión anterior sin DayTemplates:
-            // sembrar las 42 filas faltantes (7 días × 6 tareas).
+            // Plantilla creada sin DayTemplates: sembrar las 42 filas faltantes (7 días × 6 tareas).
             await WithContext(async db =>
             {
                 var template = await db.ProgramTemplates
@@ -134,25 +147,18 @@ public sealed class ProgramProgressSeeder(
 
             logger.LogInformation(
                 "Plantilla {Code}: {DayCount} filas faltantes sembradas",
-                _defaultTemplateCode, 7 * TaskSeeds.Count);
+                code, 7 * TaskSeeds.Count);
             return;
         }
 
-        var template = new ProgramTemplate
+        var newTemplate = new ProgramTemplate
         {
-            Code = _defaultTemplateCode,
-            Name = "Programa 83 semanas",
-            Description = "Plantilla integral por defecto del programa de 83 semanas (auto-sembrada).",
-            TotalWeeks = 83,
-            // Activa desde el seed: es la plantilla por defecto del MVP y debe
-            // poder usarse en inscripciones sin pasar por el flujo de publicación.
+            Code = code,
+            Name = name,
+            Description = description,
+            TotalWeeks = totalWeeks,
             Status = TemplateStatus.Active,
             Version = 1,
-            // Umbral de racha y tareas esenciales (SPEC §17, A): 1 tarea por día
-            // mantiene la racha (default) y el rescate con congelamiento exige
-            // una tarea esencial (referencia ADRED: nut / ejercicio /
-            // nutraceutico). Solo se fijan en el create: si la plantilla ya
-            // existe, el seed no toca su configuración (idempotencia).
             StreakMinTasks = 1,
             EssentialTaskCodes = ["nut", "ejercicio", "nutraceutico"],
         };
@@ -161,14 +167,12 @@ public sealed class ProgramProgressSeeder(
         {
             for (var i = 0; i < TaskSeeds.Count; i++)
             {
-                template.DayTemplates.Add(new WeeklyDayTemplate
+                newTemplate.DayTemplates.Add(new WeeklyDayTemplate
                 {
                     Weekday = weekday,
                     TaskCode = TaskSeeds[i].Code,
                     Points = TaskSeeds[i].Points,
                     SortOrder = i + 1,
-                    // MediaId NULL: el contenido (podcast) se vincula luego,
-                    // cuando existan medios publicados (SPEC §4.4, P1).
                     MediaId = null,
                 });
             }
@@ -176,14 +180,14 @@ public sealed class ProgramProgressSeeder(
 
         await WithContext(async db =>
         {
-            db.ProgramTemplates.Add(template);
+            db.ProgramTemplates.Add(newTemplate);
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);
 
         logger.LogInformation(
-            "Plantilla por defecto sembrada: {Code} (83 semanas, {DayCount} filas diarias)",
-            _defaultTemplateCode, 7 * TaskSeeds.Count);
+            "Plantilla sembrada: {Code} ({Weeks} semanas, {DayCount} filas diarias)",
+            code, totalWeeks, 7 * TaskSeeds.Count);
     }
 
     /// <summary>
@@ -269,6 +273,8 @@ private async Task SeedXpRulesAsync(CancellationToken ct)
         new XpRuleSeed(XpRuleCodes.TaskNutraceutico, "Tarea nutracéutico", "adherence", null, 1, 7),
         new XpRuleSeed(XpRuleCodes.TaskEmocional, "Tarea evaluación emocional", "adherence", null, 1, 7),
         // --- Adherencia: bonus de día perfecto ---
+        // 50 = base por defecto del bonus (espejo de ProgramRepository.DefaultDayBonusBase;
+        // el fallback del repositorio usa el mismo valor si esta regla no existe/está inactiva).
         new XpRuleSeed(XpRuleCodes.DayBonus, "Bonus día perfecto", "adherence", 50, 1, 7),
         // --- Racha: hitos (sin otorgamiento automático en el MVP actual) ---
         new XpRuleSeed(XpRuleCodes.Streak7, "Hito de racha 7 días", "streak", 100, 1, 1),

@@ -1,3 +1,5 @@
+using Serilog.Context;
+
 namespace CoppAddresd.Telemedicine.Infrastructure.Middleware;
 
 /// <summary>
@@ -20,6 +22,10 @@ public sealed class CorrelationIdMiddleware(
         context.TraceIdentifier = correlationId;
         context.Response.Headers[HeaderName] = correlationId;
 
+        // Push del correlation id al Serilog LogContext durante todo el request
+        // para que cada log event (console y JSON file sink) lo lleve, y se
+        // conserva el scope de ILogger existente con el contexto del request.
+        using (LogContext.PushProperty("CorrelationId", correlationId))
         using (logger.BeginScope("{CorrelationId}", correlationId))
         {
             await next(context);
