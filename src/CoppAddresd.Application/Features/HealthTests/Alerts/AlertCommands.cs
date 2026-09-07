@@ -132,55 +132,75 @@ public record HealthTestStatsDto(
 
 public record GetHealthTestStatsQuery(Guid? ProfessionalId = null) : IRequest<HealthTestStatsDto>;
 
-public sealed class GetHealthTestStatsQueryHandler(IHealthTestRepository repository)
-    : IRequestHandler<GetHealthTestStatsQuery, HealthTestStatsDto>
+public sealed class GetHealthTestStatsQueryHandler(
+    IHealthTestRepository repository,
+    ICacheService cache
+) : IRequestHandler<GetHealthTestStatsQuery, HealthTestStatsDto>
 {
     public async Task<HealthTestStatsDto> Handle(
         GetHealthTestStatsQuery request,
         CancellationToken ct
     )
     {
-        var patientIds = request.ProfessionalId is { } profId
-            ? await repository.GetPatientIdsForProfessionalAsync(profId, ct)
-            : null;
+        var scopeHash = CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
+        var cacheKey = CacheKeys.Stats("health-stats", scopeHash);
+        return await cache.GetOrCreateAsync(
+            cacheKey,
+            CacheKeys.StatsTtl(),
+            async token =>
+            {
+                var patientIds = request.ProfessionalId is { } profId
+                    ? await repository.GetPatientIdsForProfessionalAsync(profId, token)
+                    : null;
 
-        var total = patientIds is null ? await repository.CountPatientsAsync(ct) : patientIds.Count;
+                var total = patientIds is null
+                    ? await repository.CountPatientsAsync(token)
+                    : patientIds.Count;
 
-        var pending = patientIds is null
-            ? await repository.CountAssignmentsByStatusAsync(HealthTestAssignmentStatus.pending, ct)
-            : await repository.CountAssignmentsByStatusForPatientsAsync(
-                HealthTestAssignmentStatus.pending,
-                patientIds,
-                ct
-            );
+                var pending = patientIds is null
+                    ? await repository.CountAssignmentsByStatusAsync(
+                        HealthTestAssignmentStatus.pending,
+                        token
+                    )
+                    : await repository.CountAssignmentsByStatusForPatientsAsync(
+                        HealthTestAssignmentStatus.pending,
+                        patientIds,
+                        token
+                    );
 
-        var completed = patientIds is null
-            ? await repository.CountAssignmentsByStatusAsync(
-                HealthTestAssignmentStatus.completed,
-                ct
-            )
-            : await repository.CountAssignmentsByStatusForPatientsAsync(
-                HealthTestAssignmentStatus.completed,
-                patientIds,
-                ct
-            );
+                var completed = patientIds is null
+                    ? await repository.CountAssignmentsByStatusAsync(
+                        HealthTestAssignmentStatus.completed,
+                        token
+                    )
+                    : await repository.CountAssignmentsByStatusForPatientsAsync(
+                        HealthTestAssignmentStatus.completed,
+                        patientIds,
+                        token
+                    );
 
-        var highRisk = patientIds is null
-            ? await repository.CountEvaluationsBySeverityAsync(HealthTestSeverity.high, ct)
-            : await repository.CountEvaluationsBySeverityForPatientsAsync(
-                HealthTestSeverity.high,
-                patientIds,
-                ct
-            );
+                var highRisk = patientIds is null
+                    ? await repository.CountEvaluationsBySeverityAsync(
+                        HealthTestSeverity.high,
+                        token
+                    )
+                    : await repository.CountEvaluationsBySeverityForPatientsAsync(
+                        HealthTestSeverity.high,
+                        patientIds,
+                        token
+                    );
 
-        var activeAlerts = patientIds is null
-            ? await repository.CountAlertsByStatusAsync(HealthTestAlertStatus.active, ct)
-            : await repository.CountAlertsByStatusForPatientsAsync(
-                HealthTestAlertStatus.active,
-                patientIds,
-                ct
-            );
+                var activeAlerts = patientIds is null
+                    ? await repository.CountAlertsByStatusAsync(HealthTestAlertStatus.active, token)
+                    : await repository.CountAlertsByStatusForPatientsAsync(
+                        HealthTestAlertStatus.active,
+                        patientIds,
+                        token
+                    );
 
-        return new HealthTestStatsDto(total, pending, completed, highRisk, activeAlerts);
+                return new HealthTestStatsDto(total, pending, completed, highRisk, activeAlerts);
+            },
+            ct
+        );
     }
 }

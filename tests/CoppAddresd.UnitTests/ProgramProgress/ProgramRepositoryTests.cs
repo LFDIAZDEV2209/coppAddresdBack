@@ -1487,6 +1487,210 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(492, pending.Content.DurationSecs);
     }
 
+    // ---------------------------------------------------------------- Vital Signs Tracking (vital-signs-tracking)
+
+    [RequiresPostgresFact]
+    public async Task CompleteTask_Vitals_6Campos_7Filas_Y_FKApuntaAlAncla()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Seis");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+
+        var result = await CompleteVitalsAsync(
+            enrollmentId, tuesday, "vs-1",
+            new VitalsPayload(72, 120, 80, 98, 130m, 70m, 36.5m, null));
+
+        Assert.Equal(CompleteTaskOutcome.Created, result.Outcome);
+
+        await using var db = fixture.CreateDbContext();
+        // 6 campos → 7 filas (systolic + diastolic split) en app.clinical_measurements.
+        Assert.Equal(
+            7,
+            await db.ClinicalMeasurements.CountAsync(m => m.PatientId == patientId)
+        );
+
+        var codes = await db.ClinicalMeasurements
+            .Where(m => m.PatientId == patientId)
+            .Select(m => m.Metric.Code)
+            .ToListAsync();
+        Assert.Contains("heart_rate", codes);
+        Assert.Contains("systolic_bp", codes);
+        Assert.Contains("diastolic_bp", codes);
+        Assert.Contains("o2_saturation", codes);
+        Assert.Contains("glucose_fasting", codes);
+        Assert.Contains("weight", codes);
+        Assert.Contains("temperature_c", codes);
+
+        // EncounterId null (monitoreo autónomo, ADR-002) y Source = 'mobile'.
+        Assert.True(await db.ClinicalMeasurements
+            .Where(m => m.PatientId == patientId)
+            .AllAsync(m => m.EncounterId == null && m.Source == "mobile"));
+
+        // El completion referencia al ancla (primera fila = heart_rate, orden fijo).
+        var completion = await db.TaskCompletions.SingleAsync(t =>
+            t.EnrollmentId == enrollmentId && t.LocalDate == tuesday && t.TaskCode == TaskCode.vitals);
+        var anchor = await db.ClinicalMeasurements.SingleAsync(m =>
+            m.PatientId == patientId && m.Metric.Code == "heart_rate");
+        Assert.Equal(anchor.Id, completion.VitalSignsBatchId);
+    }
+
+    [RequiresPostgresFact]
+    public async Task CompleteTask_Vitals_SinPayload_0Filas()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Vacio");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+
+        await CompleteVitalsAsync(enrollmentId, tuesday, "vs-empty", null);
+
+        await using var db = fixture.CreateDbContext();
+        Assert.Equal(
+            0,
+            await db.ClinicalMeasurements.CountAsync(m => m.PatientId == patientId)
+        );
+    }
+
+    [RequiresPostgresFact]
+    public async Task CompleteTask_Vitals_ReplayMismoClientRequestId_SinFilasDuplicadas()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Replay");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+
+        await CompleteVitalsAsync(enrollmentId, tuesday, "vs-replay",
+            new VitalsPayload(72, 120, 80, 98, 130m, 70m, 36.5m, null));
+        await CompleteVitalsAsync(enrollmentId, tuesday, "vs-replay",
+            new VitalsPayload(72, 120, 80, 98, 130m, 70m, 36.5m, null));
+
+        await using var db = fixture.CreateDbContext();
+        // Replay idempotente (misma clientRequestId) → no duplica filas (7, no 14).
+        Assert.Equal(
+            7,
+            await db.ClinicalMeasurements.CountAsync(m => m.PatientId == patientId)
+        );
+    }
+
+    [RequiresPostgresFact]
+    public async Task CompleteTask_Vitals_MetricaInactiva_Lanza422_Y_0Filas()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Unseed");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+
+        // Simula "no sembrada": desactiva una métrica del catálogo.
+        await using (var db = fixture.CreateDbContext())
+        {
+            var metric = await db.MeasurementMetrics.SingleAsync(m => m.Code == "temperature_c");
+            metric.IsActive = false;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = fixture.CreateDbContext())
+        {
+            var repo = new ProgramRepository(db, Configuration());
+            var ex = await Assert.ThrowsAsync<UnprocessableEntityException>(() =>
+                repo.CompleteTaskAsync(new CompleteTaskInput(
+                    enrollmentId, tuesday, TaskCode.vitals, "vs-unseed", null,
+                    null, null, null, Vitals: new VitalsPayload(72, 120, 80, 98, 130m, 70m, 36.5m, null))));
+            Assert.Contains("VITALS_METRIC_NOT_SEEDED", ex.Message);
+        }
+
+        await using (var db = fixture.CreateDbContext())
+        {
+            Assert.Equal(0, await db.ClinicalMeasurements.CountAsync(m => m.PatientId == patientId));
+        }
+
+        // Restaura la métrica para no afectar otros tests de la clase.
+        await using (var db = fixture.CreateDbContext())
+        {
+            var metric = await db.MeasurementMetrics.SingleAsync(m => m.Code == "temperature_c");
+            metric.IsActive = true;
+            await db.SaveChangesAsync();
+        }
+    }
+
+    [RequiresPostgresFact]
+    public async Task CompleteTask_Vitals_TemperaturaC_UsaUnidadCelsius()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Unit");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+
+        await CompleteVitalsAsync(enrollmentId, tuesday, "vs-unit",
+            new VitalsPayload(null, null, null, null, null, null, 36.5m, null));
+
+        await using var db = fixture.CreateDbContext();
+        var celsius = await db.UnitOfMeasures.SingleAsync(u => u.Code == "celsius");
+        var tempRow = await db.ClinicalMeasurements.SingleAsync(m =>
+            m.PatientId == patientId && m.Metric.Code == "temperature_c");
+        // UnitId se resuelve desde DefaultUnitId de la métrica (celsius).
+        Assert.Equal(celsius.Id, tempRow.UnitId);
+    }
+
+    [RequiresPostgresFact]
+    public async Task GetSnapshot_RecentVitals_PobladoTrasVitals()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Snap");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+        await CompleteVitalsAsync(enrollmentId, tuesday, "vs-snap",
+            new VitalsPayload(72, 120, 80, 98, 130m, 70m, 36.5m, null));
+
+        await using var db = fixture.CreateDbContext();
+        var repo = new ProgramRepository(db, Configuration());
+        var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+        Assert.NotNull(snapshot);
+        var vitalsTask = snapshot!.TodayTasks.Single(t => t.TaskCode == TaskCode.vitals);
+        Assert.NotNull(vitalsTask.Content);
+        Assert.NotNull(vitalsTask.Content!.RecentVitals);
+        Assert.Equal(72, vitalsTask.Content.RecentVitals!.HeartRate);
+        Assert.Equal(130m, vitalsTask.Content.RecentVitals.Glucose);
+    }
+
+    [RequiresPostgresFact]
+    public async Task GetSnapshot_RecentVitals_NuloSinMediciones()
+    {
+        // Paciente aislado sin mediciones → recentVitals null.
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Null");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+        await CompleteAsync(enrollmentId, tuesday, TaskCode.podcast, "vs-snap-null");
+
+        await using var db = fixture.CreateDbContext();
+        var repo = new ProgramRepository(db, Configuration());
+        var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+        Assert.NotNull(snapshot);
+        var vitalsTask = snapshot!.TodayTasks.Single(t => t.TaskCode == TaskCode.vitals);
+        Assert.NotNull(vitalsTask.Content);
+        Assert.Null(vitalsTask.Content!.RecentVitals);
+    }
+
+    [RequiresPostgresFact]
+    public async Task FK_VitalSignsBatch_ApuntaACatalogClinicalMeasurements()
+    {
+        // Verificación de esquema real: el FK retargeteado (D2) apunta a
+        // app.clinical_measurements(id), no al legacy app.vital_signs.
+        await using var db = fixture.CreateDbContext();
+        var referencedTable = await db.Database
+            .SqlQuery<string>($"""
+                SELECT ccu.table_name AS "Value"
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.constraint_column_usage ccu
+                  ON tc.constraint_name = ccu.constraint_name
+                WHERE tc.constraint_type = 'FOREIGN KEY'
+                  AND tc.table_schema = 'app'
+                  AND tc.table_name = 'task_completions'
+                  -- EF Core emite nombres de constraint entre comillas: el
+                  -- nombre real conserva mayúsculas (FK_...), por eso la
+                  -- comparación es case-insensitive.
+                  AND LOWER(tc.constraint_name) = 'fk_task_completions_clinical_measurements_vital_signs_batch_id'
+                """)
+            .SingleOrDefaultAsync();
+        Assert.Equal("clinical_measurements", referencedTable);
+    }
+
     // ---------------------------------------------------------------- Helpers
 
     private async Task<Guid> EnrollAsync(
@@ -1528,6 +1732,30 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
                 MoodScore: code == TaskCode.emocional ? (short?)4 : null,
                 Barriers: null,
                 ContentFingerprint: null
+            )
+        );
+    }
+
+    private async Task<CompleteTaskResult> CompleteVitalsAsync(
+        Guid enrollmentId,
+        DateOnly date,
+        string requestId,
+        VitalsPayload? vitals
+    )
+    {
+        await using var db = fixture.CreateDbContext();
+        var repo = new ProgramRepository(db, Configuration());
+        return await repo.CompleteTaskAsync(
+            new CompleteTaskInput(
+                enrollmentId,
+                date,
+                TaskCode.vitals,
+                requestId,
+                null,
+                null,
+                Barriers: null,
+                ContentFingerprint: null,
+                Vitals: vitals
             )
         );
     }

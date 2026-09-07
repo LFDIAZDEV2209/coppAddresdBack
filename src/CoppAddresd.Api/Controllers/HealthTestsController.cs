@@ -6,6 +6,7 @@ using CoppAddresd.Application.Features.HealthTests.Alerts;
 using CoppAddresd.Application.Features.HealthTests.Assignments;
 using CoppAddresd.Application.Features.HealthTests.Catalog;
 using CoppAddresd.Application.Features.HealthTests.Execution;
+using CoppAddresd.Application.Features.HealthTests.Queries;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities.HealthTests;
@@ -486,6 +487,21 @@ public class HealthTestsController(
         [FromBody] AddCommentRequest request,
         CancellationToken ct
     ) => Ok(await mediator.Send(new AddCommentCommand(request, context.UserId ?? Guid.Empty), ct));
+
+    // ===================== GEO (mapa) =====================
+
+    /// <summary>Geo agregado para el mapa de Tests de Salud (ciudades con % alto riesgo).</summary>
+    [HttpGet("geo")]
+    public async Task<ActionResult<HealthTestsGeoDto>> GetGeo(CancellationToken ct)
+    {
+        var (allowed, _) = await ResolveScopeAsync(ct);
+        if (!allowed)
+        {
+            return Forbid();
+        }
+
+        return Ok(await mediator.Send(new GetHealthTestsGeoQuery(), ct));
+    }
 
     // ===================== STATS (dashboard ERP) =====================
 

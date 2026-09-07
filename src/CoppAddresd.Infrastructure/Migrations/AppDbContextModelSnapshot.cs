@@ -6099,6 +6099,104 @@ namespace CoppAddresd.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.NutritionIntakeLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int?>("Calories")
+                        .HasColumnType("integer")
+                        .HasColumnName("calories");
+
+                    b.Property<decimal?>("CarbsG")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("carbs_g");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<decimal?>("FatG")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("fat_g");
+
+                    b.Property<decimal?>("FiberG")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("fiber_g");
+
+                    b.Property<Guid?>("FoodAnalysisId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("food_analysis_id");
+
+                    b.Property<Guid>("HabitCheckId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("habit_check_id");
+
+                    b.Property<DateOnly>("LocalDate")
+                        .HasColumnType("date")
+                        .HasColumnName("local_date");
+
+                    b.Property<string>("MealCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("meal_code");
+
+                    b.Property<short?>("NutritionPlanDayNumber")
+                        .HasColumnType("smallint")
+                        .HasColumnName("nutrition_plan_day_number");
+
+                    b.Property<Guid?>("NutritionPlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("nutrition_plan_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<decimal?>("ProteinG")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("numeric(8,2)")
+                        .HasColumnName("protein_g");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("manual")
+                        .HasColumnName("source");
+
+                    b.Property<int?>("WaterMl")
+                        .HasColumnType("integer")
+                        .HasColumnName("water_ml");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FoodAnalysisId");
+
+                    b.HasIndex("HabitCheckId");
+
+                    b.HasIndex("NutritionPlanId");
+
+                    b.HasIndex("PatientId", "LocalDate")
+                        .HasDatabaseName("ix_intake_logs_patient_date");
+
+                    b.HasIndex("PatientId", "LocalDate", "MealCode")
+                        .IsUnique()
+                        .HasDatabaseName("uq_intake_logs_patient_date_meal");
+
+                    b.ToTable("nutrition_intake_logs", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -8626,6 +8724,36 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Weakness");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.NutritionIntakeLog", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis", null)
+                        .WithMany()
+                        .HasForeignKey("FoodAnalysisId")
+                        .HasPrincipalKey("AnalysisId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.HabitCheck", "HabitCheck")
+                        .WithMany()
+                        .HasForeignKey("HabitCheckId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.NutritionPlan", null)
+                        .WithMany()
+                        .HasForeignKey("NutritionPlanId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("HabitCheck");
+
+                    b.Navigation("Patient");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
@@ -8723,7 +8851,7 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("CoppAddresd.Domain.Entities.VitalSign", "VitalSignsBatch")
+                    b.HasOne("CoppAddresd.Domain.Entities.ClinicalMeasurement", "VitalSignsBatch")
                         .WithMany()
                         .HasForeignKey("VitalSignsBatchId")
                         .OnDelete(DeleteBehavior.Restrict);

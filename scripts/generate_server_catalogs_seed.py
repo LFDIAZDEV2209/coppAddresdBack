@@ -254,6 +254,8 @@ UNITS = [
     ("bpm", "Latidos por minuto", "bpm"),
     ("pct", "Porcentaje", "%"),
     ("kg_m2", "Kilogramos por metro cuadrado", "kg/m²"),
+    # vital-signs-tracking: unidad para temperatura corporal.
+    ("celsius", "Grados Celsius", "°C"),
 ]
 
 # Métricas de medición (app.measurement_metrics, único por code; FK a la unidad
@@ -267,6 +269,9 @@ METRICS = [
     ("heart_rate", "Frecuencia cardíaca", "bpm", "vital"),
     ("bmi", "Índice de masa corporal", "kg_m2", "body_comp"),
     ("body_fat", "Porcentaje de grasa corporal", "pct", "body_comp"),
+    # vital-signs-tracking: métricas nuevas para el payload de signos vitales.
+    ("o2_saturation", "Saturación de oxígeno", "pct", "vital"),
+    ("temperature_c", "Temperatura corporal", "celsius", "vital"),
 ]
 
 # Rangos de referencia (app.measurement_reference_ranges). Sin clave única:
@@ -277,6 +282,9 @@ REFERENCE_RANGES = [
     ("diastolic_bp", None, None, None, 60.0, 80.0, "mmhg", 0),
     ("bmi", None, None, None, 18.5, 24.9, "kg_m2", 0),
     ("heart_rate", None, None, None, 60.0, 100.0, "bpm", 0),
+    # vital-signs-tracking: rango de referencia clínica para SpO2 (pendiente de
+    # validación del comité; no altera las reglas de debilidad/seguridad).
+    ("o2_saturation", None, None, None, 94.0, 100.0, "pct", 0),
 ]
 
 # Organización raíz (erp.organizations, único por code).
