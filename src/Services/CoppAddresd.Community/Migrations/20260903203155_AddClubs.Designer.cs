@@ -3,6 +3,7 @@ using System;
 using CoppAddresd.Community.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Community.Migrations
 {
     [DbContext(typeof(CommunityDbContext))]
-    partial class CommunityDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260903203155_AddClubs")]
+    partial class AddClubs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -789,23 +792,6 @@ namespace CoppAddresd.Community.Migrations
                         .HasDatabaseName("ix_live_sessions_club_id_scheduled_start_at");
 
                     b.ToTable("live_sessions", "community");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSessionSpeaker", b =>
-                {
-                    b.Property<Guid>("LiveSessionId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("live_session_id");
-
-                    b.Property<Guid>("ProfileId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("profile_id");
-
-                    b.HasKey("LiveSessionId", "ProfileId");
-
-                    b.HasIndex("ProfileId");
-
-                    b.ToTable("live_session_speakers", "community");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.Message", b =>
@@ -1708,25 +1694,6 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Event");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSessionSpeaker", b =>
-                {
-                    b.HasOne("CoppAddresd.Community.Entities.LiveSession", "LiveSession")
-                        .WithMany("Speakers")
-                        .HasForeignKey("LiveSessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
-                        .WithMany()
-                        .HasForeignKey("ProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("LiveSession");
-
-                    b.Navigation("Profile");
-                });
-
             modelBuilder.Entity("CoppAddresd.Community.Entities.Message", b =>
                 {
                     b.HasOne("CoppAddresd.Community.Entities.ChatGroup", null)
@@ -1941,8 +1908,6 @@ namespace CoppAddresd.Community.Migrations
             modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSession", b =>
                 {
                     b.Navigation("ChatMessages");
-
-                    b.Navigation("Speakers");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.NetworkChannel", b =>

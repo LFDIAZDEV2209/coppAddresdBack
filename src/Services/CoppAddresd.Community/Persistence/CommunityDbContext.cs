@@ -29,6 +29,17 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<PostReport> PostReports => Set<PostReport>();
     public DbSet<CommentReport> CommentReports => Set<CommentReport>();
     public DbSet<Repost> Reposts => Set<Repost>();
+    public DbSet<Club> Clubs => Set<Club>();
+    public DbSet<ClubMember> ClubMembers => Set<ClubMember>();
+    public DbSet<ClubInvitation> ClubInvitations => Set<ClubInvitation>();
+    public DbSet<ClubCategory> ClubCategories => Set<ClubCategory>();
+    public DbSet<ClubEvent> ClubEvents => Set<ClubEvent>();
+    public DbSet<EventAttendance> EventAttendances => Set<EventAttendance>();
+    public DbSet<LiveSession> LiveSessions => Set<LiveSession>();
+    public DbSet<LiveChatMessage> LiveChatMessages => Set<LiveChatMessage>();
+    public DbSet<LiveSessionSpeaker> LiveSessionSpeakers => Set<LiveSessionSpeaker>();
+    public DbSet<ClubNotification> ClubNotifications => Set<ClubNotification>();
+    public DbSet<ModerationLog> ModerationLogs => Set<ModerationLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
