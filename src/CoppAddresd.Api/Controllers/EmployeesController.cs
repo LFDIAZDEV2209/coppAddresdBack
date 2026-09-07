@@ -89,6 +89,32 @@ public class EmployeesController(IMediator mediator) : ControllerBase
     }
 
     /// <summary>
+    /// Creación masiva de empleados desde CSV. Cada fila se procesa de forma
+    /// independiente: las válidas se crean aunque otras fallen. Devuelve
+    /// resultado por fila (created/skipped). Sin clínicas, sin invitaciones.
+    /// </summary>
+    [HttpPost("bulk")]
+    [RequirePermission(PermissionCodes.EmployeesCreate)]
+    public async Task<ActionResult<BulkCreateResultDto>> BulkCreate(
+        [FromBody] BulkCreateEmployeesApiRequest request,
+        CancellationToken ct
+    )
+    {
+        var rows = request.Rows
+            .Select(r => new BulkEmployeeRowInput(
+                r.FirstName,
+                r.LastName,
+                r.Email,
+                r.ProfessionalTypeName,
+                r.Status))
+            .ToList();
+
+        var command = new BulkCreateEmployeesCommand(request.OrganizationId, rows);
+        var result = await mediator.Send(command, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Invita al empleado: crea su usuario en el Auth Service y le envía el
     /// enlace de primer acceso. En dev (email provider Log) la respuesta trae
     /// el enlace; en producción llega solo por correo.
@@ -178,3 +204,16 @@ public record UpdateEmployeeRequest(
     IReadOnlyList<LicenseInput>? Licenses,
     bool RemoveProfessionalExtension = false
 );
+
+/// <summary>Fila individual de la solicitud de creación masiva.</summary>
+public record BulkEmployeeRowApiRequest(
+    string FirstName,
+    string LastName,
+    string Email,
+    string? ProfessionalTypeName,
+    string Status);
+
+/// <summary>Solicitud de creación masiva de empleados.</summary>
+public record BulkCreateEmployeesApiRequest(
+    Guid OrganizationId,
+    IReadOnlyList<BulkEmployeeRowApiRequest> Rows);
