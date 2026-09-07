@@ -95,6 +95,12 @@ public class FoodAiAnalyzeEndpointTests
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("Storage:SignatureKey", "test-signature-key-32-chars-long-for-ci");
+            builder.UseSetting(
+                "ConnectionStrings:DefaultConnection",
+                "Host=localhost;Database=coppaddresd_test;Username=test;Password=test;Port=5432"
+            );
+            builder.UseSetting("Jwt:Secret", "test-jwt-secret-32-chars-long-for-ci-xyz123");
+            builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
             builder.ConfigureServices(services =>
             {
                 services.AddScoped<IFoodAiClient, StubFoodAiClient>();
@@ -183,6 +189,12 @@ public class FoodAiAnalyzeEndpointTests
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("Storage:SignatureKey", "test-signature-key-32-chars-long-for-ci");
+            builder.UseSetting(
+                "ConnectionStrings:DefaultConnection",
+                "Host=localhost;Database=coppaddresd_test;Username=test;Password=test;Port=5432"
+            );
+            builder.UseSetting("Jwt:Secret", "test-jwt-secret-32-chars-long-for-ci-xyz123");
+            builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
             builder.ConfigureServices(services =>
                 services.AddScoped<INutritionProvider>(_ => stubProvider)
             );
@@ -206,6 +218,12 @@ public class FoodAiAnalyzeEndpointTests
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("Storage:SignatureKey", "test-signature-key-32-chars-long-for-ci");
+            builder.UseSetting(
+                "ConnectionStrings:DefaultConnection",
+                "Host=localhost;Database=coppaddresd_test;Username=test;Password=test;Port=5432"
+            );
+            builder.UseSetting("Jwt:Secret", "test-jwt-secret-32-chars-long-for-ci-xyz123");
+            builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
             builder.ConfigureServices(services =>
                 services.AddScoped<INutritionProvider>(_ => new StubNutritionProvider
                 {
