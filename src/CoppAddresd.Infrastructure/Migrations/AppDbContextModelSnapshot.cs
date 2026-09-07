@@ -4522,6 +4522,17 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("last_name");
 
+                    b.Property<string>("LeagueNickname")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("league_nickname");
+
+                    b.Property<bool>("LeagueOptIn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("league_opt_in");
+
                     b.Property<Guid?>("LocationId")
                         .HasColumnType("uuid")
                         .HasColumnName("location_id");
@@ -4618,6 +4629,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.HasIndex("EthnicityId");
 
                     b.HasIndex("InsurerId");
+
+                    b.HasIndex("LeagueOptIn")
+                        .HasDatabaseName("ix_patient_profiles_league_opt_in")
+                        .HasFilter("\"league_opt_in\" = true");
 
                     b.HasIndex("LocationId")
                         .HasDatabaseName("ix_patient_profiles_location_id");

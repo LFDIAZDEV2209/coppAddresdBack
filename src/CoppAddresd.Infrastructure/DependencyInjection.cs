@@ -64,6 +64,15 @@ public static class DependencyInjection
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
 
+        // Liga del paciente (LEAGUE v1): repositorio enfocado de solo lectura
+        // + update mínimo de preferencias (no crece ProgramRepository).
+        services.AddScoped<ILeagueRepository, LeagueRepository>();
+
+        // Historial de puntajes del paciente (scores-history): repositorio
+        // enfocado de solo lectura (no crece ProgramRepository, precedente:
+        // LeagueRepository). SOLO filas persistidas — nunca dispara recálculo.
+        services.AddScoped<IScoresHistoryRepository, ScoresHistoryRepository>();
+
         // Motor de scoring (Tests de Salud): estrategias registradas como
         // keyed services + registry. Agregar una estrategia nueva = registrar
         // la clase aquí (SPEC A9).

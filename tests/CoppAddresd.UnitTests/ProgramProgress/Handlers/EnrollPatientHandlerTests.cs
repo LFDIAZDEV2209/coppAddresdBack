@@ -3,6 +3,7 @@ using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using CoppAddresd.Domain.Exceptions;
+using CoppAddresd.UnitTests.Cache;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CoppAddresd.UnitTests.ProgramProgress.Handlers;
@@ -10,19 +11,22 @@ namespace CoppAddresd.UnitTests.ProgramProgress.Handlers;
 /// <summary>
 /// Tests del caso de uso de inscripción de paciente (SPEC §7.5): resolución de
 /// la plantilla por defecto (Program:DefaultTemplate:Code → fallback
-/// default-83w), default de startLocalDate al lunes local y devolución del DTO
-/// de inscripción con su estado de gamificación.
+/// default-83w), default de startLocalDate al lunes local, devolución del DTO
+/// de inscripción con su estado de gamificación e invalidación del caché de
+/// scores-history tras el commit (re-inscripción = historia nueva, SPEC
+/// §13.7.3).
 /// </summary>
 public class EnrollPatientHandlerTests
 {
     private readonly FakeProgramRepository _repository = new();
+    private readonly FakeCacheService _cache = new();
     private readonly EnrollPatientCommandHandler _handler;
     private readonly Guid _templateId = Guid.NewGuid();
 
     public EnrollPatientHandlerTests()
     {
         _handler = new EnrollPatientCommandHandler(
-            _repository, NullLogger<EnrollPatientCommandHandler>.Instance);
+            _repository, _cache, NullLogger<EnrollPatientCommandHandler>.Instance);
 
         _repository.Templates[_templateId] = new ProgramTemplate
         {
@@ -135,5 +139,24 @@ public class EnrollPatientHandlerTests
             () => _handler.Handle(command, CancellationToken.None));
         Assert.Contains("INVALID_TIMEZONE", ex.Message);
         Assert.Empty(_repository.Enrollments);
+    }
+
+    /// <summary>
+    /// Re-inscripción (tras retiro/completación): el handler invalida el caché
+    /// de scores-history del paciente post-commit (la serie cacheada de la
+    /// corrida anterior no debe servirse a la nueva — historia por programa,
+    /// SPEC §13.7.3). La purga de las filas en BD es responsabilidad de
+    /// EnrollAsync (integration-only, ProgramRepositoryTests).
+    /// </summary>
+    [Fact]
+    public async Task Handle_ReInscripcion_InvalidaElCacheDeScoresHistory()
+    {
+        var patientId = Guid.NewGuid();
+        var command = new EnrollPatientCommand(
+            patientId, _templateId, "America/Bogota", new DateOnly(2026, 9, 21));
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal([$"scores-history:{patientId}:v1"], _cache.Removed);
     }
 }

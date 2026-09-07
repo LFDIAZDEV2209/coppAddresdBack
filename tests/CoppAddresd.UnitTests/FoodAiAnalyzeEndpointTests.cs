@@ -66,12 +66,20 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
 
     public FoodAiAnalyzeEndpointTests(WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> factory)
     {
+        // Entorno "Testing" (mismo patrón que ProgramApiHost): evita cargar
+        // appsettings.Development.json, que abriría el file sink de Serilog
+        // (logs/api-.log) dentro del bin de los tests. La config necesaria
+        // para el arranque del host (DefaultConnection, Jwt, Storage) vive en
+        // appsettings.Testing.json (gitignoreado como el resto de appsettings).
         _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
             builder.ConfigureServices(services =>
             {
                 services.AddScoped<IFoodAiClient, StubFoodAiClient>();
                 services.AddScoped<IImageStorage, StubImageStorage>();
-            }));
+            });
+        });
     }
 
     [Fact]

@@ -538,6 +538,14 @@ public sealed class InventoryMetricsProcessorTests : IClassFixture<InventoryMetr
         try
         {
             await enqueue(queue);
+
+            // Drain antes del stop: en .NET 10, StopAsync de BackgroundService
+            // cancela ExecuteAsync inmediatamente; si el procesador aún no leyó
+            // la cola, los eventos encolados se descartan y el rollup queda sin
+            // filas (los asserts fallaban con Actual: null). Se espera a que
+            // drene (upserts SQL secuenciales de milisegundos) antes de parar;
+            // los asserts exactos llegan después vía WaitForMetricsAsync.
+            await Task.Delay(TimeSpan.FromMilliseconds(750));
         }
         finally
         {

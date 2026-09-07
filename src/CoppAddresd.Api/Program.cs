@@ -9,11 +9,35 @@ using CoppAddresd.Infrastructure;
 using CoppAddresd.Infrastructure.HealthChecks;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
+using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Structured logging (Serilog). Sinks come from the "Serilog" configuration
+// section (appsettings.Development.json enables Console + rolling compact-JSON
+// file sink "logs/api-.log"). Enrich.FromLogContext exposes LogContext
+// properties (CorrelationId) on every event. When no Serilog:WriteTo section
+// is configured (non-Development environments) it falls back to console-only,
+// preserving the previous default console logging behavior: Information for
+// app code, Microsoft.AspNetCore lowered to Warning (same verbosity as
+// appsettings.Example.json Logging:LogLevel), and a template that includes
+// {Properties:j} so CorrelationId/RequestPath stay visible on console.
+builder.Host.UseSerilog((ctx, cfg) =>
+{
+    cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
+
+    if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+    {
+        cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+            .WriteTo.Console(outputTemplate:
+                "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+    }
+});
 
 builder
     .Services.AddControllers()
@@ -67,9 +91,10 @@ builder.Services.AddHostedService<ProgramProgressSeeder>();
 // Seed de rutinas de ejercicio base para el configurador de contenido del ERP.
 builder.Services.AddHostedService<ExerciseRoutineSeeder>();
 
-// Seed de desarrollo: inscribe a la paciente dev en default-83w y asigna
-// contenido de 4 semanas. Se registra DESPUÉS de ProgramProgressSeeder y
-// ExerciseRoutineSeeder para que la plantilla y las rutinas ya existan.
+// Seed de desarrollo: inscribe masivamente a más de 20 pacientes en default-83w,
+// asigna planes nutricionales, rutinas de ejercicio por día de semana y simula
+// progreso histórico y XP en tiers realistas. Se registra DESPUÉS de
+// ProgramProgressSeeder y ExerciseRoutineSeeder.
 builder.Services.AddHostedService<DevProgramSeeder>();
 
 // Reconciliación nocturna de rachas (B12, T-28): job diario configurable vía
@@ -139,10 +164,19 @@ if (args.Contains("--migrate"))
     var migrationDb = migrationScope.ServiceProvider.GetRequiredService<AppDbContext>();
     await migrationDb.Database.MigrateAsync();
     Console.WriteLine("Migraciones del backend aplicadas correctamente");
+    // Flush pendiente antes de terminar el proceso: con un file sink
+    // configurado (Serilog:WriteTo) los logs de la migración no se pierden
+    // en el tail del run del job de deploy.
+    Log.CloseAndFlush();
     return;
 }
 
 var app = builder.Build();
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.All
+});
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();

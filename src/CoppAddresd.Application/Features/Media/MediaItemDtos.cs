@@ -24,7 +24,9 @@ public record CreateMediaItemRequest(
     MediaStatus Status,
     int SortOrder,
     int Day,
-    int Month);
+    int Month,
+    IReadOnlyList<CoppAddresd.Domain.Entities.MediaChapterDto>? Chapters = null,
+    IReadOnlyList<string>? Takeaways = null);
 
 /// <summary>Payload de actualización de un medio desde el ERP.</summary>
 public record UpdateMediaItemRequest(
@@ -41,7 +43,9 @@ public record UpdateMediaItemRequest(
     MediaStatus Status,
     int SortOrder,
     int Day,
-    int Month);
+    int Month,
+    IReadOnlyList<CoppAddresd.Domain.Entities.MediaChapterDto>? Chapters = null,
+    IReadOnlyList<string>? Takeaways = null);
 
 /// <summary>Representación de un medio para la API.</summary>
 public record MediaItemDto(
@@ -63,7 +67,9 @@ public record MediaItemDto(
     DateTimeOffset? PublishedAt,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    Guid? CreatedBy)
+    Guid? CreatedBy,
+    IReadOnlyList<CoppAddresd.Domain.Entities.MediaChapterDto> Chapters,
+    IReadOnlyList<string> Takeaways)
 {
     public static MediaItemDto FromEntity(CoppAddresd.Domain.Entities.MediaItem entity) => new(
         entity.Id,
@@ -84,5 +90,7 @@ public record MediaItemDto(
         entity.PublishedAt,
         entity.CreatedAt,
         entity.UpdatedAt,
-        entity.CreatedBy);
+        entity.CreatedBy,
+        entity.Chapters ?? [],
+        entity.Takeaways ?? []);
 }
