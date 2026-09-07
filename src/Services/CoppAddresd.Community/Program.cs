@@ -7,6 +7,7 @@ using CoppAddresd.Community.GraphQL.Resolvers;
 using CoppAddresd.Community.GraphQL.Subscriptions;
 using CoppAddresd.Community.Persistence;
 using CoppAddresd.Community.Seeders;
+using CoppAddresd.Community.Scheduling;
 using CoppAddresd.Community.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -76,13 +77,22 @@ builder.Services
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
     .AddSubscriptionType<CommunitySubscription>()
+    .AddTypeExtension<ClubQuery>()
+    .AddTypeExtension<ClubMutation>()
+    .AddTypeExtension<ClubSubscription>()
     .AddType<PostImageUrlResolver>()
     .AddType<ProfileImageUrlResolver>()
     .AddTypeExtension<ProfileResolvers>()
     .AddTypeExtension<PollVoteResolvers>()
+    .AddTypeExtension<ClubResolvers>()
+    .AddTypeExtension<ClubEventResolvers>()
+    .AddTypeExtension<ClubMediaResolvers>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
+
+// Publica posts de clubes PROGRAMADO vencidos (scheduler ligero del servicio).
+builder.Services.AddHostedService<ClubPostScheduler>();
 
 builder.Services.AddHealthChecks();
 
@@ -94,7 +104,10 @@ using (var scope = app.Services.CreateScope())
     await db.Database.MigrateAsync();
 
     if (app.Environment.IsDevelopment())
+    {
         await CommunitySeeder.SeedAsync(db, builder.Configuration);
+        await ClubSeeder.SeedAsync(db, builder.Configuration, CancellationToken.None);
+    }
 
     // Contenido demo adicional (polls/imágenes) — idempotente. No-op si
     // CommunityDemo no está configurado con Enabled=true (producción).
