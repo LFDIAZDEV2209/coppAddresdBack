@@ -48,6 +48,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         Set<ProfessionalTypeSpecialty>();
     public DbSet<ProfessionalLicense> ProfessionalLicenses => Set<ProfessionalLicense>();
 
+    public DbSet<ProfessionalSchedule> ProfessionalSchedules => Set<ProfessionalSchedule>();
+
     public DbSet<MediaItem> MediaItems => Set<MediaItem>();
     public DbSet<Document> Documents => Set<Document>();
     public DbSet<DocumentCategory> DocumentCategories => Set<DocumentCategory>();
