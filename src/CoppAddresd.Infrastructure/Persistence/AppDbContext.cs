@@ -144,6 +144,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HabitTemplate> HabitTemplates => Set<HabitTemplate>();
     public DbSet<HabitCheck> HabitChecks => Set<HabitCheck>();
 
+    // Program Progress — Intake nutricional enriquecido (SPEC nutrition-intake-adherence)
+    public DbSet<NutritionIntakeLog> NutritionIntakeLogs => Set<NutritionIntakeLog>();
+
     // Program Progress — Notificaciones gamificadas (SPEC §20)
     public DbSet<AppNotification> AppNotifications => Set<AppNotification>();
 

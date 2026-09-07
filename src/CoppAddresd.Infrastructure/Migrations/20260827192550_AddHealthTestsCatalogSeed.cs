@@ -10,9 +10,20 @@ namespace CoppAddresd.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Seed del módulo Tests de Salud: batería inicial ANTARES (9
-            // instrumentos, preguntas, opciones, rangos, indicadores y reglas
-            // de alerta). Idempotente (ON CONFLICT DO NOTHING sobre claves únicas).
+            // Asegura que las columnas de metadata existan en health_test_questions
+            // independientemente del orden de ejecución de la migración embebida.
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS unit character varying(20);
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS min_value numeric;
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS max_value numeric;
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS default_value numeric;
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS min_label character varying(40);
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS max_label character varying(40);
+                ALTER TABLE app.health_test_questions ADD COLUMN IF NOT EXISTS hint text;
+                """
+            );
+
             migrationBuilder.Sql(ReadSeedScript());
         }
 
