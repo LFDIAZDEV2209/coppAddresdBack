@@ -676,6 +676,204 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .ToListAsync(ct);
 
     /// <summary>
+    /// Geo agregado para el mapa de Tests de Salud: ciudades con % de alto riesgo
+    /// (severidad high/critical en health_test_results tipo score) y alertas top.
+    /// </summary>
+    public async Task<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto> GetGeoAsync(
+        CancellationToken ct = default
+    )
+    {
+        // Pacientes con ciudad (solo activos no borrados)
+        var patientsWithCity = await dbContext
+            .PatientProfiles.AsNoTracking()
+            .Where(p => p.DeletedAt == null && p.CityId != null)
+            .Select(p => new { p.Id, CityId = p.CityId!.Value })
+            .ToListAsync(ct);
+
+        if (patientsWithCity.Count == 0)
+        {
+            return new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto(
+                [],
+                [],
+                0,
+                null,
+                0
+            );
+        }
+
+        var patientIds = patientsWithCity.Select(p => p.Id).ToList();
+        var cityIds = patientsWithCity.Select(p => p.CityId).Distinct().ToList();
+
+        // Detalle de ciudades + estado
+        var cityDetails = await dbContext
+            .Cities.AsNoTracking()
+            .Where(c => cityIds.Contains(c.Id))
+            .Join(
+                dbContext.States.AsNoTracking(),
+                c => c.StateId,
+                s => s.Id,
+                (c, s) =>
+                    new
+                    {
+                        c.Id,
+                        c.Name,
+                        StateCode = s.Code,
+                    }
+            )
+            .ToListAsync(ct);
+        var cityDetailMap = cityDetails.ToDictionary(c => c.Id);
+
+        // Resultados tipo score con severidad para calcular riesgo por paciente
+        var allScoreResults = await (
+            from r in dbContext.HealthTestResults.AsNoTracking()
+            join e in dbContext.HealthTestEvaluations.AsNoTracking() on r.EvaluationId equals e.Id
+            where
+                r.ResultType == CoppAddresd.Domain.Enums.HealthTests.HealthTestResultType.score
+                && patientIds.Contains(e.PatientId)
+            select new
+            {
+                e.PatientId,
+                r.Severity,
+                r.Value,
+                e.CompletedAt,
+            }
+        ).ToListAsync(ct);
+
+        // Worst severity por paciente + avg score por paciente (latest)
+        var severityOrder = new Dictionary<
+            CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity,
+            int
+        >
+        {
+            [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.low] = 0,
+            [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.moderate] = 1,
+            [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.high] = 2,
+            [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical] = 3,
+        };
+
+        var patientRisk =
+            new Dictionary<Guid, CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity>();
+        var patientScore = new Dictionary<Guid, decimal>();
+        foreach (var grp in allScoreResults.GroupBy(x => x.PatientId))
+        {
+            var worst = grp.OrderByDescending(x =>
+                    x.Severity.HasValue && severityOrder.TryGetValue(x.Severity.Value, out var ov)
+                        ? ov
+                        : -1
+                )
+                .First();
+            patientRisk[grp.Key] =
+                worst.Severity ?? CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.low;
+            // avg score across results (simple mean)
+            patientScore[grp.Key] = grp.Average(x => x.Value);
+        }
+
+        // Alta riesgo = high o critical
+        int highRiskGlobal = patientRisk.Count(kv =>
+            kv.Value == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.high
+            || kv.Value == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
+        );
+
+        // Agrupar por ciudad
+        var citiesRaw = patientsWithCity
+            .GroupBy(p => p.CityId)
+            .Select(g => new
+            {
+                CityId = g.Key,
+                Count = g.Count(),
+                PatientIds = g.Select(x => x.Id).ToList(),
+            })
+            .ToList();
+
+        var geoCities =
+            new List<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoCityDto>();
+        foreach (var c in citiesRaw)
+        {
+            var detail = cityDetailMap.TryGetValue(c.CityId, out var cd) ? cd : null;
+            int highInCity = c.PatientIds.Count(pid =>
+                patientRisk.TryGetValue(pid, out var sev)
+                && (
+                    sev == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.high
+                    || sev == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
+                )
+            );
+            double? highPct =
+                c.Count > 0 ? Math.Round((double)highInCity / c.Count * 100, 1) : null;
+            var scoresInCity = c
+                .PatientIds.Where(pid => patientScore.ContainsKey(pid))
+                .Select(pid => patientScore[pid])
+                .ToList();
+            double? avgScore =
+                scoresInCity.Count > 0 ? (double)Math.Round(scoresInCity.Average(), 1) : null;
+
+            geoCities.Add(
+                new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoCityDto(
+                    c.CityId,
+                    detail?.Name ?? "Desconocido",
+                    detail?.StateCode,
+                    c.Count,
+                    highPct,
+                    avgScore,
+                    null,
+                    null
+                )
+            );
+        }
+
+        geoCities = geoCities.OrderByDescending(c => c.Count).ToList();
+
+        // Alertas top: pacientes con alto riesgo (max 4)
+        var alerts =
+            new List<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoAlertDto>();
+        var highRiskPatientIds = patientRisk
+            .Where(kv =>
+                kv.Value == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.high
+                || kv.Value == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
+            )
+            .Select(kv => kv.Key)
+            .Take(4)
+            .ToList();
+
+        if (highRiskPatientIds.Count > 0)
+        {
+            var alertPatients = await dbContext
+                .PatientProfiles.AsNoTracking()
+                .Where(p => highRiskPatientIds.Contains(p.Id))
+                .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+                .ToListAsync(ct);
+
+            foreach (var pid in highRiskPatientIds)
+            {
+                var name = alertPatients.FirstOrDefault(x => x.Id == pid)?.Name ?? "Paciente";
+                var sev = patientRisk[pid];
+                alerts.Add(
+                    new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoAlertDto(
+                        pid,
+                        name,
+                        sev == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
+                            ? "Riesgo crítico"
+                            : "Riesgo alto",
+                        patientScore.TryGetValue(pid, out var sc) ? (double)sc : null,
+                        sev.ToString()
+                    )
+                );
+            }
+        }
+
+        int totalPatients = patientsWithCity.Select(p => p.Id).Distinct().Count();
+        double? avgScoreGlobal =
+            patientScore.Count > 0 ? (double)Math.Round(patientScore.Values.Average(), 1) : null;
+
+        return new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto(
+            geoCities,
+            alerts,
+            totalPatients,
+            avgScoreGlobal,
+            highRiskGlobal
+        );
+    }
+
+    /// <summary>
     /// Asignaciones con paciente, versión/instrumento, evaluaciones y resultados
     /// (tabla maestra del ERP, una sola consulta). Con <c>professionalId</c> filtra
     /// por el alcance del profesional (patient_professionals).
