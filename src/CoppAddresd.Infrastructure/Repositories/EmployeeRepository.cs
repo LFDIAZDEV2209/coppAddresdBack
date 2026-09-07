@@ -576,4 +576,49 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
             byType.OrderByDescending(t => t.Count).ToList()
         );
     }
+
+    public async Task<IReadOnlyList<ProfessionalSchedule>> GetSchedulesByProfessionalIdAsync(
+        Guid professionalId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .ProfessionalSchedules.AsNoTracking()
+            .Where(s => s.ProfessionalId == professionalId)
+            .OrderBy(s => s.Weekday)
+            .ToListAsync(ct);
+
+    public async Task ReplaceSchedulesAsync(
+        Guid professionalId,
+        IReadOnlyList<ProfessionalSchedule> schedules,
+        CancellationToken ct = default
+    )
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+
+            // Eliminar todas las filas existentes del profesional.
+            await dbContext
+                .ProfessionalSchedules.Where(s => s.ProfessionalId == professionalId)
+                .ExecuteDeleteAsync(ct);
+
+            // Insertar las nuevas filas.
+            var now = DateTime.UtcNow;
+            dbContext.ProfessionalSchedules.AddRange(
+                schedules.Select(s => new ProfessionalSchedule
+                {
+                    Id = s.Id == Guid.Empty ? Guid.NewGuid() : s.Id,
+                    ProfessionalId = professionalId,
+                    Weekday = s.Weekday,
+                    StartTime = s.StartTime,
+                    EndTime = s.EndTime,
+                    CreatedAt = now,
+                })
+            );
+
+            await dbContext.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        });
+    }
 }
