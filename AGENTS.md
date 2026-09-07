@@ -49,6 +49,7 @@ Schema app:     ~69 tablas: núcleo de pacientes (patient_profiles → auth.user
 Schema erp:     21 tablas (organizations → clinics → locations; employees como
                 núcleo HR con extensión clínica 1:0..1 professionals; catálogos
                 professional_types/specialties + puentes N:N + professional_licenses;
+                erp.professional_schedules (id uuid PK gen_random_uuid(), professional_id uuid FK→erp.professionals cascade, weekday int 1–7 ISO lunes=1, start_time/end_time time, created_at/updated_at timestamptz; índices uq_professional_schedules_professional_weekday [professional_id+weekday] + ix_professional_schedules_professional_id);
                 inventory_*/products/store_items; legal_documents*).
                 Plan de evolución del módulo: docs/modules/patients/PLAN.md
 Schema audit:   1 tabla (activity_logs)
@@ -205,6 +206,25 @@ La primera versión de un agente se inserta y activa en UNA transacción
 NpgsqlRetryingExecutionStrategy no soporta transacciones manuales). La activación de una
 versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de la navegación
 `ActiveVersion` (cargada con Include) reescribía `active_version_id` al guardar.
+
+## Gestión de personas (ERP) — Endpoints
+
+```
+GET    /api/v1/employees                      # Listar empleados con filtros y paginación [Employees.View]
+GET    /api/v1/employees/{id}                 # Obtener empleado por id [Employees.View]
+POST   /api/v1/employees                      # Crear empleado [Employees.Create]
+PUT    /api/v1/employees/{id}                 # Actualizar empleado [Employees.Update]
+POST   /api/v1/employees/{id}/invite          # Invitar empleado (crea usuario Auth + envía enlace) [Employees.Create]
+POST   /api/v1/employees/bulk                 # Creación masiva desde CSV [Employees.Create] (body: { organizationId, rows: [{ firstName, lastName, email, professionalTypeName?, status activo|invitado|inactivo }] }; cada fila independiente — las válidas se crean aunque otras fallen; sin clínicas ni invitaciones)
+GET    /api/v1/professionals/stats            # Estadísticas del directorio (totales + desglose por tipo) [Professionals.View]
+POST   /api/v1/professionals                  # Crear profesional orquestado (empleado + extensión clínica + clínicas + invitación + scopes) [Professionals.Create]
+GET    /api/v1/professionals/{id}/scopes      # Asignaciones scoped del profesional (roles + overrides por clínica) [Professionals.View]
+PUT    /api/v1/professionals/{id}/scopes      # Reemplazar asignaciones scoped [Professionals.Update]
+GET    /api/v1/professionals/{id}/schedules   # Horarios semanales de atención [Professionals.View] → [{ weekday 1–7 ISO, startTime HH:mm, endTime HH:mm }]
+PUT    /api/v1/professionals/{id}/schedules   # Reemplazar horarios semanales [Professionals.Update] (body: { schedules: [{ weekday 1–7, startTime, endTime }] }; máx. 7 filas, weekday único, endTime > startTime)
+```
+
+Horarios (`erp.professional_schedules`) viven por profesional: hasta 7 filas (una por día); días sin atención no tienen fila. El PUT reemplaza el set completo de forma transaccional.
 
 ## Audit System
 
