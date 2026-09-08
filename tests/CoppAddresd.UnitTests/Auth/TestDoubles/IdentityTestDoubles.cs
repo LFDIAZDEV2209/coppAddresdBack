@@ -69,7 +69,7 @@ public static class IdentityTestDoubles
     {
         var contextAccessor = Substitute.For<IHttpContextAccessor>();
         var claimsFactory = Substitute.For<IUserClaimsPrincipalFactory<ApplicationUser>>();
-        var opts = Options.Create(new IdentityOptions>();
+        var opts = Options.Create(new IdentityOptions());
         var logger = Substitute.For<ILogger<SignInManager<ApplicationUser>>>();
         var schemes = Substitute.For<IAuthenticationSchemeProvider>();
         var confirmation = Substitute.For<IUserConfirmation<ApplicationUser>>();
