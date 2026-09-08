@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Patients.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Exceptions;
 using MediatR;
@@ -20,7 +21,8 @@ public sealed record AssignPatientProfessionalCommand(
 
 public sealed class AssignPatientProfessionalCommandHandler(
     IPatientRepository repository,
-    IEmployeeRepository employees)
+    IEmployeeRepository employees,
+    IPatientMetricsQueue? metricsQueue = null)
     : IRequestHandler<AssignPatientProfessionalCommand, PatientProfessionalAssignmentView>
 {
     public async Task<PatientProfessionalAssignmentView> Handle(
@@ -51,6 +53,18 @@ public sealed class AssignPatientProfessionalCommandHandler(
             request.GrantedBy,
             ct);
 
+        // Pre-agregación CQRS en background (0ms overhead en HTTP)
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(new PatientAssignmentMetricEvent(
+                request.PatientId,
+                request.ClinicId,
+                request.ProfessionalId,
+                true,
+                DateTime.UtcNow
+            ));
+        }
+
         return (await repository.ListAssignmentsAsync(request.PatientId, ct))
             .First(a => a.ProfessionalId == request.ProfessionalId);
     }
@@ -63,7 +77,8 @@ public sealed record RemovePatientProfessionalCommand(
     : IRequest<bool>;
 
 public sealed class RemovePatientProfessionalCommandHandler(
-    IPatientRepository repository)
+    IPatientRepository repository,
+    IPatientMetricsQueue? metricsQueue = null)
     : IRequestHandler<RemovePatientProfessionalCommand, bool>
 {
     public async Task<bool> Handle(RemovePatientProfessionalCommand request, CancellationToken ct)
@@ -74,6 +89,19 @@ public sealed class RemovePatientProfessionalCommandHandler(
         }
 
         await repository.RemoveProfessionalAsync(request.PatientId, request.ProfessionalId, ct);
+
+        // Pre-agregación CQRS en background (0ms overhead en HTTP)
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(new PatientAssignmentMetricEvent(
+                request.PatientId,
+                null,
+                request.ProfessionalId,
+                false,
+                DateTime.UtcNow
+            ));
+        }
+
         return true;
     }
 }

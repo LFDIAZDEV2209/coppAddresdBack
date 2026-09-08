@@ -62,7 +62,8 @@ public class ProgramQueryHandlerTests
         new XpInfoDto(1620, "Constante", 3000),
         new StreakInfoDto(11, 27, 2, 1.0m, null, 0),
         16,
-        [new CalendarDayDto(new DateOnly(2026, 9, 24), 4, false, 200, "InProgress")]);
+        [new CalendarDayDto(new DateOnly(2026, 9, 24), 4, false, 200, "InProgress")],
+        null, 50);
 
     [Fact]
     public async Task Handle_Snapshot_DevuelveShape71()
@@ -87,6 +88,8 @@ public class ProgramQueryHandlerTests
         Assert.Equal(1620, dto.Xp.Balance);
         Assert.Equal("Constante", dto.Xp.Level);
         Assert.Equal(11, dto.Streak.Current);
+        // Campo aditivo (SPEC §7.1/§14): monto base real del bonus DAY_BONUS.
+        Assert.Equal(50, dto.DailyBonusAmount);
     }
 
     [Fact]

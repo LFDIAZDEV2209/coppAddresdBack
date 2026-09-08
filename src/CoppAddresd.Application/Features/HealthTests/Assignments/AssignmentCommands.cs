@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Features.HealthTests;
+using CoppAddresd.Application.Features.HealthTests.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
@@ -114,8 +115,10 @@ public record AssignBatteryCommand(
     Guid? AssignedBy = null
 ) : IRequest<IReadOnlyList<HealthTestAssignmentDto>>;
 
-public sealed class AssignBatteryCommandHandler(IHealthTestRepository repository)
-    : IRequestHandler<AssignBatteryCommand, IReadOnlyList<HealthTestAssignmentDto>>
+public sealed class AssignBatteryCommandHandler(
+    IHealthTestRepository repository,
+    IHealthTestMetricsQueue? metricsQueue = null
+) : IRequestHandler<AssignBatteryCommand, IReadOnlyList<HealthTestAssignmentDto>>
 {
     public async Task<IReadOnlyList<HealthTestAssignmentDto>> Handle(
         AssignBatteryCommand request,
@@ -172,6 +175,19 @@ public sealed class AssignBatteryCommandHandler(IHealthTestRepository repository
                 };
                 await repository.AddAssignmentAsync(assignment, ct);
                 assignments.Add(assignment);
+
+                if (metricsQueue != null)
+                {
+                    await metricsQueue.EnqueueAsync(
+                        new HealthTestAssignedMetricEvent(
+                            assignment.Id,
+                            patientId,
+                            null,
+                            DateOnly.FromDateTime(now)
+                        ),
+                        ct
+                    );
+                }
             }
         }
 
@@ -197,8 +213,10 @@ public record AssignTestCommand(
     Guid? AssignedBy = null
 ) : IRequest<HealthTestAssignmentDto>;
 
-public sealed class AssignTestCommandHandler(IHealthTestRepository repository)
-    : IRequestHandler<AssignTestCommand, HealthTestAssignmentDto>
+public sealed class AssignTestCommandHandler(
+    IHealthTestRepository repository,
+    IHealthTestMetricsQueue? metricsQueue = null
+) : IRequestHandler<AssignTestCommand, HealthTestAssignmentDto>
 {
     public async Task<HealthTestAssignmentDto> Handle(
         AssignTestCommand request,
@@ -236,6 +254,20 @@ public sealed class AssignTestCommandHandler(IHealthTestRepository repository)
             DueDate = request.DueDate,
         };
         await repository.AddAssignmentAsync(assignment, ct);
+
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(
+                new HealthTestAssignedMetricEvent(
+                    assignment.Id,
+                    assignment.PatientId,
+                    null,
+                    DateOnly.FromDateTime(assignment.AssignedAt)
+                ),
+                ct
+            );
+        }
+
         return HealthTestAssignmentDto.FromEntity(assignment);
     }
 }

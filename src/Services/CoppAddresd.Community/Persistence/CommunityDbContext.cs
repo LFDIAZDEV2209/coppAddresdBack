@@ -29,7 +29,7 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<PostReport> PostReports => Set<PostReport>();
     public DbSet<CommentReport> CommentReports => Set<CommentReport>();
     public DbSet<Repost> Reposts => Set<Repost>();
-    public DbSet<Club> Clubs => Set<Club>();
+public DbSet<Club> Clubs => Set<Club>();
     public DbSet<ClubMember> ClubMembers => Set<ClubMember>();
     public DbSet<ClubInvitation> ClubInvitations => Set<ClubInvitation>();
     public DbSet<ClubCategory> ClubCategories => Set<ClubCategory>();
@@ -40,6 +40,7 @@ public sealed class CommunityDbContext(DbContextOptions<CommunityDbContext> opti
     public DbSet<LiveSessionSpeaker> LiveSessionSpeakers => Set<LiveSessionSpeaker>();
     public DbSet<ClubNotification> ClubNotifications => Set<ClubNotification>();
     public DbSet<ModerationLog> ModerationLogs => Set<ModerationLog>();
+    public DbSet<CommunityDailyMetric> CommunityDailyMetrics => Set<CommunityDailyMetric>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

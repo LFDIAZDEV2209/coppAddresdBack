@@ -95,6 +95,10 @@ GET /api/v1/orders?page=1&pageSize=20
 | 2026-08-10 | Polly resilience para AI Service | Retry (3 intentos, backoff exponencial) + circuit breaker (5 fallos, 30s). Tolerancia a fallos sin código complejo. |
 | 2026-08-10 | Auditoría trigger-based + GUC | Trigger PostgreSQL automático + EF interceptor con `set_config(..., true)` para propagar actor. Zero código en handlers. |
 | 2026-08-24 | Gateway YARP standalone (puerto 5080) + plan AWS | Único punto de entrada pública (web/móvil/webhooks); CORS centralizado, internals con `X-Internal-Key`, split SSE en AWS. Detalle completo: `docs/architecture/gateway.md`. |
+| 2026-09-04 | Pre-agregación CQRS Analítica (Fase 1) | Canales `System.Threading.Channels` + HostedServices con atomic upsert PostgreSQL en background (0ms write latency overhead). Detalle: [`docs/architecture/analytics-cqrs-preaggregation.md`](analytics-cqrs-preaggregation.md). |
+| 2026-09-04 | Pre-agregación CQRS Dashboard #5 (Comunidad ADRED) | Rollup `community.community_daily_metrics` en el microservicio Community (HotChocolate GraphQL). Las mutaciones encolan eventos no bloqueantes; HostedService ejecuta upsert atómico `ON CONFLICT`; la query ERP lee rollup-first con fallback OLTP. Detalle: [`docs/modules/community/analytics.md`](../modules/community/analytics.md). |
+| 2026-09-04 | Pre-agregación CQRS Dashboard #6 (Inventario & Farmacia) | Rollup `erp.inventory_daily_metrics` en el stack principal (MediatR). `GetAnalyticsAsync` lee O(1) del rollup (costos en centavos `long`); fallback OLTP original intacto; estado puntual del inventario siempre desde `products`. Detalle: [`docs/modules/inventory/analytics.md`](../modules/inventory/analytics.md). |
+| 2026-09-04 | Estrategia de Migración ClickHouse + CDC (Fase 2) | Hoja de ruta Debezium CDC + Kafka + ClickHouse OLAP para analítica columnar de alta dimensión con dual-read. Detalle: [`docs/architecture/clickhouse-cdc-migration-strategy.md`](clickhouse-cdc-migration-strategy.md). |
 
 ## Deuda técnica / pendientes
 

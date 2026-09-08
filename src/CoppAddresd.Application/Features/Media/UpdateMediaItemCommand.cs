@@ -23,7 +23,9 @@ public record UpdateMediaItemCommand(
     int SortOrder,
     int Day,
     int Month,
-    Guid? UpdatedBy = null)
+    Guid? UpdatedBy = null,
+    IReadOnlyList<MediaChapterDto>? Chapters = null,
+    IReadOnlyList<string>? Takeaways = null)
     : IRequest<MediaItemDto?>;
 
 public sealed class UpdateMediaItemCommandHandler(
@@ -53,6 +55,10 @@ public sealed class UpdateMediaItemCommandHandler(
         entity.SortOrder = request.SortOrder;
         entity.Day = request.Day;
         entity.Month = request.Month;
+        if (request.Chapters is not null)
+            entity.Chapters = request.Chapters.ToList();
+        if (request.Takeaways is not null)
+            entity.Takeaways = request.Takeaways.ToList();
         entity.UpdatedAt = DateTimeOffset.UtcNow;
 
         // Transición a Published: fija PublishedAt si aún no estaba publicado.

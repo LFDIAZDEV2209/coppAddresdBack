@@ -57,4 +57,13 @@ public sealed class MediaItem
 
     /// <summary>AspNetUsers.Id del creador (futuro Identity). Null hasta que exista.</summary>
     public Guid? CreatedBy { get; set; }
+
+    /// <summary>Capítulos interactivos con marca de tiempo en segundos.</summary>
+    public List<MediaChapterDto> Chapters { get; set; } = [];
+
+    /// <summary>Puntos clave o conclusiones clínicas del medio.</summary>
+    public List<string> Takeaways { get; set; } = [];
 }
+
+/// <summary>Capítulo multimedia con marca de tiempo en segundos.</summary>
+public record MediaChapterDto(int AtSeconds, string Label);

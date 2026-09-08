@@ -2279,6 +2279,37 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("health_test_comments", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestDailyMetric", b =>
+                {
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("ClinicId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MetricKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("DimensionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<long>("TotalCount")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("MetricDate", "ClinicId", "MetricKey", "DimensionKey");
+
+                    b.HasIndex("ClinicId", "MetricKey", "MetricDate");
+
+                    b.ToTable("health_test_daily_metrics", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestEvaluation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2854,6 +2885,43 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_insurers_name");
 
                     b.ToTable("insurers", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryDailyMetric", b =>
+                {
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date")
+                        .HasColumnName("metric_date");
+
+                    b.Property<string>("MetricKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("metric_key");
+
+                    b.Property<string>("DimensionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("dimension_key");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("last_updated_at");
+
+                    b.Property<long>("TotalCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("total_count");
+
+                    b.HasKey("MetricDate", "MetricKey", "DimensionKey");
+
+                    b.HasIndex("MetricDate")
+                        .HasDatabaseName("ix_inventory_daily_metrics_date");
+
+                    b.HasIndex("MetricKey", "DimensionKey", "MetricDate")
+                        .HasDatabaseName("ix_inventory_daily_metrics_key_dim_date");
+
+                    b.ToTable("inventory_daily_metrics", "erp");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.InventoryEntry", b =>
@@ -3678,6 +3746,13 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("category");
 
+                    b.Property<string>("Chapters")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("chapters")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
                     b.Property<string>("ContentType")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -3738,6 +3813,13 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)")
                         .HasColumnName("storage_key");
+
+                    b.Property<string>("Takeaways")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("takeaways")
+                        .HasDefaultValueSql("'[]'::jsonb");
 
                     b.Property<string>("ThumbnailKey")
                         .HasMaxLength(1024)
@@ -4165,6 +4247,37 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("patient_allergies", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientDailyMetric", b =>
+                {
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("ClinicId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MetricKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("DimensionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<long>("TotalCount")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("MetricDate", "ClinicId", "MetricKey", "DimensionKey");
+
+                    b.HasIndex("ClinicId", "MetricKey", "MetricDate");
+
+                    b.ToTable("patient_daily_metrics", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.PatientDiagnosis", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4409,6 +4522,17 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("last_name");
 
+                    b.Property<string>("LeagueNickname")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("league_nickname");
+
+                    b.Property<bool>("LeagueOptIn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("league_opt_in");
+
                     b.Property<Guid?>("LocationId")
                         .HasColumnType("uuid")
                         .HasColumnName("location_id");
@@ -4505,6 +4629,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.HasIndex("EthnicityId");
 
                     b.HasIndex("InsurerId");
+
+                    b.HasIndex("LeagueOptIn")
+                        .HasDatabaseName("ix_patient_profiles_league_opt_in")
+                        .HasFilter("\"league_opt_in\" = true");
 
                     b.HasIndex("LocationId")
                         .HasDatabaseName("ix_patient_profiles_location_id");
@@ -6195,6 +6323,54 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("uq_intake_logs_patient_date_meal");
 
                     b.ToTable("nutrition_intake_logs", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramDailyMetric", b =>
+                {
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date")
+                        .HasColumnName("metric_date");
+
+                    b.Property<string>("MetricKey")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("metric_key");
+
+                    b.Property<string>("DimensionKey")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasDefaultValue("general")
+                        .HasColumnName("dimension_key");
+
+                    b.Property<Guid?>("ClinicId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("clinic_id");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<long>("TotalCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("total_count");
+
+                    b.Property<decimal>("TotalValue")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("numeric(14,2)")
+                        .HasDefaultValue(0.00m)
+                        .HasColumnName("total_value");
+
+                    b.HasKey("MetricDate", "MetricKey", "DimensionKey");
+
+                    b.HasIndex("MetricDate", "MetricKey")
+                        .HasDatabaseName("ix_program_daily_metrics_lookup");
+
+                    b.ToTable("program_daily_metrics", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>

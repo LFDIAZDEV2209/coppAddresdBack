@@ -2,6 +2,7 @@ using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Community.Entities;
 using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.GraphQL.Types;
+using CoppAddresd.Community.Metrics;
 using CoppAddresd.Community.Persistence;
 using CoppAddresd.Community.Security;
 using CoppAddresd.Community.Storage;
@@ -99,7 +100,8 @@ public sealed class CommunityMutation
         [Service] ITopicEventSender sender,
         string? imageKey,
         CancellationToken ct,
-        bool pinned = false)
+        bool pinned = false,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
 
@@ -146,6 +148,15 @@ public sealed class CommunityMutation
         profile.LastActiveAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
 
+        // Métricas del dashboard ERP (rollup en background; nunca bloquea la request).
+        if (metricsQueue != null)
+            await metricsQueue.EnqueueAsync(new PostCreatedMetricEvent(
+                post.Id,
+                DateOnly.FromDateTime(now),
+                ToDimensionKey(post.Type),
+                now.Hour
+            ), ct);
+
         await RecomputeStreakAsync(db, profile, ct);
 
         // Emite un evento de feed en vivo a partir del tipo de publicación.
@@ -174,7 +185,8 @@ public sealed class CommunityMutation
         [Service] CommunityDbContext db,
         [Service] ITopicEventSender sender,
         CancellationToken ct,
-        bool pinned = false)
+        bool pinned = false,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         body = body.Trim();
         if (body.Length == 0) throw new GraphQLException("Escribe el contenido de la publicación.");
@@ -215,6 +227,15 @@ public sealed class CommunityMutation
         db.FeedEvents.Add(feedEvent);
         await db.SaveChangesAsync(ct);
 
+        // Métricas del dashboard ERP (rollup en background; nunca bloquea la request).
+        if (metricsQueue != null)
+            await metricsQueue.EnqueueAsync(new PostCreatedMetricEvent(
+                post.Id,
+                DateOnly.FromDateTime(now),
+                ToDimensionKey(post.Type),
+                now.Hour
+            ), ct);
+
         await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
         await sender.SendAsync("post_added", post);
         await sender.SendAsync("feed_event_added", feedEvent);
@@ -245,7 +266,8 @@ public sealed class CommunityMutation
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
         [Service] ITopicEventSender sender,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
 
@@ -309,6 +331,15 @@ public sealed class CommunityMutation
         await db.Entry(post).Reference(p => p.Profile).LoadAsync(ct);
         await sender.SendAsync("post_added", post);
         await sender.SendAsync("feed_event_added", feedEvent);
+
+        // Métricas del dashboard ERP (rollup en background; nunca bloquea la request).
+        if (metricsQueue != null)
+            await metricsQueue.EnqueueAsync(new PostCreatedMetricEvent(
+                post.Id,
+                DateOnly.FromDateTime(now),
+                ToDimensionKey(post.Type),
+                now.Hour
+            ), ct);
 
         return post;
     }
@@ -423,14 +454,26 @@ public sealed class CommunityMutation
         Guid postId,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
         var exists = await db.Likes.AnyAsync(l => l.PostId == postId && l.ProfileId == profile.Id, ct);
         if (!exists)
         {
-            db.Likes.Add(new Like { Id = Guid.NewGuid(), PostId = postId, ProfileId = profile.Id });
+            var like = new Like { Id = Guid.NewGuid(), PostId = postId, ProfileId = profile.Id };
+            db.Likes.Add(like);
             await db.SaveChangesAsync(ct);
+
+            // Métricas del dashboard ERP (rollup en background; nunca bloquea la request).
+            // El incremento usa la fecha del propio like (like.CreatedAt) — la misma
+            // fuente que usa UnlikePost al decrementar — para que add/remove sean simétricos
+            // incluso si el guardado cruza la medianoche UTC.
+            if (metricsQueue != null)
+            {
+                await metricsQueue.EnqueueAsync(new LikeAddedMetricEvent(
+                    postId, DateOnly.FromDateTime(like.CreatedAt), like.CreatedAt.Hour), ct);
+            }
         }
         return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
     }
@@ -439,14 +482,22 @@ public sealed class CommunityMutation
         Guid postId,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
         var like = await db.Likes.FirstOrDefaultAsync(l => l.PostId == postId && l.ProfileId == profile.Id, ct);
         if (like is not null)
         {
+            // Métricas del dashboard ERP: el like removido decrementa el bucket del
+            // día ORIGINAL del like (cuando se agregó), no el de hoy — si no, el día
+            // X quedaría inflado para siempre y el día Y clampado en 0.
+            var likeDate = DateOnly.FromDateTime(like.CreatedAt);
             db.Likes.Remove(like);
             await db.SaveChangesAsync(ct);
+
+            if (metricsQueue != null)
+                await metricsQueue.EnqueueAsync(new LikeRemovedMetricEvent(postId, likeDate), ct);
         }
         return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
     }
@@ -457,7 +508,8 @@ public sealed class CommunityMutation
         Guid commentId,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
 
@@ -467,8 +519,17 @@ public sealed class CommunityMutation
         var exists = await db.Likes.AnyAsync(l => l.CommentId == commentId && l.ProfileId == profile.Id, ct);
         if (!exists)
         {
-            db.Likes.Add(new Like { Id = Guid.NewGuid(), CommentId = commentId, ProfileId = profile.Id });
+            var like = new Like { Id = Guid.NewGuid(), CommentId = commentId, ProfileId = profile.Id };
+            db.Likes.Add(like);
             await db.SaveChangesAsync(ct);
+
+            // Métricas del dashboard ERP (rollup en background; nunca bloquea la request).
+            // Incremento con la fecha del propio like (misma fuente que UnlikeComment).
+            if (metricsQueue != null)
+            {
+                await metricsQueue.EnqueueAsync(new LikeAddedMetricEvent(
+                    commentId, DateOnly.FromDateTime(like.CreatedAt), like.CreatedAt.Hour), ct);
+            }
         }
 
         return await db.Comments
@@ -481,7 +542,8 @@ public sealed class CommunityMutation
         Guid commentId,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
 
@@ -491,8 +553,14 @@ public sealed class CommunityMutation
         var like = await db.Likes.FirstOrDefaultAsync(l => l.CommentId == commentId && l.ProfileId == profile.Id, ct);
         if (like is not null)
         {
+            // Métricas del dashboard ERP: decrementa el bucket del día ORIGINAL
+            // del like (cuando se agregó), no el de hoy.
+            var likeDate = DateOnly.FromDateTime(like.CreatedAt);
             db.Likes.Remove(like);
             await db.SaveChangesAsync(ct);
+
+            if (metricsQueue != null)
+                await metricsQueue.EnqueueAsync(new LikeRemovedMetricEvent(commentId, likeDate), ct);
         }
 
         return await db.Comments
@@ -510,7 +578,8 @@ public sealed class CommunityMutation
         Guid postId,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
 
@@ -521,14 +590,21 @@ public sealed class CommunityMutation
         if (exists)
             throw new GraphQLException("Ya reposteaste esta publicación.");
 
-        db.Reposts.Add(new Repost
+        var now = DateTime.UtcNow;
+        var repost = new Repost
         {
             Id = Guid.NewGuid(),
             PostId = postId,
             ProfileId = profile.Id,
-            CreatedAt = DateTime.UtcNow,
-        });
+            CreatedAt = now,
+        };
+        db.Reposts.Add(repost);
         await db.SaveChangesAsync(ct);
+
+        // Métricas del dashboard ERP (rollup en background; nunca bloquea la request).
+        if (metricsQueue != null)
+            await metricsQueue.EnqueueAsync(new RepostCreatedMetricEvent(
+                repost.Id, DateOnly.FromDateTime(now), now.Hour), ct);
 
         return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
     }
@@ -540,7 +616,8 @@ public sealed class CommunityMutation
         Guid postId,
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
 
@@ -549,8 +626,16 @@ public sealed class CommunityMutation
         if (repost is null)
             throw new GraphQLException("No reposteaste esta publicación.");
 
+        // Métricas del dashboard ERP: captura la fecha/hora ORIGINALES del repost
+        // ANTES de eliminarlo y decrementa esos buckets (reposts_count y
+        // hourly_activity) — si no, el conteo de reposts sobrecuenta para siempre.
+        var repostDate = DateOnly.FromDateTime(repost.CreatedAt);
+        var repostHour = repost.CreatedAt.Hour;
         db.Reposts.Remove(repost);
         await db.SaveChangesAsync(ct);
+
+        if (metricsQueue != null)
+            await metricsQueue.EnqueueAsync(new RepostRemovedMetricEvent(repost.Id, repostDate, repostHour), ct);
 
         return await db.Posts.FirstOrDefaultAsync(p => p.Id == postId, ct);
     }
@@ -679,7 +764,8 @@ public sealed class CommunityMutation
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
         [Service] ITopicEventSender sender,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
         var comment = new Comment
@@ -693,6 +779,14 @@ public sealed class CommunityMutation
         db.Comments.Add(comment);
         profile.LastActiveAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        // Métricas del dashboard ERP (rollup en background; nunca bloquea la request).
+        if (metricsQueue != null)
+            await metricsQueue.EnqueueAsync(new CommentCreatedMetricEvent(
+                comment.Id,
+                DateOnly.FromDateTime(comment.CreatedAt),
+                comment.CreatedAt.Hour
+            ), ct);
 
         // Evento de feed para comentarios (actualiza el feed en vivo)
         var feedEvent = new FeedEvent
@@ -718,7 +812,8 @@ public sealed class CommunityMutation
         [Service] CommunityDbContext db,
         [Service] IHttpContextAccessor http,
         [Service] ITopicEventSender sender,
-        CancellationToken ct)
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
         var parent = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId, ct)
@@ -735,6 +830,14 @@ public sealed class CommunityMutation
         db.Comments.Add(reply);
         profile.LastActiveAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
+
+        // Métricas del dashboard ERP: una respuesta también es un comentario (rollup en background).
+        if (metricsQueue != null)
+            await metricsQueue.EnqueueAsync(new CommentCreatedMetricEvent(
+                reply.Id,
+                DateOnly.FromDateTime(reply.CreatedAt),
+                reply.CreatedAt.Hour
+            ), ct);
 
         var feedEvent = new FeedEvent
         {
@@ -1542,5 +1645,13 @@ public sealed class CommunityMutation
         PostType.Logro => FeedEventKind.Logro,
         _ => FeedEventKind.Publicacion,
     };
+
+    /// <summary>
+    /// Clave de dimensión del rollup para el tipo de publicación: normaliza la
+    /// encuesta a "poll" (misma dimensión que escribe <c>CreatePollPost</c> y que
+    /// mapea el fallback OLTP) para que rollup y fallback siempre coincidan.
+    /// </summary>
+    private static string ToDimensionKey(PostType? type)
+        => type == PostType.Encuesta ? "poll" : type?.ToString()?.ToLowerInvariant() ?? "general";
 }
 
