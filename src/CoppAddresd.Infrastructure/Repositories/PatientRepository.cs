@@ -435,4 +435,28 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
 
         return employees.ToDictionary(x => x.Id, x => x.FullName);
     }
+
+    public async Task<IReadOnlyList<string>> GetExistingDocumentNumbersAsync(
+        IReadOnlyCollection<string> documentNumbers,
+        CancellationToken ct = default
+    )
+    {
+        if (documentNumbers.Count == 0)
+        {
+            return [];
+        }
+
+        // Una sola query: LOWER(document_number) IN (...) para bulk duplicate check.
+        var lowered = documentNumbers
+            .Select(d => d.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToList();
+
+        return await dbContext.PatientProfiles
+            .AsNoTracking()
+            .Where(x => x.DeletedAt == null && x.DocumentNumber != null)
+            .Where(x => lowered.Contains(x.DocumentNumber!.ToLower()))
+            .Select(x => x.DocumentNumber!.ToLower())
+            .ToListAsync(ct);
+    }
 }
