@@ -117,6 +117,7 @@ DELETE /api/auth/users/{id}/scoped/permissions     # Remover override scoped [Re
 GET    /api/auth/internal/authorize           # ¿Permiso en cadena de scopes? (?userId&permissionCode&scopes=Clinic:id|Organization:id|Global)
 GET    /api/auth/internal/scoped-permissions  # Permisos efectivos para una cadena de scopes (?userId&scopes=...)
 POST   /api/auth/internal/invitations         # Crear usuario sin password + acceso ERP + invitación + email (body: email, firstName, lastName)
+GET    /api/auth/internal/roles/by-name/{name} # Buscar rol por nombre (case-insensitive) → { id, name, isActive } o 404
 
 # Invitaciones de primer acceso (onboarding del profesional)
 GET    /api/auth/invitations/validate?token=       # Validar token (público, no consume)
@@ -224,9 +225,12 @@ GET    /api/v1/professionals/{id}/scopes      # Asignaciones scoped del profesio
 PUT    /api/v1/professionals/{id}/scopes      # Reemplazar asignaciones scoped [Professionals.Update]
 GET    /api/v1/professionals/{id}/schedules   # Horarios semanales de atención [Professionals.View] → [{ weekday 1–7 ISO, startTime HH:mm, endTime HH:mm }]
 PUT    /api/v1/professionals/{id}/schedules   # Reemplazar horarios semanales [Professionals.Update] (body: { schedules: [{ weekday 1–7, startTime, endTime }] }; máx. 7 filas, weekday único, endTime > startTime)
+POST   /api/v1/maintenance/backfill-professional-scopes  # Backfill de scopes de profesional (idempotente) [System.AdminSettings]
 ```
 
 Horarios (`erp.professional_schedules`) viven por profesional: hasta 7 filas (una por día); días sin atención no tienen fila. El PUT reemplaza el set completo de forma transaccional.
+
+**Invariante de scopes de profesional**: al actualizar un empleado con extensión profesional (`PUT /api/v1/employees/{id}`) que tenga `userId` vinculado, se sincroniza automáticamente (best-effort) el rol `Professional` con scope de clínica para cada clínica activa recién agregada. Si el empleado acaba de convertirse de HR a profesional (extensión recién creada), se otorgan scopes para TODAS las clínicas activas. La reconciliación manual del backfill completo se ejecuta vía `POST /api/v1/maintenance/backfill-professional-scopes` (requiere `System.AdminSettings`).
 
 ## Audit System
 
