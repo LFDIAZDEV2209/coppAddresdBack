@@ -1,8 +1,10 @@
 using CoppAddresd.Application.Features.Professionals;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
+using MediatR;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using NSubstitute.ExceptionExtensions;
 
 namespace CoppAddresd.UnitTests.Features.Professionals;
 
@@ -10,11 +12,12 @@ public class BulkCreateEmployeesTests
 {
     private readonly IEmployeeRepository _employeeRepo = Substitute.For<IEmployeeRepository>();
     private readonly IOrganizationRepository _orgRepo = Substitute.For<IOrganizationRepository>();
+    private readonly IMediator _mediator = Substitute.For<IMediator>();
     private readonly ILogger<BulkCreateEmployeesCommandHandler> _logger =
         Substitute.For<ILogger<BulkCreateEmployeesCommandHandler>>();
 
     private BulkCreateEmployeesCommandHandler CreateHandler()
-        => new(_employeeRepo, _orgRepo, _logger);
+        => new(_mediator, _employeeRepo, _orgRepo, _logger);
 
     private static Organization Org(Guid id) =>
         new() { Id = id, Code = "test-org", Name = "Test Org" };
@@ -30,6 +33,33 @@ public class BulkCreateEmployeesTests
         string status = "activo") =>
         new(firstName, lastName, email, professionalTypeName, status);
 
+    /// <summary>Configura mocks comunes: employeeRepo.AddAsync devuelve la entidad y
+    /// mediator.Send para InviteEmployeeCommand devuelve un resultado exitoso por defecto.</summary>
+    private void SetupHappyPathMocks(Guid orgId)
+    {
+        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
+            .Returns(Org(orgId));
+        _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
+            .Returns([]);
+        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
+            .Returns(false);
+        _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<Employee>());
+
+        // Default: invitación exitosa
+        _mediator.Send(Arg.Any<InviteEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var cmd = callInfo.Arg<InviteEmployeeCommand>();
+                return new InviteEmployeeResult(
+                    cmd.EmployeeId,
+                    Guid.NewGuid(),    // UserId
+                    Guid.NewGuid(),    // InvitationId
+                    DateTime.UtcNow.AddHours(24),
+                    null);
+            });
+    }
+
     [Fact]
     public async Task FilaValidaProfesional_CreaEmpleadoConExtension()
     {
@@ -43,6 +73,12 @@ public class BulkCreateEmployeesTests
             .Returns(false);
         _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.Arg<Employee>());
+        _mediator.Send(Arg.Any<InviteEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var cmd = callInfo.Arg<InviteEmployeeCommand>();
+                return new InviteEmployeeResult(cmd.EmployeeId, Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.AddHours(24), null);
+            });
 
         var handler = CreateHandler();
         var command = new BulkCreateEmployeesCommand(orgId, [
@@ -54,6 +90,7 @@ public class BulkCreateEmployeesTests
         Assert.Single(result.Results);
         Assert.True(result.Results[0].Success);
         Assert.NotNull(result.Results[0].EmployeeId);
+        Assert.NotNull(result.Results[0].UserId);
         Assert.Equal(1, result.Created);
         Assert.Equal(0, result.Failed);
 
@@ -62,20 +99,18 @@ public class BulkCreateEmployeesTests
         await _employeeRepo.Received(1).AddAsync(
             Arg.Is<Employee>(e => e.Professional != null && e.Professional.ProfessionalTypeId == typeId),
             Arg.Any<CancellationToken>());
+
+        // Verificar que se envió la invitación
+        await _mediator.Received(1).Send(
+            Arg.Is<InviteEmployeeCommand>(c => c.EmployeeId == employee),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task FilaValidaNoClinica_CreaEmpleadoSinExtension()
     {
         var orgId = Guid.NewGuid();
-        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
-            .Returns(Org(orgId));
-        _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
-            .Returns([]);
-        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
-            .Returns(false);
-        _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => callInfo.Arg<Employee>());
+        SetupHappyPathMocks(orgId);
 
         var handler = CreateHandler();
         var command = new BulkCreateEmployeesCommand(orgId, [
@@ -87,6 +122,7 @@ public class BulkCreateEmployeesTests
         Assert.Single(result.Results);
         Assert.True(result.Results[0].Success);
         Assert.NotNull(result.Results[0].EmployeeId);
+        Assert.NotNull(result.Results[0].UserId);
         Assert.Equal(1, result.Created);
         Assert.Equal(0, result.Failed);
 
@@ -99,14 +135,7 @@ public class BulkCreateEmployeesTests
     public async Task EmailDuplicadoEnBatch_FilaFallida()
     {
         var orgId = Guid.NewGuid();
-        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
-            .Returns(Org(orgId));
-        _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
-            .Returns([]);
-        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
-            .Returns(false);
-        _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => callInfo.Arg<Employee>());
+        SetupHappyPathMocks(orgId);
 
         var handler = CreateHandler();
         var command = new BulkCreateEmployeesCommand(orgId, [
@@ -227,6 +256,12 @@ public class BulkCreateEmployeesTests
             .Returns(false);
         _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => callInfo.Arg<Employee>());
+        _mediator.Send(Arg.Any<InviteEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var cmd = callInfo.Arg<InviteEmployeeCommand>();
+                return new InviteEmployeeResult(cmd.EmployeeId, Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.AddHours(24), null);
+            });
 
         var handler = CreateHandler();
         var command = new BulkCreateEmployeesCommand(orgId, [
@@ -274,14 +309,9 @@ public class BulkCreateEmployeesTests
     {
         var orgId = Guid.NewGuid();
         var typeId = Guid.NewGuid();
-        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
-            .Returns(Org(orgId));
+        SetupHappyPathMocks(orgId);
         _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
             .Returns([ProfType(typeId, "médico cirujano")]);
-        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
-            .Returns(false);
-        _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => callInfo.Arg<Employee>());
 
         var handler = CreateHandler();
         var command = new BulkCreateEmployeesCommand(orgId, [
@@ -292,6 +322,7 @@ public class BulkCreateEmployeesTests
 
         Assert.Single(result.Results);
         Assert.True(result.Results[0].Success);
+        Assert.NotNull(result.Results[0].UserId);
         Assert.Equal(1, result.Created);
     }
 
@@ -299,12 +330,7 @@ public class BulkCreateEmployeesTests
     public async Task StatusCaseInsensitive_MapeaCorrectamente()
     {
         var orgId = Guid.NewGuid();
-        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
-            .Returns(Org(orgId));
-        _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
-            .Returns([]);
-        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
-            .Returns(false);
+        SetupHappyPathMocks(orgId);
 
         Employee? captured = null;
         _employeeRepo.AddAsync(Arg.Do<Employee>(e => captured = e), Arg.Any<CancellationToken>())
@@ -322,6 +348,7 @@ public class BulkCreateEmployeesTests
         Assert.Equal(3, result.Created);
         Assert.Equal(0, result.Failed);
         Assert.All(result.Results, r => Assert.True(r.Success));
+        Assert.All(result.Results, r => Assert.NotNull(r.UserId));
         await _employeeRepo.Received(3).AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>());
     }
 
@@ -452,14 +479,9 @@ public class BulkCreateEmployeesTests
     public async Task ProfessionalTypeNameVacio_EsEmpleadoNoClinico()
     {
         var orgId = Guid.NewGuid();
-        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
-            .Returns(Org(orgId));
+        SetupHappyPathMocks(orgId);
         _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
             .Returns([ProfType(Guid.NewGuid(), "Médico")]);
-        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
-            .Returns(false);
-        _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => callInfo.Arg<Employee>());
 
         var handler = CreateHandler();
         var command = new BulkCreateEmployeesCommand(orgId, [
@@ -473,5 +495,159 @@ public class BulkCreateEmployeesTests
         await _employeeRepo.Received(1).AddAsync(
             Arg.Is<Employee>(e => e.Professional == null),
             Arg.Any<CancellationToken>());
+    }
+
+    // ─── Nuevos tests: auto-invite ────────────────────────────────────
+
+    [Fact]
+    public async Task InvitacionExitosa_SetUserIdEnResultado()
+    {
+        var orgId = Guid.NewGuid();
+        var expectedUserId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        // Configurar un userId específico en la respuesta
+        _mediator.Send(Arg.Any<InviteEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var cmd = callInfo.Arg<InviteEmployeeCommand>();
+                return new InviteEmployeeResult(cmd.EmployeeId, expectedUserId, Guid.NewGuid(), DateTime.UtcNow.AddHours(24), null);
+            });
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(email: "nuevo@test.com"),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        Assert.NotNull(result.Results[0].UserId);
+        Assert.Equal(expectedUserId, result.Results[0].UserId);
+
+        // Verificar que se envió el InviteEmployeeCommand
+        await _mediator.Received(1).Send(
+            Arg.Is<InviteEmployeeCommand>(c => c.InvitedBy == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvitacionFallida_CompensaEliminaEmpleado_FilaFallida()
+    {
+        var orgId = Guid.NewGuid();
+        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
+            .Returns(Org(orgId));
+        _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
+            .Returns([]);
+        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
+            .Returns(false);
+        _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<Employee>());
+
+        // La invitación falla
+        _mediator.Send(Arg.Any<InviteEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("El servicio de autenticación no está disponible."));
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(email: "fail@test.com"),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("invitación", result.Results[0].Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, result.Created);
+        Assert.Equal(1, result.Failed);
+
+        // Verificar compensación: se intentó eliminar el empleado
+        await _employeeRepo.Received(1).DeleteAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task InvitacionFallida_OtrasFilasAfectadas_Independencia()
+    {
+        var orgId = Guid.NewGuid();
+        _orgRepo.GetOrganizationByIdAsync(orgId, Arg.Any<CancellationToken>())
+            .Returns(Org(orgId));
+        _orgRepo.ListProfessionalTypesAsync(Arg.Any<CancellationToken>())
+            .Returns([]);
+        _employeeRepo.EmailExistsInOrganizationAsync(orgId, Arg.Any<string>(), null, Arg.Any<CancellationToken>())
+            .Returns(false);
+        _employeeRepo.AddAsync(Arg.Any<Employee>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<Employee>());
+
+        var callCount = 0;
+        _mediator.Send(Arg.Any<InviteEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                callCount++;
+                var cmd = callInfo.Arg<InviteEmployeeCommand>();
+                // La primera fila falla, las demás exitosas
+                if (callCount == 1)
+                    throw new InvalidOperationException("Error transitorio del Auth Service");
+                return new InviteEmployeeResult(cmd.EmployeeId, Guid.NewGuid(), Guid.NewGuid(), DateTime.UtcNow.AddHours(24), null);
+            });
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(email: "fail@test.com"),       // fila 1: invitación falla → compensada
+            Row(email: "ok1@test.com"),        // fila 2: éxito
+            Row(email: "ok2@test.com"),        // fila 3: éxito
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(3, result.Results.Count);
+        Assert.False(result.Results[0].Success);  // fila 1: compensada
+        Assert.True(result.Results[1].Success);   // fila 2: éxito
+        Assert.True(result.Results[2].Success);   // fila 3: éxito
+        Assert.Equal(2, result.Created);
+        Assert.Equal(1, result.Failed);
+
+        // Verificar que userId está presente en las filas exitosas
+        Assert.NotNull(result.Results[1].UserId);
+        Assert.NotNull(result.Results[2].UserId);
+
+        // Verificar que se intentó eliminar solo el empleado de la fila 1
+        await _employeeRepo.Received(1).DeleteAsync(
+            Arg.Any<Guid>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task BatchIndependencia_UnaFilaNoDetieneOtras()
+    {
+        var orgId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(email: "ok1@test.com"),
+            Row(firstName: ""),               // validación falla, no crea empleado
+            Row(email: "ok2@test.com"),
+            Row(email: "ok2@test.com"),       // duplicado en batch
+            Row(email: "ok3@test.com"),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(5, result.Results.Count);
+        Assert.True(result.Results[0].Success);
+        Assert.False(result.Results[1].Success);  // nombre vacío
+        Assert.True(result.Results[2].Success);
+        Assert.False(result.Results[3].Success);  // duplicado
+        Assert.True(result.Results[4].Success);
+        Assert.Equal(3, result.Created);
+        Assert.Equal(2, result.Failed);
+
+        // Las 3 filas exitosas tienen userId
+        Assert.NotNull(result.Results[0].UserId);
+        Assert.NotNull(result.Results[2].UserId);
+        Assert.NotNull(result.Results[4].UserId);
     }
 }
