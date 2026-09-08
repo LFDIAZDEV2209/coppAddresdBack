@@ -9,6 +9,16 @@ using System.Security.Cryptography;
 
 namespace CoppAddresd.Auth.Services;
 
+/// <summary>
+/// Proyección de solo lectura para resolver nombres de clínicas u
+/// organizaciones a partir de sus ids (raw SQL sobre erp.clinics / erp.organizations).
+/// </summary>
+internal class ScopeNameRow
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+}
+
 public class UserService : IUserService
 {
     private readonly UserManager<ApplicationUser> _userManager;
@@ -37,7 +47,9 @@ public class UserService : IUserService
         if (user is null) return null;
 
         var roles = await _userManager.GetRolesAsync(user);
-        return MapToResponse(user, roles);
+        var scopedRoles = await GetScopedRolesForUsersAsync(new[] { id }, ct);
+        scopedRoles.TryGetValue(id, out var scoped);
+        return MapToResponse(user, roles, scoped);
     }
 
     public async Task<IEnumerable<UserResponse>> GetAllAsync(CancellationToken ct = default)
@@ -47,11 +59,144 @@ public class UserService : IUserService
             .ThenBy(u => u.LastName)
             .ToListAsync(ct);
 
+        // Batch: cargar todos los roles scoped de los usuarios de UNA sola vez
+        // (evita N+1 con GetRolesAsync ya existente por usuario).
+        var userIds = users.Select(u => u.Id).ToArray();
+        var scopedRolesMap = await GetScopedRolesForUsersAsync(userIds, ct);
+
         var result = new List<UserResponse>();
         foreach (var user in users)
         {
             var roles = await _userManager.GetRolesAsync(user);
-            result.Add(MapToResponse(user, roles));
+            scopedRolesMap.TryGetValue(user.Id, out var scoped);
+            result.Add(MapToResponse(user, roles, scoped));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Carga roles scoped en batch para múltiples usuarios: UNA query sobre
+    /// ScopedRoleAssignments + Roles (sin N+1). Devuelve un diccionario
+    /// UserId → lista de UserScopedRoleResponse (con role name, scope type
+    /// y scope name resuelto best-effort).
+    /// Protected virtual para que tests puedan overridear la implementación
+    /// y evitar la dependencia de raw SQL sobre erp (no disponible en SQLite).
+    /// </summary>
+    protected virtual async Task<Dictionary<Guid, List<UserScopedRoleResponse>>> GetScopedRolesForUsersAsync(
+        Guid[] userIds,
+        CancellationToken ct)
+    {
+        if (userIds.Length == 0)
+            return new Dictionary<Guid, List<UserScopedRoleResponse>>();
+
+        // Query batch: ScopedRoleAssignments unido a Roles para obtener el nombre.
+        var assignments = await _dbContext.ScopedRoleAssignments
+            .Where(a => userIds.Contains(a.UserId))
+            .Select(a => new
+            {
+                a.UserId,
+                RoleName = a.Role.Name!,
+                a.ScopeType,
+                a.ScopeId,
+            })
+            .ToListAsync(ct);
+
+        if (assignments.Count == 0)
+            return new Dictionary<Guid, List<UserScopedRoleResponse>>();
+
+        // Resolver nombres de scopes (clínicas y organizaciones) en batch.
+        var clinicIds = assignments
+            .Where(a => a.ScopeType == "Clinic" && a.ScopeId.HasValue)
+            .Select(a => a.ScopeId!.Value)
+            .Distinct()
+            .ToArray();
+        var orgIds = assignments
+            .Where(a => a.ScopeType == "Organization" && a.ScopeId.HasValue)
+            .Select(a => a.ScopeId!.Value)
+            .Distinct()
+            .ToArray();
+
+        var scopeNames = await ResolveScopeNamesAsync(clinicIds, orgIds, ct);
+
+        // Agrupar por usuario.
+        var result = new Dictionary<Guid, List<UserScopedRoleResponse>>();
+        foreach (var a in assignments)
+        {
+            var scopeName = a.ScopeId.HasValue
+                ? scopeNames.GetValueOrDefault(a.ScopeId.Value)
+                : null;
+
+            var item = new UserScopedRoleResponse(
+                RoleName: a.RoleName,
+                ScopeType: a.ScopeType,
+                ScopeName: scopeName);
+
+            if (!result.TryGetValue(a.UserId, out var list))
+            {
+                list = new List<UserScopedRoleResponse>();
+                result[a.UserId] = list;
+            }
+            list.Add(item);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resuelve nombres de clínicas y organizaciones a partir de sus ids
+    /// usando SQL crudo sobre erp.clinics y erp.organizations.
+    /// Fail-open: si la tabla no existe o la query falla, devuelve un
+    /// diccionario vacío (los roles scoped siguen devolviendo ScopeName=null).
+    /// Protected virtual para poder mockear en tests unitarios.
+    /// </summary>
+    protected virtual async Task<Dictionary<Guid, string>> ResolveScopeNamesAsync(
+        Guid[] clinicIds,
+        Guid[] orgIds,
+        CancellationToken ct)
+    {
+        var result = new Dictionary<Guid, string>();
+
+        if (clinicIds.Length > 0)
+        {
+            try
+            {
+                var clinicNames = await _dbContext.Database
+                    .SqlQueryRaw<ScopeNameRow>(
+                        """SELECT id AS "Id", name AS "Name" FROM erp.clinics WHERE id = ANY(@ids)""",
+                        new NpgsqlParameter("ids", clinicIds))
+                    .ToListAsync(ct);
+
+                foreach (var row in clinicNames)
+                {
+                    result[row.Id] = row.Name;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudieron resolver nombres de clínicas para scopes");
+            }
+        }
+
+        if (orgIds.Length > 0)
+        {
+            try
+            {
+                var orgNames = await _dbContext.Database
+                    .SqlQueryRaw<ScopeNameRow>(
+                        """SELECT id AS "Id", name AS "Name" FROM erp.organizations WHERE id = ANY(@ids)""",
+                        new NpgsqlParameter("ids", orgIds))
+                    .ToListAsync(ct);
+
+                foreach (var row in orgNames)
+                {
+                    result[row.Id] = row.Name;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudieron resolver nombres de organizaciones para scopes");
+            }
         }
 
         return result;
@@ -567,7 +712,10 @@ public class UserService : IUserService
         return ex.InnerException is PostgresException { SqlState: "23505" };
     }
 
-    private static UserResponse MapToResponse(ApplicationUser user, IList<string> roles)
+    private static UserResponse MapToResponse(
+        ApplicationUser user,
+        IList<string> roles,
+        List<UserScopedRoleResponse>? scopedRoles = null)
     {
         return new UserResponse(
             Id: user.Id.ToString(),
@@ -576,6 +724,7 @@ public class UserService : IUserService
             LastName: user.LastName,
             IsActive: user.IsActive,
             CreatedAt: user.CreatedAt,
-            Roles: roles.ToArray());
+            Roles: roles.ToArray(),
+            ScopedRoles: scopedRoles?.Count > 0 ? scopedRoles.ToArray() : null);
     }
 }
