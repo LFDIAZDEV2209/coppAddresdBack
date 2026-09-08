@@ -140,6 +140,29 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
     }
 
+    /// <summary>
+    /// Creación masiva de pacientes desde CSV. Cada fila es independiente;
+    /// las válidas se crean aunque otras fallen. Cap de 500 filas.
+    /// </summary>
+    [HttpPost("bulk")]
+    public async Task<ActionResult<BulkCreatePatientsResultDto>> Bulk(
+        [FromBody] BulkCreatePatientsRequest request,
+        CancellationToken ct
+    )
+    {
+        if (!await context.HasPermissionAsync("Patients.Create", ct))
+            return Forbid();
+
+        var command = new BulkCreatePatientsCommand(
+            request.ClinicId ?? context.ActiveClinicId,
+            request.Rows,
+            context.UserId,
+            await context.GetProfessionalIdAsync(ct));
+
+        var result = await mediator.Send(command, ct);
+        return Ok(result);
+    }
+
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<PatientDto>> Update(
         Guid id,
