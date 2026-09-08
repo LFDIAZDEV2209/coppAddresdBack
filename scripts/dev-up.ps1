@@ -21,6 +21,14 @@ $services = @(
   @{ Name = 'api';          Project = 'src/CoppAddresd.Api';                   Url = 'http://localhost:5122'; Port = 5122; Color = 'Blue' }
 )
 
+# Frontend / Food AI projects (sibling repos in the monorepo).
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$webServices = @(
+  @{ Name = 'front';   Url = 'http://localhost:3000'; Port = 3000; Color = 'DarkYellow'; Command = 'yarn.cmd';    Args = @('dev');                 Root = (Join-Path $repoRoot 'coppaddresd-front') },
+  @{ Name = 'antares'; Url = 'http://localhost:5173'; Port = 5173; Color = 'Red';        Command = 'npm.cmd';     Args = @('run','dev');           Root = (Join-Path $repoRoot 'antares-paciente') },
+  @{ Name = 'foodai';  Url = 'http://localhost:8010'; Port = 8010; Color = 'DarkGreen';  Command = (Join-Path $repoRoot 'food-ai-service\.venv\Scripts\python.exe'); Args = @('run_dev.py'); Root = (Join-Path $repoRoot 'food-ai-service') }
+)
+
 function Test-Port([int]$Port) {
   return (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) -ne $null
 }
@@ -59,9 +67,11 @@ Write-Host ''
 Draw-Banner "COPPADRESD BACKEND - DEV ENVIRONMENT" 'Green'
 
 Write-Host ''
-Draw-Banner "POSTGRES (DOCKER)" 'Cyan'
+Draw-Banner "POSTGRES" 'Cyan'
 $compose = Join-Path $root 'docker-compose.yaml'
-if (Test-Path $compose) {
+if (Test-Port 5432) {
+  Write-Host "  PostgreSQL already listening on :5432 (native service). Skipping docker Postgres." -ForegroundColor Green
+} elseif (Test-Path $compose) {
   Push-Location $root
   try {
     Write-Host "  Starting Postgres..." -NoNewline
@@ -150,8 +160,17 @@ if (-not $AiRoot -or -not (Test-Path $AiRoot)) {
     $candidate = Join-Path $env:USERPROFILE '.local\bin\uv.exe'
     if (Test-Path $candidate) { $uvPath = $candidate }
   }
-  if (-not $uvPath) {
-    Write-Host " 'uv' not found on PATH. Install it (https://astral.sh/uv) or add it to PATH." -ForegroundColor Red
+  $venvPython = Join-Path $AiRoot '.venv\Scripts\python.exe'
+  if (-not $uvPath -and (Test-Path $venvPython)) {
+    Write-Host " 'uv' not found; using venv python directly" -ForegroundColor $AiColor
+    $proc = Start-Process -FilePath $venvPython -ArgumentList @('run_dev.py') -WorkingDirectory $AiRoot `
+      -RedirectStandardOutput (Join-Path $logs ($AiName + '.log')) `
+      -RedirectStandardError (Join-Path $logs ($AiName + '.err')) -WindowStyle Hidden -PassThru
+    $proc.Id | Out-File (Join-Path $logs ($AiName + '.pid'))
+    $AiStarted = $true
+    Write-Host " PID $($proc.Id)" -ForegroundColor $AiColor
+  } elseif (-not $uvPath) {
+    Write-Host " 'uv' not found on PATH and no .venv\Scripts\python.exe. Install uv (https://astral.sh/uv) or add it to PATH." -ForegroundColor Red
     $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Skipped'; Color = 'Yellow' }
   } else {
     $proc = Start-Process -FilePath $uvPath -ArgumentList @('run', 'python', 'run_dev.py') -WorkingDirectory $AiRoot `
@@ -237,11 +256,68 @@ if ($AiStarted -and $AiResult) {
 }
 
 Write-Host ''
+Draw-Banner "FRONTEND & FOOD AI" 'Cyan'
+
+$webResults = @()
+$webStarted = @()
+foreach ($w in $webServices) {
+  if (Test-Port $w.Port) {
+    Write-Host ("  {0} already running on :{1} (skipped)" -f $w.Name.PadRight(16), $w.Port) -ForegroundColor Yellow
+    $webResults += [pscustomobject]@{ Name = $w.Name; Url = $w.Url; Port = $w.Port; Status = 'Running'; Color = $w.Color }
+    continue
+  }
+  $cmdOk = if ([System.IO.Path]::IsPathRooted($w.Command)) {
+    Test-Path $w.Command
+  } else {
+    (Get-Command $w.Command -CommandType Application -ErrorAction SilentlyContinue) -ne $null
+  }
+  if (-not (Test-Path $w.Root) -or -not $cmdOk) {
+    Write-Host ("  {0} repo/command missing ({1}). Skipped." -f $w.Name.PadRight(16), $w.Root) -ForegroundColor Yellow
+    $webResults += [pscustomobject]@{ Name = $w.Name; Url = $w.Url; Port = $w.Port; Status = 'Missing'; Color = 'Yellow' }
+    continue
+  }
+  Write-Host ("  Starting {0}..." -f $w.Name.PadRight(16)) -NoNewline -ForegroundColor $w.Color
+  $proc = Start-Process -FilePath $w.Command -ArgumentList $w.Args -WorkingDirectory $w.Root `
+    -RedirectStandardOutput (Join-Path $logs ($w.Name + '.log')) `
+    -RedirectStandardError (Join-Path $logs ($w.Name + '.err')) -WindowStyle Hidden -PassThru
+  $proc.Id | Out-File (Join-Path $logs ($w.Name + '.pid'))
+  $webStarted += $w.Name
+  Write-Host " PID $($proc.Id)" -ForegroundColor $w.Color
+}
+
+Write-Host ''
+Draw-Banner "WAITING FOR WEB SERVICES" 'Cyan'
+foreach ($w in $webServices) {
+  if ($webStarted -notcontains $w.Name) { continue }
+  Write-Host ("  Waiting for {0} on port {1}..." -f $w.Name.PadRight(16), $w.Port) -NoNewline -ForegroundColor $w.Color
+  if (Wait-Port $w.Port $waitTimeout) {
+    Write-Host " READY" -ForegroundColor Green
+    $webResults += [pscustomobject]@{ Name = $w.Name; Url = $w.Url; Port = $w.Port; Status = 'Running'; Color = $w.Color }
+  } else {
+    Write-Host " FAILED" -ForegroundColor Red
+    $webResults += [pscustomobject]@{ Name = $w.Name; Url = $w.Url; Port = $w.Port; Status = 'FAILED'; Color = 'Red' }
+    $failed = $true
+    $log = Join-Path $logs ($w.Name + '.log')
+    $err = Join-Path $logs ($w.Name + '.err')
+    if (Test-Path $err) {
+      Write-Host "  --- Last 15 lines of $($w.Name).err ---" -ForegroundColor Gray
+      Get-Content $err -Tail 15 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+    } elseif (Test-Path $log) {
+      Write-Host "  --- Last 15 lines of $($w.Name).log ---" -ForegroundColor Gray
+      Get-Content $log -Tail 15 | ForEach-Object { Write-Host "  $_" -ForegroundColor Gray }
+    }
+  }
+}
+
+Write-Host ''
 Draw-Banner "SERVICE STATUS" 'Cyan'
 Write-Host "  Name             URL                                 Status" -ForegroundColor DarkGray
 Write-Host "  ----             ---                                 ------" -ForegroundColor DarkGray
 if ($AiResult) { $results += $AiResult }
 foreach ($r in $results) {
+  Draw-ServiceRow -Name $r.Name -Url $r.Url -Status $r.Status -StatusColor $r.Color -NameColor $r.Color
+}
+foreach ($r in $webResults) {
   Draw-ServiceRow -Name $r.Name -Url $r.Url -Status $r.Status -StatusColor $r.Color -NameColor $r.Color
 }
 
@@ -256,4 +332,4 @@ Draw-Banner "ALL SERVICES RUNNING" 'Green'
 Write-Host "  Stop with: .\scripts\dev-down.ps1" -ForegroundColor Gray
 Write-Host "  Logs in: $logs" -ForegroundColor Gray
 Write-Host "  View logs: .\scripts\dev-logs.ps1 <service> [-Follow] [-Err]" -ForegroundColor Gray
-Write-Host "  Services: auth, community, gateway, telemedicine, api, ai, postgres" -ForegroundColor Gray
+Write-Host "  Services: auth, community, gateway, telemedicine, api, ai, postgres, front, antares, foodai" -ForegroundColor Gray
