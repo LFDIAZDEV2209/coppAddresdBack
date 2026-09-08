@@ -113,6 +113,10 @@ public static class RoleSeeder
                 role = new ApplicationRole
                 {
                     Name = roleName,
+                    // Identity resuelve roles por nombre NORMALIZADO en
+                    // AddToRoleAsync/FindByNameAsync; al crearlos vía DbContext
+                    // (sin RoleManager) hay que normalizarlos explícitamente.
+                    NormalizedName = roleName.ToUpperInvariant(),
                     Description = description,
                     IsActive = true,
                     IsSystem = true,
@@ -161,6 +165,7 @@ public static class RoleSeeder
                     new ApplicationRole
                     {
                         Name = roleName,
+                        NormalizedName = roleName.ToUpperInvariant(),
                         Description =
                             "Rol clínico legado (reemplazado por Professional); conserva permisos de usuarios ya asignados",
                         IsActive = true,
@@ -210,6 +215,22 @@ public static class RoleSeeder
         if (systemMarked > 0)
         {
             logger.LogInformation("Roles marcados como IsSystem: {Count}", systemMarked);
+        }
+
+        // Backfill idempotente de NormalizedName: versiones previas del seeder
+        // creaban roles vía DbContext sin normalizar, y sin NormalizedName el
+        // lookup de Identity (AddToRoleAsync/FindByNameAsync) falla con
+        // "Role X does not exist". Solo completa los que falten.
+        var normalizedBackfill = await dbContext
+            .Roles.Where(r => r.NormalizedName == null)
+            .ExecuteUpdateAsync(s =>
+                s.SetProperty(r => r.NormalizedName, r => r.Name!.ToUpper()), ct);
+        if (normalizedBackfill > 0)
+        {
+            logger.LogInformation(
+                "Roles con NormalizedName completado: {Count}",
+                normalizedBackfill
+            );
         }
     }
 
