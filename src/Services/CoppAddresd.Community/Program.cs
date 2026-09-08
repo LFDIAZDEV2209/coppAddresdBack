@@ -77,13 +77,11 @@ builder.Services
     .AddGraphQLServer()
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
-    .AddSubscriptionType<CommunitySubscription>()
-<<<<<<< HEAD
-.AddTypeExtension<ClubQuery>()
+.AddSubscriptionType<CommunitySubscription>()
+    .AddTypeExtension<ClubQuery>()
     .AddTypeExtension<ClubMutation>()
     .AddTypeExtension<ClubSubscription>()
     .AddTypeExtension<CommunityErpAnalyticsQuery>()
->>>>>>> origin/dev
     .AddType<PostImageUrlResolver>()
     .AddType<ProfileImageUrlResolver>()
     .AddTypeExtension<ProfileResolvers>()
