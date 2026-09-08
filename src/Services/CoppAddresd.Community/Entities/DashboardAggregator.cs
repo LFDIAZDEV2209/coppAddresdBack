@@ -74,7 +74,7 @@ public static class DashboardAggregator
         // --- Inactivos en riesgo (Alto) ---
         var inactiveAtRisk = activeProfiles.Count(p =>
             IsInactiveBefore(p, utcNow.AddDays(-7))
-            && CommunityStats.ComputeRiskLevel(p.LastPostAt, p.LastActiveAt) == RiskLevel.Alto);
+            && CommunityStats.ComputeRiskLevel(p.LastPostAt, p.LastActiveAt, utcNow) == RiskLevel.Alto);
 
         // --- KPI Trends ---
         var activeInLast30d = CountActiveInWindow(activeProfiles, utcNow.AddDays(-30), utcNow);
@@ -233,7 +233,7 @@ public static class DashboardAggregator
             var dayKey = day.Date;
             result.Add(new ActivityDay
             {
-                Dia = day.Day,
+                Dia = day.ToString("MMM d"),
                 Posts = postsByDay.GetValueOrDefault(dayKey, 0),
                 Comentarios = commentsByDay.GetValueOrDefault(dayKey, 0),
                 Reacciones = likesByDay.GetValueOrDefault(dayKey, 0) + repostsByDay.GetValueOrDefault(dayKey, 0),

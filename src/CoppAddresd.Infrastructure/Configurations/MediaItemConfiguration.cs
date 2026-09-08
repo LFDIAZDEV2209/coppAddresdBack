@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CoppAddresd.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -90,6 +91,22 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
 
         builder.Property(x => x.CreatedBy)
             .HasColumnName("created_by");
+
+        builder.Property(x => x.Chapters)
+            .HasColumnName("chapters")
+            .HasColumnType("jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<MediaChapterDto>>(v, (JsonSerializerOptions?)null) ?? new List<MediaChapterDto>())
+            .HasDefaultValueSql("'[]'::jsonb");
+
+        builder.Property(x => x.Takeaways)
+            .HasColumnName("takeaways")
+            .HasColumnType("jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+            .HasDefaultValueSql("'[]'::jsonb");
 
         builder.HasIndex(x => x.Status)
             .HasDatabaseName("ix_media_items_status");

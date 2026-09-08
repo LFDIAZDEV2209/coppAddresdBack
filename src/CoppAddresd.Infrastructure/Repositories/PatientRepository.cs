@@ -233,6 +233,28 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         CancellationToken ct = default
     )
     {
+        var targetClinicId = clinicId ?? Guid.Empty;
+        var monthStartDate = DateOnly.FromDateTime(monthStartUtc);
+
+        // Pre-agregación CQRS (Fase 1): lectura O(1) desde patient_daily_metrics para vista administrativa/clínica
+        if (professionalId is null)
+        {
+            var metrics = await dbContext.PatientDailyMetrics
+                .AsNoTracking()
+                .Where(m => m.ClinicId == targetClinicId)
+                .ToListAsync(ct);
+
+            if (metrics.Count > 0)
+            {
+                var total = (int)metrics.Where(m => m.MetricKey == "total_patients").Sum(m => m.TotalCount);
+                var active = (int)metrics.Where(m => m.MetricKey == "status_count" && m.DimensionKey == "Activo").Sum(m => m.TotalCount);
+                var newThisMonth = (int)metrics.Where(m => m.MetricKey == "new_patients" && m.MetricDate >= monthStartDate).Sum(m => m.TotalCount);
+                var unassigned = (int)metrics.Where(m => m.MetricKey == "unassigned_patients").Sum(m => m.TotalCount);
+
+                return new PatientStatsDto(total, active, newThisMonth, Math.Max(0, unassigned));
+            }
+        }
+
         var query = dbContext.PatientProfiles.AsNoTracking().Where(x => x.DeletedAt == null);
 
         // Misma frontera de datos que ListAsync: clínica activa + alcance

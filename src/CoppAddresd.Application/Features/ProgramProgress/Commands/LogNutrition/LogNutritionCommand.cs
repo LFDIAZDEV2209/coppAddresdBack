@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
+using CoppAddresd.Application.Features.ProgramProgress.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using FluentValidation;
@@ -68,8 +69,16 @@ public sealed class LogNutritionCommandValidator : AbstractValidator<LogNutritio
 /// </summary>
 public sealed class LogNutritionCommandHandler(
     IProgramRepository repository,
+    IProgramMetricsQueue? metricsQueue,
     ILogger<LogNutritionCommandHandler> logger) : IRequestHandler<LogNutritionCommand, NutritionLogResultDto>
 {
+    public LogNutritionCommandHandler(
+        IProgramRepository repository,
+        ILogger<LogNutritionCommandHandler> logger)
+        : this(repository, null, logger)
+    {
+    }
+
     public async Task<NutritionLogResultDto> Handle(LogNutritionCommand request, CancellationToken ct)
     {
         var result = await repository.LogNutritionAsync(
@@ -79,6 +88,12 @@ public sealed class LogNutritionCommandHandler(
             request.Intake,
             request.ActorId,
             ct);
+
+        if (result.XpAwarded > 0 && metricsQueue is not null)
+        {
+            await metricsQueue.EnqueueAsync(
+                new XpAwardedMetricEvent(result.LocalDate, $"NUTRITION_{result.MealCode}", result.XpAwarded), ct);
+        }
 
         logger.LogInformation(
             "Program.NutritionLogged: patient={PatientId} meal={MealCode} fecha={LocalDate} " +

@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Features.HealthTests;
+using CoppAddresd.Application.Features.HealthTests.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
@@ -52,8 +53,10 @@ public record TransitionAlertCommand(
     Guid? ActorId = null
 ) : IRequest<HealthTestAlertDto?>;
 
-public sealed class TransitionAlertCommandHandler(IHealthTestRepository repository)
-    : IRequestHandler<TransitionAlertCommand, HealthTestAlertDto?>
+public sealed class TransitionAlertCommandHandler(
+    IHealthTestRepository repository,
+    IHealthTestMetricsQueue? metricsQueue = null
+) : IRequestHandler<TransitionAlertCommand, HealthTestAlertDto?>
 {
     public async Task<HealthTestAlertDto?> Handle(
         TransitionAlertCommand request,
@@ -66,6 +69,7 @@ public sealed class TransitionAlertCommandHandler(IHealthTestRepository reposito
             return null;
         }
 
+        var oldStatus = alert.Status;
         var now = DateTime.UtcNow;
         switch (request.TargetStatus)
         {
@@ -91,6 +95,22 @@ public sealed class TransitionAlertCommandHandler(IHealthTestRepository reposito
         }
 
         await repository.UpdateAlertAsync(alert, ct);
+
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(
+                new HealthTestAlertTransitionedMetricEvent(
+                    alert.Id,
+                    alert.PatientId,
+                    null,
+                    DateOnly.FromDateTime(now),
+                    oldStatus,
+                    alert.Status
+                ),
+                ct
+            );
+        }
+
         return HealthTestAlertDto.FromEntity(alert);
     }
 }

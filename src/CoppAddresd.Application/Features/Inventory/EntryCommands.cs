@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Inventory.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using MediatR;
@@ -44,7 +45,8 @@ public sealed class GetEntryQueryHandler(
 public record CreateEntryCommand(CreateEntryRequest Request) : IRequest<InventoryEntryDto>;
 
 public sealed class CreateEntryCommandHandler(
-    IInventoryRepository repository) : IRequestHandler<CreateEntryCommand, InventoryEntryDto>
+    IInventoryRepository repository,
+    IInventoryMetricsQueue? metricsQueue = null) : IRequestHandler<CreateEntryCommand, InventoryEntryDto>
 {
     public async Task<InventoryEntryDto> Handle(CreateEntryCommand request, CancellationToken ct)
     {
@@ -77,6 +79,39 @@ public sealed class CreateEntryCommandHandler(
 
         await repository.CreateEntryAsync(entry, ct);
 
+        // Pre-agregación CQRS (Dashboard #6): enqueue no bloqueante, 0ms de
+        // overhead perceptible sobre la escritura HTTP. El procesador en
+        // background actualiza el rollup erp.inventory_daily_metrics.
+        if (metricsQueue != null)
+        {
+            var metricLines = await BuildMetricLinesAsync(r.Lines, repository, ct);
+            await metricsQueue.EnqueueAsync(new InventoryEntryCreatedMetricEvent(
+                entry.Id,
+                DateOnly.FromDateTime(entry.Date),
+                entry.TotalCost,
+                metricLines
+            ), ct);
+        }
+
         return InventoryEntryDto.FromEntity(entry);
+    }
+
+    private static async Task<IReadOnlyList<InventoryMetricLine>> BuildMetricLinesAsync(
+        IReadOnlyList<InventoryEntryLineInput> lines,
+        IInventoryRepository repository,
+        CancellationToken ct)
+    {
+        var result = new List<InventoryMetricLine>();
+        foreach (var l in lines)
+        {
+            var product = await repository.GetProductByIdAsync(l.ProductId, ct);
+            result.Add(new InventoryMetricLine(
+                l.ProductName,
+                product?.Category ?? "general",
+                l.Quantity,
+                l.UnitCost
+            ));
+        }
+        return result;
     }
 }

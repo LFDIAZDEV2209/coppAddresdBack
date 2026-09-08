@@ -15,15 +15,23 @@ public sealed record CreateTemplateCommand(
     string Code,
     string Name,
     string? Description,
-    int TotalWeeks,
-    IReadOnlyList<WeeklyDayTemplateRequest> Days,
-    Guid? ActorId = null) : IRequest<ProgramTemplateDto>;
+    int? TotalWeeks = null,
+    IReadOnlyList<WeeklyDayTemplateRequest>? Days = null,
+    Guid? ActorId = null,
+    int? TotalDays = null) : IRequest<ProgramTemplateDto>
+{
+    public int ResolvedTotalWeeks =>
+        TotalDays.HasValue && TotalDays.Value > 0
+            ? (int)Math.Ceiling(TotalDays.Value / 7.0)
+            : TotalWeeks ?? 0;
+}
 
 /// <summary>
 /// Validación de input de <see cref="CreateTemplateCommand"/> (T-11): campos
 /// requeridos no vacíos, puntos no negativos y sin filas duplicadas por
 /// (weekday, task_code) dentro del payload (el índice único del repositorio lo
 /// exigiría con 409; aquí se rechaza antes, en 400).
+/// Si Days es null o vacío, el handler generará las 42 tareas por defecto.
 /// </summary>
 public sealed class CreateTemplateCommandValidator : AbstractValidator<CreateTemplateCommand>
 {
@@ -45,22 +53,19 @@ public sealed class CreateTemplateCommandValidator : AbstractValidator<CreateTem
             .MaximumLength(2000)
             .WithMessage("La descripción no puede superar 2000 caracteres.");
 
-        RuleFor(x => x.TotalWeeks)
+        RuleFor(x => x.ResolvedTotalWeeks)
             .GreaterThan(0)
-            .WithMessage("totalWeeks debe ser mayor a cero.");
+            .WithMessage("totalWeeks (o totalDays) debe ser mayor a cero.");
 
-        RuleFor(x => x.Days)
-            .NotNull()
-            .WithMessage("El conjunto de días es requerido.")
-            .Must(days => days is { Count: > 0 })
-            .WithMessage("La plantilla debe definir al menos una tarea por día.");
+        When(x => x.Days is { Count: > 0 }, () =>
+        {
+            RuleForEach(x => x.Days!)
+                .SetValidator(new WeeklyDayTemplateRequestValidator());
 
-        RuleForEach(x => x.Days)
-            .SetValidator(new WeeklyDayTemplateRequestValidator());
-
-        RuleFor(x => x.Days)
-            .Must(NoDuplicateWeekdayTask)
-            .WithMessage("No puede haber dos filas con el mismo (weekday, taskCode).");
+            RuleFor(x => x.Days!)
+                .Must(NoDuplicateWeekdayTask)
+                .WithMessage("No puede haber dos filas con el mismo (weekday, taskCode).");
+        });
     }
 
     private static bool NoDuplicateWeekdayTask(IReadOnlyList<WeeklyDayTemplateRequest>? days)

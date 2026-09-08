@@ -3,6 +3,7 @@ using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Infrastructure.Cache;
 using CoppAddresd.Telemedicine.Infrastructure.Configuration;
 using CoppAddresd.Telemedicine.Infrastructure.Extensions;
+using CoppAddresd.Telemedicine.Infrastructure.Metrics;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
 using CoppAddresd.Telemedicine.Infrastructure.Repositories;
 using CoppAddresd.Telemedicine.Infrastructure.Security;
@@ -68,6 +69,10 @@ public static class DependencyInjection
         services.AddScoped<IEncounterRepository, EncounterRepository>();
         services.AddScoped<IAlertRepository, AlertRepository>();
         services.AddScoped<ITelemedicineUnitOfWork, TelemedicineUnitOfWork>();
+
+        // Métricas analíticas pre-agregadas en segundo plano (Fase 1 Pre-agregación CQRS)
+        services.AddSingleton<ITelemedicineMetricsQueue, TelemedicineMetricsQueue>();
+        services.AddHostedService<TelemedicineMetricsProcessorHostedService>();
 
         services.Configure<Application.Configuration.TelemedicineOptions>(
             configuration.GetSection(Application.Configuration.TelemedicineOptions.SectionName)

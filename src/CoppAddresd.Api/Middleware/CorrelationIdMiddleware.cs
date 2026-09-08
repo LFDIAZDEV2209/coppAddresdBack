@@ -1,3 +1,5 @@
+using Serilog.Context;
+
 namespace CoppAddresd.Api.Middleware;
 
 /// <summary>
@@ -20,6 +22,10 @@ public sealed class CorrelationIdMiddleware(
         context.Items["CorrelationId"] = correlationId;
         context.Response.Headers["X-Correlation-ID"] = correlationId;
 
+        // Push the correlation id into the Serilog LogContext for the whole
+        // request lifetime so every log event (console and JSON file sink)
+        // carries it, then keep the existing ILogger scope for request context.
+        using (LogContext.PushProperty("CorrelationId", correlationId))
         using (logger.BeginScope(new Dictionary<string, object>
         {
             ["CorrelationId"] = correlationId,

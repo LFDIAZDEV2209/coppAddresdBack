@@ -5,6 +5,7 @@ using CoppAddresd.Application.Services;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Enums.HealthTests;
 using CoppAddresd.Infrastructure.Cache;
+using CoppAddresd.Infrastructure.Metrics;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
@@ -63,6 +64,15 @@ public static class DependencyInjection
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
 
+        // Liga del paciente (LEAGUE v1): repositorio enfocado de solo lectura
+        // + update mínimo de preferencias (no crece ProgramRepository).
+        services.AddScoped<ILeagueRepository, LeagueRepository>();
+
+        // Historial de puntajes del paciente (scores-history): repositorio
+        // enfocado de solo lectura (no crece ProgramRepository, precedente:
+        // LeagueRepository). SOLO filas persistidas — nunca dispara recálculo.
+        services.AddScoped<IScoresHistoryRepository, ScoresHistoryRepository>();
+
         // Motor de scoring (Tests de Salud): estrategias registradas como
         // keyed services + registry. Agregar una estrategia nueva = registrar
         // la clase aquí (SPEC A9).
@@ -97,6 +107,22 @@ public static class DependencyInjection
         // inscripción; los fakes de IProgramRepository de los tests no se
         // acoplan al catálogo.
         services.AddScoped<IXpRuleCatalogRepository, XpRuleCatalogRepository>();
+
+        // Pre-agregación de métricas del Programa ANTARES (Dashboard O(1) en Background)
+        services.AddSingleton<IProgramMetricsQueue, ProgramMetricsQueue>();
+        services.AddHostedService<ProgramMetricsProcessorHostedService>();
+
+        // Pre-agregación de métricas de Pacientes y Directorio Clínico (Fase 1 Pre-agregación CQRS)
+        services.AddSingleton<IPatientMetricsQueue, PatientMetricsQueue>();
+        services.AddHostedService<PatientMetricsProcessorHostedService>();
+
+        // Pre-agregación de métricas de Tests de Salud y Baterías Clínicas (Fase 1 Pre-agregación CQRS)
+        services.AddSingleton<IHealthTestMetricsQueue, HealthTestMetricsQueue>();
+        services.AddHostedService<HealthTestMetricsProcessorHostedService>();
+
+        // Pre-agregación de métricas de Inventario y Farmacia (Dashboard #6, Fase 1 CQRS)
+        services.AddSingleton<IInventoryMetricsQueue, InventoryMetricsQueue>();
+        services.AddHostedService<InventoryMetricsProcessorHostedService>();
 
         // Calculadores del motor de puntajes (SPEC §13, T-37/T-41): funciones
         // puras consumidas por ProgramRepository; registrados con su ILogger

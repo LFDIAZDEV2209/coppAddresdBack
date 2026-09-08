@@ -25,11 +25,13 @@ public sealed class UpdateTemplateCommandHandler(
         existing.Code = request.Code.Trim();
         existing.Name = request.Name.Trim();
         existing.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
-        existing.TotalWeeks = request.TotalWeeks;
+        existing.TotalWeeks = request.ResolvedTotalWeeks;
         // Status/Version/PublishedAt intencionalmente intactos: el ciclo de
         // vida lo mueven Publish/Archive (SPEC §7.6).
 
-        var days = ProgramProgressTemplateMapper.ToEntities(request.Days);
+        var days = request.Days is { Count: > 0 }
+            ? ProgramProgressTemplateMapper.ToEntities(request.Days)
+            : existing.DayTemplates.ToList();
         var updated = await repository.UpsertTemplateAsync(existing, days, request.ActorId, ct);
 
         var dto = await repository.GetTemplateAsync(updated.Id, ct)

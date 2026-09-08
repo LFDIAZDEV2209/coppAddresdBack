@@ -170,6 +170,40 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("comment_reports", "community");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.CommunityDailyMetric", b =>
+                {
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date")
+                        .HasColumnName("metric_date");
+
+                    b.Property<string>("MetricKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("metric_key");
+
+                    b.Property<string>("DimensionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("dimension_key");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("last_updated_at");
+
+                    b.Property<long>("TotalCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("total_count");
+
+                    b.HasKey("MetricDate", "MetricKey", "DimensionKey");
+
+                    b.HasIndex("MetricKey", "DimensionKey", "MetricDate")
+                        .HasDatabaseName("ix_community_daily_metrics_key_dim_date");
+
+                    b.ToTable("community_daily_metrics", "community");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.FeedEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1107,7 +1141,7 @@ namespace CoppAddresd.Community.Migrations
                         .IsRequired();
 
                     b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
-                        .WithMany()
+                        .WithMany("Reposts")
                         .HasForeignKey("ProfileId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -1179,6 +1213,8 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Likes");
 
                     b.Navigation("Posts");
+
+                    b.Navigation("Reposts");
 
                     b.Navigation("XpEntries");
                 });

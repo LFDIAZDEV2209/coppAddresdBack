@@ -78,6 +78,23 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
         builder.Property(x => x.CityId)
             .HasColumnName("city_id");
 
+        // LEAGUE v1: preferencias de la liga del paciente. Opt-in default OFF
+        // (privacidad por diseño); el nickname es un seudónimo público, no PHI
+        // directa, pero igual se trata como dato del paciente.
+        builder.Property(x => x.LeagueNickname)
+            .HasColumnName("league_nickname")
+            .HasMaxLength(32);
+
+        builder.Property(x => x.LeagueOptIn)
+            .HasColumnName("league_opt_in")
+            .HasDefaultValue(false);
+
+        // Índice parcial del cohorte de la liga: solo las filas opt-in pesan
+        // para la lectura de la liga (el cohorte se filtra por este flag).
+        builder.HasIndex(x => x.LeagueOptIn)
+            .HasDatabaseName("ix_patient_profiles_league_opt_in")
+            .HasFilter("\"league_opt_in\" = true");
+
         builder.Property(x => x.StateId)
             .HasColumnName("state_id");
 

@@ -51,6 +51,22 @@ public sealed class PatientProfile
     /// <summary>Ciudad del catálogo geográfico (FK).</summary>
     public Guid? CityId { get; set; }
 
+    /// <summary>
+    /// Seudónimo público del paciente en la liga (LEAGUE v1). Null = el
+    /// paciente se muestra con un código anónimo derivado de su id. Vive en
+    /// <c>patient_profiles</c> (no en la inscripción) para sobrevivir a una
+    /// re-inscripción. Solo se expone si <see cref="LeagueOptIn"/> es true.
+    /// </summary>
+    public string? LeagueNickname { get; set; }
+
+    /// <summary>
+    /// Opt-in a la liga del paciente (LEAGUE v1): default OFF (privacidad por
+    /// diseño — nadie aparece sin consentimiento explícito + nickname). El
+    /// paciente siempre puede leer la liga; solo los opt-in participan del
+    /// cohorte y reciben su propio ranking.
+    /// </summary>
+    public bool LeagueOptIn { get; set; }
+
     /// <summary>Estado del catálogo geográfico (FK, ej. CA).</summary>
     public Guid? StateId { get; set; }
 

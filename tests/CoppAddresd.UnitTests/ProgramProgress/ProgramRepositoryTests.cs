@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CoppAddresd.Api.Seeders;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.ProgramProgress;
@@ -226,6 +227,78 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
 
     // ---------------------------------------------------------------- AC-01
 
+    /// <summary>
+    /// Re-inscripción (retiro → enroll): la purga de puntajes en la MISMA
+    /// transacción de EnrollAsync elimina las filas de la corrida anterior
+    /// (health_scores + transformation_scores son por PACIENTE y sus semanas
+    /// colisionarían con la nueva corrida, SPEC §13.7.3). Integration-only:
+    /// la purga es una operación EF dentro del repositorio (no fakeable).
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task EnrollAsync_ReInscripcion_PurgaPuntajesDeLaCorridaAnterior()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "Purga", "Puntajes");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+
+        // Puntajes de la corrida 1 (salud con período dentro de la semana 1 y
+        // transformación de la semana 3 — la que mapearía a semana futura).
+        await using (var db = fixture.CreateDbContext())
+        {
+            db.HealthScores.Add(
+                new HealthScore
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    Score = 21,
+                    ScoreAdherence = 1,
+                    ScoreClinical = 2,
+                    ScoreNutrition = 3,
+                    ScorePsychology = 4,
+                    ScoreExercise = 5,
+                    Trend = ScoreTrend.stable,
+                    PeriodStart = _monday,
+                    PeriodEnd = _monday.AddDays(1),
+                    CalculatedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
+            db.TransformationScores.Add(
+                new TransformationScore
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    Score = 88,
+                    WeekNumber = 3,
+                    Detail = JsonSerializer.SerializeToElement(new { }),
+                    OverallTrend = ScoreTrend.stable,
+                    CalculatedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
+            await db.SaveChangesAsync();
+        }
+
+        // Retiro → re-inscripción: la nueva corrida arranca sin historial viejo.
+        await using (var db = fixture.CreateDbContext())
+        {
+            var repo = new ProgramRepository(db, Configuration());
+            await repo.WithdrawAsync(enrollmentId);
+        }
+
+        var secondEnrollmentId = await EnrollAsync(patientId: patientId);
+        Assert.NotEqual(enrollmentId, secondEnrollmentId);
+
+        await using var verifyDb = fixture.CreateDbContext();
+        Assert.Equal(
+            0,
+            await verifyDb.HealthScores.CountAsync(h => h.PatientId == patientId)
+        );
+        Assert.Equal(
+            0,
+            await verifyDb.TransformationScores.CountAsync(t => t.PatientId == patientId)
+        );
+    }
+
     [RequiresPostgresFact]
     public async Task CompleteTask_PrimeraVez_OtorgaXpExactamenteUnaVez()
     {
@@ -408,6 +481,279 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(first.DayPointsMax, replay.DayPointsMax);
         // 700 base + 50 bonus de día perfecto (SPEC §7.2: 750 en ambos caminos).
         Assert.Equal(750, replay.DayPointsMax);
+    }
+
+    // ------------------------------------- Bonus de día gobernado por catálogo (SPEC §14)
+
+    /// <summary>
+    /// La regla DAY_BONUS con base ≠ 50 manda: el máximo del día (snapshot y
+    /// completación) y <c>DailyBonusAmount</c> siguen la base del catálogo, no
+    /// el literal histórico +50 (SPEC §6.5/§14). El máximo usa la BASE de la
+    /// regla, no el otorgamiento efectivo (que podría incluir multiplicador).
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task BonusDayBonus_ReglaBase75_SnapshotYCompletacionSiguenLaRegla()
+    {
+        await SeedDayBonusRuleAsync(r =>
+        {
+            r.BaseXp = 75;
+            r.Active = true;
+            r.ValidUntil = null;
+        });
+
+        try
+        {
+            var enrollmentId = await EnrollAsync();
+            var tuesday = _monday.AddDays(1);
+
+            await using (var db = fixture.CreateDbContext())
+            {
+                var repo = new ProgramRepository(db, Configuration());
+                var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+                Assert.NotNull(snapshot);
+                // 700 (base del día) + 75 (base de la regla DAY_BONUS).
+                Assert.Equal(775, snapshot!.TodayPointsMax);
+                Assert.Equal(75, snapshot.DailyBonusAmount);
+            }
+
+            CompleteTaskResult? last = null;
+            foreach (var (code, _) in TaskSeeds)
+            {
+                last = await CompleteAsync(enrollmentId, tuesday, code, $"bonus75-{code}");
+            }
+
+            Assert.NotNull(last);
+            Assert.Equal(75, last!.DailyBonusAwarded);
+            Assert.Equal(775, last.DayPointsMax);
+        }
+        finally
+        {
+            // Aislamiento: no dejar la regla modificada para otros tests.
+            await DeleteDayBonusRuleAsync();
+        }
+    }
+
+    /// <summary>
+    /// Sin regla DAY_BONUS (o inactiva/vencida) → fallback 50 (SPEC §14.3):
+    /// idéntico al comportamiento histórico del literal +50, tanto en el
+    /// snapshot como en la completación.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task BonusDayBonus_SinRegla_Fallback50EnSnapshotYCompletacion()
+    {
+        await DeleteDayBonusRuleAsync();
+
+        var enrollmentId = await EnrollAsync();
+        var tuesday = _monday.AddDays(1);
+
+        await using (var db = fixture.CreateDbContext())
+        {
+            var repo = new ProgramRepository(db, Configuration());
+            var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+            Assert.NotNull(snapshot);
+            Assert.Equal(750, snapshot!.TodayPointsMax);
+            Assert.Equal(50, snapshot.DailyBonusAmount);
+        }
+
+        CompleteTaskResult? last = null;
+        foreach (var (code, _) in TaskSeeds)
+        {
+            last = await CompleteAsync(enrollmentId, tuesday, code, $"bonus50-{code}");
+        }
+
+        Assert.NotNull(last);
+        Assert.Equal(50, last!.DailyBonusAwarded);
+        Assert.Equal(750, last.DayPointsMax);
+    }
+
+    /// <summary>
+    /// Regla DAY_BONUS con <c>Active = false</c> → fallback 50 (SPEC §14.3):
+    /// la inactividad equivale a la ausencia, en snapshot y completación.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task BonusDayBonus_ReglaInactiva_Fallback50()
+    {
+        await SeedDayBonusRuleAsync(r =>
+        {
+            r.BaseXp = 75;
+            r.Active = false;
+        });
+
+        try
+        {
+            var enrollmentId = await EnrollAsync();
+            var tuesday = _monday.AddDays(1);
+
+            await using (var db = fixture.CreateDbContext())
+            {
+                var repo = new ProgramRepository(db, Configuration());
+                var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+                Assert.NotNull(snapshot);
+                Assert.Equal(750, snapshot!.TodayPointsMax);
+                Assert.Equal(50, snapshot.DailyBonusAmount);
+            }
+
+            CompleteTaskResult? last = null;
+            foreach (var (code, _) in TaskSeeds)
+            {
+                last = await CompleteAsync(enrollmentId, tuesday, code, $"inactive-{code}");
+            }
+
+            Assert.NotNull(last);
+            Assert.Equal(50, last!.DailyBonusAwarded);
+            Assert.Equal(750, last.DayPointsMax);
+        }
+        finally
+        {
+            // Aislamiento: no dejar la regla inactiva para otros tests.
+            await DeleteDayBonusRuleAsync();
+        }
+    }
+
+    /// <summary>
+    /// Regla DAY_BONUS vencida (<c>ValidUntil</c> = ayer) → fallback 50
+    /// (SPEC §14.3): la ventana de vigencia se evalúa contra el día UTC del
+    /// servidor, igual que el otorgamiento.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task BonusDayBonus_ReglaVencida_Fallback50()
+    {
+        await SeedDayBonusRuleAsync(r =>
+        {
+            r.BaseXp = 75;
+            r.Active = true;
+            r.ValidFrom = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-10));
+            r.ValidUntil = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+        });
+
+        try
+        {
+            var enrollmentId = await EnrollAsync();
+            var tuesday = _monday.AddDays(1);
+
+            await using (var db = fixture.CreateDbContext())
+            {
+                var repo = new ProgramRepository(db, Configuration());
+                var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+                Assert.NotNull(snapshot);
+                Assert.Equal(750, snapshot!.TodayPointsMax);
+                Assert.Equal(50, snapshot.DailyBonusAmount);
+            }
+
+            CompleteTaskResult? last = null;
+            foreach (var (code, _) in TaskSeeds)
+            {
+                last = await CompleteAsync(enrollmentId, tuesday, code, $"expired-{code}");
+            }
+
+            Assert.NotNull(last);
+            Assert.Equal(50, last!.DailyBonusAwarded);
+            Assert.Equal(750, last.DayPointsMax);
+        }
+        finally
+        {
+            await DeleteDayBonusRuleAsync();
+        }
+    }
+
+    /// <summary>
+    /// Regla DAY_BONUS vigente con <c>BaseXp = null</c> → 50 (SPEC §14.3:
+    /// <c>base_xp ?? defaultPoints</c>): el máximo y la tarjeta usan el mismo
+    /// fallback que el otorgamiento.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task BonusDayBonus_BaseXpNula_Fallback50()
+    {
+        await SeedDayBonusRuleAsync(r =>
+        {
+            r.BaseXp = null;
+            r.Active = true;
+            r.ValidUntil = null;
+        });
+
+        try
+        {
+            var enrollmentId = await EnrollAsync();
+            var tuesday = _monday.AddDays(1);
+
+            await using (var db = fixture.CreateDbContext())
+            {
+                var repo = new ProgramRepository(db, Configuration());
+                var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+                Assert.NotNull(snapshot);
+                Assert.Equal(750, snapshot!.TodayPointsMax);
+                Assert.Equal(50, snapshot.DailyBonusAmount);
+            }
+
+            CompleteTaskResult? last = null;
+            foreach (var (code, _) in TaskSeeds)
+            {
+                last = await CompleteAsync(enrollmentId, tuesday, code, $"bxn-{code}");
+            }
+
+            Assert.NotNull(last);
+            Assert.Equal(50, last!.DailyBonusAwarded);
+            Assert.Equal(750, last.DayPointsMax);
+        }
+        finally
+        {
+            await DeleteDayBonusRuleAsync();
+        }
+    }
+
+    /// <summary>
+    /// Regla DAY_BONUS con <c>Multiplier = 2</c>: el MÁXIMO del día usa la
+    /// BASE de la regla (700 + 75 = 775) mientras el otorgamiento efectivo
+    /// refleja el multiplicador (floor(75 × 2) = 150). Prueba que el máximo
+    /// nunca adopta el grant multiplicado (semántica histórica de la base
+    /// plana).
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task BonusDayBonus_Multiplicador2_MaxUsaBaseYGrantReflejaMultiplicador()
+    {
+        await SeedDayBonusRuleAsync(r =>
+        {
+            r.BaseXp = 75;
+            r.Multiplier = 2m;
+            r.Active = true;
+            r.ValidUntil = null;
+        });
+
+        try
+        {
+            var enrollmentId = await EnrollAsync();
+            var tuesday = _monday.AddDays(1);
+
+            await using (var db = fixture.CreateDbContext())
+            {
+                var repo = new ProgramRepository(db, Configuration());
+                var snapshot = await repo.GetSnapshotAsync(enrollmentId, tuesday);
+
+                Assert.NotNull(snapshot);
+                // El máximo y la tarjeta exponen la BASE (75), no el grant.
+                Assert.Equal(775, snapshot!.TodayPointsMax);
+                Assert.Equal(75, snapshot.DailyBonusAmount);
+            }
+
+            CompleteTaskResult? last = null;
+            foreach (var (code, _) in TaskSeeds)
+            {
+                last = await CompleteAsync(enrollmentId, tuesday, code, $"mult2-{code}");
+            }
+
+            Assert.NotNull(last);
+            Assert.Equal(150, last!.DailyBonusAwarded);
+            Assert.Equal(775, last.DayPointsMax);
+        }
+        finally
+        {
+            await DeleteDayBonusRuleAsync();
+        }
     }
 
     // ---------------------------------------------------------------- AC-10
@@ -1130,7 +1476,10 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         var streak = await db
             .StreakStates.AsNoTracking()
             .SingleAsync(s => s.EnrollmentId == enrollmentId);
-        Assert.Equal(0, streak.CurrentStreak);
+        // Modelo de corridas (SPEC §17, enmienda): el día de vuelta inicia
+        // corrida NUEVA → current = 1 (antes 0; el reconciliador computaba 1
+        // y reescribía el valor cada noche — deriva live↔job corregida).
+        Assert.Equal(1, streak.CurrentStreak);
         Assert.Equal(monday.AddDays(1), streak.LastBreakDate);
         // Sin castigo: la XP nunca se revoca (solo entradas positivas).
         Assert.Equal(
@@ -1167,7 +1516,11 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         var streak = await db
             .StreakStates.AsNoTracking()
             .SingleAsync(s => s.EnrollmentId == enrollmentId);
-        Assert.Equal(7, streak.CurrentStreak); // racha preservada
+        // Modelo de corridas (SPEC §17, enmienda): hueco de 1 día con rescate
+        // → el día rescatado extiende la corrida almacenada y hoy la continúa:
+        // 7 + 2 = 9 (antes "racha preservada" en 7 sin contar los días
+        // rescatado/hoy — el reconciliador computaba 9).
+        Assert.Equal(9, streak.CurrentStreak);
         Assert.Equal(0, streak.FreezesRemaining); // inventario decrementado (1 → 0)
         Assert.Equal(1, streak.FreezesUsedTotal);
 
@@ -1184,6 +1537,265 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
                 f.EnrollmentId == enrollmentId && f.Kind == StreakFreezeKind.Granted
             )
         );
+    }
+
+    // ------------------------------------ PARITY live ↔ reconciliador (SPEC §17, enmienda)
+
+    // El reconciliador nocturno (ReconcileStreaksAsync + ComputeStreakRuns) es
+    // la fuente de verdad de (current, longest, lastActive). Cada escenario
+    // conduce el path LIVE (completaciones reales vía CompleteTaskAsync) y
+    // luego verifica 0 discrepancias: el valor almacenado por el live DEBE
+    // coincidir con el modelo de corridas (antes el live guardaba 0 tras un
+    // quiebre no rescatado y el job reescribía 1 cada 3 UTC).
+
+    /// <summary>
+    /// Caso real reportado: racha de 5 (Lun..Vie), Sáb+Dom perdidos sin
+    /// congelamiento, 1 tarea el Lun siguiente → el live almacena 1 (corrida
+    /// nueva) y el reconciliador NO encuentra deriva.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_CasoReal5DiasQuiebre_ReiniciaEn1_SinDeriva()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 5; dayOffset++)
+        {
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, monday.AddDays(dayOffset), code, $"par-a-d{dayOffset}-{code}");
+            }
+        }
+
+        // Sáb (D5) + Dom (D6) perdidos (sin congelamientos: 5 % 7 ≠ 0 → sin
+        // inventario); Lun (D7) con UNA tarea (umbral 1 → calificado).
+        await CompleteAsync(enrollmentId, monday.AddDays(7), TaskCode.podcast, "par-a-lun");
+
+        await AssertStoredStreakAsync(enrollmentId, 1, 5, monday.AddDays(7), monday.AddDays(6));
+        await AssertReconcileCleanAsync(enrollmentId, 1, 5, monday.AddDays(7));
+    }
+
+    /// <summary>
+    /// Hueco de EXACTAMENTE 1 día con rescate: el día rescatado extiende la
+    /// corrida almacenada y hoy la continúa → stored + 2 (5→7). El
+    /// reconciliador cuenta el día rescatado como calificado
+    /// (StreakFreezes.UsedOnLocalDate) → paridad.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_Hueco1DiaConRescate_7_SinDeriva()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 5; dayOffset++)
+        {
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, monday.AddDays(dayOffset), code, $"par-b-d{dayOffset}-{code}");
+            }
+        }
+
+        await SeedGrantedFreezeAsync(enrollmentId);
+
+        // Sáb (D5) perdido → rescatable (plantilla sin códigos esenciales =
+        // sin restricción); Dom (D6) perfecto: hueco de 1 día → 5 + 2 = 7.
+        foreach (var (code, _) in TaskSeeds)
+        {
+            await CompleteAsync(enrollmentId, monday.AddDays(6), code, $"par-b-dom-{code}");
+        }
+
+        await AssertStoredStreakAsync(enrollmentId, 7, 7, monday.AddDays(6), null);
+        await AssertReconcileCleanAsync(enrollmentId, 7, 7, monday.AddDays(6));
+    }
+
+    /// <summary>
+    /// Hueco MULTI-día con rescate (política v1: la ventana evaluada es solo
+    /// ayer): el día rescatado inicia una corrida NUEVA → 2 (rescatado + hoy);
+    /// la corrida vieja (5) terminó en lastActive y no es contigua.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_HuecoMultiDiaConRescate_2_SinDeriva()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 5; dayOffset++)
+        {
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, monday.AddDays(dayOffset), code, $"par-c-d{dayOffset}-{code}");
+            }
+        }
+
+        await SeedGrantedFreezeAsync(enrollmentId);
+
+        // Sáb (D5) + Dom (D6) perdidos; Lun (D7) perfecto → ayer (D6) se
+        // rescata (solo la última ventana) → hueco de 2 días → current = 2.
+        foreach (var (code, _) in TaskSeeds)
+        {
+            await CompleteAsync(enrollmentId, monday.AddDays(7), code, $"par-c-lun-{code}");
+        }
+
+        await AssertStoredStreakAsync(enrollmentId, 2, 5, monday.AddDays(7), null);
+        await AssertReconcileCleanAsync(enrollmentId, 2, 5, monday.AddDays(7));
+    }
+
+    /// <summary>
+    /// Quiebre sin congelamiento → reinicio en 1 (corrida nueva) y
+    /// lastBreakDate = ayer; el reconciliador no encuentra deriva.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_QuiebreSinCongelamiento_ReiniciaEn1_SinDeriva()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 2; dayOffset++)
+        {
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, monday.AddDays(dayOffset), code, $"par-d-d{dayOffset}-{code}");
+            }
+        }
+
+        // D2 + D3 perdidos (sin congelamientos); D4 vuelve → current = 1.
+        foreach (var (code, _) in TaskSeeds)
+        {
+            await CompleteAsync(enrollmentId, monday.AddDays(4), code, $"par-d-vuelta-{code}");
+        }
+
+        await AssertStoredStreakAsync(enrollmentId, 1, 2, monday.AddDays(4), monday.AddDays(3));
+        await AssertReconcileCleanAsync(enrollmentId, 1, 2, monday.AddDays(4));
+    }
+
+    /// <summary>
+    /// Doble quiebre (quiebre → vuelta → quiebre → vuelta): la paridad
+    /// live↔reconciliador se mantiene en CADA paso (corridas de 1).
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_DobleQuiebre_ParidadEnCadaPaso()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        // D0 calificado → current 1.
+        await CompleteAsync(enrollmentId, monday, TaskCode.podcast, "par-e-d0");
+        await AssertStoredStreakAsync(enrollmentId, 1, 1, monday, null);
+        await AssertReconcileCleanAsync(enrollmentId, 1, 1, monday);
+
+        // D1 perdido; D2 vuelve → 1 (corrida nueva).
+        await CompleteAsync(enrollmentId, monday.AddDays(2), TaskCode.podcast, "par-e-d2");
+        await AssertStoredStreakAsync(enrollmentId, 1, 1, monday.AddDays(2), monday.AddDays(1));
+        await AssertReconcileCleanAsync(enrollmentId, 1, 1, monday.AddDays(2));
+
+        // D3 perdido; D4 vuelve → 1 (corrida nueva).
+        await CompleteAsync(enrollmentId, monday.AddDays(4), TaskCode.podcast, "par-e-d4");
+        await AssertStoredStreakAsync(enrollmentId, 1, 1, monday.AddDays(4), monday.AddDays(3));
+        await AssertReconcileCleanAsync(enrollmentId, 1, 1, monday.AddDays(4));
+    }
+
+    /// <summary>
+    /// Idempotencia mismo día: una segunda completación del MISMO día no
+    /// cambia la racha; el reconciliador sigue sin encontrar deriva.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_MismoDia_Idempotente_SinDeriva()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        await CompleteAsync(enrollmentId, monday, TaskCode.podcast, "par-f-1");
+        await CompleteAsync(enrollmentId, monday, TaskCode.vitals, "par-f-2"); // mismo día, otra tarea
+
+        await AssertStoredStreakAsync(enrollmentId, 1, 1, monday, null);
+        await AssertReconcileCleanAsync(enrollmentId, 1, 1, monday);
+    }
+
+    /// <summary>
+    /// Reproducción EXACTA de F1: corrida D0..D4 (5) → el job nocturno zeroea
+    /// current CONSERVANDO lastActive (corrida vieja, ComputeStreakRuns solo
+    /// es válida si termina hoy/ayer) → D5 perdido, D6 vuelve con rescate de
+    /// D5. El current se DERIVA DEL MODELO (D0..D4 + D5 rescatado + D6 = 7),
+    /// no del escalar (stored + 2 = 2 habría perdido STREAK_7 para siempre:
+    /// una vez por inscripción).
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_F1_JobZeroeadoConRescate_CurrentDelModelo7()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 5; dayOffset++)
+        {
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, monday.AddDays(dayOffset), code, $"par-f1-d{dayOffset}-{code}");
+            }
+        }
+
+        await SeedGrantedFreezeAsync(enrollmentId);
+        await CraftZeroedStreakAsync(enrollmentId); // efecto del job (03:00 UTC)
+
+        // D6 (hoy) = lastActive(D4) + 2 → hueco de 1 día; D5 (ayer) se rescata.
+        foreach (var (code, _) in TaskSeeds)
+        {
+            await CompleteAsync(enrollmentId, monday.AddDays(6), code, $"par-f1-vuelta-{code}");
+        }
+
+        await AssertStoredStreakAsync(enrollmentId, 7, 7, monday.AddDays(6), null);
+        await AssertReconcileCleanAsync(enrollmentId, 7, 7, monday.AddDays(6));
+    }
+
+    /// <summary>
+    /// Fila legacy (path pre-fix) con stored = 0 y lastActive vigente sobre
+    /// una corrida real de 5: la completación CONTIGUA siguiente deriva del
+    /// modelo (corrida que termina en lastActive = 5 + 1 = 6), no de
+    /// stored + 1 = 1. Cura la fila en un paso live.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_Legacy0_Contiguo_CurrentDelModelo6()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        for (var dayOffset = 0; dayOffset < 5; dayOffset++)
+        {
+            foreach (var (code, _) in TaskSeeds)
+            {
+                await CompleteAsync(enrollmentId, monday.AddDays(dayOffset), code, $"par-l0-d{dayOffset}-{code}");
+            }
+        }
+
+        await CraftZeroedStreakAsync(enrollmentId); // fila legada (lastActive = D4 intacto)
+
+        // D5 contiguo: fast path stored > 0 NO aplica → modelo 5 + 1 = 6.
+        foreach (var (code, _) in TaskSeeds)
+        {
+            await CompleteAsync(enrollmentId, monday.AddDays(5), code, $"par-l0-d5-{code}");
+        }
+
+        await AssertStoredStreakAsync(enrollmentId, 6, 6, monday.AddDays(5), null);
+        await AssertReconcileCleanAsync(enrollmentId, 6, 6, monday.AddDays(5));
+    }
+
+    /// <summary>
+    /// Fila zeroeada por el job + vuelta SIN rescate (sin congelamientos):
+    /// reinicia en 1 (ayer no calificó) y el reconciliador coincide.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task Racha_Parity_JobZeroeado_SinRescate_ReiniciaEn1()
+    {
+        var enrollmentId = await EnrollAsync();
+        var monday = _monday;
+
+        await CompleteAsync(enrollmentId, monday, TaskCode.podcast, "par-z-d0");
+        await CraftZeroedStreakAsync(enrollmentId);
+
+        // D1 perdido (sin congelamientos); D2 vuelve → 1.
+        await CompleteAsync(enrollmentId, monday.AddDays(2), TaskCode.podcast, "par-z-d2");
+
+        await AssertStoredStreakAsync(enrollmentId, 1, 1, monday.AddDays(2), monday.AddDays(1));
+        await AssertReconcileCleanAsync(enrollmentId, 1, 1, monday.AddDays(2));
     }
 
     // ------------------------------------ Hitos de racha extendidos (módulo "cofres")
@@ -1770,6 +2382,45 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
             """
         );
 
+    /// <summary>
+    /// Crea (si falta) o actualiza la regla DAY_BONUS del catálogo aplicando
+    /// <paramref name="configure"/> sobre la fila. La regla creada arranca
+    /// vigente con base null (fallback 50) y multiplicador 1.0; cada test
+    /// configura su escenario completo (base/active/ventana/multiplier).
+    /// Idempotente e independiente del orden de ejecución entre tests.
+    /// </summary>
+    private async Task SeedDayBonusRuleAsync(Action<XpRule> configure)
+    {
+        await using var db = fixture.CreateDbContext();
+        var rule = await db.XpRules.SingleOrDefaultAsync(r => r.Code == XpRuleCodes.DayBonus);
+        if (rule is null)
+        {
+            rule = new XpRule
+            {
+                Id = Guid.NewGuid(),
+                Code = XpRuleCodes.DayBonus,
+                Name = "Bonus día perfecto",
+                Category = "adherence",
+                BaseXp = null,
+                Multiplier = 1.0m,
+                Active = true,
+                ValidFrom = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1)),
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.XpRules.Add(rule);
+        }
+
+        configure(rule);
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Elimina la regla DAY_BONUS (fallback 50, SPEC §14.3). Idempotente.</summary>
+    private async Task DeleteDayBonusRuleAsync()
+    {
+        await using var db = fixture.CreateDbContext();
+        await db.XpRules.Where(r => r.Code == XpRuleCodes.DayBonus).ExecuteDeleteAsync();
+    }
+
     private static async Task<Guid> SeedDefaultTemplateAsync(AppDbContext db)
     {
         var template = new ProgramTemplate
@@ -1859,6 +2510,92 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         db.PatientProfiles.Add(patient);
         await db.SaveChangesAsync();
         return patient.Id;
+    }
+
+    /// <summary>
+    /// Valor almacenado por el path LIVE tras un escenario (parity suite):
+    /// (current, longest, lastActive, lastBreak) esperados.
+    /// </summary>
+    private async Task AssertStoredStreakAsync(
+        Guid enrollmentId,
+        int expectedCurrent,
+        int expectedLongest,
+        DateOnly expectedLast,
+        DateOnly? expectedLastBreak)
+    {
+        await using var db = fixture.CreateDbContext();
+        var streak = await db
+            .StreakStates.AsNoTracking()
+            .SingleAsync(s => s.EnrollmentId == enrollmentId);
+        Assert.Equal(expectedCurrent, streak.CurrentStreak);
+        Assert.Equal(expectedLongest, streak.LongestStreak);
+        Assert.Equal(expectedLast, streak.LastActiveDate);
+        Assert.Equal(expectedLastBreak, streak.LastBreakDate);
+    }
+
+    /// <summary>
+    /// Ejecuta el reconciliador nocturno sobre el estado live y exige 0
+    /// discrepancias + 0 filas corregidas, y que el valor almacenado sea
+    /// exactamente el del modelo de corridas (parity live↔reconciliador).
+    /// </summary>
+    private async Task AssertReconcileCleanAsync(
+        Guid enrollmentId,
+        int expectedCurrent,
+        int expectedLongest,
+        DateOnly expectedLast)
+    {
+        await using var db = fixture.CreateDbContext();
+        var repo = new ProgramRepository(db, Configuration());
+        var summary = await repo.ReconcileStreaksAsync();
+
+        Assert.Empty(summary.Discrepancies);
+        Assert.Equal(0, summary.Fixed);
+
+        var streak = await db
+            .StreakStates.AsNoTracking()
+            .SingleAsync(s => s.EnrollmentId == enrollmentId);
+        Assert.Equal(expectedCurrent, streak.CurrentStreak);
+        Assert.Equal(expectedLongest, streak.LongestStreak);
+        Assert.Equal(expectedLast, streak.LastActiveDate);
+    }
+
+    /// <summary>
+    /// Siembra un congelamiento OTORGADO (fila + inventario) para los
+    /// escenarios de rescate de la parity suite.
+    /// </summary>
+    private async Task SeedGrantedFreezeAsync(Guid enrollmentId, int count = 1)
+    {
+        await using var db = fixture.CreateDbContext();
+        var streak = await db
+            .StreakStates.SingleAsync(s => s.EnrollmentId == enrollmentId);
+        for (var i = 0; i < count; i++)
+        {
+            db.StreakFreezes.Add(
+                new StreakFreeze
+                {
+                    EnrollmentId = enrollmentId,
+                    Kind = StreakFreezeKind.Granted,
+                    GrantedReason = "TestSeed",
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
+        }
+
+        streak.FreezesRemaining += count;
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Simula el efecto del job nocturno (o una fila legada del path pre-fix):
+    /// <c>current_streak = 0</c> CONSERVANDO <c>last_active_date</c> (el
+    /// reconciliador zeroea cuando la corrida terminó antes de ayer).
+    /// </summary>
+    private async Task CraftZeroedStreakAsync(Guid enrollmentId)
+    {
+        await using var db = fixture.CreateDbContext();
+        await db
+            .StreakStates.Where(s => s.EnrollmentId == enrollmentId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.CurrentStreak, 0));
     }
 
     private static IReadOnlyList<(short Weekday, string TaskCode, int Points)> ParseSnapshot(
