@@ -159,6 +159,20 @@ services.AddHttpClient<IFoodAiClient, FoodAiClient>()
             )
             .AddResiliencePolicy();
 
+        // Consulta de roles por nombre (resolución del rol "Professional" para
+        // la sincronización automática de scopes por clínica).
+        services
+            .AddHttpClient<IAuthRolesClient, AuthRolesClient>(
+                (sp, client) =>
+                {
+                    var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+                }
+            )
+            .AddResiliencePolicy();
+
         services.AddScoped<ICurrentContext, CurrentContext>();
 
         // Resolución del actor del módulo Progreso del Programa (SPEC §6.14 y
