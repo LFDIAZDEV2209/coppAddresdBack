@@ -5,6 +5,7 @@ using CoppAddresd.Auth.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.Security.Cryptography;
 
 namespace CoppAddresd.Auth.Services;
 
@@ -143,6 +144,190 @@ public class UserService : IUserService
             await tx.RollbackAsync(CancellationToken.None);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Creación masiva de usuarios: cada fila se procesa de forma independiente
+    /// (una falla no detiene las demás), sin transacción global.
+    /// Carga el catálogo de roles activos una sola vez antes del loop para
+    /// resolver RoleName → RoleId con comparación case-insensitive.
+    /// Las contraseñas se generan crypto-random en el servidor (≥12 chars,
+    /// garantiza upper + lower + dígito + especial, sin chars ambiguos).
+    /// </summary>
+    public async Task<BulkCreateUsersResult> CreateBulkAsync(
+        BulkCreateUsersRequest request,
+        CancellationToken ct = default)
+    {
+        var results = new List<BulkCreateUserRowResult>();
+
+        // Cargar catálogo de roles activos UNA sola vez (evita N+1).
+        var activeRoles = await _roleManager.Roles
+            .Where(r => r.IsActive)
+            .Select(r => new { r.Id, r.Name })
+            .ToListAsync(ct);
+
+        var roleNameToId = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+        foreach (var role in activeRoles)
+        {
+            roleNameToId[role.Name!] = role.Id;
+        }
+
+        for (var i = 0; i < request.Rows.Count; i++)
+        {
+            var line = i + 1;
+            var row = request.Rows[i];
+
+            // --- Resolver status ---
+            bool isActive;
+            if (string.IsNullOrWhiteSpace(row.Status))
+            {
+                isActive = true;
+            }
+            else if (string.Equals(row.Status, "activo", StringComparison.OrdinalIgnoreCase))
+            {
+                isActive = true;
+            }
+            else if (string.Equals(row.Status, "inactivo", StringComparison.OrdinalIgnoreCase))
+            {
+                isActive = false;
+            }
+            else
+            {
+                results.Add(new BulkCreateUserRowResult
+                {
+                    Line = line,
+                    Success = false,
+                    Email = row.Email,
+                    Error = $"Status inválido: '{row.Status}'. Valores válidos: activo, inactivo."
+                });
+                continue;
+            }
+
+            // --- Resolver RoleName → RoleId ---
+            Guid[]? roleIds = null;
+            if (!string.IsNullOrWhiteSpace(row.RoleName))
+            {
+                if (roleNameToId.TryGetValue(row.RoleName, out var roleId))
+                {
+                    roleIds = [roleId];
+                }
+                else
+                {
+                    results.Add(new BulkCreateUserRowResult
+                    {
+                        Line = line,
+                        Success = false,
+                        Email = row.Email,
+                        Error = $"Rol no encontrado (nombre {row.RoleName})"
+                    });
+                    continue;
+                }
+            }
+
+            // --- Generar contraseña temporal ---
+            var tempPassword = GenerateSecurePassword();
+
+            // --- Llamar al CreateAsync existente (ya maneja email duplicado + transacción propia) ---
+            var createRequest = new CreateUserRequest
+            {
+                Email = row.Email,
+                FirstName = row.FirstName,
+                LastName = row.LastName,
+                Password = tempPassword,
+                RoleIds = roleIds,
+                PermissionIds = null
+            };
+
+            // Override IsActive: CreateAsync siempre pone IsActive=true,
+            // así que post-creación ajustamos si es inactivo.
+            var (success, error, user) = await CreateAsync(createRequest, ct);
+
+            if (!success)
+            {
+                results.Add(new BulkCreateUserRowResult
+                {
+                    Line = line,
+                    Success = false,
+                    Email = row.Email,
+                    Error = error
+                });
+                continue;
+            }
+
+            // Si el status es "inactivo", desactivar después de crear.
+            if (!isActive)
+            {
+                var targetUser = await _userManager.FindByIdAsync(user!.Id);
+                if (targetUser is not null)
+                {
+                    targetUser.IsActive = false;
+                    targetUser.UpdatedAt = DateTime.UtcNow;
+                    await _userManager.UpdateAsync(targetUser);
+                    // Reflejar en la respuesta.
+                    user = new UserResponse(
+                        user.Id,
+                        user.Email,
+                        user.FirstName,
+                        user.LastName,
+                        IsActive: false,
+                        user.CreatedAt,
+                        user.Roles);
+                }
+            }
+
+            results.Add(new BulkCreateUserRowResult
+            {
+                Line = line,
+                Success = true,
+                UserId = user!.Id,
+                Email = user.Email,
+                TemporaryPassword = tempPassword
+            });
+        }
+
+        return new BulkCreateUsersResult
+        {
+            Results = results,
+            Created = results.Count(r => r.Success),
+            Failed = results.Count(r => !r.Success)
+        };
+    }
+
+    /// <summary>
+    /// Genera una contraseña segura crypto-random (≥12 chars) que garantiza
+    /// al menos 1 mayúscula, 1 minúscula, 1 dígito y 1 carácter especial.
+    /// Excluye caracteres ambiguos (l/I/1/O/0) para legibilidad.
+    /// </summary>
+    public static string GenerateSecurePassword()
+    {
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghijkmnpqrstuvwxyz";
+        const string digits = "23456789";
+        const string special = "@#$%&*!?";
+        const string all = upper + lower + digits + special;
+
+        const int minLength = 12;
+        var password = new char[minLength];
+
+        // Garantizar al menos uno de cada categoría requerida.
+        password[0] = upper[RandomNumberGenerator.GetInt32(upper.Length)];
+        password[1] = lower[RandomNumberGenerator.GetInt32(lower.Length)];
+        password[2] = digits[RandomNumberGenerator.GetInt32(digits.Length)];
+        password[3] = special[RandomNumberGenerator.GetInt32(special.Length)];
+
+        for (var i = 4; i < password.Length; i++)
+        {
+            password[i] = all[RandomNumberGenerator.GetInt32(all.Length)];
+        }
+
+        // Fisher-Yates shuffle para que las primeras posiciones no sean predecibles.
+        for (var i = password.Length - 1; i > 0; i--)
+        {
+            var j = RandomNumberGenerator.GetInt32(i + 1);
+            (password[i], password[j]) = (password[j], password[i]);
+        }
+
+        return new string(password);
     }
 
     /// <summary>
