@@ -63,6 +63,9 @@ public static class PermissionCodes
     public const string WellnessView = "Wellness.View";
     public const string WellnessManage = "Wellness.Manage";
 
+    // Mantenimiento y administración del sistema.
+    public const string SystemAdminSettings = "System.AdminSettings";
+
     /// <summary>Nombres conocidos (para el policy provider que resuelve políticas por código).</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -106,5 +109,6 @@ public static class PermissionCodes
         StoreManage,
         WellnessView,
         WellnessManage,
+        SystemAdminSettings,
     ];
 }
