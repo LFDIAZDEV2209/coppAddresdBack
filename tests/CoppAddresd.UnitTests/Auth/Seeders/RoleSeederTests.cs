@@ -188,6 +188,46 @@ public class RoleSeederTests
     }
 
     [Fact]
+    public async Task Seed_AliasesLegadosQuedanDesactivados()
+    {
+        using var h = new Harness();
+        await SeedAsync(h);
+
+        // Los aliases legado se crean y mantienen con IsActive = false: la
+        // cadena de permisos no filtra por IsActive, así que los usuarios ya
+        // asignados conservan sus permisos, pero el rol no se asigna a nuevos.
+        foreach (var legacy in new[] { "Physician", "Nutritionist", "Psychologist" })
+        {
+            var role = await h.Db.Roles.AsNoTracking().SingleAsync(r => r.Name == legacy);
+            Assert.False(role.IsActive);
+        }
+    }
+
+    [Fact]
+    public async Task Seed_BackfillDesactivaAliasesLegadosEnBdExistente()
+    {
+        using var h = new Harness();
+        await SeedAsync(h);
+
+        // Simula BD existente donde los aliases estaban activos: el backfill
+        // idempotente debe desactivarlos al re-sembrar.
+        foreach (var legacy in new[] { "Physician", "Nutritionist", "Psychologist" })
+        {
+            var role = await h.Db.Roles.SingleAsync(r => r.Name == legacy);
+            role.IsActive = true;
+        }
+        await h.Db.SaveChangesAsync();
+
+        await SeedAsync(h);
+
+        foreach (var legacy in new[] { "Physician", "Nutritionist", "Psychologist" })
+        {
+            var role = await h.Db.Roles.AsNoTracking().SingleAsync(r => r.Name == legacy);
+            Assert.False(role.IsActive);
+        }
+    }
+
+    [Fact]
     public async Task Seed_EsIdempotente()
     {
         using var h = new Harness();
