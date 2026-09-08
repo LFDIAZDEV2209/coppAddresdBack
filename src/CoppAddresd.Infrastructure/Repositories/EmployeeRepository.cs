@@ -621,4 +621,22 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
             await transaction.CommitAsync(ct);
         });
     }
+
+    public async Task<IReadOnlyList<ProfessionalClinicMembership>> GetProfessionalClinicMembershipsAsync(
+        CancellationToken ct = default
+    )
+    {
+        return await dbContext.Employees
+            .AsNoTracking()
+            .Where(e => e.Professional != null)
+            .Select(e => new ProfessionalClinicMembership(
+                e.Id,
+                e.Professional!.Id,
+                e.UserId,
+                e.ClinicAssignments
+                    .Where(c => c.Status == "Active")
+                    .Select(c => c.ClinicId)
+                    .ToList()))
+            .ToListAsync(ct);
+    }
 }

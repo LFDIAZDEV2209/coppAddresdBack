@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Exceptions;
@@ -34,6 +35,8 @@ public record UpdateEmployeeCommand(
 public sealed class UpdateEmployeeCommandHandler(
     IEmployeeRepository repository,
     IOrganizationRepository organizationRepository,
+    IAuthScopedAssignmentsClient scopedAssignmentsClient,
+    IAuthRolesClient authRolesClient,
     ILogger<UpdateEmployeeCommandHandler> logger) : IRequestHandler<UpdateEmployeeCommand, EmployeeDto?>
 {
     public async Task<EmployeeDto?> Handle(UpdateEmployeeCommand request, CancellationToken ct)
@@ -41,6 +44,14 @@ public sealed class UpdateEmployeeCommandHandler(
         var entity = await repository.GetByIdAsync(request.Id, ct);
         if (entity is null)
             return null;
+
+        // Capturar el estado anterior del profesional y sus clínicas antes de
+        // las modificaciones, para calcular las clínicas recién agregadas.
+        var hadProfessional = entity.Professional != null;
+        var existingActiveClinicIds = entity.ClinicAssignments
+            .Where(c => string.Equals(c.Status, "Active", StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.ClinicId)
+            .ToHashSet();
 
         // Email: normalizar y validar unicidad por organización.
         if (request.Email is not null)
@@ -148,6 +159,45 @@ public sealed class UpdateEmployeeCommandHandler(
         await repository.UpdateAsync(entity, ct);
 
         logger.LogInformation("Empleado actualizado: {Id}", entity.Id);
+
+        // Invariante best-effort: si el empleado tiene extensión profesional
+        // y usuario de Auth vinculado, asegurar que tenga el rol "Professional"
+        // con scope de clínica para cada clínica activa recién agregada.
+        if (entity.Professional is not null && entity.UserId is not null)
+        {
+            var currentActiveClinicIds = entity.ClinicAssignments
+                .Where(c => string.Equals(c.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                .Select(c => c.ClinicId)
+                .ToHashSet();
+
+            // Clínicas recién agregadas: las que están en las clínicas activas
+            // actuales pero no estaban antes.
+            // Si el profesional se acaba de crear (HR → profesional), tratar
+            // TODAS las clínicas activas como "nuevas" para garantizar scopes.
+            IEnumerable<Guid> newlyAdded;
+            if (!hadProfessional)
+            {
+                // Conversión de HR a profesional: otorgar scopes para todas
+                // las clínicas activas actuales.
+                newlyAdded = currentActiveClinicIds;
+            }
+            else
+            {
+                newlyAdded = currentActiveClinicIds.Except(existingActiveClinicIds);
+            }
+
+            var clinicIdsToEnsure = newlyAdded.ToList();
+            if (clinicIdsToEnsure.Count > 0)
+            {
+                await ProfessionalScopeSync.TryEnsureProfessionalScopesAsync(
+                    scopedAssignmentsClient,
+                    authRolesClient,
+                    entity.UserId,
+                    clinicIdsToEnsure,
+                    logger,
+                    ct);
+            }
+        }
 
         var updated = await repository.GetByIdAsync(entity.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer el empleado actualizado.");

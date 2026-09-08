@@ -136,4 +136,23 @@ public interface IEmployeeRepository
         IReadOnlyList<ProfessionalSchedule> schedules,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Membresías de clínicas de profesionales: empleados con extensión
+    /// profesional y sus clínicas activas. Para el backfill de scopes del
+    /// módulo Maintenance. Solo empleados con Professional != null.
+    /// </summary>
+    Task<IReadOnlyList<ProfessionalClinicMembership>> GetProfessionalClinicMembershipsAsync(
+        CancellationToken ct = default
+    );
 }
+
+/// <summary>
+/// Membresía de un profesional en clínicas (para el backfill de scopes).
+/// </summary>
+public record ProfessionalClinicMembership(
+    Guid EmployeeId,
+    Guid ProfessionalId,
+    Guid? UserId,
+    IReadOnlyList<Guid> ActiveClinicIds
+);
