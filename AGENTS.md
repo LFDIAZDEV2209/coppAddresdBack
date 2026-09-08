@@ -86,6 +86,7 @@ GET    /api/auth/me                 # Info del usuario actual + roles + permisos
 
 GET    /api/auth/users               # Listar usuarios [RequirePermission("Users.View")]
 POST   /api/auth/users               # Crear usuario [AllowAnonymous]
+POST   /api/auth/users/bulk           # Creación masiva [AllowAnonymous] (máx 500 filas; cada fila independiente; contraseñas temporales generadas server-side, retornadas una sola vez)
 GET    /api/auth/users/{id}          # Obtener usuario [RequirePermission("Users.View")]
 PUT    /api/auth/users/{id}          # Actualizar usuario [RequirePermission("Users.Update")]
 DELETE /api/auth/users/{id}          # Eliminar usuario [RequirePermission("Users.Delete")]
