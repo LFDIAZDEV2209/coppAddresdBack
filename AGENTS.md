@@ -215,7 +215,7 @@ GET    /api/v1/employees/{id}                 # Obtener empleado por id [Employe
 POST   /api/v1/employees                      # Crear empleado [Employees.Create]
 PUT    /api/v1/employees/{id}                 # Actualizar empleado [Employees.Update]
 POST   /api/v1/employees/{id}/invite          # Invitar empleado (crea usuario Auth + envía enlace) [Employees.Create]
-POST   /api/v1/employees/bulk                 # Creación masiva desde CSV [Employees.Create] (body: { organizationId, rows: [{ firstName, lastName, email, professionalTypeName?, status activo|invitado|inactivo }] }; cada fila independiente — las válidas se crean aunque otras fallen; sin clínicas ni invitaciones)
+POST   /api/v1/employees/bulk                 # Creación masiva desde CSV [Employees.Create] (body: { organizationId, rows: [{ firstName, lastName, email, professionalTypeName?, status activo|invitado|inactivo }] }; cada fila independiente; se envía invitación de acceso automáticamente — si falla la invitación, la fila se compensa (no queda empleado))
 POST   /api/v1/patients/bulk                  # Creación masiva desde CSV [Patients.Create] (body: { clinicId?, rows: [{ firstName, lastName, documentNumber?, email?, status? }] }; status ∈ activo|inactivo (null→Activo); duplicado documentNumber detecta batch+BD; MRN auto-generado; 500 filas max)
 GET    /api/v1/professionals/stats            # Estadísticas del directorio (totales + desglose por tipo) [Professionals.View]
 POST   /api/v1/professionals                  # Crear profesional orquestado (empleado + extensión clínica + clínicas + invitación + scopes) [Professionals.Create]
