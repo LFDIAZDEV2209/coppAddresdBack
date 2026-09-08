@@ -94,6 +94,36 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Creación masiva de usuarios (AllowAnonymous, misma postura que el
+    /// POST /api/auth/users individual). Cada fila se procesa de forma
+    /// independiente: una falla no bloquea las demás. Las contraseñas se
+    /// generan en el servidor y se retornan una sola vez en la respuesta.
+    /// Rate limiting por IP (policy "auth") para acotar spam.
+    /// </summary>
+    [HttpPost("bulk")]
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    public async Task<ActionResult<BulkCreateUsersResult>> BulkCreate(
+        [FromBody] BulkCreateUsersRequest request,
+        CancellationToken ct)
+    {
+        // Validación manual consistente con el patrón del Auth Service
+        // (no usa FluentValidation — eso vive en el layer Application).
+        if (request.Rows is null || request.Rows.Count == 0)
+        {
+            return BadRequest(new { message = "Rows es requerido y debe contener al menos una fila." });
+        }
+
+        if (request.Rows.Count > 500)
+        {
+            return BadRequest(new { message = "Máximo 500 filas por solicitud." });
+        }
+
+        var result = await _userService.CreateBulkAsync(request, ct);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Actualiza el perfil del usuario. Si el request envía RoleIds o
     /// PermissionIds (sync total), se exige además Roles.Assign y
     /// Permissions.Assign. "Usuario no encontrado" → 404; los errores de
