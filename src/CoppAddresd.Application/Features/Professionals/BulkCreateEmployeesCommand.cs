@@ -28,6 +28,7 @@ public record BulkRowResultDto(
     int Line,
     bool Success,
     Guid? EmployeeId = null,
+    Guid? UserId = null,
     string? Error = null);
 
 /// <summary>Resultado global de la operación masiva.</summary>
@@ -63,6 +64,7 @@ public sealed class BulkCreateEmployeesValidator : AbstractValidator<BulkCreateE
 // ─── Handler ──────────────────────────────────────────────────────────
 
 public sealed class BulkCreateEmployeesCommandHandler(
+    IMediator mediator,
     IEmployeeRepository employeeRepository,
     IOrganizationRepository organizationRepository,
     ILogger<BulkCreateEmployeesCommandHandler> logger)
@@ -212,7 +214,44 @@ public sealed class BulkCreateEmployeesCommandHandler(
             "Bulk create: fila {Line} → empleado {EmployeeId} creado ({Email}, profesional: {IsProfessional}).",
             line, entity.Id, entity.Email, entity.Professional is not null);
 
-        return new BulkRowResultDto(line, true, EmployeeId: entity.Id);
+        // ── Auto-invite: crear usuario en Auth + enviar enlace ────────
+        try
+        {
+            var inviteResult = await mediator.Send(
+                new InviteEmployeeCommand(entity.Id, InvitedBy: null), ct);
+
+            logger.LogInformation(
+                "Bulk create: fila {Line} → invitación enviada (usuario {UserId}).",
+                line, inviteResult.UserId);
+
+            return new BulkRowResultDto(line, true, EmployeeId: entity.Id, UserId: inviteResult.UserId);
+        }
+        catch (Exception ex)
+        {
+            // Compensación: si la invitación falla, eliminar el empleado recién
+            // creado para no dejar estados a medias (patrón de CreateProfessionalCommand).
+            logger.LogError(ex,
+                "Bulk create: fila {Line} → invitación falló, compensando (eliminando empleado {EmployeeId}).",
+                line, entity.Id);
+
+            try
+            {
+                await employeeRepository.DeleteAsync(entity.Id, ct);
+            }
+            catch (Exception deleteEx)
+            {
+                logger.LogError(deleteEx,
+                    "Bulk create: fila {Line} → no se pudo eliminar el empleado {EmployeeId} durante la compensación.",
+                    line, entity.Id);
+            }
+
+            var reason = ex.Message.Contains("invitación", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("usuario", StringComparison.OrdinalIgnoreCase)
+                    ? ex.Message
+                    : $"La invitación falló: {ex.Message}";
+
+            return Fail(line, $"No se pudo enviar la invitación de acceso: {reason}");
+        }
     }
 
     private static BulkRowResultDto Fail(int line, string error)
