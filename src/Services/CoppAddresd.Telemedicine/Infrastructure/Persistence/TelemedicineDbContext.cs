@@ -22,6 +22,8 @@ public sealed class TelemedicineDbContext(DbContextOptions<TelemedicineDbContext
     public DbSet<TelemedicineAlert> Alerts => Set<TelemedicineAlert>();
     public DbSet<TelemedicineSettings> Settings => Set<TelemedicineSettings>();
     public DbSet<TelemedicineWebhookEvent> WebhookEvents => Set<TelemedicineWebhookEvent>();
+    public DbSet<AppointmentDailyMetric> AppointmentDailyMetrics => Set<AppointmentDailyMetric>();
+    public DbSet<ProfessionalDailyStat> ProfessionalDailyStats => Set<ProfessionalDailyStat>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

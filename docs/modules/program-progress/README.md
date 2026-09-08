@@ -156,7 +156,7 @@ La plantilla semanal del paciente (`default-83w`) programa **6 tipos de tarea** 
 | `nutraceutico` | Tomar nutracéutico ADRED             | 80                      |
 | `emocional`    | Check-in emocional (ánimo, barreras) | 120                     |
 
-**Día perfecto**: cuando el paciente completa todas las tareas programadas de su día, recibe un **bonus de +50 XP**. El día perfecto es la unidad de cadencia para la concesión de congelamientos de racha (ver §2.4).
+**Día perfecto**: cuando el paciente completa todas las tareas programadas de su día, recibe un **bonus de +50 XP** (base por defecto). El día perfecto es la unidad de cadencia para la concesión de congelamientos de racha (ver §2.4). El monto real del bonus sale del catálogo (`DAY_BONUS.base_xp`, §2.2; 50 de fallback si la regla no existe/está inactiva): el snapshot expone `dailyBonusAmount` (base real, sin multiplicador) y `todayPointsMax` lo usa (`base del día + dailyBonusAmount`); el otorgamiento efectivo puede diferir por el multiplicador del paciente (§2.5).
 
 ### 2.2 Catálogo de reglas de XP (`xp_rules`)
 
@@ -199,8 +199,9 @@ La racha cuenta **días consecutivos que cumplen el umbral del programa**. Confi
 
 - **Umbral de mantenimiento**: `streak_min_tasks = 1` — basta una tarea por día local para mantener la racha (configurable por plantilla).
 - **Tareas esenciales** (`essential_task_codes`): `nut`, `ejercicio`, `nutraceutico` — son las que cuentan para "rescatar" un día perdido con un congelamiento.
-- **Concesión de congelamientos**: 1 cada 7 días perfectos consecutivos, tope de 3 en inventario.
-- **Rescate con congelamiento**: si el paciente no llega al umbral un día y tiene un congelamiento, **solo lo consume** si ese día cumplió al menos una tarea esencial. Sin tarea esencial → la racha se rompe y el congelamiento queda en inventario (no se consume).
+- **Concesión de congelamientos**: 1 cada 7 días perfectos consecutivos, tope de 3 en inventario. Un salto por rescate (p. ej. 5→7) puede saltarse múltiplos intermedios (6→8 no otorga el 7) — aceptado.
+- **Rescate con congelamiento**: si el paciente no llega al umbral un día y tiene un congelamiento, **solo lo consume** si ese día cumplió al menos una tarea esencial. Sin tarea esencial → la racha se reinicia y el congelamiento queda en inventario (no se consume). La ventana evaluada es **solo ayer** (política v1: un hueco mayor rescata únicamente el último día perdido).
+- **Modelo de corridas (enmienda 2026-09-07, paridad con el reconciliador)**: el reconciliador nocturno es la fuente de verdad de `(current, longest, lastActive)`. Día calificado = cumple el umbral **o** fue rescatado con congelamiento. El **día de vuelta tras un quiebre cuenta**: la racha **reinicia en 1** (nunca en 0). Con rescate: hueco de exactamente 1 día → `current = almacenado + 2` (el día rescatado extiende la corrida y hoy la continúa); hueco mayor → `current = 2` (corrida nueva). Un reinicio 5→1 no dispara hitos ni concesiones (`grewToday = current > almacenado`).
 
 **Hitos de racha y multiplicador x2**: al alcanzar ciertos días consecutivos, el paciente recibe XP del catálogo **una sola vez por inscripción** y, en los hitos 11/22/50, activa un multiplicador x2 temporal:
 
@@ -293,6 +294,77 @@ Si no hay registros en el período → adherencia 0, sin premio, sin castigo.
 | `Program.ForceComplete` | Clínico                                                             | Forzar completación con override de fingerprint                           |
 
 **Anti-IDOR**: cualquier lectura cruzada entre pacientes devuelve `404`. Los clínicos ven solo pacientes asignados vía `app.patient_professionals`.
+
+### 2.11 Liga del paciente (LEAGUE v1)
+
+Comparación social **opt-in** entre pacientes del programa, con privacidad por diseño. Levanta el descope de SPEC "Social leagues / cross-patient comparisons" (ver enmienda en `SPEC.md` §Out of scope y fila de riesgo §1139).
+
+**Contrato** (paciente autenticado, `patientId` siempre del JWT — anti-IDOR):
+
+| Endpoint | Método | Descripción |
+| -------- | ------ | ----------- |
+| `/api/v1/program/me/league` | GET | Cohortes (estado o nacional) + ranking propio en 4 categorías |
+| `/api/v1/program/me/league-preferences` | PUT | `{ nickname: string\|null, optIn: boolean }` → estado guardado (nickname `null` = limpia el almacenado) |
+
+```jsonc
+{
+  "cohort": { "scope": "state" | "national", "stateCode": "CA" | null, "participants": 12, "computedAt": "2026-09-07T12:00:00Z" },
+  "me": { "optedIn": true, "nickname": "Pantera" },
+  "categories": {
+    "racha": { "entries": [ { "position": 1, "display": "Pantera", "isMe": true, "value": 150 } ], "myRank": 1, "myValue": 150, "totalParticipants": 12 },
+    "evo":   { "entries": [], "myRank": null, "myValue": null, "totalParticipants": 0 },
+    "adh":   { "entries": [], "myRank": null, "myValue": null, "totalParticipants": 0 },
+    "clin":  { "entries": [], "myRank": null, "myValue": null, "totalParticipants": 0 }
+  }
+}
+```
+
+**Categorías y fuentes de datos** (valores PERSISTIDOS únicamente — el endpoint nunca dispara recálculo de puntajes por participante):
+
+| Categoría | Fuente |
+| --------- | ------ |
+| `racha` | `streak_states.current_streak` de la inscripción activa |
+| `evo` | `transformation_scores.score` más reciente (por `calculated_at`) |
+| `adh` | `health_scores.score_adherence` del período más reciente |
+| `clin` | `health_scores.score_clinical` del período más reciente |
+
+Un paciente sin valor en una categoría queda **excluido de esa categoría** (nunca 0). `entries` = top 10 por valor DESC (desempate `display` ASC); si el paciente está opt-in y fuera del top 10, se anexa su fila real con su posición exacta. `myRank`/`myValue` son null sin opt-in o sin valor.
+
+**Privacidad por diseño**:
+
+- **Opt-in default OFF** (`patient_profiles.league_opt_in`, default `false`) + **nickname obligatorio** para aparecer (3–32 caracteres, charset acotado). Las preferencias viven en `patient_profiles` (no en la inscripción) para sobrevivir a re-inscripciones.
+- **Seudonimización server-side**: la respuesta NUNCA contiene id, nombre real o ciudad de otro participante. `display` = nickname o código anónimo estable (2 letras + 4 dígitos derivados de SHA-256 del id). Colisiones de nickname permitidas (display únicamente). Logs sin PHI (solo alcance, tamaño del cohorte y `computedAt`, espejo de la regla §13.6).
+- **k-rule**: un estado con **<10 opt-in** con inscripción activa cae al cohorte **nacional**; `scope` refleja cuál se usó. Sin estado resoluble (sin ciudad/estado) → nacional. El cohorte incluye solo opt-in con inscripción ACTIVA (pausadas/retiradas quedan fuera).
+- **Nickname obligatorio al optar**: `optIn = true` exige nickname válido (FluentValidation → 400, incluidos los tokens reservados de staff/marca); `optIn = false` deja el nickname opcional (`null` SIEMPRE limpia el valor almacenado).
+
+**Cache** (ver `docs/modules/cache/README.md`): el cohorte se cachea por alcance con **TTL 5 min** — clave `league:{stateCode|ALL}:v1` (prefijo del servicio: `erp:league:CA:v1`), compartida por todos los pacientes del mismo alcance. El payload cacheado NO lleva datos por-petición (sin `isMe`, sin bloque `me`): el bloque `me` y los flags `isMe` se resuelven por request contra el `patientId` del JWT. Al cambiar las preferencias del paciente se invalidan SUS claves (`league:{estado}` + `league:ALL`) — la revocación del opt-in es inmediata (privacidad); los cambios de otros pacientes se absorben por el TTL (sin invalidaciones fan-out). Fallo de caché → fail-open a PostgreSQL. El cohorte nacional puede existir bajo varias claves (`league:ALL:v1` + `league:{ST}:v1` de estados chicos) con `computedAt` independientes — inofensivo, cada clave expira sola.
+
+### 2.12 Historial de puntajes (scores-history)
+
+Serie semanal para la pestaña **Evolución** del móvil: los Índices de Salud y de Transformación **persistidos**, semana por semana, en orden ascendente. **Solo lectura**: nunca dispara recálculo ni al motor de puntajes (la frescura de la semana actual sigue siendo trabajo de `GET /scores`, §13.3).
+
+**Contrato** (paciente autenticado, `patientId` siempre del JWT — anti-IDOR; solo `[Authorize]`, convención `me/*` — los JWT de paciente no llevan claims de permiso):
+
+| Endpoint | Método | Descripción |
+| -------- | ------ | ----------- |
+| `/api/v1/program/me/scores-history?weeks=12` | GET | Serie ascendente de puntajes; `weeks` opcional (default 12, clamp 1..83) |
+
+```jsonc
+{
+  "points": [
+    { "weekNumber": 1, "periodStart": "2026-08-31", "periodEnd": "2026-09-06",
+      "healthScore": 21, "healthPrevious": null, "transformationScore": 0 }
+  ]
+}
+```
+
+**Regla de alineamiento**: `weekNumber` sale de `transformation_scores.week_number`. Cada fila de `health_scores` se asigna a la semana de la inscripción cuyo rango `[WeekStartDateLocal..WeekEndDateLocal]` contiene su `period_end`; si esa semana ya tiene punto de transformación, la fila de salud se fusiona en él (período = rango de la semana del programa); si no, la fila de salud emite su propio punto (período = el persistido de la fila). Cuando hay varias filas de salud en la misma semana gana la de `period_end` más reciente. `healthScore`/`transformationScore` son null cuando esa tabla no tiene fila para la semana (nunca 0 inventado); `healthPrevious` es el `score_previous` persistido.
+
+**Solo-persistido**: se emiten únicamente semanas con al menos una fila (nunca semanas vacías ni huecos). Sin inscripción activa → `404 NO_ACTIVE_ENROLLMENT`; sin perfil de paciente → 404 (anti-IDOR AC-11).
+
+**Cache**: clave por paciente `scores-history:{patientId}:v1` (prefijo del servicio: `erp:`), TTL 5 min, fail-open (ver `docs/modules/cache/README.md`). El payload cacheado es la serie completa del paciente — nunca compartida entre pacientes (a diferencia del cohorte de la liga, aquí el scoping lo garantiza la propia clave). El recorte a las últimas N semanas se aplica por request, nunca se cachea por-petición. El dato solo cambia al calcularse una semana: el TTL corto absorbe el staleness sin invalidaciones.
+
+**Historial por programa (enmienda 2026-09-07)**: las filas de puntajes son por paciente y se **purgaron** al re-inscribir (`EnrollAsync`, en la misma transacción) — la historia pertenece a la corrida en curso: las semanas viejas de una corrida anterior colisionarían con las nuevas (filas de semanas 3..N mapearían a semanas futuras con puntajes viejos). La re-inscripción invalida además el caché `scores-history:{patientId}:v1` post-commit. El fetch se acota a la ventana de la corrida actual (inicio de la semana 1 → fin de la semana actual local).
 
 ---
 

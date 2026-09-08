@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
@@ -39,7 +40,8 @@ public sealed class ConfirmTelemedicineRequestCommandHandler(
     IAppointmentRepository appointments,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IAlertRepository alerts)
+    IAlertRepository alerts,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<ConfirmTelemedicineRequestCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(
@@ -89,6 +91,19 @@ public sealed class ConfirmTelemedicineRequestCommandHandler(
         };
 
         await appointments.AddAsync(appointment, ct);
+
+        // Métricas pre-agregadas CQRS en segundo plano (0ms impacto en escritura)
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(new AppointmentScheduledMetricEvent(
+                appointment.Id,
+                appointment.ProfessionalId,
+                appointment.ClinicId,
+                DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime),
+                appointment.ScheduledStart.UtcDateTime.Hour,
+                appointment.Status
+            ));
+        }
 
         // Marca la solicitud como convertida (UPDATE dirigido; el índice único
         // sobre request_id evita una doble confirmación si este paso fallara).

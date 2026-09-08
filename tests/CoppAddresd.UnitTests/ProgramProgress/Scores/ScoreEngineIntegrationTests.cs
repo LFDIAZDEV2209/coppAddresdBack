@@ -146,6 +146,9 @@ public sealed class ScoreEngineIntegrationTests(ProgramRepositoryTestDb fixture)
         // Ponderado: 66*0.30 + 75*0.30 + 0*0.20 + 75*0.10 + 43*0.10
         // = 19.8 + 22.5 + 0 + 7.5 + 4.3 = 54.1 → 54.
         Assert.Equal(54, health.Current);
+        // Primer cómputo sin fila previa → previous y dimensions_previous null.
+        Assert.Null(health.Previous);
+        Assert.Null(health.DimensionsPrevious);
 
         // UNA fila persistida para el período (compute-on-read, SPEC §13.3).
         var persisted = await readDb.HealthScores.AsNoTracking()
@@ -231,6 +234,8 @@ public sealed class ScoreEngineIntegrationTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(0, health.Dimensions.Exercise);
         // 0*0.30 + 50*0.30 + 0*0.20 + 60*0.10 + 0*0.10 = 15 + 6 = 21
         Assert.Equal(21, health.Current);
+        // Primer cómputo sin fila previa → dimensions_previous null.
+        Assert.Null(health.DimensionsPrevious);
 
         Assert.NotNull(transformation);
         Assert.Equal(0, transformation.Current);
@@ -255,6 +260,77 @@ public sealed class ScoreEngineIntegrationTests(ProgramRepositoryTestDb fixture)
         Assert.NotNull(second);
         Assert.Equal(first!.Current, second!.Current);
         Assert.Equal(1, await db.HealthScores.CountAsync(h => h.PatientId == _patientId));
+    }
+
+    /// <summary>
+    /// dimensions_previous (SPEC §13.7.1, aditivo): con una fila del período
+    /// anterior persistida, el cómputo (y el cache hit) exponen sus 5
+    /// dimensiones — la MISMA fila que alimenta score_previous, sin queries
+    /// adicionales. En el primer cómputo (sin fila previa) ambos son null.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task GetOrComputeHealthScore_ExponeDimensionesDelPeriodoAnterior_YNullEnPrimerComputo()
+    {
+        var todayLocal = PatientLocalToday();
+        var periodStart = todayLocal.AddDays(-6);
+
+        // Paciente A: fila previa persistida (período anterior al actual).
+        await using (var db = fixture.CreateDbContext())
+        {
+            db.HealthScores.Add(
+                new HealthScore
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = _patientId,
+                    Score = 40,
+                    ScorePrevious = null,
+                    ScoreAdherence = 10,
+                    ScoreClinical = 20,
+                    ScoreNutrition = 30,
+                    ScorePsychology = 40,
+                    ScoreExercise = 50,
+                    Trend = ScoreTrend.stable,
+                    PeriodStart = periodStart.AddDays(-7),
+                    PeriodEnd = periodStart.AddDays(-1),
+                    CalculatedAt = DateTime.UtcNow,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
+            await db.SaveChangesAsync();
+        }
+
+        await using var readDb = fixture.CreateDbContext();
+        var repo = new ProgramRepository(readDb, Configuration());
+
+        // Cómputo: score_previous y dimensions_previous salen de la misma fila.
+        var first = await repo.GetOrComputeHealthScoreAsync(
+            _patientId, ScoreTrigger.OnRead, ct: CancellationToken.None);
+        Assert.NotNull(first);
+        Assert.Equal(40, first!.Previous);
+        Assert.NotNull(first.DimensionsPrevious);
+        Assert.Equal(10, first.DimensionsPrevious!.Adherence);
+        Assert.Equal(20, first.DimensionsPrevious.Clinical);
+        Assert.Equal(30, first.DimensionsPrevious.Nutrition);
+        Assert.Equal(40, first.DimensionsPrevious.Psychology);
+        Assert.Equal(50, first.DimensionsPrevious.Exercise);
+
+        // Cache hit: la fila fresca conserva score_previous; la fila previa se
+        // relee con la misma query indexada para dimensions_previous.
+        var second = await repo.GetOrComputeHealthScoreAsync(
+            _patientId, ScoreTrigger.OnRead, ct: CancellationToken.None);
+        Assert.NotNull(second);
+        Assert.Equal(40, second!.Previous);
+        Assert.NotNull(second.DimensionsPrevious);
+        Assert.Equal(10, second.DimensionsPrevious!.Adherence);
+
+        // Paciente B sin fila previa (primer cómputo): ambos null.
+        var patientB = await CreatePatientAsync(readDb, "Score", "Primer");
+        await repo.EnrollAsync(patientB, _templateId, "America/Bogota", _monday);
+        var fresh = await repo.GetOrComputeHealthScoreAsync(
+            patientB, ScoreTrigger.OnRead, ct: CancellationToken.None);
+        Assert.NotNull(fresh);
+        Assert.Null(fresh!.Previous);
+        Assert.Null(fresh.DimensionsPrevious);
     }
 
     // ---------------------------------------------------------------- AC-22 (integración)

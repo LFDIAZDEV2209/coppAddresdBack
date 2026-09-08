@@ -55,4 +55,43 @@ public static class CacheKeys
         TimeSpan.FromSeconds(
             Random.Shared.Next((int)StatsTtlMin.TotalSeconds, (int)StatsTtlMax.TotalSeconds + 1)
         );
+
+    /// <summary>
+    /// TTL del cohorte de la liga del paciente (LEAGUE v1): corto (5 min)
+    /// porque la liga es social y el paciente espera ver su racha/puntaje con
+    /// retraso mínimo. Al cambiar las preferencias DEL PACIENTE se invalidan
+    /// sus claves (<c>league:{estado}</c> + <c>league:ALL</c>): la revocación
+    /// del opt-in es inmediata (privacidad). Los cambios de OTROS pacientes
+    /// no invalidan nada (el TTL corto absorbe; sin invalidaciones fan-out).
+    /// </summary>
+    public static readonly TimeSpan LeagueTtl = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Clave del cohorte de la liga: <c>league:{stateCode|ALL}:v1</c> (el
+    /// prefijo del servicio lo añade la implementación: <c>erp:league:CA:v1</c>).
+    /// Compartida por todos los pacientes del mismo alcance: contiene el
+    /// cohorte SIN datos por-petición (sin <c>isMe</c>, sin bloque <c>me</c>);
+    /// el merge con la identidad del JWT ocurre en el handler, por request.
+    /// </summary>
+    public static string League(string? stateCode) =>
+        $"league:{(string.IsNullOrWhiteSpace(stateCode) ? "ALL" : stateCode.Trim().ToUpperInvariant())}:{Version}";
+
+    /// <summary>
+    /// TTL del historial de puntajes del paciente (scores-history): 5 min. El
+    /// móvil re-consulta la serie en cada visita a la pestaña Evolución; el
+    /// dato solo cambia al calcularse una semana, así que el TTL corto absorbe
+    /// el staleness sin invalidaciones. Fail-open garantizado por la
+    /// abstracción (ver docs/modules/cache/README.md).
+    /// </summary>
+    public static readonly TimeSpan ScoresHistoryTtl = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Clave del historial de puntajes: <c>scores-history:{patientId}:v1</c>
+    /// (prefijo del servicio: <c>erp:scores-history:{patientId}:v1</c>). Clave
+    /// POR PACIENTE — datos propios, nunca compartida entre pacientes (a
+    /// diferencia del cohorte de la liga, el scoping lo garantiza la propia
+    /// clave: ningún payload contiene datos de otros pacientes).
+    /// </summary>
+    public static string ScoresHistory(Guid patientId) =>
+        $"scores-history:{patientId}:{Version}";
 }

@@ -222,10 +222,10 @@ public sealed class DashboardAggregatorTests
         var result = DashboardAggregator.Compute([], [], [], [], [], [], BaseNow);
 
         Assert.Equal(30, result.ActivitySeries.Count);
-        // Todos los días deben estar presentes (dia 1..31)
+        // Todos los días deben estar presentes con etiqueta "MMM d" (ej. "sep 4").
         foreach (var day in result.ActivitySeries)
         {
-            Assert.InRange(day.Dia, 1, 31);
+            Assert.Matches(@"^[A-Za-z]{3} \d{1,2}$", day.Dia);
         }
     }
 

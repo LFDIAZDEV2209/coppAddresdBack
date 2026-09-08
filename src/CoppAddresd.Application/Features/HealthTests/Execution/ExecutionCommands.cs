@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.HealthTests.Events;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities.HealthTests;
@@ -81,7 +82,8 @@ public sealed class SubmitEvaluationCommandHandler(
     ScoreStrategyRegistry scoringRegistry,
     ScoreRangeEngine rangeEngine,
     IndicatorEngine indicatorEngine,
-    AlertEngine alertEngine
+    AlertEngine alertEngine,
+    IHealthTestMetricsQueue? metricsQueue = null
 ) : IRequestHandler<SubmitEvaluationCommand, HealthTestEvaluationDto>
 {
     public async Task<HealthTestEvaluationDto> Handle(
@@ -298,6 +300,20 @@ public sealed class SubmitEvaluationCommandHandler(
                 // Si la asignación pertenece a una batería, se marca completed si
                 // todas sus asignaciones hijas están completadas.
                 await UpdateBatteryAssignmentStatusAsync(assignment, ct);
+
+                // Pre-agregación CQRS en background (0ms overhead)
+                if (metricsQueue != null)
+                {
+                    await metricsQueue.EnqueueAsync(new HealthTestCompletedMetricEvent(
+                        evaluation.Id,
+                        assignment.PatientId,
+                        null,
+                        DateOnly.FromDateTime(evaluation.CompletedAt ?? DateTime.UtcNow),
+                        version.Instrument?.Code,
+                        totalClassification.Severity,
+                        drafts.Count
+                    ));
+                }
 
                 return HealthTestEvaluationDto.FromEntity(
                     (await repository.GetEvaluationWithDetailsAsync(evaluation.Id, ct))!

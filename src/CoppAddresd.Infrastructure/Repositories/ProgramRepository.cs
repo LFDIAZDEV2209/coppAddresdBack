@@ -206,6 +206,22 @@ public sealed class ProgramRepository(
                     );
                 }
 
+                // PURGA de puntajes de la corrida anterior (re-inscripción
+                // tras retiro/completación): health_scores y
+                // transformation_scores son POR PACIENTE (no por inscripción)
+                // y sus semanas colisionarían con las de la nueva corrida —
+                // las filas viejas de las semanas 3..N mapearían a semanas
+                // FUTURAS del nuevo historial con puntajes viejos. "Nueva
+                // inscripción = historia nueva" (mismo espíritu que
+                // streak_states, por inscripción): la purga es deliberada y
+                // se documenta en SPEC §13.7.3. Sin filas previas → no-op.
+                await dbContext
+                    .HealthScores.Where(h => h.PatientId == patientId)
+                    .ExecuteDeleteAsync(ct);
+                await dbContext
+                    .TransformationScores.Where(t => t.PatientId == patientId)
+                    .ExecuteDeleteAsync(ct);
+
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
                 return enrollment;
@@ -951,12 +967,13 @@ public sealed class ProgramRepository(
         if (isPerfect && !checkin.IsPerfectDay)
         {
             // SPEC §14: el bonus de día perfecto también pasa por el catálogo
-            // (regla DAY_BONUS, base 50 por defecto si no existe/está inactiva).
+            // (regla DAY_BONUS, base DefaultDayBonusBase si no existe/está
+            // inactiva).
             var (bonusPoints, bonusRuleCode, bonusMultiplierUsed) = await ResolveXpAwardAsync(
                 enrollment.Id,
                 enrollment.Timezone,
                 XpRuleCodes.DayBonus,
-                50,
+                DefaultDayBonusBase,
                 input.LocalDate,
                 ct
             );
@@ -1007,6 +1024,8 @@ public sealed class ProgramRepository(
                 enrollment.Id,
                 input.LocalDate,
                 template.EssentialTaskCodes,
+                Math.Max(1, (int)template.StreakMinTasks),
+                enrollment.StartLocalDate,
                 ct
             );
         }
@@ -1102,9 +1121,15 @@ public sealed class ProgramRepository(
             streak?.CurrentStreak ?? 0,
             streak?.FreezesRemaining ?? 0,
             checkin.TotalPoints + checkin.BonusAwarded,
-            // Máximo del día: misma computación que el replay (SPEC §7.2: el
-            // body del replay debe ser idéntico a la primera escritura).
-            ComputeDayPointsMax(scheduledForDay)
+            // Máximo del día: misma computación que el replay (SPEC §7.2). La
+            // base del bonus sale de la regla DAY_BONUS del catálogo (50 de
+            // fallback), NO del otorgamiento efectivo: el grant puede incluir
+            // el multiplicador de regla/paciente, mientras el máximo histórico
+            // siempre usó la base plana — mantener la base evita cambiar la
+            // semántica de la respuesta más allá de quitar el literal. La
+            // equivalencia con el replay es condicional a que la regla no
+            // cambie entre las dos lecturas (ver ComputeDayPointsMax).
+            ComputeDayPointsMax(scheduledForDay, await ResolveDayBonusBaseAsync(ct))
         );
     }
 
@@ -1204,27 +1229,59 @@ public sealed class ProgramRepository(
     // ---------------------------------------------------------------- Racha
 
     /// <summary>
-    /// Actualiza la racha al completar un día que cumple el umbral (SPEC §17, B):
+    /// Actualiza la racha al completar un día que cumple el umbral (SPEC §17, B).
+    /// El MODELO DE CORRIDAS del reconciliador nocturno es la fuente de verdad
+    /// (<see cref="ComputeStreakRuns"/>): día calificado = completaciones ≥
+    /// <c>streak_min_tasks</c> O día rescatado con congelamiento
+    /// (<c>streak_freezes.used_on_local_date</c>); <c>current</c> = corrida
+    /// consecutiva de días calificados que termina hoy o ayer (zona local).
     /// - Día consecutivo al último activo → <c>current_streak + 1</c>.
     /// - Hueco (días perdidos) con congelamiento disponible Y una tarea
-    ///   esencial completada en el día perdido → consume uno (racha intacta,
-    ///   <c>last_active_date = hoy</c>). Regla "el rescate requiere una tarea
-    ///   esencial" (SPEC §17, C, referencia ADRED): sin tarea esencial el
-    ///   congelamiento NO se consume (queda en inventario) y la racha se rompe
-    ///   (AC-32).
-    /// - Hueco sin congelamiento → <c>current_streak = 0</c> y
-    ///   <c>last_break_date = ayer</c> (el día que quebró la racha).
+    ///   esencial completada en el día perdido → consume uno y el día
+    ///   rescatado cuenta como calificado (AYER es la única ventana evaluada
+    ///   en v1): hueco de EXACTAMENTE 1 día → <c>current = stored + 2</c> (el
+    ///   día rescatado extiende la corrida almacenada y hoy la continúa);
+    ///   hueco mayor → <c>current = 2</c> (corrida nueva: rescatado + hoy).
+    ///   Regla "el rescate requiere una tarea esencial" (SPEC §17, C,
+    ///   referencia ADRED): sin tarea esencial el congelamiento NO se consume
+    ///   (queda en inventario) y la racha se reinicia (AC-32).
+    /// - Hueco sin rescate → <c>current = 1</c> (el día de vuelta inicia
+    ///   corrida nueva — el modelo de corridas no deja la racha en 0) y
+    ///   <c>last_break_date = ayer</c> (el día que quebró la racha). Antes
+    ///   este branch guardaba 0; el reconciliador computaba 1 y el job
+    ///   nocturno reescribía el valor cada 3 UTC (deriva permanente
+    ///   live↔job) — la paridad se cubre en la parity suite de
+    ///   ProgramRepositoryTests.
+    /// - Mismo día → sin cambios (idempotente).
     /// Otorga 1 congelamiento cada <c>FreezeGrantEveryPerfectDays</c> días
-    /// perfectos consecutivos (tope 3, OQ-3) — sin cambios (SPEC §17, C).
+    /// perfectos consecutivos (tope 3, OQ-3) — sin cambios (SPEC §17, C). Un
+    /// salto por rescate (p. ej. 5→7) puede saltarse múltiplos intermedios
+    /// (una corrida 6→8 no otorga el 7) — aceptado y documentado; el
+    /// reconciliador no otorga congelamientos (la paridad se define solo
+///     sobre current/longest/lastActive).
     /// Los writes de racha usan <c>ExecuteUpdate</c> para no pisar FKs vía
     /// tracking de navegaciones. Devuelve el valor nuevo de
     /// <c>current_streak</c> y si creció HOY (lo usa el motor de hitos de
     /// racha, SPEC §16, B: solo un día que crece puede alcanzar un hito).
+    ///
+    /// <b>Derivación del current (enmienda F1/F4)</b>: el escalar almacenado
+    /// SOLO se confía en el fast path contiguo con <c>stored &gt; 0</c>. En el
+    /// rescate y en filas legadas/job-zeroed (stored = 0 con <c>lastActive</c>
+    /// vigente) el current se deriva del MODELO
+    /// (<see cref="ComputeModelRunEndingAtAsync"/>): el job nocturno puede
+    /// haber zeroeado el current conservando lastActive (corrida vieja) y
+    /// <c>stored + 2</c> subestimaría la corrida real (perdiendo STREAK_7
+    /// para siempre — una vez por inscripción). Notas: <c>last_break_date</c>
+    /// es estado SOLO-ESCRITURA (no tiene lectores); el KPI ERP "En riesgo
+    /// (streak = 0)" ahora cuenta solo pacientes AUSENTES (los que vuelven
+    /// reinician en 1 y ya no se cuentan) — cambio de semántica aceptado.
     /// </summary>
     private async Task<(int Current, bool GrewToday)> UpdateStreakAsync(
         Guid enrollmentId,
         DateOnly today,
         IReadOnlyList<string> essentialTaskCodes,
+        int minTasks,
+        DateOnly windowStart,
         CancellationToken ct
     )
     {
@@ -1261,7 +1318,17 @@ public sealed class ProgramRepository(
         }
         else if (today == lastActive.Value.AddDays(1))
         {
-            current += 1;
+            // Fast path contiguo: stored + 1 — válido SOLO si stored refleja
+            // la corrida real (stored > 0). Con stored == 0 (fila legada del
+            // path pre-fix o zeroeada por el job con lastActive vigente) el
+            // current se DERIVA del modelo: corrida que termina en lastActive
+            // + 1 (hoy la continúa). Cero queries extra en el camino normal.
+            current =
+                current > 0
+                    ? current + 1
+                    : await ComputeModelRunEndingAtAsync(
+                          enrollmentId, lastActive.Value, windowStart, minTasks, ct
+                      ) + 1;
             streakGrewToday = true;
         }
         else if (today == lastActive.Value)
@@ -1275,7 +1342,9 @@ public sealed class ProgramRepository(
             // Rescate con congelamiento (SPEC §17, C): solo si el día perdido
             // completó al menos una tarea esencial de la plantilla. Sin tarea
             // esencial el congelamiento NO se consume (permanece en inventario)
-            // y la racha se rompe (AC-32).
+            // y la racha se reinicia (AC-32). Política v1: la ventana evaluada
+            // es SOLO ayer (huecos mayores rescatan únicamente el último día).
+            var rescued = false;
             if (
                 freezesRemaining > 0
                 && await HadEssentialTaskAsync(enrollmentId, missedDay, essentialTaskCodes, ct)
@@ -1294,13 +1363,38 @@ public sealed class ProgramRepository(
                         CreatedAt = DateTime.UtcNow,
                     }
                 );
-                // La racha se preserva (no se incrementa hoy tras un quiebre).
+                rescued = true;
             }
             else
             {
-                current = 0;
                 lastBreak = missedDay;
             }
+
+            // Sin rescate → el día de vuelta inicia corrida nueva (1); el
+            // reconciliador coincide (ayer no calificó).
+            if (!rescued)
+            {
+                current = 1;
+            }
+            else
+            {
+                // current DERIVADO DEL MODELO (paridad con el reconciliador,
+                // enmienda F1): el día rescatado (ayer) ya cuenta como
+                // calificado → corrida que termina en ayer + 1 (hoy la
+                // continúa). El stored scalar NO es confiable: el job
+                // nocturno pudo zeroearlo conservando lastActive (corrida
+                // vieja) → stored + 2 subestimaría la corrida real (p. ej.
+                // D0..D4 + D5 rescatado + D6 → el modelo dice 7, stored+2
+                // decía 2) y el motor de hitos perdería STREAK_7 para
+                // siempre (una vez por inscripción). Se flushea el Consumed
+                // ANTES de la query del modelo para que la vea.
+                await dbContext.SaveChangesAsync(ct);
+                var modelRun = await ComputeModelRunEndingAtAsync(
+                    enrollmentId, missedDay, windowStart, minTasks, ct);
+                current = modelRun + 1;
+            }
+
+            streakGrewToday = current > streak.CurrentStreak;
         }
 
         lastActive = today;
@@ -1314,12 +1408,17 @@ public sealed class ProgramRepository(
         // CONSECUTIVOS, solo si la racha creció HOY (SPEC §6.6: "cada 7 días
         // perfectos consecutivos"). Si un congelamiento se consumió preservando
         // la racha en un múltiplo (AC-09), no se re-otorga en el mismo valor:
-        // el inventario sí decrementa.
+        // el inventario sí decrementa. Un salto por rescate (p. ej. 5→7) puede
+        // saltarse múltiplos intermedios (una corrida 6→8 no otorga el 7) —
+        // aceptado y documentado; el reconciliador no otorga congelamientos.
         if (
-            streakGrewToday
-            && current > 0
-            && current % _freezeGrantEveryPerfectDays == 0
-            && freezesRemaining < MaxFreezes
+            ShouldGrantFreeze(
+                current,
+                streakGrewToday,
+                _freezeGrantEveryPerfectDays,
+                freezesRemaining,
+                MaxFreezes
+            )
         )
         {
             freezesRemaining += 1;
@@ -1352,6 +1451,107 @@ public sealed class ProgramRepository(
 
         return (current, streakGrewToday);
     }
+
+    /// <summary>
+    /// Corrida de días calificados consecutivos que termina en
+    /// <paramref name="anchorDate"/> (espejo del modelo del reconciliador,
+    /// <see cref="ComputeStreakRuns"/>): camina hacia atrás desde el ancla
+    /// contando días calificados contiguos; devuelve 0 si el ancla mismo no
+    /// califica. Pura y determinista — unit-testable sin BD. La ventana
+    /// arranca en la inscripción (una corrida no puede precederla).
+    /// </summary>
+    internal static int CountModelRunEndingAt(
+        IReadOnlySet<DateOnly> qualifyingDays,
+        DateOnly anchorDate,
+        DateOnly windowStart
+    )
+    {
+        if (!qualifyingDays.Contains(anchorDate))
+        {
+            return 0;
+        }
+
+        var run = 1;
+        for (
+            var d = anchorDate.AddDays(-1);
+            d >= windowStart && qualifyingDays.Contains(d);
+            d = d.AddDays(-1)
+        )
+        {
+            run++;
+        }
+
+        return run;
+    }
+
+    /// <summary>
+    /// Corrida del modelo que termina en <paramref name="anchorDate"/> (enmienda
+    /// F1/F4): días calificados en la ventana [windowStart, anchorDate] con la
+    /// MISMA definición que <see cref="ReconcileStreaksAsync"/> (completaciones
+    /// con conteo ≥ umbral UNION congelamientos consumidos) y la corrida
+    /// consecutiva desde el ancla. Set-based, sin N+1 (2 queries, como el
+    /// reconciliador). Lo usan el rescate y el fast path contiguo con stored 0
+    /// para derivar el current del modelo en vez del escalar almacenado.
+    /// </summary>
+    private async Task<int> ComputeModelRunEndingAtAsync(
+        Guid enrollmentId,
+        DateOnly anchorDate,
+        DateOnly windowStart,
+        int minTasks,
+        CancellationToken ct
+    )
+    {
+        var minCount = Math.Max(1, minTasks);
+
+        // Espejo de ReconcileStreaksAsync: completionCounts (conteo por
+        // fecha local ≥ umbral) — acotado a la ventana de la inscripción.
+        var completionDates = await dbContext
+            .TaskCompletions.AsNoTracking()
+            .Where(
+                t =>
+                    t.EnrollmentId == enrollmentId
+                    && t.LocalDate >= windowStart
+                    && t.LocalDate <= anchorDate
+            )
+            .GroupBy(t => t.LocalDate)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .Where(g => g.Count >= minCount)
+            .Select(g => g.Date)
+            .ToListAsync(ct);
+
+        // Espejo de ReconcileStreaksAsync: consumedFreezes (días rescatados).
+        var consumedDates = await dbContext
+            .StreakFreezes.AsNoTracking()
+            .Where(
+                f =>
+                    f.EnrollmentId == enrollmentId
+                    && f.Kind == StreakFreezeKind.Consumed
+                    && f.UsedOnLocalDate != null
+                    && f.UsedOnLocalDate >= windowStart
+                    && f.UsedOnLocalDate <= anchorDate
+            )
+            .Select(f => f.UsedOnLocalDate!.Value)
+            .ToListAsync(ct);
+
+        var qualifying = completionDates.Concat(consumedDates).ToHashSet();
+        return CountModelRunEndingAt(qualifying, anchorDate, windowStart);
+    }
+
+    /// <summary>
+    /// Cadencia de concesión de congelamientos (SPEC §6.6/OQ-3): 1 cada
+    /// <paramref name="grantEvery"/> días perfectos consecutivos, solo si la
+    /// racha creció hoy y el inventario está bajo el tope. Un salto por
+    /// rescate (p. ej. 5→7) puede saltarse múltiplos intermedios (6→8 no
+    /// otorga el 7) — aceptado; el reconciliador no otorga congelamientos
+    /// (la paridad se define solo sobre current/longest/lastActive).
+    /// </summary>
+    internal static bool ShouldGrantFreeze(
+        int current,
+        bool grewToday,
+        int grantEvery,
+        int freezesRemaining,
+        int maxFreezes
+    ) => grewToday && current > 0 && current % grantEvery == 0 && freezesRemaining < maxFreezes;
 
     /// <summary>
     /// Regla "el rescate requiere una tarea esencial" (SPEC §17, C, referencia
@@ -1613,12 +1813,13 @@ public sealed class ProgramRepository(
         var mediaIds = todayCompletions
             .Where(c => c.MediaId.HasValue)
             .Select(c => c.MediaId!.Value)
+            .Concat(todayScheduled.Where(s => s.MediaId.HasValue).Select(s => s.MediaId!.Value))
             .Concat(fallbackByTask.Where(f => f.MediaId.HasValue).Select(f => f.MediaId!.Value))
             .Distinct()
             .ToList();
         var mediaById =
             mediaIds.Count == 0
-                ? new Dictionary<Guid, (string Title, string? Description, string Author, int? DurationSecs, string? ThumbnailKey, string StorageKey)>()
+                ? new Dictionary<Guid, (string Title, string? Description, string Author, int? DurationSecs, string? ThumbnailKey, string StorageKey, List<MediaChapterDto> Chapters, List<string> Takeaways)>()
                 : (
                     await dbContext
                         .MediaItems.AsNoTracking()
@@ -1632,9 +1833,11 @@ public sealed class ProgramRepository(
                             m.DurationSecs,
                             m.ThumbnailKey,
                             m.StorageKey,
+                            m.Chapters,
+                            m.Takeaways,
                         })
                         .ToListAsync(ct)
-                ).ToDictionary(m => m.Id, m => (m.Title, m.Description, m.Author, m.DurationSecs, m.ThumbnailKey, m.StorageKey));
+                ).ToDictionary(m => m.Id, m => (m.Title, m.Description, m.Author, m.DurationSecs, m.ThumbnailKey, m.StorageKey, m.Chapters, m.Takeaways));
 
         var fallbackMediaByTask = fallbackByTask
             .Where(f => f.MediaId.HasValue)
@@ -1822,23 +2025,27 @@ public sealed class ProgramRepository(
 
                 if (taskCode == TaskCode.podcast)
                 {
-                    var activeMediaId = done?.MediaId ?? (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fbId) ? fbId : (Guid?)null);
+                    var activeMediaId = done?.MediaId ?? t.MediaId ?? (fallbackMediaByTask.TryGetValue(t.TaskCode, out var fbId) ? fbId : (Guid?)null);
                     if (activeMediaId.HasValue && mediaById.TryGetValue(activeMediaId.Value, out var media))
                     {
                         var duration = media.DurationSecs ?? 480;
-                        var defaultChapters = new List<PodcastChapterDto>
-                        {
-                            new(0, "Por qué la racha importa"),
-                            new((int)(duration * 0.2), "Insulina y horarios"),
-                            new((int)(duration * 0.55), "El circuito de 12 minutos"),
-                            new((int)(duration * 0.8), "Reto de hoy"),
-                        };
-                        var defaultTakeaways = new List<string>
-                        {
-                            "Misma hora · mismo ritual diario",
-                            "Proteína en cada comida principal",
-                            "12 minutos bastan si son diarios",
-                        };
+                        var chapters = media.Chapters.Count > 0
+                            ? media.Chapters.Select(c => new PodcastChapterDto(c.AtSeconds, c.Label)).ToList()
+                            : new List<PodcastChapterDto>
+                            {
+                                new(0, "Por qué la racha importa"),
+                                new((int)(duration * 0.2), "Insulina y horarios"),
+                                new((int)(duration * 0.55), "El circuito de 12 minutos"),
+                                new((int)(duration * 0.8), "Reto de hoy"),
+                            };
+                        var takeaways = media.Takeaways.Count > 0
+                            ? media.Takeaways
+                            : new List<string>
+                            {
+                                "Misma hora · mismo ritual diario",
+                                "Proteína en cada comida principal",
+                                "12 minutos bastan si son diarios",
+                            };
 
                         content = new TodayTaskContentDto(
                             MediaId: activeMediaId.Value,
@@ -1848,8 +2055,8 @@ public sealed class ProgramRepository(
                             Author: media.Author,
                             Description: media.Description,
                             MediaUrl: media.StorageKey,
-                            Chapters: defaultChapters,
-                            Takeaways: defaultTakeaways,
+                            Chapters: chapters,
+                            Takeaways: takeaways,
                             ContentUnavailable: false
                         );
                     }
@@ -2041,6 +2248,12 @@ public sealed class ProgramRepository(
             );
         }
 
+        // Bonus de día perfecto gobernado por el catálogo (SPEC §14): la base
+        // de la regla DAY_BONUS (50 si no existe/está inactiva) alimenta el
+        // máximo del día y se expone para la tarjeta de bonus del móvil (sin
+        // multiplicador: el máximo histórico siempre usó la base plana).
+        var dayBonusBase = await ResolveDayBonusBaseAsync(ct);
+
         return new ProgramSnapshotDto(
             enrollmentId,
             new ProgramSnapshotTemplateDto(
@@ -2059,8 +2272,9 @@ public sealed class ProgramRepository(
             todayTasks,
             (checkin?.TotalPoints ?? 0) + (checkin?.BonusAwarded ?? 0),
             checkin?.IsPerfectDay != true,
-            // Máximo alcanzable del día: puntos base + bonus (SPEC §7.1).
-            todayScheduled.Sum(t => t.Points) + 50,
+            // Máximo alcanzable del día: puntos base + base del bonus de día
+            // perfecto de la regla DAY_BONUS (SPEC §7.1/§14).
+            todayScheduled.Sum(t => t.Points) + dayBonusBase,
             new XpInfoDto(xpBalance, level.Level, level.NextLevelAt),
             new StreakInfoDto(
                 streakCurrent,
@@ -2076,7 +2290,8 @@ public sealed class ProgramRepository(
             ),
             nextMilestone,
             calendar,
-            streakChests
+            streakChests,
+            dayBonusBase
         );
     }
 
@@ -2911,18 +3126,29 @@ public sealed class ProgramRepository(
 
         var weekday = ToIsoWeekday(localDate);
         return ComputeDayPointsMax(
-            ParseSnapshot(week.TasksSnapshot).Where(t => t.Weekday == weekday)
+            ParseSnapshot(week.TasksSnapshot).Where(t => t.Weekday == weekday),
+            await ResolveDayBonusBaseAsync(ct)
         );
     }
 
     /// <summary>
-    /// Máximo de puntos alcanzable del día: suma de la base del snapshot + el
-    /// bonus de día perfecto (+50, SPEC §6.5). Única computación compartida por
-    /// la primera escritura y el replay (SPEC §7.2: 700 + 50 = 750) para que el
-    /// body del replay sea idéntico al de la primera respuesta.
+    /// Máximo de puntos alcanzable del día: suma de la base del snapshot + la
+    /// base del bonus de día perfecto (regla DAY_BONUS, SPEC §6.5/§14; 50 de
+    /// fallback si no existe/está inactiva). Única computación compartida por
+    /// la primera escritura y el replay (SPEC §7.2).
+    ///
+    /// <b>Invariante</b>: ambos caminos resuelven la MISMA base de regla
+    /// (<see cref="ResolveDayBonusBaseAsync"/>), por lo que el body del replay
+    /// es idéntico al de la primera respuesta MIENTRAS la regla DAY_BONUS no
+    /// cambie entre las dos lecturas. Riesgo aceptado y documentado: una
+    /// edición de la regla en el ERP a mitad de día (o un rollover de
+    /// <c>ValidFrom</c>/<c>ValidUntil</c> al cambiar el día UTC del servidor)
+    /// entre la escritura y el replay puede hacer divergir el valor. El máximo
+    /// NO se persiste deliberadamente por ahora (persistirlo exigiría una
+    /// migración que este cambio no contempla).
     /// </summary>
-    private static int ComputeDayPointsMax(IEnumerable<SnapshotTask> dayTasks) =>
-        dayTasks.Sum(t => t.Points) + 50;
+    private static int ComputeDayPointsMax(IEnumerable<SnapshotTask> dayTasks, int bonusAmount) =>
+        dayTasks.Sum(t => t.Points) + bonusAmount;
 
     // ---------------------------------------------------------------- Catálogo de reglas XP (SPEC §14)
 
@@ -2948,6 +3174,30 @@ public sealed class ProgramRepository(
                     && (r.ValidUntil == null || r.ValidUntil >= today),
                 ct
             );
+    }
+
+    /// <summary>
+    /// Base por defecto del bonus de día perfecto (SPEC §6.5): fallback cuando
+    /// la regla <c>DAY_BONUS</c> del catálogo no existe/está inactiva/vencida
+    /// y <c>defaultPoints</c> del otorgamiento. Única fuente del literal en
+    /// este repositorio; el seeder (<c>ProgramProgressSeeder</c>) siembra el
+    /// mismo valor en otra capa y se mantiene en sincronía manualmente.
+    /// </summary>
+    private const int DefaultDayBonusBase = 50;
+
+    /// <summary>
+    /// Base del bonus de día perfecto (regla <c>DAY_BONUS</c>, SPEC §6.5/§14):
+    /// <c>base_xp</c> de la regla vigente, o <see cref="DefaultDayBonusBase"/>
+    /// cuando la regla no existe/está inactiva/vencida (mismo fallback que
+    /// <see cref="ResolveXpAwardAsync"/>).
+    /// SIN multiplicadores (de regla ni del paciente): alimenta
+    /// <c>TodayPointsMax</c> (el máximo histórico siempre usó la base plana) y
+    /// el <c>DailyBonusAmount</c> del snapshot para la tarjeta de bonus móvil.
+    /// </summary>
+    private async Task<int> ResolveDayBonusBaseAsync(CancellationToken ct)
+    {
+        var rule = await ResolveActiveRuleAsync(XpRuleCodes.DayBonus, ct);
+        return rule?.BaseXp ?? DefaultDayBonusBase;
     }
 
     /// <summary>
@@ -3678,9 +3928,16 @@ public sealed class ProgramRepository(
 
         // Fila fresca del período (period_end == hoy): cache hit, sin recalcular
         // (SPEC §13.3). force = recálculo manual clínico → siempre recalcula.
+        // dimensions_previous requiere la fila del período anterior: se relee
+        // con una query indexada extra SOLO si la fila actual conserva un
+        // score_previous (si es null, no existe fila previa → null, sin query).
         if (existing is not null && !force)
         {
-            return ToHealthScoreDto(existing);
+            var cachedPreviousRow =
+                existing.ScorePrevious is null
+                    ? null
+                    : await LoadPreviousScoreRowAsync(patientId, periodStart, ct);
+            return ToHealthScoreDto(existing, cachedPreviousRow);
         }
 
         var input = await BuildHealthScoreInputAsync(enrollment, periodStart, periodEnd, ct);
@@ -3688,15 +3945,12 @@ public sealed class ProgramRepository(
         var result = _healthScoreCalculator.Calculate(input, context);
 
         // score_previous: el de la fila existente (historial conservado) o el
-        // del período anterior persistido (la fila que NO es la actual).
-        var previousScore =
-            existing?.ScorePrevious
-            ?? await dbContext
-                .HealthScores.AsNoTracking()
-                .Where(h => h.PatientId == patientId && h.PeriodEnd < periodStart)
-                .OrderByDescending(h => h.PeriodEnd)
-                .Select(h => (int?)h.Score)
-                .FirstOrDefaultAsync(ct);
+        // del período anterior persistido (la fila que NO es la actual). La
+        // fila previa se proyecta COMPLETA (total + 5 dimensiones) para
+        // alimentar también dimensions_previous — misma query indexada
+        // (patient_id, period_end DESC), sin N+1 adicional.
+        var previousRow = await LoadPreviousScoreRowAsync(patientId, periodStart, ct);
+        var previousScore = existing?.ScorePrevious ?? previousRow?.Score;
 
         var trend = DeriveTrend(result.Total, previousScore);
         var now = DateTime.UtcNow;
@@ -3762,7 +4016,21 @@ public sealed class ProgramRepository(
                 result.Nutrition,
                 result.Psychology,
                 result.Exercise
-            )
+            ),
+            // Integridad del par (previous, dimensions_previous): previous viene del
+            // ScorePrevious almacenado (existing) o de la fila releída; las
+            // dimensiones solo se exponen cuando la fila releída coincide en
+            // Score con el valor que se devuelve como previous (tras backfill/
+            // borrado/recálculo de un período anterior pueden divergir).
+            previousRow is not null && previousRow.Score == previousScore
+                ? new HealthScoreDimensionsDto(
+                    previousRow.ScoreAdherence,
+                    previousRow.ScoreClinical,
+                    previousRow.ScoreNutrition,
+                    previousRow.ScorePsychology,
+                    previousRow.ScoreExercise
+                )
+                : null
         );
     }
 
@@ -7000,8 +7268,45 @@ public sealed class ProgramRepository(
             .FirstOrDefaultAsync(ct);
     }
 
-    private static HealthScoreDto ToHealthScoreDto(HealthScore h) =>
-        new(
+    /// <summary>
+    /// Fila del período anterior persistido de un paciente (la que alimenta
+    /// <c>score_previous</c> y <c>dimensions_previous</c>): la de mayor
+    /// <c>period_end</c> estrictamente anterior al inicio del período actual,
+    /// proyectada completa (total + 5 dimensiones). Una sola query indexada
+    /// <c>(patient_id, period_end DESC)</c>; null en el primer cómputo.
+    /// </summary>
+    private Task<HealthScore?> LoadPreviousScoreRowAsync(
+        Guid patientId,
+        DateOnly periodStart,
+        CancellationToken ct
+    ) =>
+        dbContext
+            .HealthScores.AsNoTracking()
+            .Where(h => h.PatientId == patientId && h.PeriodEnd < periodStart)
+            .OrderByDescending(h => h.PeriodEnd)
+            .FirstOrDefaultAsync(ct);
+
+    private static HealthScoreDto ToHealthScoreDto(HealthScore h, HealthScore? previousRow = null)
+    {
+        // Integridad del par (previous, dimensions_previous): el escalar
+        // previous sale del ScorePrevious ALMACENADO de la fila actual (fijo
+        // en su cómputo), mientras la fila previa se relee VIVA (max
+        // period_end). Tras un backfill, borrado o recálculo de un período
+        // anterior pueden describir filas DISTINTAS → las dimensiones solo se
+        // exponen cuando la fila releída coincide en Score con el valor
+        // almacenado; si no, null (par incoherente).
+        var previousDimensions =
+            previousRow is not null && previousRow.Score == h.ScorePrevious
+                ? new HealthScoreDimensionsDto(
+                    previousRow.ScoreAdherence,
+                    previousRow.ScoreClinical,
+                    previousRow.ScoreNutrition,
+                    previousRow.ScorePsychology,
+                    previousRow.ScoreExercise
+                )
+                : null;
+
+        return new HealthScoreDto(
             h.Score,
             h.ScorePrevious,
             h.Trend.ToString(),
@@ -7011,8 +7316,10 @@ public sealed class ProgramRepository(
                 h.ScoreNutrition,
                 h.ScorePsychology,
                 h.ScoreExercise
-            )
+            ),
+            previousDimensions
         );
+    }
 
     private static TransformationScoreDto ToTransformationScoreDto(TransformationScore t)
     {
@@ -7588,13 +7895,24 @@ public sealed class ProgramRepository(
             .OrderByDescending(x => x.Total)
             .ToList();
 
-        // Evolución 30 días
+        // Evolución 30 días optimizada (O(1) con tabla pre-agregada + fallback en 1 sola query agrupada)
+        var completionsByDate = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => m.MetricKey == "tasks_completed_today" && m.MetricDate >= today30 && m.MetricDate <= today)
+            .ToDictionaryAsync(m => m.MetricDate, m => (int)m.TotalCount, ct);
+
+        if (completionsByDate.Count == 0 && enrollmentIds.Count > 0)
+        {
+            completionsByDate = await dbContext.TaskCompletions.AsNoTracking()
+                .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate >= today30 && tc.LocalDate <= today)
+                .GroupBy(tc => tc.LocalDate)
+                .Select(g => new { Date = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Date, x => x.Count, ct);
+        }
+
         var evolucion30 = new List<ErpDailyAdherence>();
         for (var d = today30; d <= today; d = d.AddDays(1))
         {
-            var dayCompleted = await dbContext.TaskCompletions.AsNoTracking()
-                .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == d)
-                .CountAsync(ct);
+            var dayCompleted = completionsByDate.GetValueOrDefault(d, 0);
             var dayWeekday = ToIsoWeekday(d);
             var dayScheduled = activeWeekSnapshots
                 .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
@@ -8284,13 +8602,22 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             PatientOverviewTransformationScore? ts = null;
             if (transformationScore is not null)
             {
-                var detailDict =
-                    transformationScore.Detail.ValueKind == JsonValueKind.Object
-                        ? JsonSerializer
+                Dictionary<string, PatientOverviewTransformationDetail>? detailDict = null;
+                if (transformationScore.Detail.ValueKind == JsonValueKind.Object)
+                {
+                    try
+                    {
+                        detailDict = JsonSerializer
                             .Deserialize<Dictionary<string, PatientOverviewTransformationDetail>>(
                                 transformationScore.Detail.GetRawText()
-                            ) ?? new Dictionary<string, PatientOverviewTransformationDetail>()
-                        : new Dictionary<string, PatientOverviewTransformationDetail>();
+                            );
+                    }
+                    catch
+                    {
+                        detailDict = new Dictionary<string, PatientOverviewTransformationDetail>();
+                    }
+                }
+                detailDict ??= new Dictionary<string, PatientOverviewTransformationDetail>();
 
                 ts = new PatientOverviewTransformationScore(
                     transformationScore.Score,
