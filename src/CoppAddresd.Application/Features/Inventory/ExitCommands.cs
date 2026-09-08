@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Inventory.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using MediatR;
@@ -44,7 +45,8 @@ public sealed class GetExitQueryHandler(
 public record CreateExitCommand(CreateExitRequest Request) : IRequest<InventoryExitDto>;
 
 public sealed class CreateExitCommandHandler(
-    IInventoryRepository repository) : IRequestHandler<CreateExitCommand, InventoryExitDto>
+    IInventoryRepository repository,
+    IInventoryMetricsQueue? metricsQueue = null) : IRequestHandler<CreateExitCommand, InventoryExitDto>
 {
     public async Task<InventoryExitDto> Handle(CreateExitCommand request, CancellationToken ct)
     {
@@ -75,6 +77,37 @@ public sealed class CreateExitCommandHandler(
 
         await repository.CreateExitAsync(exit, ct);
 
+        // Pre-agregación CQRS (Dashboard #6): enqueue no bloqueante. InventoryExit
+        // no tiene TotalCost propio; el procesador lo calcula desde las líneas.
+        if (metricsQueue != null)
+        {
+            var metricLines = await BuildMetricLinesAsync(r.Lines, repository, ct);
+            await metricsQueue.EnqueueAsync(new InventoryExitCreatedMetricEvent(
+                exit.Id,
+                DateOnly.FromDateTime(exit.Date),
+                metricLines
+            ), ct);
+        }
+
         return InventoryExitDto.FromEntity(exit);
+    }
+
+    private static async Task<IReadOnlyList<InventoryMetricLine>> BuildMetricLinesAsync(
+        IReadOnlyList<InventoryExitLineInput> lines,
+        IInventoryRepository repository,
+        CancellationToken ct)
+    {
+        var result = new List<InventoryMetricLine>();
+        foreach (var l in lines)
+        {
+            var product = await repository.GetProductByIdAsync(l.ProductId, ct);
+            result.Add(new InventoryMetricLine(
+                l.ProductName,
+                product?.Category ?? "general",
+                l.Quantity,
+                l.UnitCost
+            ));
+        }
+        return result;
     }
 }

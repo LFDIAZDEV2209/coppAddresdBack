@@ -84,6 +84,12 @@ public sealed record CompleteTaskResult(
 /// UI de cofres el móvil DEBE preferir este campo sobre
 /// <c>NextMilestoneDays</c>, cuya semántica (múltiplos de 7) no corresponde a
 /// los hitos reales del catálogo.
+///
+/// <c>DailyBonusAmount</c> es el monto base REAL de la regla DAY_BONUS del
+/// catálogo (<c>app.xp_rules</c>, sin multiplicador): el móvil lo usa en la
+/// tarjeta de bonus y es el que compone <c>TodayPointsMax</c>
+/// (base del día + DailyBonusAmount). 50 cuando la regla no existe/está
+/// inactiva (fallback SPEC §14.3); null solo en respuestas previas.
 /// </summary>
 public sealed record ProgramSnapshotDto(
     Guid EnrollmentId,
@@ -97,7 +103,8 @@ public sealed record ProgramSnapshotDto(
     StreakInfoDto Streak,
     int NextMilestoneDays,
     IReadOnlyList<CalendarDayDto> Calendar,
-    IReadOnlyList<StreakChestDto>? StreakChests = null);
+    IReadOnlyList<StreakChestDto>? StreakChests = null,
+    int? DailyBonusAmount = null);
 
 /// <summary>
 /// Bloque de plantilla/semana actual del snapshot. <c>StreakMinTasks</c> y

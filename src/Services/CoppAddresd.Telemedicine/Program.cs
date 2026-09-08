@@ -8,8 +8,31 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Structured logging (Serilog). Sinks come from the "Serilog" configuration
+// section (appsettings.Development.json enables Console + rolling compact-JSON
+// file sink "logs/tele-.log"). Enrich.FromLogContext exposes LogContext
+// properties (CorrelationId) on every event. When no Serilog:WriteTo section
+// is configured (non-Development environments) it falls back to console-only,
+// preserving the previous default console logging behavior: Information for
+// app code, Microsoft.AspNetCore lowered to Warning (same verbosity as
+// appsettings.Example.json Logging:LogLevel), and a template that includes
+// {Properties:j} so CorrelationId/RequestPath stay visible on console.
+builder.Host.UseSerilog((ctx, cfg) =>
+{
+    cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
+
+    if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+    {
+        cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+            .WriteTo.Console(outputTemplate:
+                "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+    }
+});
 
 builder
     .Services.AddControllers()
@@ -78,6 +101,10 @@ if (args.Contains("--migrate"))
     var migrationDb = migrationScope.ServiceProvider.GetRequiredService<TelemedicineDbContext>();
     await migrationDb.Database.MigrateAsync();
     Console.WriteLine("Migraciones de telemedicina aplicadas correctamente");
+    // Flush pendiente antes de terminar el proceso: con un file sink
+    // configurado (Serilog:WriteTo) los logs de la migración no se pierden
+    // en el tail del run del job de deploy.
+    Log.CloseAndFlush();
     return;
 }
 

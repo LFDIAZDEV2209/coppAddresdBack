@@ -186,6 +186,55 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.ToTable("appointment_cancellations", "tele");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.AppointmentDailyMetric", b =>
+                {
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date")
+                        .HasColumnName("metric_date");
+
+                    b.Property<Guid>("ProfessionalId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasDefaultValue(new Guid("00000000-0000-0000-0000-000000000000"))
+                        .HasColumnName("professional_id");
+
+                    b.Property<string>("MetricKey")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("metric_key");
+
+                    b.Property<string>("DimensionKey")
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasDefaultValue("general")
+                        .HasColumnName("dimension_key");
+
+                    b.Property<Guid?>("ClinicId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("clinic_id");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<long>("TotalCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("total_count");
+
+                    b.HasKey("MetricDate", "ProfessionalId", "MetricKey", "DimensionKey")
+                        .HasName("pk_appointment_daily_metrics");
+
+                    b.HasIndex("MetricDate", "ProfessionalId", "MetricKey")
+                        .HasDatabaseName("ix_appointment_daily_metrics_lookup");
+
+                    b.ToTable("appointment_daily_metrics", "tele");
+                });
+
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.AppointmentReschedule", b =>
                 {
                     b.Property<Guid>("Id")
@@ -315,6 +364,65 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasDatabaseName("ix_clinical_encounters_session_id");
 
                     b.ToTable("clinical_encounters", "tele");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ProfessionalDailyStat", b =>
+                {
+                    b.Property<Guid>("ProfessionalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("professional_id");
+
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date")
+                        .HasColumnName("metric_date");
+
+                    b.Property<int>("CancelledAppointments")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("cancelled_appointments");
+
+                    b.Property<Guid?>("ClinicId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("clinic_id");
+
+                    b.Property<int>("CompletedAppointments")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("completed_appointments");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<int>("NoShowAppointments")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("no_show_appointments");
+
+                    b.Property<int>("TotalAppointments")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("total_appointments");
+
+                    b.Property<int>("UniquePatients")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("unique_patients");
+
+                    b.HasKey("ProfessionalId", "MetricDate")
+                        .HasName("pk_professional_daily_stats");
+
+                    b.HasIndex("MetricDate")
+                        .HasDatabaseName("ix_professional_daily_stats_date");
+
+                    b.ToTable("professional_daily_stats", "tele");
                 });
 
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineAlert", b =>

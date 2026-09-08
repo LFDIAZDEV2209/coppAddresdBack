@@ -210,6 +210,22 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         CancellationToken ct = default
     )
     {
+        var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(to.UtcDateTime);
+        var profId = professionalId ?? Guid.Empty;
+
+        var preaggTotal = await dbContext.AppointmentDailyMetrics
+            .AsNoTracking()
+            .Where(m => m.ProfessionalId == profId
+                     && m.MetricDate >= fromDate && m.MetricDate <= toDate
+                     && m.MetricKey == "daily_total")
+            .SumAsync(m => (long?)m.TotalCount, ct);
+
+        if (preaggTotal.HasValue && preaggTotal.Value > 0)
+        {
+            return (int)preaggTotal.Value;
+        }
+
         var query = dbContext
             .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
@@ -245,6 +261,27 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         CancellationToken ct = default
     )
     {
+        var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(to.UtcDateTime);
+        var profId = professionalId ?? Guid.Empty;
+
+        var preagg = await dbContext.AppointmentDailyMetrics
+            .AsNoTracking()
+            .Where(m => m.ProfessionalId == profId
+                     && m.MetricDate >= fromDate && m.MetricDate <= toDate
+                     && m.MetricKey == "daily_total")
+            .ToListAsync(ct);
+
+        if (preagg.Count > 0)
+        {
+            return preagg
+                .Select(m => new DailyAppointmentCount(
+                    new DateTimeOffset(m.MetricDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                    (int)m.TotalCount))
+                .OrderBy(x => x.Day)
+                .ToList();
+        }
+
         var query = dbContext
             .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
@@ -274,6 +311,32 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         CancellationToken ct = default
     )
     {
+        var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(to.UtcDateTime);
+        var profId = professionalId ?? Guid.Empty;
+
+        var preagg = await dbContext.AppointmentDailyMetrics
+            .AsNoTracking()
+            .Where(m => m.ProfessionalId == profId
+                     && m.MetricDate >= fromDate && m.MetricDate <= toDate
+                     && m.MetricKey == "status_count")
+            .ToListAsync(ct);
+
+        if (preagg.Count > 0)
+        {
+            return preagg
+                .GroupBy(m => m.DimensionKey)
+                .Select(g => new
+                {
+                    StatusStr = g.Key,
+                    Count = (int)g.Sum(x => x.TotalCount)
+                })
+                .Where(x => Enum.TryParse<AppointmentStatus>(x.StatusStr, out _))
+                .Select(x => new AppointmentStatusCount(Enum.Parse<AppointmentStatus>(x.StatusStr), x.Count))
+                .OrderBy(x => x.Status)
+                .ToList();
+        }
+
         var query = dbContext
             .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
@@ -302,6 +365,31 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         CancellationToken ct = default
     )
     {
+        var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(to.UtcDateTime);
+        var profId = professionalId ?? Guid.Empty;
+
+        var preagg = await dbContext.AppointmentDailyMetrics
+            .AsNoTracking()
+            .Where(m => m.ProfessionalId == profId
+                     && m.MetricDate >= fromDate && m.MetricDate <= toDate
+                     && m.MetricKey == "hourly_count")
+            .ToListAsync(ct);
+
+        if (preagg.Count > 0)
+        {
+            return preagg
+                .GroupBy(m => m.DimensionKey)
+                .Select(g =>
+                {
+                    var raw = g.Key.Replace("Hour_", "");
+                    var hour = int.TryParse(raw, out var h) ? h : 0;
+                    return new HourlyAppointmentCount(hour, (int)g.Sum(x => x.TotalCount));
+                })
+                .OrderBy(x => x.Hour)
+                .ToList();
+        }
+
         var query = dbContext
             .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
@@ -328,6 +416,29 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         CancellationToken ct = default
     )
     {
+        var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
+        var toDate = DateOnly.FromDateTime(to.UtcDateTime);
+
+        var stats = await dbContext.ProfessionalDailyStats
+            .AsNoTracking()
+            .Where(s => s.MetricDate >= fromDate && s.MetricDate <= toDate)
+            .ToListAsync(ct);
+
+        if (stats.Count > 0)
+        {
+            return stats
+                .GroupBy(s => s.ProfessionalId)
+                .Select(g => new ProfessionalAppointmentActivity(
+                    g.Key,
+                    g.Sum(x => x.TotalAppointments),
+                    g.Sum(x => x.CompletedAppointments),
+                    g.Sum(x => x.CancelledAppointments),
+                    g.Sum(x => x.UniquePatients)
+                ))
+                .OrderByDescending(x => x.Total)
+                .ToList();
+        }
+
         var rows = await dbContext
             .Appointments.AsNoTracking()
             .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to)

@@ -5,6 +5,7 @@ using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.GraphQL.Resolvers;
 using CoppAddresd.Community.GraphQL.Subscriptions;
+using CoppAddresd.Community.Metrics;
 using CoppAddresd.Community.Persistence;
 using CoppAddresd.Community.Seeders;
 using CoppAddresd.Community.Storage;
@@ -76,6 +77,7 @@ builder.Services
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
     .AddSubscriptionType<CommunitySubscription>()
+    .AddTypeExtension<CommunityErpAnalyticsQuery>()
     .AddType<PostImageUrlResolver>()
     .AddType<ProfileImageUrlResolver>()
     .AddTypeExtension<ProfileResolvers>()
@@ -85,6 +87,13 @@ builder.Services
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
 
 builder.Services.AddHealthChecks();
+
+// Métricas del dashboard ERP (Dashboard #5): cola en memoria (Channel) + procesador
+// en background que hace el UPSERT atómico sobre community.community_daily_metrics.
+// El enqueue en las mutaciones no bloquea la request: el writer del Channel retorna
+// prácticamente de inmediato y el HostedService drena la cola en segundo plano.
+builder.Services.AddSingleton<ICommunityMetricsQueue, CommunityMetricsQueue>();
+builder.Services.AddHostedService<CommunityMetricsProcessorHostedService>();
 
 var app = builder.Build();
 

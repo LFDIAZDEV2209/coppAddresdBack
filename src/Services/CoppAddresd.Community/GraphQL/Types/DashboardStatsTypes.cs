@@ -21,8 +21,11 @@ public sealed record DashboardKpiTrends
 /// <summary>Punto diario de la serie temporal de actividad (últimos 30 días).</summary>
 public sealed record ActivityDay
 {
-    /// <summary>Día del mes (1..31).</summary>
-    public int Dia { get; init; }
+    /// <summary>
+    /// Etiqueta del día en formato "MMM d" (ej. "sep 4"): incluye el mes para no
+    /// colisionar cuando el rango de 30 días cruza de mes (dos etiquetas "1", etc.).
+    /// </summary>
+    public string Dia { get; init; } = default!;
 
     /// <summary>Publicaciones creadas ese día.</summary>
     public int Posts { get; init; }

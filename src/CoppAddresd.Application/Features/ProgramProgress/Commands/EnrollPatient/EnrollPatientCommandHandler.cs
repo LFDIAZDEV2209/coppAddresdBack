@@ -14,13 +14,19 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatien
 ///    <paramref name="EnrollPatientCommand.DefaultTemplateCode"/> (la capa API
 ///    lee <c>Program:DefaultTemplate:Code</c>; fallback <c>default-83w</c>).
 /// 3. <c>StartLocalDate</c> por defecto: el lunes de la semana local actual.
-/// 4. Delega en <c>EnrollAsync</c> y devuelve la inscripción con su estado de
+/// 4. Delega en <c>EnrollAsync</c> (que purga los puntajes de la corrida
+///    anterior, SPEC §13.7.3) y devuelve la inscripción con su estado de
 ///    gamificación (racha 0, XP 0) leyéndola de vuelta.
+/// 5. Tras el commit, invalida el caché del historial de puntajes del
+///    paciente (<c>scores-history:{{patientId}}:v1</c>): la serie cacheada de
+///    la corrida anterior (TTL 5 min) no debe servirse a la nueva corrida
+///    (patrón league-preferences — la invalidación post-commit del handler).
 /// El actor (created_by) llega en <c>ActorId</c> desde la capa API
 /// (<c>ICurrentContext</c>), precedente del repo (CreateNutritionPlanCommand).
 /// </summary>
 public sealed class EnrollPatientCommandHandler(
     IProgramRepository repository,
+    ICacheService cache,
     ILogger<EnrollPatientCommandHandler> logger) : IRequestHandler<EnrollPatientCommand, ProgramEnrollmentDto>
 {
     public async Task<ProgramEnrollmentDto> Handle(EnrollPatientCommand request, CancellationToken ct)
@@ -47,6 +53,11 @@ public sealed class EnrollPatientCommandHandler(
 
         var enrollment = await repository.EnrollAsync(
             request.PatientId, templateId.Value, request.Timezone, startLocalDate, request.ActorId, ct);
+
+        // Post-commit (EnrollAsync ya commiteó): la serie cacheada de la
+        // corrida anterior no debe servirse a la nueva (historia por
+        // programa, SPEC §13.7.3). Best-effort (fail-open de la abstracción).
+        await cache.RemoveAsync(CacheKeys.ScoresHistory(request.PatientId), ct);
 
         var dto = await repository.GetEnrollmentAsync(enrollment.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer la inscripción creada.");

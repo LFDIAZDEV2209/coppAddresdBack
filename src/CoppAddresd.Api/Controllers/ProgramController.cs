@@ -1,6 +1,7 @@
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
+using CoppAddresd.Api.Security;
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ArchiveTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkEnrollPatients;
@@ -35,11 +36,14 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateWeaknessSt
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenWeaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListWeaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.League;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetLeague;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.AcceptIntervention;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateInterventionStatus;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleScheduled;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleAttended;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleComply;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateLeaguePreferences;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListInterventions;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenInterventions;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetAdaptation;
@@ -47,6 +51,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.GetCalendar;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetPath;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetScores;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetScoresHistory;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetSnapshot;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetBaselines;
@@ -91,7 +96,8 @@ public sealed class ProgramController(
     ILogger<ProgramController> logger,
     IConfiguration configuration,
     IProgramActorContext actorContext,
-    IObjectStorageService objectStorage) : ControllerBase
+    IObjectStorageService objectStorage,
+    StorageSignatureService? signatureService = null) : ControllerBase
 {
     private const string DefaultTemplateCodeKey = "Program:DefaultTemplate:Code";
     private const string DefaultTemplateCodeFallback = "default-83w";
@@ -101,8 +107,8 @@ public sealed class ProgramController(
     /// <summary>
     /// Snapshot del programa para la home del móvil (SPEC §7.1). La inscripción
     /// es la activa del paciente autenticado (la ruta no recibe enrollmentId).
-    /// El <c>thumbnailUrl</c> de cada tarea podcast se resuelve a la forma final
-    /// de URL (proxy local o presign S3) en la capa API (B5).
+    /// El <c>thumbnailUrl</c> y <c>mediaUrl</c> de cada tarea podcast se resuelven a la forma final
+    /// de URL (proxy firmado local o presign S3) en la capa API (B5).
     /// </summary>
     [HttpGet("me/snapshot")]
     public async Task<ActionResult<ProgramSnapshotDto>> GetMySnapshot(CancellationToken ct)
@@ -114,7 +120,7 @@ public sealed class ProgramController(
         }
 
         var snapshot = await mediator.Send(new GetSnapshotQuery(enrollmentId.Value), ct);
-        return Ok(await ResolveThumbnailUrlsAsync(snapshot, ct));
+        return Ok(await ResolveMediaUrlsAsync(snapshot, ct));
     }
 
     /// <summary>
@@ -129,7 +135,7 @@ public sealed class ProgramController(
     public async Task<ActionResult<ProgramSnapshotDto>> GetEnrollmentSnapshot(
         Guid id,
         CancellationToken ct)
-        => Ok(await ResolveThumbnailUrlsAsync(await mediator.Send(new GetSnapshotQuery(id), ct), ct));
+        => Ok(await ResolveMediaUrlsAsync(await mediator.Send(new GetSnapshotQuery(id), ct), ct));
 
     // ===================== PACIENTE: completar tarea =====================
 
@@ -664,7 +670,8 @@ public sealed class ProgramController(
             request.Description,
             request.TotalWeeks,
             request.Days,
-            actorContext.UserId), ct);
+            actorContext.UserId,
+            request.TotalDays), ct);
 
         return CreatedAtAction(nameof(GetTemplate), new { id = result.Id }, result);
     }
@@ -678,7 +685,7 @@ public sealed class ProgramController(
         CancellationToken ct)
         => Ok(await mediator.Send(new UpdateTemplateCommand(
             id, request.Code, request.Name, request.Description, request.TotalWeeks,
-            request.Days, actorContext.UserId), ct));
+            request.Days, actorContext.UserId, request.TotalDays), ct));
 
     /// <summary>Publica una plantilla: bump de versión y Draft → Active (SPEC §7.6).</summary>
     [HttpPost("templates/{id:guid}/publish")]
@@ -764,6 +771,93 @@ public sealed class ProgramController(
         }
 
         return Ok(await mediator.Send(new GetScoresQuery(patientId.Value), ct));
+    }
+
+    /// <summary>
+    /// Historial de puntajes del paciente autenticado (pestaña Evolución del
+    /// móvil): serie semanal ASCENDENTE con los Índices de Salud y de
+    /// Transformación PERSISTIDOS (nunca dispara recálculo ni al motor de
+    /// puntajes — la frescura de la semana actual es trabajo de
+    /// <c>GET /scores</c>). Self-service del paciente: SOLO <c>[Authorize]</c>
+    /// (convención <c>me/*</c> — los JWT de paciente no llevan claims de
+    /// permiso, igual que la liga). El <c>patientId</c> se resuelve del JWT
+    /// vía <see cref="IProgramActorContext"/> (nunca del body, anti-IDOR
+    /// AC-11): sin perfil de paciente → 404; sin inscripción activa → 404
+    /// <c>NO_ACTIVE_ENROLLMENT</c>. <c>weeks</c> opcional (default 12, clamp
+    /// 1..83). Serie cacheada 5 min por paciente (fail-open); el recorte a las
+    /// últimas N semanas se aplica por request.
+    /// </summary>
+    [HttpGet("me/scores-history")]
+    public async Task<ActionResult<ScoresHistoryResponseDto>> GetScoresHistory(
+        int? weeks,
+        CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        return Ok(await mediator.Send(
+            new GetScoresHistoryQuery(patientId.Value, weeks ?? GetScoresHistoryQuery.DefaultWeeks), ct));
+    }
+
+    // ===================== PACIENTE: liga (LEAGUE v1) =====================
+
+    /// <summary>
+    /// Preferencias de la liga del paciente autenticado (LEAGUE v1):
+    /// <c>{ nickname: string|null, optIn: boolean }</c>. El opt-in es default
+    /// OFF (privacidad por diseño) y el nickname es el seudónimo público que
+    /// se muestra en el ranking (obligatorio para optar). Self-service del
+    /// paciente: SOLO <c>[Authorize]</c> (convención <c>me/*</c>, sin permisos
+    /// granulares en v1 — los JWT de paciente no llevan claims de permiso).
+    /// El <c>patientId</c> SIEMPRE viene del JWT vía
+    /// <see cref="IProgramActorContext"/> (nunca del body, anti-IDOR AC-11).
+    /// Validación FluentValidation (formato/longitud del nickname, opt-in sin
+    /// nickname, tokens reservados) → 400; sin perfil de paciente → 404.
+    /// Persiste SOLO las dos columnas de la liga; el resto del perfil no se
+    /// toca. Al guardar invalida el cohorte cacheado del paciente (revocación
+    /// del consentimiento inmediata).
+    /// </summary>
+    [HttpPut("me/league-preferences")]
+    public async Task<ActionResult<LeaguePreferencesDto>> UpdateLeaguePreferences(
+        [FromBody] UpdateLeaguePreferencesRequest request,
+        CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        return Ok(await mediator.Send(
+            new UpdateLeaguePreferencesCommand(patientId.Value, request.Nickname, request.OptIn), ct));
+    }
+
+    /// <summary>
+    /// Liga del paciente autenticado (LEAGUE v1): cohorte (estado o nacional
+    /// por la k-rule) con las 4 categorías (racha/evo/adh/clin) y el ranking
+    /// propio. Privacidad por diseño: opt-in default OFF, seudonimización
+    /// server-side (la respuesta nunca contiene id, nombre real o ciudad de
+    /// otro participante) y k-rule (estado con &lt;10 opt-in → cohorte
+    /// nacional). Self-service del paciente: SOLO <c>[Authorize]</c>
+    /// (convención <c>me/*</c> — los JWT de paciente no llevan claims de
+    /// permiso; los permisos granulares del módulo son batch B7, pendiente).
+    /// El <c>patientId</c> se resuelve del JWT (nunca del body); sin perfil o
+    /// sin inscripción activa → 404. Cohortes cacheados 5 min (Valkey,
+    /// fail-open); el bloque <c>me</c> y los flags <c>isMe</c> se resuelven
+    /// por request contra el JWT.
+    /// </summary>
+    [HttpGet("me/league")]
+    public async Task<ActionResult<LeagueResponseDto>> GetLeague(CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        return Ok(await mediator.Send(new GetLeagueQuery(patientId.Value), ct));
     }
 
     /// <summary>
@@ -1314,15 +1408,16 @@ public sealed class ProgramController(
     // ===================== helpers =====================
 
     /// <summary>
-    /// Resuelve el <c>thumbnailUrl</c> de cada tarea del snapshot a su forma
-    /// final de URL (SPEC §7.1 + T-13): con el proveedor S3 un presign real; con
-    /// el proveedor Local el proxy del backend <c>{host}/api/v1/storage/{key}</c>
-    /// (misma convención que <c>MediaController</c>/<c>StorageController</c>).
+    /// <summary>
+    /// Resuelve las URLs de storage (<c>thumbnailUrl</c> y <c>mediaUrl</c>) de cada tarea del snapshot a su forma
+    /// final de URL (SPEC §7.1 + T-13): con el proveedor S3 un presign real con 1h de validez; con
+    /// el proveedor Local el proxy firmado del backend <c>{host}/api/v1/storage/{key}?exp&amp;sig</c>
+    /// preservando la totalidad de propiedades del DTO (audio, autor, capítulos, etc.).
     /// </summary>
-    private async Task<ProgramSnapshotDto> ResolveThumbnailUrlsAsync(
+    private async Task<ProgramSnapshotDto> ResolveMediaUrlsAsync(
         ProgramSnapshotDto snapshot, CancellationToken ct)
     {
-        if (snapshot.TodayTasks.All(t => t.Content?.ThumbnailUrl is null))
+        if (snapshot.TodayTasks.Count == 0)
         {
             return snapshot;
         }
@@ -1330,17 +1425,22 @@ public sealed class ProgramController(
         var tasks = new List<TodayTaskDto>(snapshot.TodayTasks.Count);
         foreach (var task in snapshot.TodayTasks)
         {
-            if (task.Content?.ThumbnailUrl is not { } thumbnailKey)
+            if (task.Content is null)
             {
                 tasks.Add(task);
                 continue;
             }
 
-            var resolvedUrl = await ResolveMediaUrlAsync(thumbnailKey, ct);
+            var resolvedThumbnail = await ResolveMediaUrlAsync(task.Content.ThumbnailUrl, ct);
+            var resolvedMedia = await ResolveMediaUrlAsync(task.Content.MediaUrl, ct);
+
             tasks.Add(task with
             {
-                Content = new TodayTaskContentDto(
-                    task.Content.MediaId, task.Content.Title, task.Content.DurationSecs, resolvedUrl),
+                Content = task.Content with
+                {
+                    ThumbnailUrl = resolvedThumbnail,
+                    MediaUrl = resolvedMedia,
+                },
             });
         }
 
@@ -1366,6 +1466,13 @@ public sealed class ProgramController(
         {
             return await objectStorage.GetPreSignedUrlAsync(
                 key, TimeSpan.FromHours(1), ct);
+        }
+
+        if (signatureService is not null)
+        {
+            var expiresAt = DateTimeOffset.UtcNow.AddHours(1);
+            var signature = signatureService.Sign(key, expiresAt);
+            return $"{Request.Scheme}://{Request.Host}/api/v1/storage/{key}?exp={expiresAt.ToUnixTimeSeconds()}&sig={signature}";
         }
 
         return $"{Request.Scheme}://{Request.Host}/api/v1/storage/{key}";
@@ -1453,16 +1560,18 @@ public sealed record CreateTemplateRequest(
     string Code,
     string Name,
     string? Description,
-    int TotalWeeks,
-    IReadOnlyList<WeeklyDayTemplateRequest> Days);
+    int? TotalWeeks = null,
+    IReadOnlyList<WeeklyDayTemplateRequest>? Days = null,
+    int? TotalDays = null);
 
 /// <summary>Payload de actualización de plantilla (SPEC §7.6).</summary>
 public sealed record UpdateTemplateRequest(
     string Code,
     string Name,
     string? Description,
-    int TotalWeeks,
-    IReadOnlyList<WeeklyDayTemplateRequest> Days);
+    int? TotalWeeks = null,
+    IReadOnlyList<WeeklyDayTemplateRequest>? Days = null,
+    int? TotalDays = null);
 
 /// <summary>Payload de <c>POST /adaptations/{id}/decide</c> (SPEC §7.7).</summary>
 public sealed record DecideAdaptationRequest(AdaptationDecisionAction Decision, string? Note);
@@ -1512,3 +1621,13 @@ public sealed record LogNutritionRequest(
     MealCode MealCode,
     DateOnly? LocalDate,
     NutritionIntakePayload? Intake = null);
+
+/// <summary>
+/// Payload de <c>PUT /api/v1/program/me/league-preferences</c> (LEAGUE v1):
+/// <c>nickname</c> (seudónimo público; null o ausente = LIMPIA el valor
+/// almacenado) y <c>optIn</c> (default OFF). Con <c>optIn = true</c> el
+/// nickname es obligatorio (3-32 caracteres, charset acotado, tokens
+/// reservados rechazados — validación FluentValidation → 400). El paciente
+/// se resuelve del JWT, nunca del body.
+/// </summary>
+public sealed record UpdateLeaguePreferencesRequest(string? Nickname, bool OptIn);

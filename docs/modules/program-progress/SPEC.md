@@ -62,6 +62,7 @@
 - Podcast chapters / takeaways tables.
 - Rewards marketplace, chests, cosmetic economy.
 - Social leagues / cross-patient comparisons.
+  - **ENMIENDA (LEAGUE v1)**: descope levantado para v1 con **opt-in default OFF** + **seudonimización server-side** (la respuesta nunca expone id/nombre real/ciudad de otro participante; display = nickname o código anónimo por hash) + **k-rule** (estado con <10 opt-in → cohorte nacional). Implementado en `GET /api/v1/program/me/league` + `PUT /api/v1/program/me/league-preferences` (ver README §2.11). La **firma legal final del mecanismo corresponde al negocio** (pendiente); el código es la base técnica sobre la que firmar.
 - **Timed/push-scheduled notifications** (multiplier expiring, streak at risk before midnight, weekly assessment) — require a scheduler; the backend has no cron/queue in MVP (§13.3). The transactional gamified notifications live in §20.
 - **AI weekly assessment (LLM narrative)** — FUTURO (P3, §21.5): el contrato queda documentado pero NO implementado; requiere un endpoint nuevo en el ai-service (no existe) + scheduler o disparo manual. El motor determinista de debilidades (§21) SÍ está en scope.
 - Multi-language UI strings on the mobile side (ES preserved; EN in P3).
@@ -557,8 +558,8 @@ Invariants:
 
 - A day **meets the threshold** iff `tasks_done >= streak_min_tasks` (SPEC §17, B; default `1` — the seeded template keeps the pre-§17 behavior where ≥1 completed task maintains the streak). The threshold is read from the enrollment's template (`program_templates` via `program_enrollments.template_id`).
 - A day that meets the threshold contributes to the streak: the day after a qualifying day, `current_streak += 1` and `last_active_date = today`.
-- If `yesterday_local_date != last_active_date` AND `yesterday_local_date < today - 1 day` (i.e., gap > 1 day) AND `freezes_remaining > 0`, the handler consumes one freeze **only if at least one completed task on the missed day is in the template's `essential_task_codes`** (SPEC §17, C — "rescue requires an essential task", ADRED-inspired; AC-31). It inserts `streak_freezes(kind='Consumed', used_on_local_date=yesterday)`, decrements `freezes_remaining`, sets `last_active_date = today`, streak **unchanged**.
-- Otherwise (no freeze, or freeze but no essential task on the missed day) `current_streak = 0`, `last_break_date = today`, **no XP change**; an unconsumable freeze stays in inventory (AC-32).
+- If `yesterday_local_date != last_active_date` (gap) AND `freezes_remaining > 0` AND at least one completed task on the missed day is in the template's `essential_task_codes` (SPEC §17, C — "rescue requires an essential task", ADRED-inspired; AC-31): the handler consumes ONE freeze and inserts `streak_freezes(kind='Consumed', used_on_local_date=yesterday)`. **Rescue window = yesterday only (v1 policy)**: multi-day gaps rescue just the last missed day. The rescued day COUNTS as qualifying (run model, §17.3bis): gap of exactly 1 day → `current_streak = stored + 2` (the rescued day extends the stored run; today continues it); gap > 1 day → `current_streak = 2` (the rescued day starts a new run with today). `last_active_date = today`.
+- Otherwise (no freeze, or freeze but no essential task on the missed day) the streak **restarts at 1** (the return day starts a new run — the run model never stores 0 for a qualifying day, §17.3bis), `last_break_date = today`, **no XP change**; an unconsumable freeze stays in inventory (AC-32). *Enmienda 2026-09-07: antes `current_streak = 0`; el reconciliador computaba 1 y el job nocturno reescribía el valor (deriva live↔job corregida).*
 - A perfect day remains "all scheduled tasks completed" and is used unchanged for the day bonus (§6.3/§6.5) and the freeze grant cadence.
 - Grant rule: 1 freeze every 7 consecutive perfect days, capped at 3 (configurable in `appsettings.json` under `Program:Streak:FreezeGrantEveryPerfectDays`) — unchanged (SPEC §17, C).
 
@@ -1136,7 +1137,7 @@ These are explicitly **out of MVP** and not designed here. Re-evaluate after P3.
 |------|--------------|
 | Podcast chapters / takeaways | Backend can deliver `media_items` only; mobile can keep the mock `chapters` array locally. No backend table until product needs persistence. |
 | Rewards marketplace / chest economy | Mock `NEXT_CHEST_DAYS = 50` becomes a derived `nextMilestoneDays` field. No `chest` table until there's a real marketplace. |
-| Social leagues | Cross-patient comparisons raise privacy questions; needs legal review. |
+| Social leagues | Cross-patient comparisons raise privacy questions; needs legal review. **ENMIENDA (LEAGUE v1)**: descope levantado para v1 con opt-in default OFF + seudonimización server-side + k-rule (estado <10 opt-in → nacional) — `GET /api/v1/program/me/league` + `PUT /api/v1/program/me/league-preferences` (README §2.11). La firma legal final corresponde al negocio (pendiente). |
 | Timed push notifications (multiplier expiring, streak at risk, weekly assessment) | Need a scheduler; the backend has no cron/queue in MVP (§13.3). The transactional gamified notifications (first-award events) live in SPEC §20. |
 | i18n on mobile | ES preserved; EN added in P3. |
 | Bulk enrollment jobs, CSV export | Admin scale features; planned in P3. |
@@ -1422,6 +1423,27 @@ Forces a recompute. Body: `{ "patientId": "<uuid>", "periodEndLocalDate": "2026-
 **Response 200**: same shape as `GET /api/v1/program/scores`. `X-Score-Recalculated: true` header is set so callers can distinguish a fresh compute from a cache hit.
 
 **Errors**: `403 FORBIDDEN` (no `Program.Edit`), `404 NOT_FOUND` (patient not in caller's scope), `422 INVALID_PERIOD` (bad date).
+
+#### 13.7.3 `GET /api/v1/program/me/scores-history`
+
+Endpoint de LECTURA para la pestaña Evolución del móvil: serie semanal ASCENDENTE de los Índices de Salud y de Transformación construida SOLO con filas persistidas (`app.health_scores` / `app.transformation_scores`) — nunca dispara compute-on-read ni al motor de puntajes (la frescura de la semana actual queda en `GET /scores`, §13.3). Self-service del paciente: solo `[Authorize]` (convención `me/*`; los JWT de paciente no llevan claims de permiso). Query param `weeks` opcional (default 12, clamp 1..83).
+
+**Response 200**
+
+```json
+{
+  "points": [
+    { "weekNumber": 1, "periodStart": "2026-08-31", "periodEnd": "2026-09-06",
+      "healthScore": 21, "healthPrevious": null, "transformationScore": 0 }
+  ]
+}
+```
+
+`weekNumber` = `transformation_scores.week_number`, o la semana de la inscripción cuyo rango `[WeekStartDateLocal..WeekEndDateLocal]` contiene el `period_end` de la fila de salud (un `period_end` IGUAL al inicio de la semana N+1 pertenece a la semana N+1). `healthScore`/`transformationScore` son null cuando esa tabla no tiene fila para la semana; `healthPrevious` = `score_previous` persistido. Solo se emiten semanas con al menos una fila (nunca huecos). Cache: clave por paciente `scores-history:{patientId}:v1`, TTL 5 min, fail-open; el recorte a las últimas N semanas se aplica por request.
+
+> **Enmienda 2026-09-07 — historial POR PROGRAMA (purga en re-inscripción)**: `health_scores`/`transformation_scores` son por PACIENTE; al re-inscribir (tras retiro/completación) `EnrollAsync` **purga** las filas del paciente en la MISMA transacción — las semanas de la corrida anterior colisionarían con la nueva (filas viejas de semanas 3..N mapearían a semanas FUTURAS con puntajes viejos). "Nueva inscripción = historia nueva" (deliberado, mismo espíritu que `streak_states`, por inscripción). El handler de inscripción invalida además el caché `scores-history:{patientId}:v1` post-commit. El fetch del historial se acota a la ventana de la corrida actual (inicio de la semana 1 → fin de la semana actual local).
+
+**Errors**: `404 NO_ACTIVE_ENROLLMENT` si el llamador no tiene inscripción activa (anti-IDOR: cruces entre pacientes → 404, nunca 403).
 
 ### 13.8 Implementation placement (mirrors §8.1)
 
@@ -1819,8 +1841,32 @@ En el camino de racha (`ProgramRepository.CompleteTaskCoreAsync` → `UpdateStre
 Cuando un día **no cumple el umbral** y la evaluación de racha llegaría a consumir un congelamiento para preservarla:
 
 - El congelamiento se consume **solo si** el día perdido completó al menos una tarea cuyo código está en `essential_task_codes` de la plantilla (AC-31). Se registra con el camino `Consumed` existente (`streak_freezes(kind='Consumed', used_on_local_date = día perdido)`).
-- Si el paciente no completó ninguna tarea esencial el día perdido → la racha se rompe y el congelamiento **NO se consume** (permanece en inventario, AC-32). Sin congelamiento → racha se rompe (sin cambios).
+- Si el paciente no completó ninguna tarea esencial el día perdido → la racha se reinicia y el congelamiento **NO se consume** (permanece en inventario, AC-32). Sin congelamiento → racha se reinicia (sin cambios).
 - `essential_task_codes = []` → sin restricción (rescate permitido, compatibilidad previa).
+
+### 17.3bis ENMIENDA 2026-09-07 — modelo de corridas (paridad live ↔ reconciliador)
+
+El reconciliador nocturno (`ReconcileStreaksAsync`/`ComputeStreakRuns`) es la **fuente de verdad** de `(current_streak, longest_streak, last_active_date)`. Definición unificada (aplicada por el reconciliador SIEMPRE y por el path live en la rama de hueco):
+
+- **Día calificado** = día con `tasks_done >= streak_min_tasks` **O** día rescatado (`streak_freezes.used_on_local_date`).
+- **`current`** = corrida consecutiva de días calificados que termina hoy o ayer (zona local del paciente). El **día de vuelta tras un quiebre cuenta**: inicia una corrida nueva → `current = 1` (el modelo nunca guarda 0 para un día calificado).
+- **Rescate** (política v1): la ventana evaluada es **SOLO ayer**. El día rescatado cuenta como calificado:
+  - Hueco de **exactamente 1 día** (hoy = last_active + 2) → `current = stored + 2` (el día rescatado extiende la corrida almacenada y hoy la continúa).
+  - Hueco **mayor** → `current = 2` (el día rescatado inicia una corrida nueva junto con hoy; la corrida vieja terminó en `last_active` y no es contigua).
+- **Sin rescate** → `current = 1` y `last_break_date = ayer` (el día que quebró la racha).
+- **`grewToday` = `current > stored`** (guarda de hitos y de la cadencia de congelamientos: un reinicio 5→1 NO dispara nada). La concesión de congelamientos (1 cada 7 perfectos, tope 3) puede saltarse múltiplos intermedios en un salto por rescate (6→8 no otorga el 7) — aceptado.
+- El reconciliador **NO escribe** `streak_freezes` ni `last_break_date`: la paridad se define solo sobre `(current_streak, longest_streak, last_active_date)`.
+
+Antes de esta enmienda, el path live guardaba `current = 0` tras un quiebre no rescatado (el reconciliador computaba 1 y el job nocturno reescribía el valor cada 3 UTC → deriva permanente). La corrección aplica el modelo de corridas en la rama de hueco de `UpdateStreakAsync`; la paridad se cubre en la parity suite de `ProgramRepositoryTests` (escenarios a–f).
+
+**Enmienda 2026-09-07 (F1/F4) — current DERIVADO DEL MODELO (no del escalar almacenado)**: el escalar `stored` solo se confía en el fast path contiguo con `stored > 0`. El job nocturno (03:00 UTC) y `POST /program/maintenance/reconcile-streaks` escriben `current = 0` CONSERVANDO `last_active_date` cuando la corrida terminó antes de ayer → `stored + 2` en un rescate subestimaría la corrida real (p. ej. corrida D0..D4 + D5 rescatado + D6: el modelo dice **7**, `stored + 2` decía 2) y el motor de hitos perdería `STREAK_7` para siempre (una vez por inscripción). Por eso:
+
+- **Rescate**: tras consumir el congelamiento de ayer (flush), `current = corridaModelo(ayer) + 1` — el día rescatado ya cuenta como calificado y hoy la continúa. `grewToday = current > stored`.
+- **Fast path contiguo** (`hoy == last_active + 1`): `stored + 1` solo con `stored > 0`; con `stored == 0` (filas legadas del path pre-fix) → `current = corridaModelo(last_active) + 1` (cura filas legacy en un paso live, sin queries extra en el camino normal).
+- **Sin rescate** → `current = 1` (sin cambios; ayer no calificó y el reconciliador coincide).
+- La definición de día calificado de `corridaModelo` es EXACTAMENTE la del reconciliador (completaciones ≥ umbral UNION `streak_freezes.used_on_local_date`, ventana desde el inicio de la inscripción).
+- `last_break_date` es estado **solo-escritura** (no tiene lectores en el backend).
+- El KPI ERP "En riesgo (streak = 0)" cambia de semántica post-fix: los pacientes que vuelven reinician en 1 y dejan de contarse — el KPI cuenta ahora solo pacientes AUSENTES (sin completación hoy/ayer). Aceptado y documentado.
 
 ### 17.4 Exposición en el snapshot (D)
 

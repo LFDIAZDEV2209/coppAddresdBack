@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Patients.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using MediatR;
@@ -51,7 +52,8 @@ public record UpdatePatientCommand(
 public sealed class UpdatePatientCommandHandler(
     IPatientRepository repository,
     ICatalogRepository catalogs,
-    ILogger<UpdatePatientCommandHandler> logger) : IRequestHandler<UpdatePatientCommand, PatientDto?>
+    ILogger<UpdatePatientCommandHandler> logger,
+    IPatientMetricsQueue? metricsQueue = null) : IRequestHandler<UpdatePatientCommand, PatientDto?>
 {
     public async Task<PatientDto?> Handle(UpdatePatientCommand request, CancellationToken ct)
     {
@@ -72,6 +74,9 @@ public sealed class UpdatePatientCommandHandler(
             request.Medications,
             request.Allergies,
             ct);
+
+        var oldStatus = entity.Status;
+        var newStatus = string.IsNullOrWhiteSpace(request.Status) ? entity.Status : request.Status.Trim();
 
         entity.MedicalRecordNumber = string.IsNullOrWhiteSpace(request.MedicalRecordNumber)
             ? entity.MedicalRecordNumber
@@ -103,7 +108,7 @@ public sealed class UpdatePatientCommandHandler(
         entity.Disability = PatientOptions.Normalize(request.Disability);
         entity.HospitalizationHistory = PatientOptions.Normalize(request.HospitalizationHistory);
         entity.SurgeryHistory = PatientOptions.Normalize(request.SurgeryHistory);
-        entity.Status = string.IsNullOrWhiteSpace(request.Status) ? entity.Status : request.Status.Trim();
+        entity.Status = newStatus;
         entity.Notes = PatientOptions.Normalize(request.Notes);
         entity.UpdatedAt = DateTime.UtcNow;
         entity.UpdatedBy = request.UpdatedBy;
@@ -111,6 +116,18 @@ public sealed class UpdatePatientCommandHandler(
         ReplaceChildren(entity, request.Diagnoses, request.Medications, request.Allergies, request.VitalSigns);
 
         await repository.UpdateAsync(entity, ct);
+
+        // Pre-agregación CQRS en background (0ms overhead en HTTP)
+        if (oldStatus != entity.Status && metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(new PatientStatusChangedMetricEvent(
+                entity.Id,
+                entity.ClinicId,
+                oldStatus,
+                entity.Status,
+                DateTime.UtcNow
+            ));
+        }
 
         logger.LogInformation("Paciente actualizado: {Id} ({FirstName} {LastName})",
             entity.Id, entity.FirstName, entity.LastName);

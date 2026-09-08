@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Patients.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Exceptions;
@@ -55,7 +56,8 @@ public record CreatePatientCommand(
 public sealed class CreatePatientCommandHandler(
     IPatientRepository repository,
     ICatalogRepository catalogs,
-    ILogger<CreatePatientCommandHandler> logger) : IRequestHandler<CreatePatientCommand, PatientDto>
+    ILogger<CreatePatientCommandHandler> logger,
+    IPatientMetricsQueue? metricsQueue = null) : IRequestHandler<CreatePatientCommand, PatientDto>
 {
     public async Task<PatientDto> Handle(CreatePatientCommand request, CancellationToken ct)
     {
@@ -114,9 +116,9 @@ public sealed class CreatePatientCommandHandler(
             Disability = PatientOptions.Normalize(request.Disability),
             HospitalizationHistory = PatientOptions.Normalize(request.HospitalizationHistory),
             SurgeryHistory = PatientOptions.Normalize(request.SurgeryHistory),
-            Status = string.IsNullOrWhiteSpace(request.Status) ? "Activo" : request.Status.Trim(),
+            Status = PatientOptions.Normalize(request.Status) ?? "Activo",
             Notes = PatientOptions.Normalize(request.Notes),
-            // Frontera de datos (Fase 4): el paciente pertenece a la clínica
+            // Frontera de datos (Fase 4): la clínica viene resuelta desde la clínica
             // activa del contexto; el actor queda registrado para auditoría.
             ClinicId = request.ClinicId,
             LocationId = request.LocationId,
@@ -128,6 +130,20 @@ public sealed class CreatePatientCommandHandler(
         ApplyChildren(entity, request.Diagnoses, request.Medications, request.Allergies, request.VitalSigns);
 
         await repository.AddAsync(entity, ct);
+
+        // Pre-agregación CQRS en background (0ms overhead en HTTP)
+        if (metricsQueue != null)
+        {
+            await metricsQueue.EnqueueAsync(new PatientRegisteredMetricEvent(
+                entity.Id,
+                entity.ClinicId,
+                entity.Gender,
+                entity.DateOfBirth,
+                entity.InsurerId,
+                entity.Status,
+                entity.CreatedAt
+            ));
+        }
 
         // Auto-asignación (regla de negocio): si el creador es un profesional
         // clínico, el paciente queda asignado a él ("mis pacientes"). El id se
