@@ -62,9 +62,10 @@ public static class RoleSeeder
 
     /// <summary>
     /// Aliases legado: roles clínicos por profesión reemplazados por el rol
-    /// consolidado <c>Professional</c>. Se garantiza su existencia e IsSystem
-    /// (los usuarios ya asignados conservan permisos), pero no reciben
-    /// asignaciones por defecto ni deben usarse para usuarios nuevos.
+    /// consolidado <c>Professional</c>. Se garantiza su existencia e IsSystem,
+    /// pero se crean y mantienen DESACTIVADOS (IsActive = false) — la cadena
+    /// de permisos no filtra por IsActive, así que los usuarios ya asignados
+    /// conservan sus permisos. No deben usarse para usuarios nuevos.
     /// </summary>
     private static readonly string[] LegacyAliasRoles =
     [
@@ -167,8 +168,8 @@ public static class RoleSeeder
                         Name = roleName,
                         NormalizedName = roleName.ToUpperInvariant(),
                         Description =
-                            "Rol clínico legado (reemplazado por Professional); conserva permisos de usuarios ya asignados",
-                        IsActive = true,
+                            "Alias clínico legado desactivado (reemplazado por Professional); los usuarios ya asignados conservan sus permisos",
+                        IsActive = false,
                         IsSystem = true,
                         CreatedAt = DateTime.UtcNow,
                     }
@@ -205,6 +206,20 @@ public static class RoleSeeder
                     revoked
                 );
             }
+        }
+
+        // Desactivación idempotente de aliases legado: DBs existentes quedan
+        // desactivadas al arrancar; la cadena de permisos no filtra por IsActive,
+        // así que nadie pierde acceso.
+        var legacyDeactivated = await dbContext
+            .Roles.Where(r => LegacyAliasRoles.Contains(r.Name) && r.IsActive)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.IsActive, false), ct);
+        if (legacyDeactivated > 0)
+        {
+            logger.LogInformation(
+                "Aliases legado desactivados (IsActive = false): {Count}",
+                legacyDeactivated
+            );
         }
 
         // Marcado IsSystem (idempotente): protege los roles de sistema del
