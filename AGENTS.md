@@ -95,6 +95,7 @@ GET    /api/auth/roles               # Listar roles [RequirePermission("Roles.Vi
 POST   /api/auth/roles               # Crear rol [RequirePermission("Roles.Create")]
 PUT    /api/auth/roles/{id}          # Actualizar rol [RequirePermission("Roles.Update")]
 DELETE /api/auth/roles/{id}          # Eliminar rol [RequirePermission("Roles.Delete")]
+PUT    /api/auth/roles/{id}/permissions # Sincronizar permisos del rol (sync-total) [RequirePermission("Permissions.Assign")] + System.AdminSettings
 POST   /api/auth/roles/{id}/assign   # Asignar rol a usuario [RequirePermission("Roles.Assign")]
 DELETE /api/auth/roles/{id}/assign   # Remover rol de usuario [RequirePermission("Roles.Assign")]
 
