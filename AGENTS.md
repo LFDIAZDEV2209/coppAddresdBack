@@ -86,7 +86,7 @@ GET    /api/auth/me                 # Info del usuario actual + roles + permisos
 
 GET    /api/auth/users               # Listar usuarios [RequirePermission("Users.View")]
 POST   /api/auth/users               # Crear usuario [AllowAnonymous]
-POST   /api/auth/users/bulk           # Creación masiva [AllowAnonymous] (máx 500 filas; cada fila independiente; contraseñas temporales generadas server-side, retornadas una sola vez; clinicName? + roleName? → asignación scoped de clínica en vez de rol global)
+POST   /api/auth/users/bulk           # Creación masiva [AllowAnonymous] (máx 500 filas; cada fila independiente; contraseñas temporales generadas server-side, retornadas una sola vez; clinicCode? tiene precedencia sobre clinicName?, ambos con roleName? → asignación scoped de clínica en vez de rol global)
 GET    /api/auth/users/{id}          # Obtener usuario [RequirePermission("Users.View")]
 PUT    /api/auth/users/{id}          # Actualizar usuario [RequirePermission("Users.Update")]
 DELETE /api/auth/users/{id}          # Eliminar usuario [RequirePermission("Users.Delete")]
@@ -218,8 +218,8 @@ GET    /api/v1/employees/{id}                 # Obtener empleado por id [Employe
 POST   /api/v1/employees                      # Crear empleado [Employees.Create]
 PUT    /api/v1/employees/{id}                 # Actualizar empleado [Employees.Update]
 POST   /api/v1/employees/{id}/invite          # Invitar empleado (crea usuario Auth + envía enlace) [Employees.Create]
-POST   /api/v1/employees/bulk                 # Creación masiva desde CSV [Employees.Create] (body: { organizationId, rows: [{ firstName, lastName, email, professionalTypeName?, status activo|invitado|inactivo }] }; cada fila independiente; se envía invitación de acceso automáticamente — si falla la invitación, la fila se compensa (no queda empleado))
-POST   /api/v1/patients/bulk                  # Creación masiva desde CSV [Patients.Create] (body: { clinicId?, rows: [{ firstName, lastName, documentNumber?, email?, status? }] }; status ∈ activo|inactivo (null→Activo); duplicado documentNumber detecta batch+BD; MRN auto-generado; 500 filas max)
+POST   /api/v1/employees/bulk                 # Creación masiva desde CSV [Employees.Create] (body: { organizationId, rows: [{ firstName, lastName, email, professionalTypeName?, status activo|invitado|inactivo, clinics?: [{code, roleName}] }] }; cada fila independiente; clinics[]: resuelve code→clínica en la org, roleName→roleId (case-insensitive), crea asignaciones de clínica (primera IsPrimary) + scoped roles en invitación; si falla la invitación, la fila se compensa (no queda empleado))
+POST   /api/v1/patients/bulk                  # Creación masiva desde CSV [Patients.Create] (body: { clinicId?, rows: [{ firstName, lastName, documentNumber?, email?, status?, clinicCode? }] }; clinicCode tiene precedencia sobre clinicId del envelope; status ∈ activo|inactivo (null→Activo); duplicado documentNumber detecta batch+BD; MRN auto-generado; 500 filas max)
 GET    /api/v1/professionals/stats            # Estadísticas del directorio (totales + desglose por tipo) [Professionals.View]
 POST   /api/v1/professionals                  # Crear profesional orquestado (empleado + extensión clínica + clínicas + invitación + scopes) [Professionals.Create]
 GET    /api/v1/professionals/{id}/scopes      # Asignaciones scoped del profesional (roles + overrides por clínica) [Professionals.View]
