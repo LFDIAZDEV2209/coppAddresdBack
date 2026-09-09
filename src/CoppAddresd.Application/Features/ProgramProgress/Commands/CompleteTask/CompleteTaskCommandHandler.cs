@@ -23,14 +23,24 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Commands.CompleteTask
 public sealed class CompleteTaskCommandHandler(
     IProgramRepository repository,
     IProgramMetricsQueue? metricsQueue,
+    IBiometriaMetricsQueue? biometriaQueue,
     ILogger<CompleteTaskCommandHandler> logger) : IRequestHandler<CompleteTaskCommand, CompleteTaskResponseDto>
 {
     public CompleteTaskCommandHandler(
         IProgramRepository repository,
         ILogger<CompleteTaskCommandHandler> logger)
-        : this(repository, null, logger)
+        : this(repository, null, null, logger)
     {
     }
+
+    public CompleteTaskCommandHandler(
+        IProgramRepository repository,
+        IProgramMetricsQueue? metricsQueue,
+        ILogger<CompleteTaskCommandHandler> logger)
+        : this(repository, metricsQueue, null, logger)
+    {
+    }
+
     public async Task<CompleteTaskResponseDto> Handle(CompleteTaskCommand request, CancellationToken ct)
     {
         if (request.TaskCode == TaskCode.emocional && !request.MoodScore.HasValue)
@@ -70,15 +80,38 @@ public sealed class CompleteTaskCommandHandler(
                 "IDEMPOTENCY_KEY_REUSED: la clave clientRequestId ya fue usada para otra tarea o fecha.");
         }
 
-        if (result.Outcome == CompleteTaskOutcome.Created && metricsQueue is not null)
+        if (result.Outcome == CompleteTaskOutcome.Created)
         {
-            await metricsQueue.EnqueueAsync(
-                new TaskCompletedMetricEvent(request.LocalDate, request.TaskCode.ToString(), result.PointsAwarded), ct);
-
-            if (result.PointsAwarded > 0)
+            if (metricsQueue is not null)
             {
                 await metricsQueue.EnqueueAsync(
-                    new XpAwardedMetricEvent(request.LocalDate, $"TASK_{request.TaskCode}", result.PointsAwarded), ct);
+                    new TaskCompletedMetricEvent(request.LocalDate, request.TaskCode.ToString(), result.PointsAwarded), ct);
+
+                if (result.PointsAwarded > 0)
+                {
+                    await metricsQueue.EnqueueAsync(
+                        new XpAwardedMetricEvent(request.LocalDate, $"TASK_{request.TaskCode}", result.PointsAwarded), ct);
+                }
+            }
+
+            if (request.TaskCode == TaskCode.vitals && request.Vitals is not null && biometriaQueue is not null)
+            {
+                var patientInfo = await repository.GetPatientBiometriaInfoAsync(request.EnrollmentId, ct);
+                if (patientInfo is not null)
+                {
+                    await biometriaQueue.EnqueueAsync(
+                        new BiometriaMeasuredEvent(
+                            PatientId: patientInfo.PatientId,
+                            Gender: patientInfo.Gender,
+                            CityId: patientInfo.CityId?.ToString(),
+                            ObservedDate: request.LocalDate,
+                            Imc: null,
+                            BodyFatPct: null,
+                            GlucosaFasting: request.Vitals.Glucose,
+                            Waist: null,
+                            Hip: null
+                        ), ct);
+                }
             }
         }
 

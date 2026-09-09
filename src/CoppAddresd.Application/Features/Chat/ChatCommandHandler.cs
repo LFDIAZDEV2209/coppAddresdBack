@@ -39,7 +39,7 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
         {
             var result = await _aiService.ChatAsync(dto, ct);
             _logger.LogInformation("Chat response: ThreadId={ThreadId}", result.ThreadId);
-            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId, result.Agent);
+            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId, result.Agent, result.Suggestions);
         }
         catch (AiServiceException exc) when (exc.StatusCode == 404 && request.AgentTypeId is not null)
         {
@@ -57,7 +57,7 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
 
             var result = await _aiService.ChatAsync(dto, ct);
             _logger.LogInformation("Chat response (tras re-sync): ThreadId={ThreadId}", result.ThreadId);
-            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId, result.Agent);
+            return new ChatResult(result.Reply, result.ThreadId, result.ExecutionId, result.Agent, result.Suggestions);
         }
     }
 }

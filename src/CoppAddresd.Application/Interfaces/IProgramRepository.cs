@@ -638,7 +638,10 @@ public interface IProgramRepository
         CancellationToken ct = default);
 
     /// <summary>Vista de cofres/rachas ERP (SPEC §23, AC-53).</summary>
-    Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default);
+    Task<ProgramErpCofresDto> GetErpCofresAsync(
+        int page = 1, int pageSize = 10,
+        string? search = null, string? sortBy = null, string? sortDir = null,
+        CancellationToken ct = default);
 
     /// <summary>Perfil 360 de un paciente (SPEC §23, AC-54). Devuelve null si el paciente no tiene inscripción.</summary>
     Task<PatientOverviewDto?> GetPatientOverviewAsync(Guid patientId, CancellationToken ct = default);
@@ -667,6 +670,9 @@ public interface IProgramRepository
 
     /// <summary>Resumen comunitario de biometría: promedios, distribuciones, evolución semanal, ciudades y alertas.</summary>
     Task<BiometriaCommunityDto> GetBiometriaCommunityAsync(CancellationToken ct = default);
+
+    /// <summary>Información básica del paciente (PatientId, Gender, CityId) para métricas biométricas.</summary>
+    Task<PatientBiometriaInfoDto?> GetPatientBiometriaInfoAsync(Guid enrollmentId, CancellationToken ct = default);
 
     /// <summary>Listado paginado de pacientes con indicadores de biometría (última medición).</summary>
     Task<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)> ListBiometriaPatientsAsync(

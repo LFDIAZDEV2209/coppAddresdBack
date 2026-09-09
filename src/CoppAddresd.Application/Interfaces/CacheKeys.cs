@@ -94,4 +94,21 @@ public static class CacheKeys
     /// </summary>
     public static string ScoresHistory(Guid patientId) =>
         $"scores-history:{patientId}:{Version}";
+
+    /// <summary>
+    /// TTL del historial de métricas clínicas del paciente (metrics-history):
+    /// 5 min. Las completaciones de signos vitales cambian el dato con un lag
+    /// ≤ TTL — mismo tradeoff que scores-history (documentado en
+    /// docs/modules/cache/README.md).
+    /// </summary>
+    public static readonly TimeSpan MetricsHistoryTtl = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Clave del historial de métricas: <c>metrics-history:{patientId}:v1</c>
+    /// (prefijo del servicio: <c>erp:metrics-history:{patientId}:v1</c>).
+    /// Clave POR PACIENTE — datos propios, nunca compartida (mismo criterio
+    /// que scores-history).
+    /// </summary>
+    public static string MetricsHistory(Guid patientId) =>
+        $"metrics-history:{patientId}:{Version}";
 }

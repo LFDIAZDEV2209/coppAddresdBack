@@ -18,6 +18,21 @@ public sealed class Post
     /// <summary>Destino/canal de la publicación. Por defecto TodasLasComunidades.</summary>
     public PostDestination? Destination { get; set; }
 
+    /// <summary>Club al que pertenece la publicación (null = feed social global).</summary>
+    public Guid? ClubId { get; set; }
+
+    /// <summary>Estado de publicación dentro del club (null si no es post de club).</summary>
+    public ClubPostStatus? ClubStatus { get; set; }
+
+    /// <summary>Visibilidad de la publicación dentro del club (null si no es post de club).</summary>
+    public ClubPostVisibility? ClubVisibility { get; set; }
+
+    /// <summary>Destacado dentro del club.</summary>
+    public bool Featured { get; set; }
+
+    /// <summary>Fecha de publicación programada (null si se publica de inmediato).</summary>
+    public DateTime? ScheduledFor { get; set; }
+
     /// <summary>Cantidad de visualizaciones (incrementado por viewPost).</summary>
     public int ViewCount { get; set; }
 
@@ -34,6 +49,9 @@ public sealed class Post
     public DateTime? DeletedAt { get; set; }
 
     public Profile? Profile { get; set; }
+
+    /// <summary>Club de la publicación (null para posts del feed global).</summary>
+    public Club? Club { get; set; }
 
     /// <summary>Encuesta vinculada a la publicación (null si es un post normal).</summary>
     public Poll? Poll { get; set; }
