@@ -1,6 +1,7 @@
 using CoppAddresd.Auth.Constants;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Auth.Seeders;
@@ -8,7 +9,7 @@ namespace CoppAddresd.Auth.Seeders;
 /// <summary>
 /// Siembra los roles del ERP por contexto (OrganizationAdmin, ClinicAdmin,
 /// ClinicalDirector, Professional, Nurse, Receptionist, CareCoordinator,
-/// Coordinator, Finance, Auditor) con sus permisos por defecto. El rol Admin
+/// Finance, Auditor) con sus permisos por defecto. El rol Admin
 /// (global) se maneja en <see cref="AdminSeeder"/> con todos los permisos.
 /// Estos roles se asignan a usuarios con scope (clínica/organización) vía las
 /// asignaciones scoped; los permisos aquí definidos son la base editable por
@@ -16,10 +17,10 @@ namespace CoppAddresd.Auth.Seeders;
 ///
 /// Convención de escalabilidad: roles FUNCIONALES por capacidad, no por
 /// profesión. Los roles clínicos legado Physician/Nutritionist/Psychologist
-/// (idénticos en permisos) quedan como aliases: se garantiza su existencia
-/// (IsSystem) pero no reciben asignaciones nuevas; los profesionales nuevos
-/// se asignan al rol consolidado <c>Professional</c>. Un tipo de profesional
-/// o especialidad nueva NUNCA exige un rol nuevo.
+/// y el alias funcional Coordinator se eliminan en cada arranque: sus
+/// holders se convierten al rol consolidado correspondiente (Professional
+/// o CareCoordinator) y luego se borra el rol (cascade limpia asignaciones).
+/// Un tipo de profesional o especialidad nueva NUNCA exige un rol nuevo.
 /// </summary>
 public static class RoleSeeder
 {
@@ -61,23 +62,38 @@ public static class RoleSeeder
     ];
 
     /// <summary>
-    /// Aliases legado: roles clínicos por profesión reemplazados por el rol
-    /// consolidado <c>Professional</c>. Se garantiza su existencia e IsSystem,
-    /// pero se crean y mantienen DESACTIVADOS (IsActive = false) — la cadena
-    /// de permisos no filtra por IsActive, así que los usuarios ya asignados
-    /// conservan sus permisos. No deben usarse para usuarios nuevos.
+    /// Roles legado a eliminar en cada arranque: aliases de roles clínicos
+    /// por profesión (Physician/Nutritionist/Psychologist) y el alias funcional
+    /// Coordinator. Sus holders se convierten al rol consolidado correspondiente
+    /// antes de borrar el rol (cascade limpia UserRoles, RolePermissions,
+    /// ScopedRoleAssignments).
     /// </summary>
-    private static readonly string[] LegacyAliasRoles =
+    private static readonly string[] LegacyRolesToDelete =
     [
         "Physician",
         "Nutritionist",
         "Psychologist",
+        "Coordinator",
     ];
 
     /// <summary>
-    /// Nombres de todos los roles de sistema (Admin + DefaultRoles + aliases).
+    /// Conversión de roles legado: cada rol legado se mapea al rol consolidado
+    /// al que se transfieren sus holders.
+    /// </summary>
+    private static readonly Dictionary<string, string> LegacyConversionMap = new()
+    {
+        ["Physician"] = "Professional",
+        ["Nutritionist"] = "Professional",
+        ["Psychologist"] = "Professional",
+        ["Coordinator"] = "CareCoordinator",
+    };
+
+    /// <summary>
+    /// Nombres de todos los roles de sistema (Admin + DefaultRoles).
     /// Se marcan IsSystem de forma idempotente al sembrar (también en BD
     /// existentes), protegiéndolos de renombrado/eliminación accidental.
+    /// Los roles legado (Physician/Nutritionist/Psychologist/Coordinator)
+    /// se eliminan en cada arranque y no forman parte de este set.
     /// </summary>
     private static readonly string[] SystemRoleNames =
     [
@@ -86,13 +102,9 @@ public static class RoleSeeder
         "ClinicAdmin",
         "ClinicalDirector",
         "Professional",
-        "Physician",
-        "Nutritionist",
-        "Psychologist",
         "Nurse",
         "Receptionist",
         "CareCoordinator",
-        "Coordinator",
         "Finance",
         "Auditor",
     ];
@@ -156,29 +168,6 @@ public static class RoleSeeder
             }
         }
 
-        // Aliases legado: garantizar existencia (sin permisos por defecto).
-        foreach (var roleName in LegacyAliasRoles)
-        {
-            var exists = await dbContext.Roles.AnyAsync(r => r.Name == roleName, ct);
-            if (!exists)
-            {
-                dbContext.Roles.Add(
-                    new ApplicationRole
-                    {
-                        Name = roleName,
-                        NormalizedName = roleName.ToUpperInvariant(),
-                        Description =
-                            "Alias clínico legado desactivado (reemplazado por Professional); los usuarios ya asignados conservan sus permisos",
-                        IsActive = false,
-                        IsSystem = true,
-                        CreatedAt = DateTime.UtcNow,
-                    }
-                );
-                await dbContext.SaveChangesAsync(ct);
-                logger.LogInformation("Rol legado creado (alias): {Role}", roleName);
-            }
-        }
-
         // Revocación de defaults (idempotente): aplica solo a los códigos
         // declarados en RevokedDefaults, para que el cambio de convención
         // (p. ej. Patients.View → Patients.ViewOwn) se refleje en BD existentes.
@@ -208,19 +197,10 @@ public static class RoleSeeder
             }
         }
 
-        // Desactivación idempotente de aliases legado: DBs existentes quedan
-        // desactivadas al arrancar; la cadena de permisos no filtra por IsActive,
-        // así que nadie pierde acceso.
-        var legacyDeactivated = await dbContext
-            .Roles.Where(r => LegacyAliasRoles.Contains(r.Name) && r.IsActive)
-            .ExecuteUpdateAsync(s => s.SetProperty(r => r.IsActive, false), ct);
-        if (legacyDeactivated > 0)
-        {
-            logger.LogInformation(
-                "Aliases legado desactivados (IsActive = false): {Count}",
-                legacyDeactivated
-            );
-        }
+        // Limpieza idempotente de roles legado: para cada rol legado,
+        // transferir sus holders al rol consolidado correspondiente y
+        // luego eliminar el rol (cascade limpia asignaciones).
+        await CleanupLegacyRolesAsync(dbContext, logger, ct);
 
         // Marcado IsSystem (idempotente): protege los roles de sistema del
         // renombrado/eliminación accidental, incluso en BD existentes.
@@ -249,6 +229,99 @@ public static class RoleSeeder
         }
     }
 
+    /// <summary>
+    /// Limpieza idempotente de roles legado: para cada rol en LegacyRolesToDelete,
+    /// transfiere sus holders al rol consolidado correspondiente (Professional o
+    /// CareCoordinator) y luego elimina el rol. Si el rol legado no existe, se
+    /// omite. Si el rol destino no existe, se crea (idempotente — DefaultRoles
+    /// lo crea antes, pero salvaguarda por si el orden cambia).
+    /// </summary>
+    private static async Task CleanupLegacyRolesAsync(
+        AuthDbContext dbContext,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        foreach (var legacyName in LegacyRolesToDelete)
+        {
+            if (!LegacyConversionMap.TryGetValue(legacyName, out var targetName))
+            {
+                continue;
+            }
+
+            var legacyRole = await dbContext.Roles
+                .FirstOrDefaultAsync(r => r.Name == legacyName, ct);
+            if (legacyRole is null)
+            {
+                continue; // No existe → nada que limpiar.
+            }
+
+            // Obtener el rol destino (Professional o CareCoordinator).
+            var targetRole = await dbContext.Roles
+                .FirstOrDefaultAsync(r => r.Name == targetName, ct);
+            if (targetRole is null)
+            {
+                // Crear el rol destino si no existe (raro, pero seguro).
+                targetRole = new ApplicationRole
+                {
+                    Name = targetName,
+                    NormalizedName = targetName.ToUpperInvariant(),
+                    Description = "Rol consolidado (auto-creado durante limpieza legado)",
+                    IsActive = true,
+                    IsSystem = true,
+                    CreatedAt = DateTime.UtcNow,
+                };
+                dbContext.Roles.Add(targetRole);
+                await dbContext.SaveChangesAsync(ct);
+            }
+
+            // Obtener todos los holders del rol legado (UserRoles).
+            var holderIds = await dbContext.UserRoles
+                .Where(ur => ur.RoleId == legacyRole.Id)
+                .Select(ur => ur.UserId)
+                .ToListAsync(ct);
+
+            var convertedCount = 0;
+            foreach (var userId in holderIds)
+            {
+                // Verificar si el usuario ya tiene el rol destino.
+                var alreadyHasTarget = await dbContext.UserRoles
+                    .AnyAsync(ur => ur.UserId == userId && ur.RoleId == targetRole.Id, ct);
+
+                if (!alreadyHasTarget)
+                {
+                    dbContext.UserRoles.Add(
+                        new IdentityUserRole<Guid>
+                        {
+                            UserId = userId,
+                            RoleId = targetRole.Id,
+                        });
+                    convertedCount++;
+                }
+            }
+
+            if (convertedCount > 0)
+            {
+                await dbContext.SaveChangesAsync(ct);
+                logger.LogWarning(
+                    "Rol legado {Legacy}: {Count} holder(s) convertido(s) a {Target}. " +
+                    "Usuarios afectados: {UserIds}",
+                    legacyName,
+                    convertedCount,
+                    targetName,
+                    string.Join(", ", holderIds));
+            }
+
+            // Eliminar el rol legado: cascade limpia UserRoles, RolePermissions,
+            // ScopedRoleAssignments.
+            dbContext.Roles.Remove(legacyRole);
+            await dbContext.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "Rol legado eliminado: {Legacy} (holders previamente transferidos a {Target})",
+                legacyName,
+                targetName);
+        }
+    }
+
     /// <summary>Permisos de telemedicina por perfil (declarados ANTES de DefaultRoles:
     /// los collection expressions con spread evalúan al inicializar el campo).</summary>
     private static readonly string[] AllTelemedicinePermissions =
@@ -262,11 +335,7 @@ public static class RoleSeeder
         PermissionCodes.TelemedicineAppointmentsReschedule,
         PermissionCodes.TelemedicineAgendaView,
         PermissionCodes.TelemedicineAlertsView,
-        // Supervisión de salas/sesiones: lo tienen los roles administrativos
-        // (OrgAdmin/ClinicAdmin vía este array y ClinicalDirector explícito).
-        // Los profesionales de línea NO: acceden a su sala por identidad (JWT).
         PermissionCodes.TelemedicineSessionsManage,
-        // Vista administrativa global (listados de citas/solicitudes/sesiones y KPIs).
         PermissionCodes.TelemedicineAdminView,
     ];
 
@@ -469,21 +538,6 @@ public static class RoleSeeder
         (
             "CareCoordinator",
             "Coordinación de cuidados: seguimiento del paciente",
-            [
-                PermissionCodes.PatientsView,
-                PermissionCodes.DocumentsView,
-                PermissionCodes.ClinicalRecordsView,
-                PermissionCodes.ProfessionalsView,
-                PermissionCodes.PrescriptionsView,
-                .. ViewerTelemedicinePermissions,
-                .. ModuleAdminPermissions,
-                PermissionCodes.LegalDocumentsView,
-                PermissionCodes.WellnessView,
-            ]
-        ),
-        (
-            "Coordinator",
-            "Coordinador: alias funcional de CareCoordinator (visibilidad y seguimiento)",
             [
                 PermissionCodes.PatientsView,
                 PermissionCodes.DocumentsView,
