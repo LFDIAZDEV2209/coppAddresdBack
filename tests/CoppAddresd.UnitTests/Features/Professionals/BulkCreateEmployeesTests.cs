@@ -475,6 +475,51 @@ public class BulkCreateEmployeesTests
         Assert.False(result.IsValid);
     }
 
+    // ─── Tests de adopt ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task AdoptHasPassword_FilaExitosaSinCompensacion()
+    {
+        // Adopt con password: InviteEmployeeCommand devuelve resultado con
+        // HasPassword=true, la fila es exitosa y no hay compensación.
+        var orgId = Guid.NewGuid();
+        var expectedUserId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        // Simular InviteEmployeeCommand devolviendo resultado adopt+hasPassword.
+        _mediator.Send(Arg.Any<InviteEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var cmd = callInfo.Arg<InviteEmployeeCommand>();
+                return new InviteEmployeeResult(
+                    cmd.EmployeeId,
+                    expectedUserId,
+                    Guid.Empty,    // Sin invitación (hasPassword)
+                    DateTime.MinValue,
+                    null);
+            });
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(email: "existente@test.com"),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        Assert.Equal(expectedUserId, result.Results[0].UserId);
+        Assert.Equal(1, result.Created);
+        Assert.Equal(0, result.Failed);
+
+        // Se vinculó el usuario al empleado (SetUserIdAsync es interno de InviteEmployeeCommand).
+        await _mediator.Received(1).Send(
+            Arg.Is<InviteEmployeeCommand>(c => c.InvitedBy == null),
+            Arg.Any<CancellationToken>());
+        // No hubo compensación (no se eliminó el empleado).
+        await _employeeRepo.DidNotReceive().DeleteAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task ProfessionalTypeNameVacio_EsEmpleadoNoClinico()
     {
