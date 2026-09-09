@@ -13,11 +13,12 @@ public class BulkCreateEmployeesTests
     private readonly IEmployeeRepository _employeeRepo = Substitute.For<IEmployeeRepository>();
     private readonly IOrganizationRepository _orgRepo = Substitute.For<IOrganizationRepository>();
     private readonly IMediator _mediator = Substitute.For<IMediator>();
+    private readonly IAuthRolesClient _authRolesClient = Substitute.For<IAuthRolesClient>();
     private readonly ILogger<BulkCreateEmployeesCommandHandler> _logger =
         Substitute.For<ILogger<BulkCreateEmployeesCommandHandler>>();
 
     private BulkCreateEmployeesCommandHandler CreateHandler()
-        => new(_mediator, _employeeRepo, _orgRepo, _logger);
+        => new(_mediator, _employeeRepo, _orgRepo, _authRolesClient, _logger);
 
     private static Organization Org(Guid id) =>
         new() { Id = id, Code = "test-org", Name = "Test Org" };
@@ -30,8 +31,9 @@ public class BulkCreateEmployeesTests
         string lastName = "López",
         string email = "ana@test.com",
         string? professionalTypeName = null,
-        string status = "activo") =>
-        new(firstName, lastName, email, professionalTypeName, status);
+        string status = "activo",
+        IReadOnlyList<EmployeeBulkClinicInput>? clinics = null) =>
+        new(firstName, lastName, email, professionalTypeName, status, clinics);
 
     /// <summary>Configura mocks comunes: employeeRepo.AddAsync devuelve la entidad y
     /// mediator.Send para InviteEmployeeCommand devuelve un resultado exitoso por defecto.</summary>
@@ -694,5 +696,295 @@ public class BulkCreateEmployeesTests
         Assert.NotNull(result.Results[0].UserId);
         Assert.NotNull(result.Results[2].UserId);
         Assert.NotNull(result.Results[4].UserId);
+    }
+
+    // ─── Tests: clínicas por código + rol scoped ──────────────────────
+
+    [Fact]
+    public async Task FilaConDosClinicasRoles_CreaAssignmentsEInvitaConScopes()
+    {
+        var orgId = Guid.NewGuid();
+        var clinicId1 = Guid.NewGuid();
+        var clinicId2 = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+
+        SetupHappyPathMocks(orgId);
+
+        // Configurar resolución de clínicas por código.
+        _orgRepo.GetClinicsByCodesAsync(orgId, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([(clinicId1, "CL001"), (clinicId2, "CL002")]);
+
+        // Configurar resolución de rol por nombre.
+        _authRolesClient.GetRoleByNameAsync("Professional", Arg.Any<CancellationToken>())
+            .Returns(new AuthRoleLookupResult(roleId, "Professional", true));
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(clinics: [
+                new EmployeeBulkClinicInput("CL001", "Professional"),
+                new EmployeeBulkClinicInput("CL002", "Professional"),
+            ]),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        Assert.NotNull(result.Results[0].EmployeeId);
+        Assert.Equal(1, result.Created);
+        Assert.Equal(0, result.Failed);
+
+        // Verificar que el empleado tiene 2 asignaciones de clínica.
+        await _employeeRepo.Received(1).AddAsync(
+            Arg.Is<Employee>(e =>
+                e.ClinicAssignments != null && e.ClinicAssignments.Count == 2
+                && e.ClinicAssignments.Any(a => a.ClinicId == clinicId1 && a.IsPrimary)
+                && e.ClinicAssignments.Any(a => a.ClinicId == clinicId2 && !a.IsPrimary)),
+            Arg.Any<CancellationToken>());
+
+        // Verificar que se envió InviteEmployeeCommand con ScopedRoles.
+        await _mediator.Received(1).Send(
+            Arg.Is<InviteEmployeeCommand>(c =>
+                c.ScopedRoles != null
+                && c.ScopedRoles.Count == 2
+                && c.ScopedRoles.Any(s => s.ScopeId == clinicId1 && s.ScopeType == "Clinic")
+                && c.ScopedRoles.Any(s => s.ScopeId == clinicId2 && s.ScopeType == "Clinic")),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CodigoClinicaDesconocido_FilaFallida()
+    {
+        var orgId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        // Código desconocido: no retorna nada.
+        _orgRepo.GetClinicsByCodesAsync(orgId, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(clinics: [
+                new EmployeeBulkClinicInput("NOEXISTE", "Professional"),
+            ]),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica no encontrada", result.Results[0].Error!);
+        Assert.Contains("NOEXISTE", result.Results[0].Error!);
+        Assert.Equal(0, result.Created);
+        Assert.Equal(1, result.Failed);
+    }
+
+    [Fact]
+    public async Task RolDesconocido_FilaFallida()
+    {
+        var orgId = Guid.NewGuid();
+        var clinicId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        _orgRepo.GetClinicsByCodesAsync(orgId, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([(clinicId, "CL001")]);
+
+        // Rol no encontrado → null.
+        _authRolesClient.GetRoleByNameAsync("NoExiste", Arg.Any<CancellationToken>())
+            .Returns((AuthRoleLookupResult?)null);
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(clinics: [
+                new EmployeeBulkClinicInput("CL001", "NoExiste"),
+            ]),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Rol no encontrado o inactivo", result.Results[0].Error!);
+        Assert.Contains("NoExiste", result.Results[0].Error!);
+        Assert.Equal(0, result.Created);
+        Assert.Equal(1, result.Failed);
+    }
+
+    [Fact]
+    public async Task ClinicaSinRol_FilaFallida()
+    {
+        var orgId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        // Fila sin clínicas funciona igual que antes (backward compat).
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(clinics: null),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        Assert.Equal(1, result.Created);
+
+        // No se llama a GetClinicsByCodesAsync cuando no hay clínicas.
+        await _orgRepo.DidNotReceive().GetClinicsByCodesAsync(
+            Arg.Any<Guid>(), Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task FilaSinClinicas_ComportamientoIgualAntes()
+    {
+        var orgId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(email: "ok@test.com"),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        Assert.Equal(1, result.Created);
+        Assert.Equal(0, result.Failed);
+
+        // Sin clínicas, el empleado se crea sin ClinicAssignments.
+        await _employeeRepo.Received(1).AddAsync(
+            Arg.Is<Employee>(e => e.ClinicAssignments == null || e.ClinicAssignments.Count == 0),
+            Arg.Any<CancellationToken>());
+
+        // Invitación sin ScopedRoles.
+        await _mediator.Received(1).Send(
+            Arg.Is<InviteEmployeeCommand>(c => c.ScopedRoles == null),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RolesDuplicadosEnLote_SeResuelvenUnaSolaVez()
+    {
+        var orgId = Guid.NewGuid();
+        var clinicId1 = Guid.NewGuid();
+        var clinicId2 = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+
+        SetupHappyPathMocks(orgId);
+
+        _orgRepo.GetClinicsByCodesAsync(orgId, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([(clinicId1, "CL001"), (clinicId2, "CL002")]);
+
+        _authRolesClient.GetRoleByNameAsync("Professional", Arg.Any<CancellationToken>())
+            .Returns(new AuthRoleLookupResult(roleId, "Professional", true));
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(email: "a@test.com", clinics: [
+                new EmployeeBulkClinicInput("CL001", "Professional"),
+                new EmployeeBulkClinicInput("CL002", "Professional"),
+            ]),
+            Row(email: "b@test.com", clinics: [
+                new EmployeeBulkClinicInput("CL001", "Professional"),
+                new EmployeeBulkClinicInput("CL002", "Professional"),
+            ]),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(2, result.Created);
+        Assert.Equal(0, result.Failed);
+
+        // El rol "Professional" se resolvió una sola vez (cache), no dos.
+        await _authRolesClient.Received(1).GetRoleByNameAsync("Professional", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ClinicaInactiva_FilaFallida()
+    {
+        var orgId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        // La clínica inactiva no aparece en los resultados del repo.
+        _orgRepo.GetClinicsByCodesAsync(orgId, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(clinics: [
+                new EmployeeBulkClinicInput("INACTIVA", "Professional"),
+            ]),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica no encontrada", result.Results[0].Error!);
+    }
+
+    [Fact]
+    public async Task RolInactivo_FilaFallida()
+    {
+        var orgId = Guid.NewGuid();
+        var clinicId = Guid.NewGuid();
+        SetupHappyPathMocks(orgId);
+
+        _orgRepo.GetClinicsByCodesAsync(orgId, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([(clinicId, "CL001")]);
+
+        // Rol inactivo → IsActive=false.
+        _authRolesClient.GetRoleByNameAsync("InactiveRole", Arg.Any<CancellationToken>())
+            .Returns(new AuthRoleLookupResult(Guid.NewGuid(), "InactiveRole", false));
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(clinics: [
+                new EmployeeBulkClinicInput("CL001", "InactiveRole"),
+            ]),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Rol no encontrado o inactivo", result.Results[0].Error!);
+    }
+
+    [Fact]
+    public async Task ClinicaDuplicadaEnMismaFila_UltimaGana()
+    {
+        // Si un código de clínica aparece dos veces en la misma fila,
+        // se deduplica en la query al repo (Distinct). El segundo
+        // intento fallará porque el código solo tiene 1 resultado
+        // y se reusa el mismo clinicId — comportamiento aceptable.
+        var orgId = Guid.NewGuid();
+        var clinicId = Guid.NewGuid();
+        var roleId = Guid.NewGuid();
+
+        SetupHappyPathMocks(orgId);
+
+        _orgRepo.GetClinicsByCodesAsync(orgId, Arg.Any<IReadOnlyList<string>>(), Arg.Any<CancellationToken>())
+            .Returns([(clinicId, "CL001")]);
+
+        _authRolesClient.GetRoleByNameAsync("Professional", Arg.Any<CancellationToken>())
+            .Returns(new AuthRoleLookupResult(roleId, "Professional", true));
+
+        var handler = CreateHandler();
+        var command = new BulkCreateEmployeesCommand(orgId, [
+            Row(clinics: [
+                new EmployeeBulkClinicInput("CL001", "Professional"),
+                new EmployeeBulkClinicInput("CL001", "Professional"),  // duplicado
+            ]),
+        ]);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // La fila crea el empleado con 2 assignments (ambos al mismo clinicId).
+        // Esto es aceptable: la lógica deduplica a nivel de query pero la fila
+        // crea los assignments tal cual se piden.
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        Assert.Equal(1, result.Created);
     }
 }

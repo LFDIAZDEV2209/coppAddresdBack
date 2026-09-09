@@ -8,13 +8,21 @@ namespace CoppAddresd.Application.Features.Professionals;
 
 // ─── DTOs de entrada ──────────────────────────────────────────────────
 
+/// <summary>
+/// Entrada de clínica por código dentro de una fila del CSV de empleados.
+/// Code y RoleName son obligatorios juntos: si se indica clínica se debe
+/// asignar un rol (con scope de clínica) al empleado invitado.
+/// </summary>
+public record EmployeeBulkClinicInput(string Code, string RoleName);
+
 /// <summary>Fila individual del CSV importado.</summary>
 public record BulkEmployeeRowInput(
     string FirstName,
     string LastName,
     string Email,
     string? ProfessionalTypeName,
-    string Status);
+    string Status,
+    IReadOnlyList<EmployeeBulkClinicInput>? Clinics = null);
 
 /// <summary>Envelope de la solicitud de creación masiva.</summary>
 public record BulkCreateEmployeesRequest(
@@ -58,6 +66,18 @@ public sealed class BulkCreateEmployeesValidator : AbstractValidator<BulkCreateE
             .NotEmpty().WithMessage("La lista de filas no puede estar vacía.")
             .Must(rows => rows.Count <= MaxRows)
             .WithMessage($"El lote no puede superar {MaxRows} filas.");
+
+        // Validación de clínicas por fila: si se provee una lista de clínicas,
+        // cada elemento debe tener Code y RoleName no vacíos (requeridos juntos).
+        RuleForEach(x => x.Rows)
+            .ChildRules(row =>
+            {
+                row.RuleFor(r => r.Clinics)
+                    .Must(clinics => clinics is null || clinics.All(c =>
+                        !string.IsNullOrWhiteSpace(c.Code) && !string.IsNullOrWhiteSpace(c.RoleName)))
+                    .When(r => r.Clinics is { Count: > 0 })
+                    .WithMessage("Cada clínica debe tener Code y RoleName no vacíos.");
+            });
     }
 }
 
@@ -67,6 +87,7 @@ public sealed class BulkCreateEmployeesCommandHandler(
     IMediator mediator,
     IEmployeeRepository employeeRepository,
     IOrganizationRepository organizationRepository,
+    IAuthRolesClient authRolesClient,
     ILogger<BulkCreateEmployeesCommandHandler> logger)
     : IRequestHandler<BulkCreateEmployeesCommand, BulkCreateResultDto>
 {
@@ -103,18 +124,42 @@ public sealed class BulkCreateEmployeesCommandHandler(
                 t => t,
                 StringComparer.OrdinalIgnoreCase);
 
-        // 3. Acumular emails del batch para detectar duplicados internos.
+        // 3. Precargar códigos de clínica del batch para resolver en una sola query.
+        var allClinicCodes = request.Rows
+            .Where(r => r.Clinics is { Count: > 0 })
+            .SelectMany(r => r.Clinics!)
+            .Select(c => c.Code.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Dictionary<string, Guid> clinicCodeToId = new(StringComparer.OrdinalIgnoreCase);
+        if (allClinicCodes.Count > 0)
+        {
+            var clinicResults = await organizationRepository.GetClinicsByCodesAsync(
+                request.OrganizationId, allClinicCodes, ct);
+
+            // Mapear cada código a su Id (múltiples códigos pueden resolver a la misma clínica).
+            foreach (var (id, code) in clinicResults)
+            {
+                clinicCodeToId[code.Trim()] = id;
+            }
+        }
+
+        // 4. Cache de roles resueltos por nombre (evita N llamadas al Auth para el mismo rol).
+        Dictionary<string, AuthRoleLookupResult?> roleCache = new(StringComparer.OrdinalIgnoreCase);
+
+        // 5. Acumular emails del batch para detectar duplicados internos.
         var emailsInBatch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var results = new List<BulkRowResultDto>();
 
-        // 4. Procesar cada fila de forma independiente.
+        // 6. Procesar cada fila de forma independiente.
         for (var i = 0; i < request.Rows.Count; i++)
         {
             var line = i + 1; // 1-based
             var row = request.Rows[i];
 
             var rowResult = await ProcessRowAsync(
-                row, line, organization, typesByName, emailsInBatch, ct);
+                row, line, organization, typesByName, clinicCodeToId, roleCache, emailsInBatch, ct);
 
             results.Add(rowResult);
         }
@@ -134,6 +179,8 @@ public sealed class BulkCreateEmployeesCommandHandler(
         int line,
         Organization organization,
         Dictionary<string, ProfessionalType> typesByName,
+        Dictionary<string, Guid> clinicCodeToId,
+        Dictionary<string, AuthRoleLookupResult?> roleCache,
         HashSet<string> emailsInBatch,
         CancellationToken ct)
     {
@@ -184,6 +231,54 @@ public sealed class BulkCreateEmployeesCommandHandler(
             professionalTypeId = matchedType.Id;
         }
 
+        // ── Resolver clínicas por código + roles ───────────────────────
+
+        List<ClinicAssignmentInput>? clinicAssignments = null;
+        List<ScopedRoleAssignmentInput>? scopedRoles = null;
+
+        if (row.Clinics is { Count: > 0 })
+        {
+            clinicAssignments = [];
+            scopedRoles = [];
+
+            for (var ci = 0; ci < row.Clinics.Count; ci++)
+            {
+                var clinicInput = row.Clinics[ci];
+                var code = clinicInput.Code.Trim();
+
+                // 1. Resolver código → clinicId
+                if (!clinicCodeToId.TryGetValue(code, out var clinicId))
+                {
+                    return Fail(line, $"Clínica no encontrada (código {code})");
+                }
+
+                // 2. Resolver RoleName → roleId (case-insensitive, con cache por nombre).
+                var roleNameKey = clinicInput.RoleName.Trim();
+                if (!roleCache.TryGetValue(roleNameKey, out var roleLookup))
+                {
+                    roleLookup = await authRolesClient.GetRoleByNameAsync(roleNameKey, ct);
+                    roleCache[roleNameKey] = roleLookup;
+                }
+
+                if (roleLookup is null || !roleLookup.IsActive)
+                {
+                    return Fail(line, $"Rol no encontrado o inactivo (nombre {roleNameKey})");
+                }
+
+                // 3. Agregar asignación de clínica: primera IsPrimary=true, resto false.
+                clinicAssignments.Add(new ClinicAssignmentInput(
+                    ClinicId: clinicId,
+                    IsPrimary: ci == 0,
+                    Status: "Active"));
+
+                // 4. Agregar scoped role para pasar a InviteEmployeeCommand.
+                scopedRoles.Add(new ScopedRoleAssignmentInput(
+                    RoleId: roleLookup.Id,
+                    ScopeType: "Clinic",
+                    ScopeId: clinicId));
+            }
+        }
+
         // ── Creación del empleado ──────────────────────────────────────
 
         var entity = new Employee
@@ -208,17 +303,37 @@ public sealed class BulkCreateEmployeesCommandHandler(
             };
         }
 
+        // Aplicar asignaciones de clínicas (reutiliza patrón de CreateEmployeeCommand).
+        if (clinicAssignments is { Count: > 0 })
+        {
+            var now = DateTime.UtcNow;
+            entity.ClinicAssignments = clinicAssignments
+                .Select(a => new EmployeeClinic
+                {
+                    ClinicId = a.ClinicId,
+                    IsPrimary = a.IsPrimary,
+                    Status = string.IsNullOrWhiteSpace(a.Status) ? "Active" : a.Status.Trim(),
+                    CreatedAt = now,
+                })
+                .ToList();
+        }
+
         await employeeRepository.AddAsync(entity, ct);
 
         logger.LogInformation(
-            "Bulk create: fila {Line} → empleado {EmployeeId} creado ({Email}, profesional: {IsProfessional}).",
-            line, entity.Id, entity.Email, entity.Professional is not null);
+            "Bulk create: fila {Line} → empleado {EmployeeId} creado ({Email}, profesional: {IsProfessional}, clínicas: {ClinicCount}).",
+            line, entity.Id, entity.Email, entity.Professional is not null,
+            clinicAssignments?.Count ?? 0);
 
         // ── Auto-invite: crear usuario en Auth + enviar enlace ────────
         try
         {
             var inviteResult = await mediator.Send(
-                new InviteEmployeeCommand(entity.Id, InvitedBy: null), ct);
+                new InviteEmployeeCommand(
+                    entity.Id,
+                    InvitedBy: null,
+                    ScopedRoles: scopedRoles is { Count: > 0 } ? scopedRoles : null),
+                ct);
 
             logger.LogInformation(
                 "Bulk create: fila {Line} → invitación enviada (usuario {UserId}).",
