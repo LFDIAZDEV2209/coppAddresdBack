@@ -24,7 +24,9 @@ $services = @(
 # Frontend / Food AI projects (sibling repos in the monorepo).
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $webServices = @(
-  @{ Name = 'front';   Url = 'http://localhost:3000'; Port = 3000; Color = 'DarkYellow'; Command = 'yarn.cmd';    Args = @('dev');                 Root = (Join-Path $repoRoot 'coppaddresd-front') },
+# Yarn global (1.x) entra en conflicto con packageManager yarn@4 Corepack;
+# lanzamos con npx para no depender del yarn global (corepack falla con EPERM en este equipo).
+  @{ Name = 'front';   Url = 'http://localhost:3000'; Port = 3000; Color = 'DarkYellow'; Command = 'npx.cmd';     Args = @('next', 'dev');       Root = (Join-Path $repoRoot 'coppaddresd-front') },
   @{ Name = 'antares'; Url = 'http://localhost:5173'; Port = 5173; Color = 'Red';        Command = 'npm.cmd';     Args = @('run','dev');           Root = (Join-Path $repoRoot 'antares-paciente') },
   @{ Name = 'foodai';  Url = 'http://localhost:8010'; Port = 8010; Color = 'DarkGreen';  Command = (Join-Path $repoRoot 'food-ai-service\.venv\Scripts\python.exe'); Args = @('run_dev.py'); Root = (Join-Path $repoRoot 'food-ai-service') }
 )
