@@ -3,6 +3,7 @@ using System;
 using CoppAddresd.Community.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Community.Migrations
 {
     [DbContext(typeof(CommunityDbContext))]
-    partial class CommunityDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260903203155_AddClubs")]
+    partial class AddClubs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -534,7 +537,7 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("comment_reports", "community");
                 });
 
-modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
+            modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -572,40 +575,6 @@ modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
                         .HasDatabaseName("ix_event_attendances_event_id_profile_id");
 
                     b.ToTable("event_attendances", "community");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.CommunityDailyMetric", b =>
-                {
-                    b.Property<DateOnly>("MetricDate")
-                        .HasColumnType("date")
-                        .HasColumnName("metric_date");
-
-                    b.Property<string>("MetricKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("metric_key");
-
-                    b.Property<string>("DimensionKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("dimension_key");
-
-                    b.Property<DateTime>("LastUpdatedAt")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("last_updated_at");
-
-                    b.Property<long>("TotalCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasDefaultValue(0L)
-                        .HasColumnName("total_count");
-
-                    b.HasKey("MetricDate", "MetricKey", "DimensionKey");
-
-                    b.HasIndex("MetricKey", "DimensionKey", "MetricDate")
-                        .HasDatabaseName("ix_community_daily_metrics_key_dim_date");
-
-                    b.ToTable("community_daily_metrics", "community");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.FeedEvent", b =>
@@ -823,23 +792,6 @@ modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
                         .HasDatabaseName("ix_live_sessions_club_id_scheduled_start_at");
 
                     b.ToTable("live_sessions", "community");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSessionSpeaker", b =>
-                {
-                    b.Property<Guid>("LiveSessionId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("live_session_id");
-
-                    b.Property<Guid>("ProfileId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("profile_id");
-
-                    b.HasKey("LiveSessionId", "ProfileId");
-
-                    b.HasIndex("ProfileId");
-
-                    b.ToTable("live_session_speakers", "community");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.Message", b =>
@@ -1742,25 +1694,6 @@ modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
                     b.Navigation("Event");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSessionSpeaker", b =>
-                {
-                    b.HasOne("CoppAddresd.Community.Entities.LiveSession", "LiveSession")
-                        .WithMany("Speakers")
-                        .HasForeignKey("LiveSessionId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
-                        .WithMany()
-                        .HasForeignKey("ProfileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("LiveSession");
-
-                    b.Navigation("Profile");
-                });
-
             modelBuilder.Entity("CoppAddresd.Community.Entities.Message", b =>
                 {
                     b.HasOne("CoppAddresd.Community.Entities.ChatGroup", null)
@@ -1975,8 +1908,6 @@ modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
             modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSession", b =>
                 {
                     b.Navigation("ChatMessages");
-
-                    b.Navigation("Speakers");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.NetworkChannel", b =>
