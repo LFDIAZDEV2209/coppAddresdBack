@@ -12,6 +12,7 @@ public interface IPermissionService
     Task<IEnumerable<string>> GetUserAllPermissionCodesAsync(Guid userId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> AssignToRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> RemoveFromRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> SetForRoleAsync(Guid roleId, IReadOnlyList<Guid> permissionIds, CancellationToken ct = default);
     Task<(bool Success, string? Error)> AssignToUserAsync(Guid userId, Guid permissionId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> RemoveFromUserAsync(Guid userId, Guid permissionId, CancellationToken ct = default);
     Task<bool> UserHasPermissionAsync(Guid userId, string permissionCode, CancellationToken ct = default);
