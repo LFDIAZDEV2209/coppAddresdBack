@@ -9,6 +9,7 @@ using CoppAddresd.Application.Common.Behaviors;
 using CoppAddresd.Application.Features.FoodAi;
 using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Infrastructure.Extensions;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Services;
@@ -41,6 +42,18 @@ public static class ApplicationServiceExtensions
 
         services.Configure<FoodAiSettings>(
             configuration.GetSection(FoodAiSettings.SectionName));
+
+        // Recordatorios proactivos de hitos del programa (días 7/14/21/45/60/90):
+        // configuración + proveedor de plantillas (v1 estáticas por
+        // configuración; el proveedor con LLM futuro se enchufa detrás de la
+        // misma interfaz sin tocar el scheduler) + notificador que reutiliza
+        // SendPushNotificationCommand (FCM + inyección proactiva en el chat) +
+        // job orquestador (lo consume ProgramMilestoneSenderHostedService).
+        services.Configure<ProgramMilestoneSenderSettings>(
+            configuration.GetSection(ProgramMilestoneSenderSettings.SectionName));
+        services.AddScoped<IProgramMilestoneTemplateProvider, PredefinedMilestoneTemplateProvider>();
+        services.AddScoped<IProgramMilestoneNotifier, ProgramMilestoneNotifier>();
+        services.AddScoped<ProgramMilestoneSenderJob>();
 
         // Clave interna compartida con el microservicio de Telemedicina
         // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).

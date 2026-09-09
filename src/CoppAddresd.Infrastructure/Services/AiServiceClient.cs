@@ -95,16 +95,16 @@ public class AiServiceClient : IAiServiceClient
 
         // JsonOpts (snake_case + case-insensitive + WhenWritingNull): el
         // payload se serializa acorde al contrato del ai-service y la
-        // respuesta (`answer`/`thread_id`/`execution_id`/`agent`) se
-        // deserializa correctamente. Los errores se propagan como
-        // AiServiceException para habilitar el re-sync del agente.
+        // respuesta (`answer`/`thread_id`/`execution_id`/`agent`/
+        // `suggestions`) se deserializa correctamente. Los errores se
+        // propagan como AiServiceException para habilitar el re-sync del agente.
         using var response = await _httpClient.SendAsync(httpRequest, ct);
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
 
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
-        return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent);
+        return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent, result.Suggestions);
     }
 
     public async Task<AiPlanResult> GeneratePlanAsync(
@@ -306,13 +306,15 @@ public class AiServiceClient : IAiServiceClient
     }
 
     // El contrato del ai-service responde `answer`, `thread_id`,
-    // `execution_id` y `agent` (snake_case), no `reply`/`threadId`
-    // (camelCase Web defaults).
+    // `execution_id`, `agent` y `suggestions` (snake_case), no
+    // `reply`/`threadId` (camelCase Web defaults). Si el ai-service omite
+    // `suggestions`, queda null (los CTA son opcionales).
     private record ChatResponseJson(
         [property: JsonPropertyName("answer")] string Reply,
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("execution_id")] string? ExecutionId = null,
-        [property: JsonPropertyName("agent")] string? Agent = null);
+        [property: JsonPropertyName("agent")] string? Agent = null,
+        [property: JsonPropertyName("suggestions")] IReadOnlyList<ChatSuggestion>? Suggestions = null);
     private record DoneJson(string ThreadId);
     private record NodeJson(string Node);
     private record MessageJson(string Type, string? Content);
