@@ -14,7 +14,8 @@ public record BulkPatientRowInput(
     string LastName,
     string? DocumentNumber,
     string? Email,
-    string? Status);
+    string? Status,
+    string? ClinicCode = null);
 
 /// <summary>Envelope de la solicitud de creación masiva.</summary>
 public record BulkCreatePatientsRequest(
@@ -63,6 +64,7 @@ public sealed class BulkCreatePatientsValidator : AbstractValidator<BulkCreatePa
 
 public sealed class BulkCreatePatientsCommandHandler(
     IPatientRepository repository,
+    IOrganizationRepository organizationRepository,
     ILogger<BulkCreatePatientsCommandHandler> logger)
     : IRequestHandler<BulkCreatePatientsCommand, BulkCreatePatientsResultDto>
 {
@@ -90,18 +92,43 @@ public sealed class BulkCreatePatientsCommandHandler(
             docsInDb = new HashSet<string>(existingDocs, StringComparer.OrdinalIgnoreCase);
         }
 
-        // 2. Acumular documentos del batch para detectar duplicados internos.
+        // 2. Precargar códigos de clínica del batch para resolver en batch.
+        //    Se usa un diccionario para cache: código → clinicId resuelto (o null si no encontrado).
+        var allClinicCodes = request.Rows
+            .Where(r => !string.IsNullOrWhiteSpace(r.ClinicCode))
+            .Select(r => r.ClinicCode!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Diccionario: código normalizado → Guid? (null = no encontrado, para distinguir de "no se consultó").
+        Dictionary<string, Guid?> clinicCodeToId = new(StringComparer.OrdinalIgnoreCase);
+        if (allClinicCodes.Count > 0)
+        {
+            // Buscar clínicas activas por código (query global, no por organización
+            // ya que patients/bulk no tiene organizationId en el envelope).
+            // Se reutiliza GetClinicsByCodesAsync con Guid.Empty como placeholder;
+            // se necesita un método más general. Usamos búsqueda directa.
+            foreach (var code in allClinicCodes)
+            {
+                // No hay método global en IOrganizationRepository; resolvemos
+                // individualmente con la nueva query.
+                var resolved = await ResolveClinicByCodeAsync(code, ct);
+                clinicCodeToId[code] = resolved;
+            }
+        }
+
+        // 3. Acumular documentos del batch para detectar duplicados internos.
         var docsInBatchTracker = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var results = new List<BulkPatientRowResultDto>();
 
-        // 3. Procesar cada fila de forma independiente.
+        // 4. Procesar cada fila de forma independiente.
         for (var i = 0; i < request.Rows.Count; i++)
         {
             var line = i + 1; // 1-based
             var row = request.Rows[i];
 
             var rowResult = await ProcessRowAsync(
-                row, line, request, docsInBatchTracker, docsInDb, ct);
+                row, line, request, clinicCodeToId, docsInBatchTracker, docsInDb, ct);
 
             results.Add(rowResult);
         }
@@ -116,10 +143,29 @@ public sealed class BulkCreatePatientsCommandHandler(
         return new BulkCreatePatientsResultDto(results, created, failed);
     }
 
+    /// <summary>
+    /// Resuelve un código de clínica a su Id buscando clínicas activas
+    /// con ese código (case-insensitive). Devuelve null si no se encontró.
+    /// </summary>
+    private async Task<Guid?> ResolveClinicByCodeAsync(string code, CancellationToken ct)
+    {
+        try
+        {
+            var clinics = await organizationRepository.GetClinicsByCodeAsync(code, ct);
+            return clinics.Count == 1 ? clinics[0].Id : null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo resolver clínica por código: {Code}", code);
+            return null;
+        }
+    }
+
     private async Task<BulkPatientRowResultDto> ProcessRowAsync(
         BulkPatientRowInput row,
         int line,
         BulkCreatePatientsCommand request,
+        Dictionary<string, Guid?> clinicCodeToId,
         HashSet<string> docsInBatch,
         HashSet<string> docsInDb,
         CancellationToken ct)
@@ -172,6 +218,28 @@ public sealed class BulkCreatePatientsCommandHandler(
                 return Fail(line, "El documento ya está registrado.");
         }
 
+        // ── Resolver ClinicCode → clinicId (por fila) ─────────────────
+        // Si la fila trae ClinicCode, se usa ese y se ignora request.ClinicId.
+        // Si no trae ClinicCode, se usa el fallback: request.ClinicId ?? context.ActiveClinicId.
+        Guid? effectiveClinicId = request.ClinicId;
+
+        if (!string.IsNullOrWhiteSpace(row.ClinicCode))
+        {
+            var code = row.ClinicCode.Trim();
+            if (!clinicCodeToId.TryGetValue(code, out var resolvedId))
+            {
+                // Código no estaba en el pre-cálculo (no debería pasar, pero defensiva).
+                return Fail(line, $"Clínica no encontrada (código {code})");
+            }
+
+            if (resolvedId is null)
+            {
+                return Fail(line, $"Clínica no encontrada (código {code})");
+            }
+
+            effectiveClinicId = resolvedId;
+        }
+
         // status vocabulario
         var status = NormalizeStatus(row.Status);
 
@@ -188,7 +256,7 @@ public sealed class BulkCreatePatientsCommandHandler(
             DocumentNumber = documentNumber,
             Email = email,
             Status = status,
-            ClinicId = request.ClinicId,
+            ClinicId = effectiveClinicId,
             CreatedBy = request.CreatedBy,
             UpdatedBy = request.CreatedBy,
             CreatedAt = DateTime.UtcNow,
