@@ -34,6 +34,13 @@ public class InvitationsController(
     /// correo. Lo invoca el ERP con <c>X-Internal-Key</c>. El token se
     /// devuelve SOLO con el provider "Log" (dev); en producción la única vía
     /// es el correo.
+    ///
+    /// Si <c>adoptExisting</c> es true y el usuario ya existe:
+    ///   - Si está inactivo → 409 (reactivar antes de usar).
+    ///   - Si está activo sin password (estado invitado) → se crea nueva
+    ///     invitación y se envía el correo.
+    ///   - Si está activo con password → se vincula directamente sin nueva
+    ///     invitación.
     /// </summary>
     [HttpPost("api/auth/internal/invitations")]
     [AllowAnonymous]
@@ -43,11 +50,63 @@ public class InvitationsController(
         CancellationToken ct)
     {
         var email = request.Email.Trim().ToLowerInvariant();
+        var existingUser = await userManager.FindByEmailAsync(email);
 
-        if (await userManager.FindByEmailAsync(email) is not null)
+        if (existingUser is not null)
         {
-            return Conflict(new { message = $"Ya existe un usuario con el correo '{email}'." });
+            if (!request.AdoptExisting)
+            {
+                return Conflict(new { message = $"Ya existe un usuario con el correo '{email}'." });
+            }
+
+            // adoptExisting: usuario ya registrado — verificar estado.
+            if (!existingUser.IsActive)
+            {
+                return Conflict(new
+                {
+                    message = $"Ya existe un usuario inactivo con el correo '{email}'. Reactívalo antes de asignarle un puesto."
+                });
+            }
+
+            // Asegurar acceso ERP (el usuario existente podría no tenerlo).
+            await EnsureErpAccessAsync(existingUser.Id, ct);
+
+            if (!await userManager.HasPasswordAsync(existingUser))
+            {
+                // Estado invitado (sin password): crear nueva invitación y enviar correo.
+                var (success, error, invitation, token) = await invitations.CreateAsync(existingUser.Id, request.CreatedBy, ct);
+                if (!success || invitation is null || token is null)
+                {
+                    return BadRequest(new { message = error ?? "No se pudo crear la invitación." });
+                }
+
+                var link = $"{_emailSettings.FrontendUrl}/invitaciones?token={token}";
+                await SendInvitationEmailAsync(existingUser, link, ct);
+
+                return Ok(new
+                {
+                    userId = existingUser.Id,
+                    adopted = true,
+                    hasPassword = false,
+                    invitationId = invitation.Id,
+                    expiresAt = invitation.ExpiresAt,
+                    link = IsLogProvider() ? link : null,
+                });
+            }
+
+            // Ya tiene password — vincular directamente sin nueva invitación.
+            return Ok(new
+            {
+                userId = existingUser.Id,
+                adopted = true,
+                hasPassword = true,
+                invitationId = (Guid?)null,
+                expiresAt = (DateTime?)null,
+                link = (string?)null,
+            });
         }
+
+        // ── Usuario nuevo ──────────────────────────────────────────────
 
         var user = new ApplicationUser
         {
@@ -67,36 +126,27 @@ public class InvitationsController(
         }
 
         // Acceso a la aplicación ERP (puede iniciar sesión tras aceptar).
-        var erpApplication = await dbContext.Applications
-            .FirstOrDefaultAsync(a => a.Code == ApplicationCodes.Erp, ct);
-        if (erpApplication is not null)
+        await EnsureErpAccessAsync(user.Id, ct);
+
+        var (newSuccess, newError, newInvitation, newToken) = await invitations.CreateAsync(user.Id, request.CreatedBy, ct);
+        if (!newSuccess || newInvitation is null || newToken is null)
         {
-            dbContext.UserApplications.Add(new UserApplication
-            {
-                UserId = user.Id,
-                ApplicationId = erpApplication.Id,
-                CreatedAt = DateTime.UtcNow,
-            });
-            await dbContext.SaveChangesAsync(ct);
+            return BadRequest(new { message = newError ?? "No se pudo crear la invitación." });
         }
 
-        var (success, error, invitation, token) = await invitations.CreateAsync(user.Id, request.CreatedBy, ct);
-        if (!success || invitation is null || token is null)
-        {
-            return BadRequest(new { message = error ?? "No se pudo crear la invitación." });
-        }
-
-        var link = $"{_emailSettings.FrontendUrl}/invitaciones?token={token}";
-        await SendInvitationEmailAsync(user, link, ct);
+        var newLink = $"{_emailSettings.FrontendUrl}/invitaciones?token={newToken}";
+        await SendInvitationEmailAsync(user, newLink, ct);
 
         return Ok(new
         {
             userId = user.Id,
-            invitationId = invitation.Id,
-            expiresAt = invitation.ExpiresAt,
+            adopted = false,
+            hasPassword = false,
+            invitationId = newInvitation.Id,
+            expiresAt = newInvitation.ExpiresAt,
             // Solo en dev (provider Log) se expone el enlace; en producción el
             // correo es la única vía.
-            link = IsLogProvider() ? link : null,
+            link = IsLogProvider() ? newLink : null,
         });
     }
 
@@ -223,6 +273,29 @@ public class InvitationsController(
     private bool IsLogProvider()
         => _emailSettings.Provider.Equals("Log", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Asegura que el usuario tenga acceso a la aplicación ERP (UserApplication).
+    /// Si ya existe la entrada, no duplica.
+    /// </summary>
+    private async Task EnsureErpAccessAsync(Guid userId, CancellationToken ct)
+    {
+        var erpApplication = await dbContext.Applications
+            .FirstOrDefaultAsync(a => a.Code == ApplicationCodes.Erp, ct);
+        if (erpApplication is null) return;
+
+        var alreadyHasAccess = await dbContext.UserApplications
+            .AnyAsync(ua => ua.UserId == userId && ua.ApplicationId == erpApplication.Id, ct);
+        if (alreadyHasAccess) return;
+
+        dbContext.UserApplications.Add(new UserApplication
+        {
+            UserId = userId,
+            ApplicationId = erpApplication.Id,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await dbContext.SaveChangesAsync(ct);
+    }
+
     private Guid? GetCallerId()
     {
         var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -234,6 +307,7 @@ public record CreateInvitationInternalRequest(
     string Email,
     string FirstName,
     string LastName,
-    Guid? CreatedBy = null);
+    Guid? CreatedBy = null,
+    bool AdoptExisting = false);
 
 public record AcceptInvitationRequest(string Token, string Password);
