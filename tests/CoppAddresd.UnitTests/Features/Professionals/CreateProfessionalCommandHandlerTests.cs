@@ -73,7 +73,7 @@ public class CreateProfessionalCommandHandlerTests
         await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
             handler.Handle(command, CancellationToken.None));
 
-        await _auth.DidNotReceiveWithAnyArgs().CreateInvitationAsync(default!, default!, default!, default);
+        await _auth.DidNotReceiveWithAnyArgs().CreateInvitationAsync(default!, default!, default!, default, default);
     }
 
     [Fact]
@@ -87,7 +87,9 @@ public class CreateProfessionalCommandHandlerTests
         _mediator.Send(Arg.Any<CreateEmployeeCommand>(), Arg.Any<CancellationToken>())
             .Returns(EmployeeDto(employeeId));
 
-        _auth.CreateInvitationAsync("ana@mediquer.com", "Ana", "López", Arg.Any<CancellationToken>())
+        _auth.CreateInvitationAsync(
+                "ana@mediquer.com", "Ana", "López",
+                Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(new InvitationCreationResult(userId, invitationId, DateTime.UtcNow.AddHours(72), "http://link"));
 
         var handler = CreateHandler();
@@ -119,7 +121,9 @@ public class CreateProfessionalCommandHandlerTests
         _mediator.Send(Arg.Any<CreateEmployeeCommand>(), Arg.Any<CancellationToken>())
             .Returns(EmployeeDto(employeeId));
 
-        _auth.CreateInvitationAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+        _auth.CreateInvitationAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<bool>(), Arg.Any<CancellationToken>())
             .Returns(new InvitationCreationResult(userId, invitationId, DateTime.UtcNow.AddHours(72), "http://link"));
 
         _scoped.ReplaceAsync(
@@ -138,5 +142,116 @@ public class CreateProfessionalCommandHandlerTests
         // Compensación: se revoca la invitación y se elimina el empleado recién creado.
         await _auth.Received(1).RevokeAsync(invitationId, Arg.Any<CancellationToken>());
         await _employeeRepository.Received(1).DeleteAsync(employeeId, Arg.Any<CancellationToken>());
+    }
+
+    // ─── Tests de adopt ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task Handle_AdoptHasPassword_ScopesAplicadosSinExcepcion()
+    {
+        // Adopt con password: el usuario ya tiene contraseña vinculada;
+        // no hay invitación nueva (InvitationId = Guid.Empty).
+        var clinicId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        _mediator.Send(Arg.Any<CreateEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(EmployeeDto(employeeId));
+
+        _auth.CreateInvitationAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(new InvitationCreationResult(userId, Guid.Empty, DateTime.MinValue, null,
+                Adopted: true, HasPassword: true));
+
+        var handler = CreateHandler();
+
+        var result = await handler.Handle(ComandoBase(clinicId), CancellationToken.None);
+
+        Assert.Equal(employeeId, result.EmployeeId);
+        // InvitationId es Guid.Empty cuando el usuario ya tenía password.
+        Assert.Equal(Guid.Empty, result.InvitationId);
+
+        // El usuario se vincula al empleado.
+        await _employeeRepository.Received(1).SetUserIdAsync(employeeId, userId, Arg.Any<CancellationToken>());
+        // Los scopes se aplican.
+        await _scoped.Received(1).ReplaceAsync(
+            userId,
+            Arg.Any<IReadOnlyList<ScopedRoleAssignmentInput>>(),
+            Arg.Any<IReadOnlyList<ScopedPermissionAssignmentInput>>(),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
+        // No se intenta revocar (InvitationId = Guid.Empty).
+        await _auth.DidNotReceive().RevokeAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_AdoptHasPassword_FallaScopes_NoIntentaRevocar()
+    {
+        // Compensación con adopt+hasPassword: como no hay invitación,
+        // la compensación NO revoca nada, solo elimina el empleado.
+        var clinicId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+
+        _mediator.Send(Arg.Any<CreateEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(EmployeeDto(employeeId));
+
+        _auth.CreateInvitationAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(new InvitationCreationResult(userId, Guid.Empty, DateTime.MinValue, null,
+                Adopted: true, HasPassword: true));
+
+        _scoped.ReplaceAsync(
+                Arg.Any<Guid>(),
+                Arg.Any<IReadOnlyList<ScopedRoleAssignmentInput>>(),
+                Arg.Any<IReadOnlyList<ScopedPermissionAssignmentInput>>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new UnprocessableEntityException("Rol no encontrado")));
+
+        var handler = CreateHandler();
+
+        await Assert.ThrowsAsync<UnprocessableEntityException>(() =>
+            handler.Handle(ComandoBase(clinicId), CancellationToken.None));
+
+        // Compensación: NO se revoca (InvitationId = Guid.Empty), solo se elimina el empleado.
+        await _auth.DidNotReceive().RevokeAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _employeeRepository.Received(1).DeleteAsync(employeeId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_AdoptWithoutPassword_FlujoNormalConInvitacion()
+    {
+        // Adopt sin password: como un flujo normal, crea invitación.
+        var clinicId = Guid.NewGuid();
+        var employeeId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var invitationId = Guid.NewGuid();
+
+        _mediator.Send(Arg.Any<CreateEmployeeCommand>(), Arg.Any<CancellationToken>())
+            .Returns(EmployeeDto(employeeId));
+
+        _auth.CreateInvitationAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(new InvitationCreationResult(userId, invitationId, DateTime.UtcNow.AddHours(72), "http://link",
+                Adopted: true, HasPassword: false));
+
+        var handler = CreateHandler();
+
+        var result = await handler.Handle(ComandoBase(clinicId), CancellationToken.None);
+
+        Assert.Equal(employeeId, result.EmployeeId);
+        Assert.Equal(invitationId, result.InvitationId);
+
+        await _employeeRepository.Received(1).SetUserIdAsync(employeeId, userId, Arg.Any<CancellationToken>());
+        await _scoped.Received(1).ReplaceAsync(
+            userId,
+            Arg.Any<IReadOnlyList<ScopedRoleAssignmentInput>>(),
+            Arg.Any<IReadOnlyList<ScopedPermissionAssignmentInput>>(),
+            Arg.Any<Guid?>(),
+            Arg.Any<CancellationToken>());
     }
 }

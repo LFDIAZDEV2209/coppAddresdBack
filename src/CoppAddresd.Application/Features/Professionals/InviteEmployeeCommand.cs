@@ -18,6 +18,8 @@ public record InviteEmployeeResult(
 /// Invita a un empleado: crea el usuario (sin password) en el Auth Service,
 /// genera la invitación y vincula <c>user_id</c> al empleado. El correo con el
 /// enlace lo envía el Auth Service; en dev el enlace viaja en la respuesta.
+///
+/// Si el usuario ya existe (adoptExisting), se vincula directamente sin duplicar.
 /// </summary>
 public record InviteEmployeeCommand(Guid EmployeeId, Guid? InvitedBy) : IRequest<InviteEmployeeResult>;
 
@@ -37,13 +39,25 @@ public sealed class InviteEmployeeCommandHandler(
                 "El empleado ya tiene un usuario vinculado. Use reenviar invitación si es necesario.");
         }
 
+        // adoptExisting: true — vincula usuarios existentes sin duplicar.
         var invitation = await auth.CreateInvitationAsync(
-            employee.Email, employee.FirstName, employee.LastName, ct);
+            employee.Email, employee.FirstName, employee.LastName,
+            adoptExisting: true, ct: ct);
 
         await employees.SetUserIdAsync(employee.Id, invitation.UserId, ct);
 
-        logger.LogInformation("Empleado {EmployeeId} invitado (usuario {UserId})",
-            employee.Id, invitation.UserId);
+        if (invitation.HasPassword)
+        {
+            // Usuario existente con contraseña vinculado directamente; no hay invitación nueva.
+            logger.LogInformation(
+                "Empleado {EmployeeId}: usuario existente con contraseña vinculado; sin nueva invitación",
+                employee.Id);
+        }
+        else
+        {
+            logger.LogInformation("Empleado {EmployeeId} invitado (usuario {UserId})",
+                employee.Id, invitation.UserId);
+        }
 
         return new InviteEmployeeResult(
             employee.Id,
