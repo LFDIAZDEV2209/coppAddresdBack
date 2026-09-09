@@ -44,4 +44,11 @@ public record BulkCreateUserRow
     /// Estado del usuario: "activo" (default) o "inactivo" (case-insensitive).
     /// </summary>
     public string? Status { get; init; }
+
+    /// <summary>
+    /// Nombre de la clínica para asignación scoped (opcional, case-insensitive).
+    /// Si se proporciona junto con RoleName, se crea una asignación de rol
+    /// con scope de clínica en vez de un rol global. Requiere RoleName.
+    /// </summary>
+    public string? ClinicName { get; init; }
 }

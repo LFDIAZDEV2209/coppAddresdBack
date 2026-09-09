@@ -17,14 +17,46 @@ namespace CoppAddresd.UnitTests.Auth.Services;
 /// Usa SQLite in-memory (mismo patrón que RoleServiceTests) con Identity
 /// real para validar el flujo completo: resolución de roles por nombre,
 /// mapeo de status, generación de contraseñas temporales, independencia
-/// por fila y límites de capacidad.
+/// por fila, límites de capacidad y asignación scoped por clínica.
 /// </summary>
 public class BulkCreateUsersTests
 {
+    /// <summary>
+    /// Servicio de prueba que reemplaza la búsqueda de clínicas por nombre
+    /// con un stub compatible con SQLite (no tiene tabla erp.clinics).
+    /// Permite configurar clínicas de prueba por nombre.
+    /// </summary>
+    private sealed class TestUserService : UserService
+    {
+        private readonly Dictionary<string, List<(Guid Id, string Name)>> _clinics;
+
+        public TestUserService(
+            UserManager<ApplicationUser> userManager,
+            RoleManager<ApplicationRole> roleManager,
+            AuthDbContext dbContext,
+            ITokenInvalidationService tokenInvalidation,
+            Dictionary<string, List<(Guid Id, string Name)>>? clinics = null)
+            : base(userManager, roleManager, dbContext, tokenInvalidation, NullLogger<UserService>.Instance)
+        {
+            _clinics = clinics ?? new Dictionary<string, List<(Guid, string)>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        protected override Task<List<(Guid Id, string Name)>> FindClinicsByNameAsync(
+            string name,
+            CancellationToken ct)
+        {
+            if (_clinics.TryGetValue(name, out var matches))
+                return Task.FromResult(matches);
+
+            return Task.FromResult(new List<(Guid Id, string Name)>());
+        }
+    }
+
     private sealed class Harness : IDisposable
     {
         private readonly SqliteConnection _connection;
         private readonly ServiceProvider _provider;
+        private readonly Dictionary<string, List<(Guid Id, string Name)>> _clinics = new(StringComparer.OrdinalIgnoreCase);
 
         public Harness()
         {
@@ -44,7 +76,7 @@ public class BulkCreateUsersTests
                 .AddEntityFrameworkStores<AuthDbContext>()
                 .AddDefaultTokenProviders();
 
-            services.AddScoped<UserService>();
+            // No registrar UserService DI — lo creamos manualmente con el stub.
             services.AddSingleton<IRoleService, RoleService>();
             services.AddSingleton<ITokenInvalidationService>(new FakeTokenInvalidationService());
 
@@ -64,7 +96,27 @@ public class BulkCreateUsersTests
         }
 
         public AuthDbContext Db => _provider.GetRequiredService<AuthDbContext>();
-        public UserService Users => _provider.GetRequiredService<UserService>();
+
+        /// <summary>Crea el servicio de prueba con el stub de clínicas configurado.</summary>
+        public TestUserService Users => new(
+            UserManager,
+            RoleManager,
+            Db,
+            _provider.GetRequiredService<ITokenInvalidationService>(),
+            _clinics);
+
+        /// <summary>Registra una clínica de prueba para la búsqueda por nombre.</summary>
+        public void RegisterClinic(string name, Guid id)
+        {
+            _clinics[name] = [(id, name)];
+        }
+
+        /// <summary>Registra múltiples clínicas con el mismo nombre (ambigua).</summary>
+        public void RegisterAmbiguousClinic(string name, params Guid[] ids)
+        {
+            _clinics[name] = ids.Select(id => (id, name)).ToList();
+        }
+
         public RoleService Roles => _provider.GetRequiredService<RoleService>();
         public UserManager<ApplicationUser> UserManager =>
             _provider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -453,5 +505,262 @@ public class BulkCreateUsersTests
         Assert.Equal(3, result.Created);
         Assert.Equal(2, result.Failed);
         Assert.Equal(5, result.Results.Count);
+    }
+
+    // --- Tests de asignación scoped por clínica ---
+
+    [Fact]
+    public async Task BulkCreate_ConClinicaYRol_CreaAsignacionScoped()
+    {
+        using var h = new Harness();
+        var roleId = await h.CreateRoleAsync("Professional");
+        var clinicId = Guid.NewGuid();
+        h.RegisterClinic("Clínica Central", clinicId);
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicName = "Clínica Central",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        var user = await h.UserManager.FindByIdAsync(result.Results[0].UserId!);
+        Assert.NotNull(user);
+
+        // NO debe tener rol global.
+        Assert.False(await h.UserManager.IsInRoleAsync(user!, "Professional"));
+
+        // SÍ debe tener asignación scoped.
+        var scoped = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user!.Id && s.ScopeType == "Clinic" && s.ScopeId == clinicId)
+            .ToListAsync();
+        Assert.Single(scoped);
+        Assert.Equal(roleId, scoped[0].RoleId);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicaNoEncontrada_FilaFallida()
+    {
+        using var h = new Harness();
+        await h.CreateRoleAsync("Professional");
+        // No registramos ninguna clínica.
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicName = "Clínica Inexistente",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica no encontrada", result.Results[0].Error);
+        Assert.Contains("Clínica Inexistente", result.Results[0].Error!);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicaAmbigua_FilaFallida()
+    {
+        using var h = new Harness();
+        await h.CreateRoleAsync("Professional");
+        h.RegisterAmbiguousClinic("Clínica Centro", Guid.NewGuid(), Guid.NewGuid());
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicName = "Clínica Centro",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica ambigua", result.Results[0].Error);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicaSinRol_FilaFallida()
+    {
+        using var h = new Harness();
+        var clinicId = Guid.NewGuid();
+        h.RegisterClinic("Clínica Central", clinicId);
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = null,
+                    ClinicName = "Clínica Central",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("La clínica requiere un rol", result.Results[0].Error);
+    }
+
+    [Fact]
+    public async Task BulkCreate_SinClinica_ConRolGlobal_ComportamientoNormal()
+    {
+        using var h = new Harness();
+        var roleId = await h.CreateRoleAsync("Professional");
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicName = null,
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        var user = await h.UserManager.FindByIdAsync(result.Results[0].UserId!);
+        Assert.NotNull(user);
+
+        // Rol global asignado (comportamiento existente).
+        Assert.True(await h.UserManager.IsInRoleAsync(user!, "Professional"));
+        // Sin asignación scoped.
+        var scoped = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user!.Id)
+            .ToListAsync();
+        Assert.Empty(scoped);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicaYRol_CaseInsensitive()
+    {
+        using var h = new Harness();
+        var roleId = await h.CreateRoleAsync("Professional");
+        var clinicId = Guid.NewGuid();
+        h.RegisterClinic("Clínica Central", clinicId);
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "professional", // minúscula
+                    ClinicName = "clínica central", // minúscula
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.True(result.Results[0].Success);
+        var user = await h.UserManager.FindByIdAsync(result.Results[0].UserId!);
+        Assert.NotNull(user);
+
+        var scoped = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user!.Id && s.ScopeType == "Clinic" && s.ScopeId == clinicId)
+            .ToListAsync();
+        Assert.Single(scoped);
+    }
+
+    [Fact]
+    public async Task BulkCreate_MixtoClinicaYSinClinica_IndependenciaPorFila()
+    {
+        using var h = new Harness();
+        var roleId = await h.CreateRoleAsync("Professional");
+        var clinicId = Guid.NewGuid();
+        h.RegisterClinic("Clínica Central", clinicId);
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                // Fila 1: con clínica → scoped.
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicName = "Clínica Central",
+                },
+                // Fila 2: sin clínica → global.
+                new()
+                {
+                    FirstName = "Luis",
+                    LastName = "Pérez",
+                    Email = "luis@test.com",
+                    RoleName = "Professional",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Equal(2, result.Created);
+        Assert.Equal(0, result.Failed);
+
+        // Fila 1: scoped.
+        var user1 = await h.UserManager.FindByIdAsync(result.Results[0].UserId!);
+        Assert.False(await h.UserManager.IsInRoleAsync(user1!, "Professional"));
+        var scoped1 = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user1!.Id)
+            .ToListAsync();
+        Assert.Single(scoped1);
+
+        // Fila 2: global.
+        var user2 = await h.UserManager.FindByIdAsync(result.Results[1].UserId!);
+        Assert.True(await h.UserManager.IsInRoleAsync(user2!, "Professional"));
+        var scoped2 = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user2!.Id)
+            .ToListAsync();
+        Assert.Empty(scoped2);
     }
 }

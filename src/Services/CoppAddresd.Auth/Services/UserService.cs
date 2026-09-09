@@ -203,6 +203,34 @@ public class UserService : IUserService
     }
 
     /// <summary>
+    /// Busca clínicas por nombre (case-insensitive) usando SQL crudo sobre
+    /// erp.clinics. Devuelve todas las coincidencias (0, 1 o N).
+    /// Protected virtual para poder mockear en tests unitarios (SQLite
+    /// no tiene la tabla erp.clinics).
+    /// </summary>
+    protected virtual async Task<List<(Guid Id, string Name)>> FindClinicsByNameAsync(
+        string name,
+        CancellationToken ct)
+    {
+        try
+        {
+            var clinics = await _dbContext.Database
+                .SqlQueryRaw<ScopeNameRow>(
+                    """SELECT id AS "Id", name AS "Name" FROM erp.clinics WHERE LOWER(name) = LOWER(@name)""",
+                    new NpgsqlParameter("name", name))
+                .Select(c => new ValueTuple<Guid, string>(c.Id, c.Name))
+                .ToListAsync(ct);
+
+            return clinics;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudieron buscar clínicas por nombre: {ClinicName}", name);
+            return [];
+        }
+    }
+
+    /// <summary>
     /// Crea el usuario, su password y (si vienen) sus roles y permisos directos
     /// en UNA transacción: si cualquier rol/permiso no existe o falla una
     /// asignación, se revierte todo y se devuelve un único error.
@@ -349,12 +377,12 @@ public class UserService : IUserService
             }
 
             // --- Resolver RoleName → RoleId ---
-            Guid[]? roleIds = null;
+            Guid? resolvedRoleId = null;
             if (!string.IsNullOrWhiteSpace(row.RoleName))
             {
                 if (roleNameToId.TryGetValue(row.RoleName, out var roleId))
                 {
-                    roleIds = [roleId];
+                    resolvedRoleId = roleId;
                 }
                 else
                 {
@@ -369,17 +397,69 @@ public class UserService : IUserService
                 }
             }
 
+            // --- Resolver ClinicName → clinicId (asignación scoped) ---
+            Guid? clinicId = null;
+            var hasClinicName = !string.IsNullOrWhiteSpace(row.ClinicName);
+            if (hasClinicName)
+            {
+                // La clínica requiere un rol.
+                if (resolvedRoleId is null)
+                {
+                    results.Add(new BulkCreateUserRowResult
+                    {
+                        Line = line,
+                        Success = false,
+                        Email = row.Email,
+                        Error = "La clínica requiere un rol"
+                    });
+                    continue;
+                }
+
+                var clinics = await FindClinicsByNameAsync(row.ClinicName!.Trim(), ct);
+                if (clinics.Count == 0)
+                {
+                    results.Add(new BulkCreateUserRowResult
+                    {
+                        Line = line,
+                        Success = false,
+                        Email = row.Email,
+                        Error = $"Clínica no encontrada (nombre {row.ClinicName})"
+                    });
+                    continue;
+                }
+                if (clinics.Count > 1)
+                {
+                    results.Add(new BulkCreateUserRowResult
+                    {
+                        Line = line,
+                        Success = false,
+                        Email = row.Email,
+                        Error = $"Clínica ambigua (nombre {row.ClinicName})"
+                    });
+                    continue;
+                }
+                clinicId = clinics[0].Id;
+            }
+
+            // --- Determinar si el rol se asigna global o scoped ---
+            Guid[]? globalRoleIds = null;
+            if (resolvedRoleId.HasValue && !hasClinicName)
+            {
+                // Sin clínica: rol global (comportamiento existente).
+                globalRoleIds = [resolvedRoleId.Value];
+            }
+
             // --- Generar contraseña temporal ---
             var tempPassword = GenerateSecurePassword();
 
-            // --- Llamar al CreateAsync existente (ya maneja email duplicado + transacción propia) ---
+            // --- Crear usuario (CreateAsync asigna roles globales si los hay) ---
             var createRequest = new CreateUserRequest
             {
                 Email = row.Email,
                 FirstName = row.FirstName,
                 LastName = row.LastName,
                 Password = tempPassword,
-                RoleIds = roleIds,
+                RoleIds = globalRoleIds,
                 PermissionIds = null
             };
 
@@ -397,6 +477,34 @@ public class UserService : IUserService
                     Error = error
                 });
                 continue;
+            }
+
+            // --- Asignación scoped (si hay clínica + rol) ---
+            if (hasClinicName && resolvedRoleId.HasValue && clinicId.HasValue)
+            {
+                var userGuid = Guid.Parse(user!.Id);
+
+                // Verificar si ya existe una asignación scoped idéntica.
+                var alreadyExists = await _dbContext.ScopedRoleAssignments
+                    .AnyAsync(s =>
+                        s.UserId == userGuid &&
+                        s.RoleId == resolvedRoleId.Value &&
+                        s.ScopeType == "Clinic" &&
+                        s.ScopeId == clinicId.Value, ct);
+
+                if (!alreadyExists)
+                {
+                    _dbContext.ScopedRoleAssignments.Add(new ScopedRoleAssignment
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = userGuid,
+                        RoleId = resolvedRoleId.Value,
+                        ScopeType = "Clinic",
+                        ScopeId = clinicId.Value,
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                    await _dbContext.SaveChangesAsync(ct);
+                }
             }
 
             // Si el status es "inactivo", desactivar después de crear.
