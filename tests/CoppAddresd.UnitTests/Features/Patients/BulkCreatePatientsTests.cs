@@ -9,19 +9,21 @@ namespace CoppAddresd.UnitTests.Features.Patients;
 public class BulkCreatePatientsTests
 {
     private readonly IPatientRepository _repository = Substitute.For<IPatientRepository>();
+    private readonly IOrganizationRepository _orgRepo = Substitute.For<IOrganizationRepository>();
     private readonly ILogger<BulkCreatePatientsCommandHandler> _logger =
         Substitute.For<ILogger<BulkCreatePatientsCommandHandler>>();
 
     private BulkCreatePatientsCommandHandler CreateHandler()
-        => new(_repository, _logger);
+        => new(_repository, _orgRepo, _logger);
 
     private static BulkPatientRowInput Row(
         string firstName = "Ana",
         string lastName = "López",
         string? documentNumber = null,
         string? email = null,
-        string? status = null) =>
-        new(firstName, lastName, documentNumber, email, status);
+        string? status = null,
+        string? clinicCode = null) =>
+        new(firstName, lastName, documentNumber, email, status, clinicCode);
 
     [Fact]
     public async Task FilaValida_CreaPaciente()
@@ -511,5 +513,150 @@ public class BulkCreatePatientsTests
         Assert.Single(result.Results);
         Assert.False(result.Results[0].Success);
         Assert.Contains("100 caracteres", result.Results[0].Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // ─── Tests: ClinicCode por fila ──────────────────────────────────
+
+    [Fact]
+    public async Task ClinicCodeValido_UsaEsaClinica()
+    {
+        var clinicId = Guid.NewGuid();
+        _repository
+            .GetExistingDocumentNumbersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _repository.AddAsync(Arg.Any<PatientProfile>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<PatientProfile>());
+
+        _orgRepo.GetClinicsByCodeAsync("CL001", Arg.Any<CancellationToken>())
+            .Returns([(clinicId, "Clínica Central")]);
+
+        var handler = CreateHandler();
+        var command = new BulkCreatePatientsCommand(
+            ClinicId: null,
+            Rows: [Row(clinicCode: "CL001")],
+            CreatedBy: null,
+            CreatedByProfessionalId: null);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        await _repository.Received(1).AddAsync(
+            Arg.Is<PatientProfile>(p => p.ClinicId == clinicId),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ClinicCodeDesconocido_FilaFallida()
+    {
+        _repository
+            .GetExistingDocumentNumbersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        _orgRepo.GetClinicsByCodeAsync("NOEXISTE", Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var handler = CreateHandler();
+        var command = new BulkCreatePatientsCommand(
+            ClinicId: null,
+            Rows: [Row(clinicCode: "NOEXISTE")],
+            CreatedBy: null,
+            CreatedByProfessionalId: null);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica no encontrada", result.Results[0].Error!);
+        Assert.Contains("NOEXISTE", result.Results[0].Error!);
+    }
+
+    [Fact]
+    public async Task ClinicCodeAmbiguo_FilaFallida()
+    {
+        // Si hay más de 1 clínica con el mismo código, es ambiguo.
+        var clinicId1 = Guid.NewGuid();
+        var clinicId2 = Guid.NewGuid();
+        _repository
+            .GetExistingDocumentNumbersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        _orgRepo.GetClinicsByCodeAsync("AMBIGUO", Arg.Any<CancellationToken>())
+            .Returns([(clinicId1, "Clínica A"), (clinicId2, "Clínica B")]);
+
+        var handler = CreateHandler();
+        var command = new BulkCreatePatientsCommand(
+            ClinicId: null,
+            Rows: [Row(clinicCode: "AMBIGUO")],
+            CreatedBy: null,
+            CreatedByProfessionalId: null);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica no encontrada", result.Results[0].Error!);
+    }
+
+    [Fact]
+    public async Task SinClinicCode_MantieneFallback()
+    {
+        var clinicId = Guid.NewGuid();
+        _repository
+            .GetExistingDocumentNumbersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _repository.AddAsync(Arg.Any<PatientProfile>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<PatientProfile>());
+
+        var handler = CreateHandler();
+        var command = new BulkCreatePatientsCommand(
+            ClinicId: clinicId,
+            Rows: [Row(clinicCode: null)],
+            CreatedBy: null,
+            CreatedByProfessionalId: null);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        await _repository.Received(1).AddAsync(
+            Arg.Is<PatientProfile>(p => p.ClinicId == clinicId),
+            Arg.Any<CancellationToken>());
+
+        // No se llamó a GetClinicsByCodeAsync cuando no hay ClinicCode.
+        await _orgRepo.DidNotReceive().GetClinicsByCodeAsync(
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ClinicCodeConClinicaId_Fila_GanaClinicaCode()
+    {
+        // Si la fila trae ClinicCode y el envelope trae ClinicId,
+        // el ClinicCode de la fila tiene precedencia.
+        var clinicFromCode = Guid.NewGuid();
+        var clinicFromEnvelope = Guid.NewGuid();
+        _repository
+            .GetExistingDocumentNumbersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _repository.AddAsync(Arg.Any<PatientProfile>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<PatientProfile>());
+
+        _orgRepo.GetClinicsByCodeAsync("CL001", Arg.Any<CancellationToken>())
+            .Returns([(clinicFromCode, "Clínica del código")]);
+
+        var handler = CreateHandler();
+        var command = new BulkCreatePatientsCommand(
+            ClinicId: clinicFromEnvelope,
+            Rows: [Row(clinicCode: "CL001")],
+            CreatedBy: null,
+            CreatedByProfessionalId: null);
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        await _repository.Received(1).AddAsync(
+            Arg.Is<PatientProfile>(p => p.ClinicId == clinicFromCode),
+            Arg.Any<CancellationToken>());
     }
 }
