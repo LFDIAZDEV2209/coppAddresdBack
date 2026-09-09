@@ -235,7 +235,8 @@ public static class DependencyInjection
                 // las operaciones sobre una conexión (pooling nativo).
                 services.AddSingleton<IConnectionMultiplexer>(_ =>
                 {
-                    var raw = connectionString ?? "localhost:6379";
+                    // localhost resuelve primero a ::1 (IPv6) y falla cuando Valkey solo escucha IPv4.
+                    var raw = connectionString ?? "127.0.0.1:6379";
                     var options = ConfigurationOptions.Parse(raw);
                     // Contrato fail-open: el arranque NUNCA se bloquea por
                     // caché ausente; las operaciones degradan por operación.
