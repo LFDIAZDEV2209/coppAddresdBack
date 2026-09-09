@@ -64,9 +64,18 @@ public static class DependencyInjection
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
 
+        // Recordatorios de hitos del programa (Program Milestone Reminder):
+        // repositorio enfocado de program_milestone_sends (precedente:
+        // DeviceTokenRepository/LeagueRepository — no crece ProgramRepository).
+        services.AddScoped<IProgramMilestoneRepository, ProgramMilestoneRepository>();
+
         // Liga del paciente (LEAGUE v1): repositorio enfocado de solo lectura
         // + update mínimo de preferencias (no crece ProgramRepository).
         services.AddScoped<ILeagueRepository, LeagueRepository>();
+
+        // Historial de métricas clínicas (metrics-history): repositorio
+        // enfocado de solo lectura (precedente ScoresHistoryRepository).
+        services.AddScoped<IMetricsHistoryRepository, MetricsHistoryRepository>();
 
         // Historial de puntajes del paciente (scores-history): repositorio
         // enfocado de solo lectura (no crece ProgramRepository, precedente:
@@ -123,6 +132,10 @@ public static class DependencyInjection
         // Pre-agregación de métricas de Inventario y Farmacia (Dashboard #6, Fase 1 CQRS)
         services.AddSingleton<IInventoryMetricsQueue, InventoryMetricsQueue>();
         services.AddHostedService<InventoryMetricsProcessorHostedService>();
+
+        // Pre-agregación de métricas Biométricas Clínicas (CQRS Channel Pattern)
+        services.AddSingleton<IBiometriaMetricsQueue, BiometriaMetricsQueue>();
+        services.AddHostedService<BiometriaMetricsProcessorHostedService>();
 
         // Calculadores del motor de puntajes (SPEC §13, T-37/T-41): funciones
         // puras consumidas por ProgramRepository; registrados con su ILogger
