@@ -231,6 +231,36 @@ public class UserService : IUserService
     }
 
     /// <summary>
+    /// Busca clínicas por código (case-insensitive) usando SQL crudo sobre
+    /// erp.clinics. Devuelve todas las coincidencias (0, 1 o N).
+    /// Protected virtual para poder mockear en tests unitarios (SQLite
+    /// no tiene la tabla erp.clinics).
+    /// Espejo exacto de FindClinicsByNameAsync pero comparando code en
+    /// lugar de name.
+    /// </summary>
+    protected virtual async Task<List<(Guid Id, string Name)>> FindClinicsByCodeAsync(
+        string code,
+        CancellationToken ct)
+    {
+        try
+        {
+            var clinics = await _dbContext.Database
+                .SqlQueryRaw<ScopeNameRow>(
+                    """SELECT id AS "Id", name AS "Name" FROM erp.clinics WHERE LOWER(code) = LOWER(@code)""",
+                    new NpgsqlParameter("code", code))
+                .Select(c => new ValueTuple<Guid, string>(c.Id, c.Name))
+                .ToListAsync(ct);
+
+            return clinics;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudieron buscar clínicas por código: {ClinicCode}", code);
+            return [];
+        }
+    }
+
+    /// <summary>
     /// Crea el usuario, su password y (si vienen) sus roles y permisos directos
     /// en UNA transacción: si cualquier rol/permiso no existe o falla una
     /// asignación, se revierte todo y se devuelve un único error.
@@ -397,10 +427,14 @@ public class UserService : IUserService
                 }
             }
 
-            // --- Resolver ClinicName → clinicId (asignación scoped) ---
+            // --- Resolver ClinicCode/ClinicName → clinicId (asignación scoped) ---
+            // Precedencia: ClinicCode se usa si está presente; ClinicName se ignora.
             Guid? clinicId = null;
+            var hasClinicCode = !string.IsNullOrWhiteSpace(row.ClinicCode);
             var hasClinicName = !string.IsNullOrWhiteSpace(row.ClinicName);
-            if (hasClinicName)
+            var hasClinic = hasClinicCode || hasClinicName;
+
+            if (hasClinic)
             {
                 // La clínica requiere un rol.
                 if (resolvedRoleId is null)
@@ -415,35 +449,67 @@ public class UserService : IUserService
                     continue;
                 }
 
-                var clinics = await FindClinicsByNameAsync(row.ClinicName!.Trim(), ct);
-                if (clinics.Count == 0)
+                // Si ClinicCode está presente, tiene precedencia sobre ClinicName.
+                if (hasClinicCode)
                 {
-                    results.Add(new BulkCreateUserRowResult
+                    var clinics = await FindClinicsByCodeAsync(row.ClinicCode!.Trim(), ct);
+                    if (clinics.Count == 0)
                     {
-                        Line = line,
-                        Success = false,
-                        Email = row.Email,
-                        Error = $"Clínica no encontrada (nombre {row.ClinicName})"
-                    });
-                    continue;
+                        results.Add(new BulkCreateUserRowResult
+                        {
+                            Line = line,
+                            Success = false,
+                            Email = row.Email,
+                            Error = $"Clínica no encontrada (código {row.ClinicCode})"
+                        });
+                        continue;
+                    }
+                    if (clinics.Count > 1)
+                    {
+                        results.Add(new BulkCreateUserRowResult
+                        {
+                            Line = line,
+                            Success = false,
+                            Email = row.Email,
+                            Error = $"Clínica ambigua (código {row.ClinicCode})"
+                        });
+                        continue;
+                    }
+                    clinicId = clinics[0].Id;
                 }
-                if (clinics.Count > 1)
+                else
                 {
-                    results.Add(new BulkCreateUserRowResult
+                    // ClinicName (comportamiento existente).
+                    var clinics = await FindClinicsByNameAsync(row.ClinicName!.Trim(), ct);
+                    if (clinics.Count == 0)
                     {
-                        Line = line,
-                        Success = false,
-                        Email = row.Email,
-                        Error = $"Clínica ambigua (nombre {row.ClinicName})"
-                    });
-                    continue;
+                        results.Add(new BulkCreateUserRowResult
+                        {
+                            Line = line,
+                            Success = false,
+                            Email = row.Email,
+                            Error = $"Clínica no encontrada (nombre {row.ClinicName})"
+                        });
+                        continue;
+                    }
+                    if (clinics.Count > 1)
+                    {
+                        results.Add(new BulkCreateUserRowResult
+                        {
+                            Line = line,
+                            Success = false,
+                            Email = row.Email,
+                            Error = $"Clínica ambigua (nombre {row.ClinicName})"
+                        });
+                        continue;
+                    }
+                    clinicId = clinics[0].Id;
                 }
-                clinicId = clinics[0].Id;
             }
 
             // --- Determinar si el rol se asigna global o scoped ---
             Guid[]? globalRoleIds = null;
-            if (resolvedRoleId.HasValue && !hasClinicName)
+            if (resolvedRoleId.HasValue && !hasClinic)
             {
                 // Sin clínica: rol global (comportamiento existente).
                 globalRoleIds = [resolvedRoleId.Value];
@@ -480,7 +546,7 @@ public class UserService : IUserService
             }
 
             // --- Asignación scoped (si hay clínica + rol) ---
-            if (hasClinicName && resolvedRoleId.HasValue && clinicId.HasValue)
+            if (hasClinic && resolvedRoleId.HasValue && clinicId.HasValue)
             {
                 var userGuid = Guid.Parse(user!.Id);
 

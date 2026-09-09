@@ -51,4 +51,12 @@ public record BulkCreateUserRow
     /// con scope de clínica en vez de un rol global. Requiere RoleName.
     /// </summary>
     public string? ClinicName { get; init; }
+
+    /// <summary>
+    /// Código de la clínica para asignación scoped (opcional, case-insensitive).
+    /// Si se proporciona, tiene precedencia sobre ClinicName y se usa para
+    /// buscar la clínica por código en lugar de por nombre.
+    /// Requiere RoleName.
+    /// </summary>
+    public string? ClinicCode { get; init; }
 }

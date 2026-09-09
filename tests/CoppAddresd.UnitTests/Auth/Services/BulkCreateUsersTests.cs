@@ -23,22 +23,25 @@ public class BulkCreateUsersTests
 {
     /// <summary>
     /// Servicio de prueba que reemplaza la búsqueda de clínicas por nombre
-    /// con un stub compatible con SQLite (no tiene tabla erp.clinics).
-    /// Permite configurar clínicas de prueba por nombre.
+    /// y por código con stubs compatibles con SQLite (no tiene tabla erp.clinics).
+    /// Permite configurar clínicas de prueba por nombre y código.
     /// </summary>
     private sealed class TestUserService : UserService
     {
         private readonly Dictionary<string, List<(Guid Id, string Name)>> _clinics;
+        private readonly Dictionary<string, List<(Guid Id, string Name)>> _clinicsByCode;
 
         public TestUserService(
             UserManager<ApplicationUser> userManager,
             RoleManager<ApplicationRole> roleManager,
             AuthDbContext dbContext,
             ITokenInvalidationService tokenInvalidation,
-            Dictionary<string, List<(Guid Id, string Name)>>? clinics = null)
+            Dictionary<string, List<(Guid Id, string Name)>>? clinics = null,
+            Dictionary<string, List<(Guid Id, string Name)>>? clinicsByCode = null)
             : base(userManager, roleManager, dbContext, tokenInvalidation, NullLogger<UserService>.Instance)
         {
             _clinics = clinics ?? new Dictionary<string, List<(Guid, string)>>(StringComparer.OrdinalIgnoreCase);
+            _clinicsByCode = clinicsByCode ?? new Dictionary<string, List<(Guid, string)>>(StringComparer.OrdinalIgnoreCase);
         }
 
         protected override Task<List<(Guid Id, string Name)>> FindClinicsByNameAsync(
@@ -50,6 +53,16 @@ public class BulkCreateUsersTests
 
             return Task.FromResult(new List<(Guid Id, string Name)>());
         }
+
+        protected override Task<List<(Guid Id, string Name)>> FindClinicsByCodeAsync(
+            string code,
+            CancellationToken ct)
+        {
+            if (_clinicsByCode.TryGetValue(code, out var matches))
+                return Task.FromResult(matches);
+
+            return Task.FromResult(new List<(Guid Id, string Name)>());
+        }
     }
 
     private sealed class Harness : IDisposable
@@ -57,6 +70,7 @@ public class BulkCreateUsersTests
         private readonly SqliteConnection _connection;
         private readonly ServiceProvider _provider;
         private readonly Dictionary<string, List<(Guid Id, string Name)>> _clinics = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, List<(Guid Id, string Name)>> _clinicsByCode = new(StringComparer.OrdinalIgnoreCase);
 
         public Harness()
         {
@@ -97,13 +111,14 @@ public class BulkCreateUsersTests
 
         public AuthDbContext Db => _provider.GetRequiredService<AuthDbContext>();
 
-        /// <summary>Crea el servicio de prueba con el stub de clínicas configurado.</summary>
+        /// <summary>Crea el servicio de prueba con los stubs de clínicas configurados.</summary>
         public TestUserService Users => new(
             UserManager,
             RoleManager,
             Db,
             _provider.GetRequiredService<ITokenInvalidationService>(),
-            _clinics);
+            _clinics,
+            _clinicsByCode);
 
         /// <summary>Registra una clínica de prueba para la búsqueda por nombre.</summary>
         public void RegisterClinic(string name, Guid id)
@@ -115,6 +130,18 @@ public class BulkCreateUsersTests
         public void RegisterAmbiguousClinic(string name, params Guid[] ids)
         {
             _clinics[name] = ids.Select(id => (id, name)).ToList();
+        }
+
+        /// <summary>Registra una clínica de prueba para la búsqueda por código.</summary>
+        public void RegisterClinicByCode(string code, Guid id, string? name = null)
+        {
+            _clinicsByCode[code] = [(id, name ?? code)];
+        }
+
+        /// <summary>Registra múltiples clínicas con el mismo código (ambigua).</summary>
+        public void RegisterAmbiguousClinicByCode(string code, params Guid[] ids)
+        {
+            _clinicsByCode[code] = ids.Select(id => (id, $"Clinic-{id}")).ToList();
         }
 
         public RoleService Roles => _provider.GetRequiredService<RoleService>();
@@ -762,5 +789,217 @@ public class BulkCreateUsersTests
             .Where(s => s.UserId == user2!.Id)
             .ToListAsync();
         Assert.Empty(scoped2);
+    }
+
+    // --- Tests de ClinicCode (precedencia sobre ClinicName) ---
+
+    [Fact]
+    public async Task BulkCreate_ConClinicCode_CreaAsignacionScoped()
+    {
+        using var h = new Harness();
+        var roleId = await h.CreateRoleAsync("Professional");
+        var clinicId = Guid.NewGuid();
+        h.RegisterClinicByCode("CL001", clinicId, "Clínica Central");
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicCode = "CL001",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        var user = await h.UserManager.FindByIdAsync(result.Results[0].UserId!);
+        Assert.NotNull(user);
+
+        // NO debe tener rol global.
+        Assert.False(await h.UserManager.IsInRoleAsync(user!, "Professional"));
+
+        // SÍ debe tener asignación scoped.
+        var scoped = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user!.Id && s.ScopeType == "Clinic" && s.ScopeId == clinicId)
+            .ToListAsync();
+        Assert.Single(scoped);
+        Assert.Equal(roleId, scoped[0].RoleId);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicCodeNoEncontrado_FilaFallida()
+    {
+        using var h = new Harness();
+        await h.CreateRoleAsync("Professional");
+        // No registramos ninguna clínica por código.
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicCode = "NOEXISTE",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica no encontrada", result.Results[0].Error);
+        Assert.Contains("NOEXISTE", result.Results[0].Error!);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicCodeYClinicName_Juntos_UsaCode()
+    {
+        // Si la fila trae ClinicCode Y ClinicCode tiene precedencia, se ignora ClinicName.
+        using var h = new Harness();
+        var roleId = await h.CreateRoleAsync("Professional");
+        var clinicIdByCode = Guid.NewGuid();
+        var clinicIdByName = Guid.NewGuid();
+
+        h.RegisterClinicByCode("CL001", clinicIdByCode, "Clínica por Código");
+        h.RegisterClinic("Clínica por Nombre", clinicIdByName);
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicCode = "CL001",
+                    ClinicName = "Clínica por Nombre", // se ignora por precedencia
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+
+        // Debe usar la clínica del código, no la del nombre.
+        var user = await h.UserManager.FindByIdAsync(result.Results[0].UserId!);
+        var scoped = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user!.Id && s.ScopeId == clinicIdByCode)
+            .ToListAsync();
+        Assert.Single(scoped);
+    }
+
+    [Fact]
+    public async Task BulkCreate_SinClinicCode_NiClinicName_Unchanged()
+    {
+        // Sin ClinicCode ni ClinicName, el comportamiento es unchanged.
+        using var h = new Harness();
+        var roleId = await h.CreateRoleAsync("Professional");
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicCode = null,
+                    ClinicName = null,
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.True(result.Results[0].Success);
+        var user = await h.UserManager.FindByIdAsync(result.Results[0].UserId!);
+        Assert.True(await h.UserManager.IsInRoleAsync(user!, "Professional"));
+        var scoped = await h.Db.ScopedRoleAssignments
+            .Where(s => s.UserId == user!.Id)
+            .ToListAsync();
+        Assert.Empty(scoped);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicCodeAmbiguo_FilaFallida()
+    {
+        // Si hay más de 1 clínica con el mismo código, es ambiguo.
+        using var h = new Harness();
+        await h.CreateRoleAsync("Professional");
+        var clinicId1 = Guid.NewGuid();
+        var clinicId2 = Guid.NewGuid();
+
+        // Registrar dos clínicas con el mismo código (ambigua).
+        h.RegisterAmbiguousClinicByCode("AMBIGUO", clinicId1, clinicId2);
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = "Professional",
+                    ClinicCode = "AMBIGUO",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("Clínica ambigua", result.Results[0].Error);
+    }
+
+    [Fact]
+    public async Task BulkCreate_ClinicCodeSinRol_FilaFallida()
+    {
+        using var h = new Harness();
+        var clinicId = Guid.NewGuid();
+        h.RegisterClinicByCode("CL001", clinicId, "Clínica Central");
+
+        var request = new BulkCreateUsersRequest
+        {
+            Rows =
+            [
+                new()
+                {
+                    FirstName = "Ana",
+                    LastName = "García",
+                    Email = "ana@test.com",
+                    RoleName = null,
+                    ClinicCode = "CL001",
+                },
+            ]
+        };
+
+        var result = await h.Users.CreateBulkAsync(request);
+
+        Assert.Single(result.Results);
+        Assert.False(result.Results[0].Success);
+        Assert.Contains("La clínica requiere un rol", result.Results[0].Error);
     }
 }
