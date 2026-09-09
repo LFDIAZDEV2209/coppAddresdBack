@@ -244,14 +244,42 @@ public sealed class BiometriaSeeder(
                 });
                 inserted++;
 
-                // Wrist
+                // BMI
                 db.ClinicalMeasurements.Add(new ClinicalMeasurement
                 {
                     Id = Guid.NewGuid(),
                     PatientId = enrollment.PatientId,
-                    MetricId = metricMap["wrist"],
-                    Value = weekWrist,
-                    UnitId = unitMap["cm"],
+                    MetricId = metricMap["bmi"],
+                    Value = weekBmi,
+                    UnitId = unitMap["kg_m2"],
+                    ObservedAt = observedAt,
+                    Source = BiometriaSource,
+                    CreatedAt = DateTime.UtcNow,
+                });
+                inserted++;
+
+                // Body Fat
+                db.ClinicalMeasurements.Add(new ClinicalMeasurement
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = enrollment.PatientId,
+                    MetricId = metricMap["body_fat"],
+                    Value = weekBodyFat,
+                    UnitId = unitMap["pct"],
+                    ObservedAt = observedAt,
+                    Source = BiometriaSource,
+                    CreatedAt = DateTime.UtcNow,
+                });
+                inserted++;
+
+                // Glucose Fasting
+                db.ClinicalMeasurements.Add(new ClinicalMeasurement
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = enrollment.PatientId,
+                    MetricId = metricMap["glucose_fasting"],
+                    Value = weekGlucose,
+                    UnitId = unitMap["mg_dl"],
                     ObservedAt = observedAt,
                     Source = BiometriaSource,
                     CreatedAt = DateTime.UtcNow,
@@ -263,10 +291,91 @@ public sealed class BiometriaSeeder(
         if (inserted > 0)
         {
             await db.SaveChangesAsync(ct);
+            await BackfillBiometriaRollupAsync(db, ct);
         }
 
         logger.LogInformation(
-            "Biometría seed completado: {Enrollments} inscripciones, {Inserted} mediciones insertadas.",
+            "Biometría seed completado: {Enrollments} inscripciones, {Inserted} mediciones insertadas y rollup actualizado.",
             activeEnrollments.Count, inserted);
+    }
+
+    private static async Task BackfillBiometriaRollupAsync(AppDbContext db, CancellationToken ct)
+    {
+        // Script de backfill atómico para app.biometria_daily_metrics
+        const string sqlBackfill = """
+            INSERT INTO app.biometria_daily_metrics (metric_date, metric_key, dimension_key, total_count, total_value, last_updated_at)
+            SELECT
+                DATE(cm.observed_at) AS metric_date,
+                'imc_distribution' AS metric_key,
+                CASE
+                    WHEN cm.value < 18.5 THEN 'Bajo peso'
+                    WHEN cm.value < 25   THEN 'Normal'
+                    WHEN cm.value < 30   THEN 'Sobrepeso'
+                    WHEN cm.value < 35   THEN 'Obesidad I'
+                    ELSE 'Obesidad II-III'
+                END AS dimension_key,
+                COUNT(*) AS total_count,
+                SUM(cm.value) AS total_value,
+                NOW() AS last_updated_at
+            FROM app.clinical_measurements cm
+            JOIN app.measurement_metrics mm ON cm.metric_id = mm.id
+            WHERE mm.code = 'bmi'
+            GROUP BY DATE(cm.observed_at), CASE
+                WHEN cm.value < 18.5 THEN 'Bajo peso'
+                WHEN cm.value < 25   THEN 'Normal'
+                WHEN cm.value < 30   THEN 'Sobrepeso'
+                WHEN cm.value < 35   THEN 'Obesidad I'
+                ELSE 'Obesidad II-III'
+            END
+            ON CONFLICT (metric_date, metric_key, dimension_key)
+            DO UPDATE SET total_count = EXCLUDED.total_count, total_value = EXCLUDED.total_value, last_updated_at = NOW();
+
+            INSERT INTO app.biometria_daily_metrics (metric_date, metric_key, dimension_key, total_count, total_value, last_updated_at)
+            SELECT
+                DATE(cm.observed_at) AS metric_date,
+                'community_avg' AS metric_key,
+                'imc' AS dimension_key,
+                COUNT(*) AS total_count,
+                SUM(cm.value) AS total_value,
+                NOW() AS last_updated_at
+            FROM app.clinical_measurements cm
+            JOIN app.measurement_metrics mm ON cm.metric_id = mm.id
+            WHERE mm.code = 'bmi'
+            GROUP BY DATE(cm.observed_at)
+            ON CONFLICT (metric_date, metric_key, dimension_key)
+            DO UPDATE SET total_count = EXCLUDED.total_count, total_value = EXCLUDED.total_value, last_updated_at = NOW();
+
+            INSERT INTO app.biometria_daily_metrics (metric_date, metric_key, dimension_key, total_count, total_value, last_updated_at)
+            SELECT
+                DATE(cm.observed_at) AS metric_date,
+                'community_avg' AS metric_key,
+                'grasa' AS dimension_key,
+                COUNT(*) AS total_count,
+                SUM(cm.value) AS total_value,
+                NOW() AS last_updated_at
+            FROM app.clinical_measurements cm
+            JOIN app.measurement_metrics mm ON cm.metric_id = mm.id
+            WHERE mm.code = 'body_fat'
+            GROUP BY DATE(cm.observed_at)
+            ON CONFLICT (metric_date, metric_key, dimension_key)
+            DO UPDATE SET total_count = EXCLUDED.total_count, total_value = EXCLUDED.total_value, last_updated_at = NOW();
+
+            INSERT INTO app.biometria_daily_metrics (metric_date, metric_key, dimension_key, total_count, total_value, last_updated_at)
+            SELECT
+                DATE(cm.observed_at) AS metric_date,
+                'community_avg' AS metric_key,
+                'glucosa' AS dimension_key,
+                COUNT(*) AS total_count,
+                SUM(cm.value) AS total_value,
+                NOW() AS last_updated_at
+            FROM app.clinical_measurements cm
+            JOIN app.measurement_metrics mm ON cm.metric_id = mm.id
+            WHERE mm.code = 'glucose_fasting'
+            GROUP BY DATE(cm.observed_at)
+            ON CONFLICT (metric_date, metric_key, dimension_key)
+            DO UPDATE SET total_count = EXCLUDED.total_count, total_value = EXCLUDED.total_value, last_updated_at = NOW();
+            """;
+
+        await db.Database.ExecuteSqlRawAsync(sqlBackfill, ct);
     }
 }

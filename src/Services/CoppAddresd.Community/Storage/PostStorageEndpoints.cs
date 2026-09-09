@@ -13,14 +13,15 @@ namespace CoppAddresd.Community.Storage;
 /// </summary>
 public static class PostStorageEndpoints
 {
-    /// <summary>Prefijos de clave reservados (publicaciones, avatares, portadas).</summary>
+    /// <summary>Prefijos de clave reservados (publicaciones, avatares, portadas, logos).</summary>
     public const string KeyPrefix = "community/posts/";
     public const string AvatarPrefix = "community/avatars/";
     public const string CoverPrefix = "community/covers/";
+    public const string LogoPrefix = "community/logos/";
 
     /// <summary>Prefijos permitidos para los adjuntos del servicio de comunidad.</summary>
     private static readonly string[] AllowedPrefixes =
-        [KeyPrefix, AvatarPrefix, CoverPrefix];
+        [KeyPrefix, AvatarPrefix, CoverPrefix, LogoPrefix];
 
     /// <summary>Límite de tamaño por imagen (8 MB).</summary>
     private const long MaxImageBytes = 8 * 1024 * 1024;
@@ -94,6 +95,10 @@ public static class PostStorageEndpoints
     /// <summary>True si la clave pertenece al espacio de portadas.</summary>
     public static bool IsCoverKey(string key)
         => key.StartsWith(CoverPrefix, StringComparison.Ordinal);
+
+    /// <summary>True si la clave pertenece al espacio de logos.</summary>
+    public static bool IsLogoKey(string key)
+        => key.StartsWith(LogoPrefix, StringComparison.Ordinal);
 
     private static async Task<IResult> PutPostImageAsync(
         string key,

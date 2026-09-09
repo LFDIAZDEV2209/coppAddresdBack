@@ -77,6 +77,370 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("chat_group_members", "community");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.Club", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("CoverKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("cover_key");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("CreatedByProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_profile_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("description");
+
+                    b.Property<bool>("IsSystem")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_system");
+
+                    b.Property<string>("LogoKey")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("logo_key");
+
+                    b.Property<int?>("MaxMembers")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_members");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.PrimitiveCollection<string[]>("Objectives")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("objectives");
+
+                    b.PrimitiveCollection<string[]>("Rules")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("rules");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("slug");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.PrimitiveCollection<string[]>("Tags")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("tags");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("visibility");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category")
+                        .HasDatabaseName("ix_clubs_category");
+
+                    b.HasIndex("CreatedByProfileId");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_clubs_slug");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_clubs_status");
+
+                    b.ToTable("clubs", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("icon");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("slug");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_club_categories_slug");
+
+                    b.ToTable("club_categories", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("club_id");
+
+                    b.Property<int>("ConfirmedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("confirmed_count");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("description");
+
+                    b.Property<DateTime>("EndsAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("ends_at");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("location");
+
+                    b.Property<int?>("MaxAttendees")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_attendees");
+
+                    b.Property<string>("MeetingUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("meeting_url");
+
+                    b.Property<DateTime>("StartsAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("starts_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("type");
+
+                    b.Property<int>("WaitlistCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("waitlist_count");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId", "StartsAt")
+                        .HasDatabaseName("ix_club_events_club_id_starts_at");
+
+                    b.ToTable("club_events", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubInvitation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("club_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("CreatedByProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by_profile_id");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("ProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profile_id");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("used_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId")
+                        .HasDatabaseName("ix_club_invitations_club_id");
+
+                    b.HasIndex("Token")
+                        .IsUnique()
+                        .HasDatabaseName("ix_club_invitations_token");
+
+                    b.ToTable("club_invitations", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubMember", b =>
+                {
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("club_id");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profile_id");
+
+                    b.Property<DateTime>("JoinedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("joined_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("MutedUntil")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("muted_until");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("ClubId", "ProfileId");
+
+                    b.HasIndex("ProfileId")
+                        .HasDatabaseName("ix_club_members_profile_id");
+
+                    b.HasIndex("ClubId", "Role")
+                        .HasDatabaseName("ix_club_members_club_id_role");
+
+                    b.ToTable("club_members", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("club_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Payload")
+                        .HasColumnType("text")
+                        .HasColumnName("payload");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profile_id");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("read_at");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClubId")
+                        .HasDatabaseName("ix_club_notifications_club_id");
+
+                    b.HasIndex("ProfileId", "ReadAt")
+                        .HasDatabaseName("ix_club_notifications_profile_id_read_at");
+
+                    b.ToTable("club_notifications", "community");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.Comment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -168,6 +532,46 @@ namespace CoppAddresd.Community.Migrations
                         .HasDatabaseName("ix_comment_reports_reported_by_profile_id");
 
                     b.ToTable("comment_reports", "community");
+                });
+
+modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profile_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfileId")
+                        .HasDatabaseName("ix_event_attendances_profile_id");
+
+                    b.HasIndex("EventId", "ProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_event_attendances_event_id_profile_id");
+
+                    b.ToTable("event_attendances", "community");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.CommunityDailyMetric", b =>
@@ -325,6 +729,119 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("likes", "community");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("body");
+
+                    b.Property<Guid>("LiveSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("live_session_id");
+
+                    b.Property<Guid>("SenderProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sender_profile_id");
+
+                    b.Property<DateTime>("SentAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("sent_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SenderProfileId");
+
+                    b.HasIndex("LiveSessionId", "SentAt")
+                        .HasDatabaseName("ix_live_chat_messages_live_session_id_sent_at");
+
+                    b.ToTable("live_chat_messages", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("club_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("EmbedUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("embed_url");
+
+                    b.Property<Guid?>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<string>("ProviderRoom")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("provider_room");
+
+                    b.Property<DateTime>("ScheduledStartAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("scheduled_start_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId");
+
+                    b.HasIndex("ClubId", "ScheduledStartAt")
+                        .HasDatabaseName("ix_live_sessions_club_id_scheduled_start_at");
+
+                    b.ToTable("live_sessions", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSessionSpeaker", b =>
+                {
+                    b.Property<Guid>("LiveSessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("live_session_id");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profile_id");
+
+                    b.HasKey("LiveSessionId", "ProfileId");
+
+                    b.HasIndex("ProfileId");
+
+                    b.ToTable("live_session_speakers", "community");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.Message", b =>
                 {
                     b.Property<Guid>("Id")
@@ -376,6 +893,55 @@ namespace CoppAddresd.Community.Migrations
                         .HasDatabaseName("ix_messages_sender_recipient_created");
 
                     b.ToTable("messages", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ModerationLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("action");
+
+                    b.Property<Guid>("ActorProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_profile_id");
+
+                    b.Property<Guid>("ClubId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("club_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("TargetProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_profile_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorProfileId");
+
+                    b.HasIndex("TargetProfileId");
+
+                    b.HasIndex("ClubId", "CreatedAt")
+                        .HasDatabaseName("ix_moderation_logs_club_id_created_at");
+
+                    b.ToTable("moderation_logs", "community");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.NetworkChannel", b =>
@@ -556,6 +1122,20 @@ namespace CoppAddresd.Community.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("body");
 
+                    b.Property<Guid?>("ClubId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("club_id");
+
+                    b.Property<string>("ClubStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("club_status");
+
+                    b.Property<string>("ClubVisibility")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("club_visibility");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamptz")
@@ -570,6 +1150,10 @@ namespace CoppAddresd.Community.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("destination");
+
+                    b.Property<bool>("Featured")
+                        .HasColumnType("boolean")
+                        .HasColumnName("featured");
 
                     b.Property<string>("ImageKey")
                         .HasMaxLength(512)
@@ -587,6 +1171,10 @@ namespace CoppAddresd.Community.Migrations
                     b.Property<Guid>("ProfileId")
                         .HasColumnType("uuid")
                         .HasColumnName("profile_id");
+
+                    b.Property<DateTime?>("ScheduledFor")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("scheduled_for");
 
                     b.Property<string>("Type")
                         .HasMaxLength(30)
@@ -608,6 +1196,12 @@ namespace CoppAddresd.Community.Migrations
 
                     b.HasIndex("ProfileId")
                         .HasDatabaseName("ix_posts_profile_id");
+
+                    b.HasIndex("ClubId", "ClubStatus")
+                        .HasDatabaseName("ix_posts_club_id_club_status");
+
+                    b.HasIndex("ClubId", "CreatedAt")
+                        .HasDatabaseName("ix_posts_club_id_created_at");
 
                     b.ToTable("posts", "community");
                 });
@@ -929,6 +1523,77 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Profile");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.Club", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "CreatedByProfile")
+                        .WithMany()
+                        .HasForeignKey("CreatedByProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedByProfile");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubEvent", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Club", "Club")
+                        .WithMany("Events")
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Club");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubInvitation", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Club", "Club")
+                        .WithMany("Invitations")
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Club");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubMember", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Club", "Club")
+                        .WithMany("Members")
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Club");
+
+                    b.Navigation("Profile");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubNotification", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Club", "Club")
+                        .WithMany("Notifications")
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Club");
+
+                    b.Navigation("Profile");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.Comment", b =>
                 {
                     b.HasOne("CoppAddresd.Community.Entities.Comment", null)
@@ -969,6 +1634,25 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Comment");
 
                     b.Navigation("ReportedBy");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.ClubEvent", "Event")
+                        .WithMany("Attendances")
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Event");
+
+                    b.Navigation("Profile");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.FeedEvent", b =>
@@ -1021,6 +1705,62 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Profile");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveChatMessage", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.LiveSession", "LiveSession")
+                        .WithMany("ChatMessages")
+                        .HasForeignKey("LiveSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "SenderProfile")
+                        .WithMany()
+                        .HasForeignKey("SenderProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LiveSession");
+
+                    b.Navigation("SenderProfile");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSession", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Club", "Club")
+                        .WithMany("LiveSessions")
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.ClubEvent", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Club");
+
+                    b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSessionSpeaker", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.LiveSession", "LiveSession")
+                        .WithMany("Speakers")
+                        .HasForeignKey("LiveSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
+                        .WithMany()
+                        .HasForeignKey("ProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("LiveSession");
+
+                    b.Navigation("Profile");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.Message", b =>
                 {
                     b.HasOne("CoppAddresd.Community.Entities.ChatGroup", null)
@@ -1043,6 +1783,33 @@ namespace CoppAddresd.Community.Migrations
                         .WithMany()
                         .HasForeignKey("TriggeredByProfileId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ModerationLog", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "ActorProfile")
+                        .WithMany()
+                        .HasForeignKey("ActorProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Club", "Club")
+                        .WithMany("ModerationLogs")
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", "TargetProfile")
+                        .WithMany()
+                        .HasForeignKey("TargetProfileId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ActorProfile");
+
+                    b.Navigation("Club");
+
+                    b.Navigation("TargetProfile");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.NetworkGrowthPoint", b =>
@@ -1091,11 +1858,18 @@ namespace CoppAddresd.Community.Migrations
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.Post", b =>
                 {
+                    b.HasOne("CoppAddresd.Community.Entities.Club", "Club")
+                        .WithMany()
+                        .HasForeignKey("ClubId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("CoppAddresd.Community.Entities.Profile", "Profile")
                         .WithMany("Posts")
                         .HasForeignKey("ProfileId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Club");
 
                     b.Navigation("Profile");
                 });
@@ -1169,6 +1943,26 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Messages");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.Club", b =>
+                {
+                    b.Navigation("Events");
+
+                    b.Navigation("Invitations");
+
+                    b.Navigation("LiveSessions");
+
+                    b.Navigation("Members");
+
+                    b.Navigation("ModerationLogs");
+
+                    b.Navigation("Notifications");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ClubEvent", b =>
+                {
+                    b.Navigation("Attendances");
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.Comment", b =>
                 {
                     b.Navigation("Likes");
@@ -1176,6 +1970,13 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Replies");
 
                     b.Navigation("Reports");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.LiveSession", b =>
+                {
+                    b.Navigation("ChatMessages");
+
+                    b.Navigation("Speakers");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.NetworkChannel", b =>

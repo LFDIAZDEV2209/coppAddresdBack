@@ -90,6 +90,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Encounter> Encounters => Set<Encounter>();
     public DbSet<ClinicalMeasurement> ClinicalMeasurements => Set<ClinicalMeasurement>();
     public DbSet<PlanSafetyRule> PlanSafetyRules => Set<PlanSafetyRule>();
+    public DbSet<BiometriaDailyMetric> BiometriaDailyMetrics => Set<BiometriaDailyMetric>();
 
 // Food AI — Nutrición (schema foodai)
     public DbSet<Food> Foods => Set<Food>();
@@ -136,6 +137,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<EmotionalRecord> EmotionalRecords => Set<EmotionalRecord>();
     public DbSet<XpRule> XpRules => Set<XpRule>();
     public DbSet<ProgramDailyMetric> ProgramDailyMetrics => Set<ProgramDailyMetric>();
+    public DbSet<ProgramMilestoneSend> ProgramMilestoneSends => Set<ProgramMilestoneSend>();
 
     // Program Progress — Scores
     public DbSet<HealthScoreWeight> HealthScoreWeights => Set<HealthScoreWeight>();

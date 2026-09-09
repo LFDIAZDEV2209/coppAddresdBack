@@ -3,7 +3,9 @@ using CoppAddresd.Auth.Entities;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -12,21 +14,24 @@ namespace CoppAddresd.UnitTests.Auth.TestDoubles;
 
 /// <summary>
 /// Helpers de identidad para tests de Auth.
-/// Provee un AuthDbContext en memoria aislado por llamada y dobles
-/// de UserManager/SignInManager requeridos por InvalidationVerificationTests.
+/// Provee contextos en memoria (InMemory/SQLite) y dobles de
+/// UserManager/SignInManager/RoleManager.
 /// </summary>
 public static class IdentityTestDoubles
 {
     /// <summary>
-    /// Crea un AuthDbContext en memoria aislado por llamada.
-    /// Usa InMemory con nombre único por invocación para garantizar aislamiento
-    /// entre tests (evita colisiones y FK de SQLite que romperían el seed con
-    /// UserRoles huérfanos).
+    /// Crea un AuthDbContext InMemory aislado por llamada (EnsureCreated).
+    /// Los servicios que abren transacciones explícitas (UserService) obtienen
+    /// un no-op del proveedor InMemory: se ignora la advertencia
+    /// TransactionIgnoredWarning a propósito para que esos flujos no estallen.
+    /// Para comportamiento relacional real (ExecuteUpdateAsync, transacciones)
+    /// usar <see cref="CreateSqliteDbContext"/>.
     /// </summary>
     public static AuthDbContext CreateInMemoryDbContext()
     {
         var options = new DbContextOptionsBuilder<AuthDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         var context = new AuthDbContext(options);
@@ -35,7 +40,34 @@ public static class IdentityTestDoubles
     }
 
     /// <summary>
-    /// Crea un UserManager mock que resuelve FindByIdAsync al usuario dado.
+    /// Crea un AuthDbContext sobre SQLite EN MEMORIA con el esquema completo del
+    /// modelo: ejecuta UPDATEs condicionales (ExecuteUpdateAsync) y transacciones
+    /// reales, a diferencia del proveedor InMemory. La conexión se devuelve
+    /// ABIERTA (la BD vive mientras haya conexiones abiertas); el llamador debe
+    /// disponer contexto y conexión. Un mismo dbName comparte la BD (tests de
+    /// concurrencia con dos contextos).
+    /// </summary>
+    public static (AuthDbContext Db, SqliteConnection Connection) CreateSqliteDbContext(
+        string? dbName = null)
+    {
+        var connectionString = dbName is null
+            ? "DataSource=:memory:"
+            : $"Data Source={dbName};Mode=Memory;Cache=Shared";
+
+        var connection = new SqliteConnection(connectionString);
+        connection.Open();
+
+        var options = new DbContextOptionsBuilder<AuthDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        return (new AuthDbContext(options), connection);
+    }
+
+    /// <summary>
+    /// Crea un UserManager mock que resuelve FindByIdAsync al usuario dado
+    /// (solo cuando el id coincide; resto → null, para ejercitar rutas de
+    /// "usuario no encontrado").
     /// </summary>
     public static UserManager<ApplicationUser> CreateUserManager(ApplicationUser user)
     {
@@ -78,5 +110,21 @@ public static class IdentityTestDoubles
             userManager, contextAccessor, claimsFactory, opts, logger, schemes, confirmation);
 
         return manager;
+    }
+
+    /// <summary>
+    /// RoleManager sustituto (NSubstitute): los tests no ejercitan el manager de
+    /// roles (el sync resuelve RoleIds contra el AuthDbContext); se entrega un
+    /// substitute sin configuración.
+    /// </summary>
+    public static RoleManager<ApplicationRole> CreateRoleManager()
+    {
+        return Substitute.For<RoleManager<ApplicationRole>>(
+            Substitute.For<IRoleStore<ApplicationRole>>(),
+            Array.Empty<IRoleValidator<ApplicationRole>>(),
+            new UpperInvariantLookupNormalizer(),
+            new IdentityErrorDescriber(),
+            Substitute.For<ILogger<RoleManager<ApplicationRole>>>()
+        );
     }
 }
