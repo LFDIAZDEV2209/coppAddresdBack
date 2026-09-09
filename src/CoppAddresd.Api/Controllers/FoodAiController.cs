@@ -70,7 +70,13 @@ public class FoodAiController : ControllerBase
 
         try
         {
-            await using var stream = image.OpenReadStream();
+            // IFormFile entrega un ReferenceReadStream (lectura forward-only, sin
+            // seek); el handler re-posiciona el stream (Position = 0) varias veces
+            // (guardar imagen + enviar al Food AI). Se bufferiza a MemoryStream.
+            await using var sourceStream = image.OpenReadStream();
+            using var stream = new MemoryStream();
+            await sourceStream.CopyToAsync(stream, ct);
+            stream.Position = 0;
             var userId = TryGetUserId();
             var command = new AnalyzeFoodImageCommand(
                 stream, image.FileName, image.ContentType, image.Length, userId);
