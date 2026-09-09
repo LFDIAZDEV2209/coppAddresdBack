@@ -1,5 +1,7 @@
 using CoppAddresd.Auth.Data;
+using CoppAddresd.Auth.Entities;
 using CoppAddresd.Auth.Seeders;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,9 +10,9 @@ namespace CoppAddresd.UnitTests.Auth.Seeders;
 
 /// <summary>
 /// Verifica la convención de escalabilidad del RoleSeeder: rol clínico
-/// consolidado Professional, aliases legado con permisos idénticos, roles
-/// funcionales por capacidad (Finance/Auditor/Coordinator) y marcado IsSystem
-/// idempotente.
+/// consolidado Professional, eliminación de roles legado con conversión
+/// de holders, roles funcionales por capacidad (Finance/Auditor) y marcado
+/// IsSystem idempotente.
 /// </summary>
 public class RoleSeederTests
 {
@@ -58,57 +60,12 @@ public class RoleSeederTests
         Assert.Contains("Professional", names);
         Assert.Contains("Finance", names);
         Assert.Contains("Auditor", names);
-        Assert.Contains("Coordinator", names);
-        // Aliases legado: existen (conservan usuarios ya asignados).
-        Assert.Contains("Physician", names);
-        Assert.Contains("Nutritionist", names);
-        Assert.Contains("Psychologist", names);
-    }
-
-    [Fact]
-    public async Task Seed_LegadosNoRecibenPermisosPorDefecto()
-    {
-        using var h = new Harness();
-        await SeedAsync(h);
-
-        // En BD nueva los aliases legado existen pero sin asignaciones por
-        // defecto: los permisos los conservan solo usuarios ya asignados en
-        // BD existentes (ver Seed_NoRevocaPermisosDeAliasesLegadoExistentes).
-        foreach (var legacy in new[] { "Physician", "Nutritionist", "Psychologist" })
-        {
-            var legacyPermissions = await GetRolePermissionCodesAsync(h, legacy);
-            Assert.Empty(legacyPermissions);
-        }
-    }
-
-    [Fact]
-    public async Task Seed_NoRevocaPermisosDeAliasesLegadoExistentes()
-    {
-        using var h = new Harness();
-        await SeedAsync(h);
-
-        // Simula una BD existente: el legado ya tenía los permisos clínicos
-        // compartidos (los de Professional). El seed no debe quitárselos.
-        var professionalPermissions = await GetRolePermissionCodesAsync(h, "Professional");
-        var physician = await h.Db.Roles.SingleAsync(r => r.Name == "Physician");
-        h.Db.RolePermissions.AddRange(
-            professionalPermissions.Select(code =>
-            {
-                var permission = h.Db.Permissions.Single(p => p.Code == code);
-                return new CoppAddresd.Auth.Entities.RolePermission
-                {
-                    RoleId = physician.Id,
-                    PermissionId = permission.Id,
-                };
-            })
-        );
-        await h.Db.SaveChangesAsync();
-
-        // Re-sembrar: los permisos existentes del alias se conservan.
-        await SeedAsync(h);
-
-        var preserved = await GetRolePermissionCodesAsync(h, "Physician");
-        Assert.Equal(professionalPermissions.OrderBy(c => c), preserved.OrderBy(c => c));
+        Assert.Contains("CareCoordinator", names);
+        // Roles legado eliminados.
+        Assert.DoesNotContain("Coordinator", names);
+        Assert.DoesNotContain("Physician", names);
+        Assert.DoesNotContain("Nutritionist", names);
+        Assert.DoesNotContain("Psychologist", names);
     }
 
     [Fact]
@@ -177,58 +134,174 @@ public class RoleSeederTests
         Assert.Contains("Professional", systemRoles);
         Assert.Contains("Finance", systemRoles);
         Assert.Contains("Auditor", systemRoles);
-        Assert.Contains("Coordinator", systemRoles);
-        Assert.Contains("Physician", systemRoles);
-        Assert.Contains("Nutritionist", systemRoles);
-        Assert.Contains("Psychologist", systemRoles);
         Assert.Contains("Nurse", systemRoles);
         Assert.Contains("Receptionist", systemRoles);
         Assert.Contains("CareCoordinator", systemRoles);
+        // Roles legado ya no existen (eliminados por el seeder).
+        Assert.DoesNotContain("Physician", systemRoles);
+        Assert.DoesNotContain("Nutritionist", systemRoles);
+        Assert.DoesNotContain("Psychologist", systemRoles);
+        Assert.DoesNotContain("Coordinator", systemRoles);
         // El rol Admin lo crea AdminSeeder (IsSystem = true); no corre en este harness.
     }
 
     [Fact]
-    public async Task Seed_AliasesLegadosQuedanDesactivados()
+    public async Task Seed_EliminaRolesLegado()
     {
         using var h = new Harness();
         await SeedAsync(h);
 
-        // Los aliases legado se crean y mantienen con IsActive = false: la
-        // cadena de permisos no filtra por IsActive, así que los usuarios ya
-        // asignados conservan sus permisos, pero el rol no se asigna a nuevos.
-        foreach (var legacy in new[] { "Physician", "Nutritionist", "Psychologist" })
-        {
-            var role = await h.Db.Roles.AsNoTracking().SingleAsync(r => r.Name == legacy);
-            Assert.False(role.IsActive);
-        }
+        // Los 4 roles legado deben haber sido eliminados completamente.
+        var names = await h.Db.Roles.AsNoTracking().Select(r => r.Name).ToListAsync();
+        Assert.DoesNotContain("Physician", names);
+        Assert.DoesNotContain("Nutritionist", names);
+        Assert.DoesNotContain("Psychologist", names);
+        Assert.DoesNotContain("Coordinator", names);
     }
 
     [Fact]
-    public async Task Seed_BackfillDesactivaAliasesLegadosEnBdExistente()
+    public async Task Seed_ConvierteHoldersLegadosAProfessional()
     {
         using var h = new Harness();
-        await SeedAsync(h);
 
-        // Simula BD existente donde los aliases estaban activos: el backfill
-        // idempotente debe desactivarlos al re-sembrar.
-        foreach (var legacy in new[] { "Physician", "Nutritionist", "Psychologist" })
+        // Preparar BD existente: crear roles legado y asignar usuarios.
+        await PermissionSeeder.SeedAsync(h.Db, NullLogger.Instance);
+
+        // Crear roles manualmente (antes del seed).
+        var physicianRole = new ApplicationRole
         {
-            var role = await h.Db.Roles.SingleAsync(r => r.Name == legacy);
-            role.IsActive = true;
-        }
+            Name = "Physician",
+            NormalizedName = "PHYSICIAN",
+            Description = "Rol legado",
+            IsActive = true,
+            IsSystem = true,
+            CreatedAt = DateTime.UtcNow,
+        };
+        var psychologistRole = new ApplicationRole
+        {
+            Name = "Psychologist",
+            NormalizedName = "PSYCHOLOGIST",
+            Description = "Rol legado",
+            IsActive = true,
+            IsSystem = true,
+            CreatedAt = DateTime.UtcNow,
+        };
+        h.Db.Roles.AddRange(physicianRole, psychologistRole);
         await h.Db.SaveChangesAsync();
 
-        await SeedAsync(h);
-
-        foreach (var legacy in new[] { "Physician", "Nutritionist", "Psychologist" })
+        // Crear usuario y asignarle Physician.
+        var user1 = new ApplicationUser
         {
-            var role = await h.Db.Roles.AsNoTracking().SingleAsync(r => r.Name == legacy);
-            Assert.False(role.IsActive);
-        }
+            UserName = "doctor@test.com",
+            Email = "doctor@test.com",
+            FirstName = "Dr.",
+            LastName = "House",
+            IsActive = true,
+            EmailConfirmed = true,
+        };
+        h.Db.Users.Add(user1);
+        await h.Db.SaveChangesAsync();
+
+        h.Db.UserRoles.Add(
+            new IdentityUserRole<Guid>
+            {
+                UserId = user1.Id,
+                RoleId = physicianRole.Id,
+            });
+        await h.Db.SaveChangesAsync();
+
+        // Crear otro usuario y asignarle Psychologist.
+        var user2 = new ApplicationUser
+        {
+            UserName = "psi@test.com",
+            Email = "psi@test.com",
+            FirstName = "Psi",
+            LastName = "Logo",
+            IsActive = true,
+            EmailConfirmed = true,
+        };
+        h.Db.Users.Add(user2);
+        await h.Db.SaveChangesAsync();
+
+        h.Db.UserRoles.Add(
+            new IdentityUserRole<Guid>
+            {
+                UserId = user2.Id,
+                RoleId = psychologistRole.Id,
+            });
+        await h.Db.SaveChangesAsync();
+
+        // Ejecutar el seeder: debe convertir holders a Professional y eliminar Physician/Psychologist.
+        await RoleSeeder.SeedAsync(h.Db, NullLogger.Instance);
+
+        // Verificar que Professional existe.
+        var professional = await h.Db.Roles.FirstOrDefaultAsync(r => r.Name == "Professional");
+        Assert.NotNull(professional);
+
+        // Verificar que los usuarios ahora están en Professional.
+        Assert.True(await h.Db.UserRoles.AnyAsync(ur => ur.UserId == user1.Id && ur.RoleId == professional!.Id));
+        Assert.True(await h.Db.UserRoles.AnyAsync(ur => ur.UserId == user2.Id && ur.RoleId == professional!.Id));
+
+        // Verificar que los roles legado ya no existen.
+        Assert.Null(await h.Db.Roles.FirstOrDefaultAsync(r => r.Name == "Physician"));
+        Assert.Null(await h.Db.Roles.FirstOrDefaultAsync(r => r.Name == "Psychologist"));
     }
 
     [Fact]
-    public async Task Seed_EsIdempotente()
+    public async Task Seed_ConvierteCoordinatorACareCoordinator()
+    {
+        using var h = new Harness();
+
+        await PermissionSeeder.SeedAsync(h.Db, NullLogger.Instance);
+
+        // Crear rol Coordinator manualmente.
+        var coordinatorRole = new ApplicationRole
+        {
+            Name = "Coordinator",
+            NormalizedName = "COORDINATOR",
+            Description = "Alias legado",
+            IsActive = true,
+            IsSystem = true,
+            CreatedAt = DateTime.UtcNow,
+        };
+        h.Db.Roles.Add(coordinatorRole);
+        await h.Db.SaveChangesAsync();
+
+        // Crear usuario y asignarle Coordinator.
+        var user = new ApplicationUser
+        {
+            UserName = "coord@test.com",
+            Email = "coord@test.com",
+            FirstName = "Coord",
+            LastName = "Test",
+            IsActive = true,
+            EmailConfirmed = true,
+        };
+        h.Db.Users.Add(user);
+        await h.Db.SaveChangesAsync();
+
+        h.Db.UserRoles.Add(
+            new IdentityUserRole<Guid>
+            {
+                UserId = user.Id,
+                RoleId = coordinatorRole.Id,
+            });
+        await h.Db.SaveChangesAsync();
+
+        // Ejecutar el seeder.
+        await RoleSeeder.SeedAsync(h.Db, NullLogger.Instance);
+
+        // Verificar que CareCoordinator existe y tiene al usuario.
+        var careCoord = await h.Db.Roles.FirstOrDefaultAsync(r => r.Name == "CareCoordinator");
+        Assert.NotNull(careCoord);
+        Assert.True(await h.Db.UserRoles.AnyAsync(ur => ur.UserId == user.Id && ur.RoleId == careCoord!.Id));
+
+        // Verificar que Coordinator ya no existe.
+        Assert.Null(await h.Db.Roles.FirstOrDefaultAsync(r => r.Name == "Coordinator"));
+    }
+
+    [Fact]
+    public async Task Seed_LimpiezaEsIdempotente()
     {
         using var h = new Harness();
         await SeedAsync(h);
@@ -237,8 +310,15 @@ public class RoleSeederTests
         var totalRoles = await h.Db.Roles.CountAsync();
         var totalAssignments = await h.Db.RolePermissions.CountAsync();
 
-        Assert.Equal(13, totalRoles); // 10 DefaultRoles + 3 aliases legado (Admin lo crea AdminSeeder, no corre aquí)
+        Assert.Equal(9, totalRoles); // 9 DefaultRoles (Admin lo crea AdminSeeder, no corre aquí)
         Assert.True(totalAssignments > 0);
+
+        // Los roles legado no deben existir.
+        var names = await h.Db.Roles.AsNoTracking().Select(r => r.Name).ToListAsync();
+        Assert.DoesNotContain("Physician", names);
+        Assert.DoesNotContain("Nutritionist", names);
+        Assert.DoesNotContain("Psychologist", names);
+        Assert.DoesNotContain("Coordinator", names);
     }
 
     private static async Task<IReadOnlyList<string>> GetRolePermissionCodesAsync(
