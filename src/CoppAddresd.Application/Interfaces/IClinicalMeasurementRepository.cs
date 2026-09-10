@@ -24,4 +24,20 @@ public interface IClinicalMeasurementRepository
     Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
         Guid patientId,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Inserta un lote de mediciones clínicas (p. ej. extraídas de un examen de laboratorio)
+    /// en una sola operación atómica.
+    /// </summary>
+    Task AddBatchAsync(IReadOnlyList<Domain.Entities.ClinicalMeasurement> measurements, CancellationToken ct = default);
+
+    /// <summary>
+    /// Obtiene las métricas activas del catálogo con su unidad por defecto cargada.
+    /// </summary>
+    Task<IReadOnlyList<Domain.Entities.MeasurementMetric>> GetActiveMetricsWithUnitsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Obtiene todas las unidades de medida activas del catálogo.
+    /// </summary>
+    Task<IReadOnlyList<Domain.Entities.UnitOfMeasure>> GetActiveUnitsAsync(CancellationToken ct = default);
 }

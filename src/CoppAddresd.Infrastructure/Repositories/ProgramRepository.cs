@@ -4801,10 +4801,16 @@ public sealed class ProgramRepository(
     ///
     /// El <c>localDate</c> opcional se resuelve contra el hoy local del paciente
     /// (una fecha futura → 422 <c>INVALID_DATE</c>, misma autoridad de tiempo
-    /// que el resto del módulo). Un log duplicado (la comida/hidratación de esa
-    /// fecha ya está registrada) → 409 <c>HABIT_ALREADY_LOGGED</c> (semántica
+    /// que el resto del módulo). Un log duplicado de una COMIDA (des/alm/mer/
+    /// cen) → 409 <c>HABIT_ALREADY_LOGGED</c> (semántica
     /// de "ya registrado" del módulo, precedente <c>REVIEW_ALREADY_DECIDED</c>);
-    /// la XP nunca se duplica — el único de <c>habit_checks</c> y el dedupe
+    /// el AGUA es acumulable: la repetición del mismo día responde 200 con
+    /// XP 0 y actualiza el total acumulado <c>waterMl</c> de la fila de intake
+    /// anclada al habit_check existente (solo sube — monotónico; payload
+    /// menor/igual o sin <c>waterMl</c> → no-op idempotente; fila faltante,
+    /// anomalía pre-SPEC, → se crea sin XP). La XP de hidratación
+    /// (<c>NUTRITION_HYDRATION</c>) se otorga exactamente 1/día, en el primer
+    /// log; la XP nunca se duplica — el único de <c>habit_checks</c> y el dedupe
     /// parcial <c>('habit_log', habit_check.id, reason)</c> del libro mayor son
     /// el backstop de carrera. La tarea <c>nut</c> del programa NO se
     /// auto-completa aquí: el log granular es aditivo y su flujo queda intacto
@@ -4861,8 +4867,11 @@ public sealed class ProgramRepository(
                 }
 
                 // Upsert idempotente (único por (paciente, plantilla, fecha)):
-                // si la comida/hidratación de esa fecha ya está registrada, es
-                // un intento duplicado → 409 HABIT_ALREADY_LOGGED.
+                // si la comida/hidratación de esa fecha ya está registrada, la
+                // semántica depende del código: las COMIDAS son first-write-wins
+                // → 409 HABIT_ALREADY_LOGGED; el AGUA es acumulable durante el
+                // día (decisión de producto: tarjeta de 8 vasos del móvil) —
+                // rama abajo.
                 var existing = await dbContext
                     .HabitChecks.AsNoTracking()
                     .FirstOrDefaultAsync(
@@ -4874,8 +4883,82 @@ public sealed class ProgramRepository(
                     );
                 if (existing is not null)
                 {
-                    throw new BusinessRuleViolationException(
-                        "HABIT_ALREADY_LOGGED: la comida/hidratación de esa fecha ya fue registrada."
+                    if (mealCode != MealCode.agua)
+                    {
+                        throw new BusinessRuleViolationException(
+                            "HABIT_ALREADY_LOGGED: la comida/hidratación de esa fecha ya fue registrada."
+                        );
+                    }
+
+                    // === Hidratación acumulable (agua) ===
+                    // El paciente registra vasos PROGRESIVOS durante el día:
+                    // cada tap envía el total ACUMULADO (vaso n → waterMl =
+                    // n × 250, source manual). La repetición del mismo día NO
+                    // es un duplicado: actualiza el total acumulado de la fila
+                    // de intake anclada a este habit_check y responde 200 con
+                    // XP 0 — NUTRITION_HYDRATION se otorga exactamente 1/día,
+                    // en el primer log (sin segundo HabitCheck, sin entrada XP).
+                    var intakeRow = await dbContext.NutritionIntakeLogs
+                        .FirstOrDefaultAsync(l => l.HabitCheckId == existing.Id, ct);
+
+                    if (intakeRow is null)
+                    {
+                        // Anomalía de datos pre-SPEC (habit_check sin fila de
+                        // intake): créala anclada al habit_check existente con
+                        // los campos del payload, SIN XP.
+                        dbContext.NutritionIntakeLogs.Add(
+                            new NutritionIntakeLog
+                            {
+                                Id = Guid.NewGuid(),
+                                PatientId = patientId,
+                                HabitCheckId = existing.Id,
+                                LocalDate = logDate,
+                                MealCode = mealCode,
+                                Calories = intake?.Calories,
+                                ProteinG = intake?.ProteinG,
+                                CarbsG = intake?.CarbsG,
+                                FatG = intake?.FatG,
+                                FiberG = intake?.FiberG,
+                                WaterMl = intake?.WaterMl,
+                                Source = string.IsNullOrWhiteSpace(intake?.Source)
+                                    ? "manual"
+                                    : intake!.Source,
+                                FoodAnalysisId = intake?.FoodAnalysisId,
+                            }
+                        );
+                    }
+                    else
+                    {
+                        // Total acumulado MONOTÓNICO (solo sube): si el payload
+                        // trae waterMl MAYOR que el actual — o la fila aún no
+                        // tiene total (primer log sin intake) — se actualiza el
+                        // total y el source si el payload trae uno no vacío;
+                        // menor/igual o sin waterMl → no-op idempotente (el
+                        // replay del mismo tap no cambia nada).
+                        if (
+                            intake?.WaterMl is { } waterMl
+                            && (intakeRow.WaterMl is null || waterMl > intakeRow.WaterMl.Value)
+                        )
+                        {
+                            intakeRow.WaterMl = waterMl;
+                            if (!string.IsNullOrWhiteSpace(intake?.Source))
+                            {
+                                intakeRow.Source = intake!.Source;
+                            }
+                        }
+                    }
+
+                    var waterRepeatBalance = await CurrentBalanceAsync(enrollment.Id, ct);
+                    await dbContext.SaveChangesAsync(ct);
+                    await transaction.CommitAsync(ct);
+
+                    return new NutritionLogResultDto(
+                        existing.Id,
+                        template.Code,
+                        logDate,
+                        existing.IsDone,
+                        0,
+                        waterRepeatBalance
                     );
                 }
 
@@ -4895,9 +4978,11 @@ public sealed class ProgramRepository(
                 // marker": un log sin intake persiste la fila con campos null
                 // (el gate de S3 y el snapshot leen app.nutrition_intake_logs,
                 // no habit_checks; un log sin macros NO puede ser invisible al
-                // gate). La dedup pre-insert ya garantizó first-write-wins
-                // (409 HABIT_ALREADY_LOGGED): aquí solo se agrega la fila; la
-                // XP granular queda intacta (sin revocación, decisión 24).
+                // gate). La dedup pre-insert ya garantizó first-write-wins para
+                // las COMIDAS (409 HABIT_ALREADY_LOGGED; el repeat de agua se
+                // manejó arriba, actualizando el total acumulado): aquí solo se
+                // agrega la fila del PRIMER log del día; la XP granular queda
+                // intacta (sin revocación, decisión 24).
                 Guid? resolvedPlanId = null;
                 short? resolvedPlanDayNumber = null;
 

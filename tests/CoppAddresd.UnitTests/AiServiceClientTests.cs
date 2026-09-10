@@ -134,4 +134,56 @@ public class AiServiceClientTests
         Assert.Equal("secret-internal-key", request.Headers["X-Internal-Key"]);
         Assert.Equal("/api/v1/chat/stream", request.Path);
     }
+
+    [Fact]
+    public async Task ExtractLabMetricsAsync_envia_multipart_form_data_y_parsea_respuesta()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"summary":"Se detectó glucosa","metrics":[{"metric_name":"glucose_fasting","value":98.2,"unit_symbol":"mg/dL","observed_at":"2026-09-01T12:00:00Z"}],"readable":true}"""),
+        });
+        var client = BuildClient(handler);
+
+        using var stream = new MemoryStream("fake-file-bytes"u8.ToArray());
+        var patientId = Guid.NewGuid();
+        var batchId = Guid.NewGuid();
+
+        var result = await client.ExtractLabMetricsAsync(
+            patientId, batchId, stream, "exam.jpg", "image/jpeg", "t-1");
+
+        var request = handler.Requests.Single();
+        Assert.Equal("secret-internal-key", request.Headers["X-Internal-Key"]);
+        Assert.Equal("/chat/lab-exam", request.Path);
+        Assert.Contains("patient_id", request.Body);
+        Assert.Contains(patientId.ToString(), request.Body);
+        Assert.Contains("batch_id", request.Body);
+        Assert.Contains(batchId.ToString(), request.Body);
+        Assert.Contains("t-1", request.Body);
+        Assert.Contains("exam.jpg", request.Body);
+
+        Assert.True(result.Readable);
+        Assert.Equal("Se detectó glucosa", result.Summary);
+        Assert.Single(result.Metrics);
+        Assert.Equal("glucose_fasting", result.Metrics[0].MetricName);
+        Assert.Equal(98.2m, result.Metrics[0].Value);
+        Assert.Equal("mg/dL", result.Metrics[0].UnitSymbol);
+    }
+
+    [Fact]
+    public async Task ExtractLabMetricsAsync_error_502_lanza_AiServiceException()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway)
+        {
+            Content = new StringContent("LLM provider unreachable"),
+        });
+        var client = BuildClient(handler);
+
+        using var stream = new MemoryStream("fake-file-bytes"u8.ToArray());
+        var ex = await Assert.ThrowsAsync<AiServiceException>(() =>
+            client.ExtractLabMetricsAsync(Guid.NewGuid(), Guid.NewGuid(), stream, "exam.pdf", "application/pdf"));
+
+        Assert.Equal(502, ex.StatusCode);
+        Assert.Contains("LLM provider unreachable", ex.Detail);
+    }
 }

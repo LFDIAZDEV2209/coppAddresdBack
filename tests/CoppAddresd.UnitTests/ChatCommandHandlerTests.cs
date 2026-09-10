@@ -51,6 +51,16 @@ public class ChatCommandHandlerTests
             string userId,
             CancellationToken ct = default)
             => throw new NotImplementedException();
+
+        public Task<CoppAddresd.Application.DTOs.LabExam.LabExamAiResponse> ExtractLabMetricsAsync(
+            Guid patientId,
+            Guid batchId,
+            Stream fileStream,
+            string fileName,
+            string contentType,
+            string? threadId = null,
+            CancellationToken ct = default)
+            => throw new NotImplementedException();
     }
 
     private sealed class FakeRuntimeSync : IAgentRuntimeSyncService

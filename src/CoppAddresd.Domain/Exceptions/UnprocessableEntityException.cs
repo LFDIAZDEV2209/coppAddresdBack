@@ -11,4 +11,8 @@ namespace CoppAddresd.Domain.Exceptions;
 /// pueda añadir <c>errors.missingMealCodes</c> al body RFC 7807 sin cambiar
 /// el comportamiento del resto de mapeos.
 /// </remarks>
-public class UnprocessableEntityException(string message) : Exception(message);
+public class UnprocessableEntityException : Exception
+{
+    public UnprocessableEntityException(string message) : base(message) { }
+    public UnprocessableEntityException(string message, Exception? innerException) : base(message, innerException) { }
+}

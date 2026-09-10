@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -5,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.Ai;
+using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Features.Chat;
 using CoppAddresd.Application.Features.Threads;
 using CoppAddresd.Application.Features.Wellness;
@@ -256,6 +258,59 @@ public class AiServiceClient : IAiServiceClient
             return new ThreadStateResult(threadId, 0, null);
 
         return new ThreadStateResult(result.ThreadId, result.MessageCount, result.LastMessage);
+    }
+
+    public async Task<LabExamAiResponse> ExtractLabMetricsAsync(
+        Guid patientId,
+        Guid batchId,
+        Stream fileStream,
+        string fileName,
+        string contentType,
+        string? threadId = null,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "Extracting lab metrics via AI service: PatientId={PatientId}, BatchId={BatchId}, File={FileName}",
+            patientId, batchId, fileName);
+
+        using var content = new MultipartFormDataContent();
+
+        var streamContent = new StreamContent(fileStream);
+        var mediaType = string.IsNullOrWhiteSpace(contentType)
+            ? "application/octet-stream"
+            : contentType.Split(';')[0].Trim();
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        content.Add(streamContent, "file", fileName);
+
+        content.Add(new StringContent(patientId.ToString()), "patient_id");
+        content.Add(new StringContent(batchId.ToString()), "batch_id");
+
+        if (!string.IsNullOrWhiteSpace(threadId))
+        {
+            content.Add(new StringContent(threadId), "thread_id");
+        }
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.LabExamEndpoint)
+        {
+            Content = content,
+        };
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ThrowForResponseAsync(response, ct);
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<LabExamAiResponse>(JsonOpts, ct);
+        if (result is null)
+        {
+            throw new AiServiceException(
+                (int)response.StatusCode,
+                "El AI Service no devolvió una respuesta válida para el examen de laboratorio.");
+        }
+
+        return result;
     }
 
     private SseEvent? ParseSseEvent(StreamChatChunk chunk)
