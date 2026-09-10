@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.Ai;
+using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Features.Patients;
 
 namespace CoppAddresd.Application.Interfaces;
@@ -40,4 +41,17 @@ public interface IClinicalMeasurementRepository
     /// Obtiene todas las unidades de medida activas del catálogo.
     /// </summary>
     Task<IReadOnlyList<Domain.Entities.UnitOfMeasure>> GetActiveUnitsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Última medición por métrica para el contexto de narración de exámenes
+    /// (lab-exam-empathetic-response, R1): cualquier origen (lab, device,
+    /// checkin, manual), excluyendo las filas del lote indicado — el lote
+    /// recién persistido. Devuelve un diccionario por código canónico de
+    /// métrica (case-insensitive). Una sola query set-based (DISTINCT ON).
+    /// </summary>
+    Task<IReadOnlyDictionary<string, LabExamMetricSnapshot>> GetLastPerMetricAsync(
+        Guid patientId,
+        IEnumerable<string> metricNames,
+        Guid excludeBatchId,
+        CancellationToken ct = default);
 }

@@ -13,7 +13,9 @@ public record UploadLabExamCommand(
     string ContentType,
     long FileLength,
     Guid PatientId,
-    string? ThreadId = null) : IRequest<LabExamUploadResult>;
+    string? ThreadId = null,
+    /// <summary>Código de idioma del paciente (<c>"es"</c> | <c>"en"</c>); null ⇒ el ai-service usa <c>"es"</c>.</summary>
+    string? Language = null) : IRequest<LabExamUploadResult>;
 
 /// <summary>
 /// Validador de reglas para la subida de exámenes de laboratorio.
