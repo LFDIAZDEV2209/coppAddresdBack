@@ -46,8 +46,18 @@ public class ProgramControlSettings
     /// </summary>
     public bool ControlsEnabled { get; set; } = false;
 
-    /// <summary>Horas desde Responded tras las cuales se envía el follow-up (default 48).</summary>
+    /// <summary>Horas desde Sent tras las cuales se envía el follow-up (default 48).</summary>
     public int FollowupHours { get; set; } = 48;
+
+    /// <summary>
+    /// Plantilla del follow-up de la fase 2 (cuerpo del push + mensaje proactivo
+    /// del chat): admite el placeholder <c>{day}</c> (día del hito), en voseo
+    /// rioplatense y de a lo sumo 2 oraciones. Configurable por entorno (U7);
+    /// si queda vacía, el follow-up se omite con warning (el control permanece
+    /// Sent y la próxima pasada reintenta).
+    /// </summary>
+    public string FollowupTemplate { get; set; } =
+        "Te quedó pendiente tu control del día {day}: ¿pudiste pasar tus últimos análisis por el chat? Si ya no querés subirlos, avisáme y lo cerramos.";
 
     /// <summary>Horas desde el follow-up tras las cuales el control pasa a Missed (default 48).</summary>
     public int MissedAfterFollowupHours { get; set; } = 48;
