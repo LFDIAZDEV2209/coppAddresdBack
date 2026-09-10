@@ -5,16 +5,16 @@ namespace CoppAddresd.Application.Services.ProgramProgress;
 
 /// <summary>
 /// Proveedor v1 de plantillas estáticas: construye en memoria el diccionario
-/// día → plantilla desde <c>Program:MilestoneSender:Templates</c> (copy
-/// neutral en español definido por producto). Cuando el contenido se genere
-/// con LLM, el nuevo proveedor implementará
-/// <see cref="IProgramMilestoneTemplateProvider"/> sin cambios en el job.
+/// día → plantilla desde <c>Program:Controls:Templates</c> (copy neutral en
+/// español definido por producto). Cuando el contenido se genere con LLM, el
+/// nuevo proveedor implementará
+/// <see cref="IProgramControlTemplateProvider"/> sin cambios en el job.
 /// </summary>
-public sealed class PredefinedMilestoneTemplateProvider : IProgramMilestoneTemplateProvider
+public sealed class PredefinedProgramControlTemplateProvider : IProgramControlTemplateProvider
 {
-    private readonly IReadOnlyDictionary<int, MilestoneTemplate> _templates;
+    private readonly IReadOnlyDictionary<int, ProgramControlTemplate> _templates;
 
-    public PredefinedMilestoneTemplateProvider(IOptions<ProgramMilestoneSenderSettings> options)
+    public PredefinedProgramControlTemplateProvider(IOptions<ProgramControlSettings> options)
     {
         _templates = options.Value.Templates
             .Where(t => t.Day > 0)
@@ -25,11 +25,11 @@ public sealed class PredefinedMilestoneTemplateProvider : IProgramMilestoneTempl
     /// <summary>
     /// Plantilla del día de hito o null si el día no está configurado.
     /// </summary>
-    public Task<MilestoneTemplate?> GetAsync(int milestoneDay, CancellationToken ct = default)
+    public Task<ProgramControlTemplate?> GetAsync(int milestoneDay, CancellationToken ct = default)
         => Task.FromResult(
             _templates.TryGetValue(milestoneDay, out var template) ? template : null);
 
-    private static MilestoneTemplate ToTemplate(MilestoneTemplateSettings settings)
+    private static ProgramControlTemplate ToTemplate(ProgramControlTemplateSettings settings)
         => new(
             settings.Title,
             settings.Message,

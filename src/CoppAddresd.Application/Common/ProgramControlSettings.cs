@@ -2,13 +2,15 @@ namespace CoppAddresd.Application.Common;
 
 /// <summary>
 /// Configuración del envío proactivo de recordatorios por hito del programa
-/// (Program Milestone Reminder): días de hito, ventana de entrega local del
-/// paciente, días de gracia, reintentos y plantillas estáticas por día. El job
-/// <c>ProgramMilestoneSenderJob</c> lee esta sección vía IOptions.
+/// (Controles, <c>Program:Controls</c>): días de hito, ventana de entrega local
+/// del paciente, días de gracia, reintentos y plantillas estáticas por día, más
+/// el killswitch del flujo conversacional y los plazos de la fase 2
+/// (follow-up, cierre sin examen). El job <c>ProgramControlJob</c> lee esta
+/// sección vía IOptions.
 /// </summary>
-public class ProgramMilestoneSenderSettings
+public class ProgramControlSettings
 {
-    public const string SectionName = "Program:MilestoneSender";
+    public const string SectionName = "Program:Controls";
 
     /// <summary>Habilita el job periódico (default true).</summary>
     public bool Enabled { get; set; } = true;
@@ -35,14 +37,30 @@ public class ProgramMilestoneSenderSettings
     public List<int> Days { get; set; } = [7, 14, 21, 45, 60, 90];
 
     /// <summary>Plantillas estáticas (v1) por día de hito.</summary>
-    public List<MilestoneTemplateSettings> Templates { get; set; } = [];
+    public List<ProgramControlTemplateSettings> Templates { get; set; } = [];
+
+    /// <summary>
+    /// Killswitch del flujo conversacional de controles (fase 2): con false
+    /// (default) el backend se comporta como UC-001 puro — la columna status
+    /// solo avanza por la fase 1 y los hooks de chat/exámenes no se enganchan.
+    /// </summary>
+    public bool ControlsEnabled { get; set; } = false;
+
+    /// <summary>Horas desde Responded tras las cuales se envía el follow-up (default 48).</summary>
+    public int FollowupHours { get; set; } = 48;
+
+    /// <summary>Horas desde el follow-up tras las cuales el control pasa a Missed (default 48).</summary>
+    public int MissedAfterFollowupHours { get; set; } = 48;
+
+    /// <summary>Días desde Responded sin subir examen tras los cuales se cierra sin examen (default 7).</summary>
+    public int NoUploadCloseDays { get; set; } = 7;
 }
 
 /// <summary>
 /// Plantilla configurable de un recordatorio de hito: copy neutral en español
 /// (título + mensaje) y el agente de chat que recibe la inyección proactiva.
 /// </summary>
-public sealed class MilestoneTemplateSettings
+public sealed class ProgramControlTemplateSettings
 {
     /// <summary>Día del programa del hito al que aplica esta plantilla.</summary>
     public int Day { get; set; }

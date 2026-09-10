@@ -8,14 +8,14 @@ using Microsoft.EntityFrameworkCore;
 namespace CoppAddresd.Infrastructure.Repositories;
 
 /// <summary>
-/// Repositorio del envío de recordatorios de hito del programa: candidatos
-/// activos (inscripción + perfil con usuario) y filas de
-/// <c>program_milestone_sends</c>. Estilo espejo de DeviceTokenRepository:
-/// operaciones acotadas, SaveChanges por operación.
+/// Repositorio del control conversacional del programa: candidatos activos
+/// (inscripción + perfil con usuario) y filas de <c>program_controls</c>.
+/// Estilo espejo de DeviceTokenRepository: operaciones acotadas, SaveChanges
+/// por operación.
 /// </summary>
-public sealed class ProgramMilestoneRepository(AppDbContext dbContext) : IProgramMilestoneRepository
+public sealed class ProgramControlRepository(AppDbContext dbContext) : IProgramControlRepository
 {
-    public async Task<IReadOnlyList<MilestoneEnrollmentCandidate>> ListActiveCandidatesAsync(
+    public async Task<IReadOnlyList<ProgramControlEnrollmentCandidate>> ListActiveCandidatesAsync(
         DateOnly startLocalDateCutoff, CancellationToken ct = default)
         => await dbContext.ProgramEnrollments
             .AsNoTracking()
@@ -24,86 +24,86 @@ public sealed class ProgramMilestoneRepository(AppDbContext dbContext) : IProgra
                 && e.StartLocalDate >= startLocalDateCutoff
                 && e.Patient != null
                 && e.Patient.UserId != null)
-            .Select(e => new MilestoneEnrollmentCandidate(
+            .Select(e => new ProgramControlEnrollmentCandidate(
                 e.Id, e.PatientId, e.Patient!.UserId!.Value, e.Timezone, e.StartLocalDate))
             .ToListAsync(ct);
 
-    public async Task<ProgramMilestoneSend?> GetSendAsync(
+    public async Task<ProgramControl?> GetAsync(
         Guid enrollmentId, int milestoneDay, CancellationToken ct = default)
-        => await dbContext.ProgramMilestoneSends
+        => await dbContext.ProgramControls
             .AsNoTracking()
             .FirstOrDefaultAsync(
-                s => s.EnrollmentId == enrollmentId && s.MilestoneDay == milestoneDay, ct);
+                c => c.EnrollmentId == enrollmentId && c.MilestoneDay == milestoneDay, ct);
 
-    public async Task AddAsync(ProgramMilestoneSend send, CancellationToken ct = default)
+    public async Task AddAsync(ProgramControl control, CancellationToken ct = default)
     {
-        dbContext.ProgramMilestoneSends.Add(send);
+        dbContext.ProgramControls.Add(control);
         await dbContext.SaveChangesAsync(ct);
     }
 
-    public async Task UpdateAsync(ProgramMilestoneSend send, CancellationToken ct = default)
+    public async Task UpdateAsync(ProgramControl control, CancellationToken ct = default)
     {
-        dbContext.ProgramMilestoneSends.Update(send);
+        dbContext.ProgramControls.Update(control);
         await dbContext.SaveChangesAsync(ct);
     }
 
-    public async Task<MilestoneEnrollmentCandidate?> GetCandidateAsync(
+    public async Task<ProgramControlEnrollmentCandidate?> GetCandidateAsync(
         Guid enrollmentId, CancellationToken ct = default)
         => await dbContext.ProgramEnrollments
             .AsNoTracking()
             .Where(e => e.Id == enrollmentId
                 && e.Patient != null
                 && e.Patient.UserId != null)
-            .Select(e => new MilestoneEnrollmentCandidate(
+            .Select(e => new ProgramControlEnrollmentCandidate(
                 e.Id, e.PatientId, e.Patient!.UserId!.Value, e.Timezone, e.StartLocalDate))
             .FirstOrDefaultAsync(ct);
 
-    public async Task<IReadOnlyList<ProgramMilestoneSend>> ListSendsAsync(
+    public async Task<IReadOnlyList<ProgramControl>> ListAsync(
         Guid? enrollmentId = null,
         Guid? patientId = null,
-        ProgramMilestoneSendStatus? status = null,
+        ProgramControlStatus? status = null,
         int? limit = null,
         CancellationToken ct = default)
     {
         // La navegación Enrollment se carga (Include) únicamente para exponer
         // el PatientId en el mapeo del controlador sin N+1; el filtro por
         // paciente traduce el mismo join.
-        IQueryable<ProgramMilestoneSend> query = dbContext.ProgramMilestoneSends
+        IQueryable<ProgramControl> query = dbContext.ProgramControls
             .AsNoTracking()
-            .Include(s => s.Enrollment);
+            .Include(c => c.Enrollment);
 
         if (enrollmentId is { } eid)
         {
-            query = query.Where(s => s.EnrollmentId == eid);
+            query = query.Where(c => c.EnrollmentId == eid);
         }
 
         if (patientId is { } pid)
         {
-            query = query.Where(s => s.Enrollment!.PatientId == pid);
+            query = query.Where(c => c.Enrollment!.PatientId == pid);
         }
 
-        if (status is { } sendStatus)
+        if (status is { } controlStatus)
         {
-            query = query.Where(s => s.Status == sendStatus);
+            query = query.Where(c => c.Status == controlStatus);
         }
 
         return await query
-            .OrderByDescending(s => s.CreatedAt)
+            .OrderByDescending(c => c.CreatedAt)
             .Take(Math.Clamp(limit ?? 100, 1, 500))
             .ToListAsync(ct);
     }
 
-    public async Task<int> DeleteSendsAsync(
+    public async Task<int> DeleteAsync(
         Guid? enrollmentId = null, CancellationToken ct = default)
     {
         // Se elimina por el change tracker (no ExecuteDelete) para mantener la
         // consistencia con el interceptor de auditoría: la migración adjunta un
-        // trigger de auditoría a program_milestone_sends, y el actor se propaga
-        // por GUC en SaveChanges (misma convención que DeviceTokenRepository).
-        var query = dbContext.ProgramMilestoneSends.AsQueryable();
+        // trigger de auditoría a program_controls, y el actor se propaga por
+        // GUC en SaveChanges (misma convención que DeviceTokenRepository).
+        var query = dbContext.ProgramControls.AsQueryable();
         if (enrollmentId is { } eid)
         {
-            query = query.Where(s => s.EnrollmentId == eid);
+            query = query.Where(c => c.EnrollmentId == eid);
         }
 
         var rows = await query.ToListAsync(ct);
@@ -112,7 +112,7 @@ public sealed class ProgramMilestoneRepository(AppDbContext dbContext) : IProgra
             return 0;
         }
 
-        dbContext.ProgramMilestoneSends.RemoveRange(rows);
+        dbContext.ProgramControls.RemoveRange(rows);
         await dbContext.SaveChangesAsync(ct);
         return rows.Count;
     }

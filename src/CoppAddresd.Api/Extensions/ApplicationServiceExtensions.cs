@@ -43,17 +43,17 @@ public static class ApplicationServiceExtensions
         services.Configure<FoodAiSettings>(
             configuration.GetSection(FoodAiSettings.SectionName));
 
-        // Recordatorios proactivos de hitos del programa (días 7/14/21/45/60/90):
+        // Controles proactivos del programa (días 7/14/21/45/60/90):
         // configuración + proveedor de plantillas (v1 estáticas por
         // configuración; el proveedor con LLM futuro se enchufa detrás de la
         // misma interfaz sin tocar el scheduler) + notificador que reutiliza
         // SendPushNotificationCommand (FCM + inyección proactiva en el chat) +
-        // job orquestador (lo consume ProgramMilestoneSenderHostedService).
-        services.Configure<ProgramMilestoneSenderSettings>(
-            configuration.GetSection(ProgramMilestoneSenderSettings.SectionName));
-        services.AddScoped<IProgramMilestoneTemplateProvider, PredefinedMilestoneTemplateProvider>();
-        services.AddScoped<IProgramMilestoneNotifier, ProgramMilestoneNotifier>();
-        services.AddScoped<ProgramMilestoneSenderJob>();
+        // job orquestador (lo consume ProgramControlHostedService).
+        services.Configure<ProgramControlSettings>(
+            configuration.GetSection(ProgramControlSettings.SectionName));
+        services.AddScoped<IProgramControlTemplateProvider, PredefinedProgramControlTemplateProvider>();
+        services.AddScoped<IProgramControlNotifier, ProgramControlNotifier>();
+        services.AddScoped<ProgramControlJob>();
 
         // Clave interna compartida con el microservicio de Telemedicina
         // (endpoints /api/v1/internal/telemedicine, header X-Internal-Key).

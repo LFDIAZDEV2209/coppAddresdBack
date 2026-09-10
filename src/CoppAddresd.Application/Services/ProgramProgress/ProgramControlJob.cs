@@ -8,22 +8,22 @@ using Microsoft.Extensions.Options;
 namespace CoppAddresd.Application.Services.ProgramProgress;
 
 /// <summary>
-/// Job de recordatorios proactivos de hito del programa (días 7, 14, 21, 45,
-/// 60, 90): por cada inscripción activa con usuario, calcula en la zona local
-/// del paciente qué hitos están en fecha (día exacto + gracia) y dentro de la
-/// ventana de entrega, y notifica con la plantilla del día. Idempotente: el
-/// índice único (enrollment_id, milestone_day) + el registro previo
-/// (<see cref="ProgramMilestoneSend"/>) garantizan que cada hito se notifica
-/// como máximo una vez. Lo consume el hosted service
-/// (<c>ProgramMilestoneSenderHostedService</c>, API).
+/// Job de controles proactivos del programa (días 7, 14, 21, 45, 60, 90): por
+/// cada inscripción activa con usuario, calcula en la zona local del paciente
+/// qué hitos están en fecha (día exacto + gracia) y dentro de la ventana de
+/// entrega, y notifica con la plantilla del día. Idempotente: el índice único
+/// (enrollment_id, milestone_day) + el registro previo
+/// (<see cref="ProgramControl"/>) garantizan que cada hito se notifica como
+/// máximo una vez. Lo consume el hosted service
+/// (<c>ProgramControlHostedService</c>, API).
 /// </summary>
-public sealed class ProgramMilestoneSenderJob
+public sealed class ProgramControlJob
 {
-    private readonly IProgramMilestoneRepository _repository;
-    private readonly IProgramMilestoneTemplateProvider _templates;
-    private readonly IProgramMilestoneNotifier _notifier;
-    private readonly IOptions<ProgramMilestoneSenderSettings> _settings;
-    private readonly ILogger<ProgramMilestoneSenderJob> _logger;
+    private readonly IProgramControlRepository _repository;
+    private readonly IProgramControlTemplateProvider _templates;
+    private readonly IProgramControlNotifier _notifier;
+    private readonly IOptions<ProgramControlSettings> _settings;
+    private readonly ILogger<ProgramControlJob> _logger;
     private readonly Func<DateTime> _utcNow;
 
     /// <summary>
@@ -31,12 +31,12 @@ public sealed class ProgramMilestoneSenderJob
     /// instante UTC actual para que los tests de ventana de entrega sean
     /// deterministas. En producción se omite (default <see cref="DateTime.UtcNow"/>).
     /// </summary>
-    public ProgramMilestoneSenderJob(
-        IProgramMilestoneRepository repository,
-        IProgramMilestoneTemplateProvider templates,
-        IProgramMilestoneNotifier notifier,
-        IOptions<ProgramMilestoneSenderSettings> settings,
-        ILogger<ProgramMilestoneSenderJob> logger,
+    public ProgramControlJob(
+        IProgramControlRepository repository,
+        IProgramControlTemplateProvider templates,
+        IProgramControlNotifier notifier,
+        IOptions<ProgramControlSettings> settings,
+        ILogger<ProgramControlJob> logger,
         Func<DateTime>? utcNow = null)
     {
         _repository = repository;
@@ -52,11 +52,11 @@ public sealed class ProgramMilestoneSenderJob
     /// dentro de la ventana local y notifica cada par (inscripción, día) que
     /// todavía no está en estado terminal. Idempotente: una segunda pasada no
     /// re-notifica los pares ya Sent/Skipped/Failed. Devuelve el resumen de la
-    /// pasada (<see cref="ProgramMilestoneRunResult"/>) para el endpoint demo
-    /// <c>POST /program-milestones/run</c>; el hosted service ignora el
+    /// pasada (<see cref="ProgramControlRunResult"/>) para el endpoint demo
+    /// <c>POST /program-controls/run</c>; el hosted service ignora el
     /// resultado.
     /// </summary>
-    public async Task<ProgramMilestoneRunResult> RunAsync(CancellationToken ct = default)
+    public async Task<ProgramControlRunResult> RunAsync(CancellationToken ct = default)
     {
         var settings = _settings.Value;
 
@@ -69,10 +69,10 @@ public sealed class ProgramMilestoneSenderJob
         var sent = 0;
         var skipped = 0;
         var failed = 0;
-        var details = new List<ProgramMilestoneSendResult>();
+        var details = new List<ProgramControlSendResult>();
         if (candidates.Count == 0)
         {
-            return new ProgramMilestoneRunResult(0, sent, skipped, failed, details);
+            return new ProgramControlRunResult(0, sent, skipped, failed, details);
         }
 
         foreach (var candidate in candidates)
@@ -80,14 +80,14 @@ public sealed class ProgramMilestoneSenderJob
             var localNow = ToPatientLocal(candidate.Timezone);
             var todayLocal = DateOnly.FromDateTime(localNow);
 
-            if (!ProgramMilestoneSchedule.WithinDeliveryWindow(
+            if (!ProgramControlSchedule.WithinDeliveryWindow(
                     TimeOnly.FromDateTime(localNow), settings.StartLocalHour, settings.EndLocalHour))
             {
                 // Fuera de la ventana 9–21 local: la próxima pasada reintenta.
                 continue;
             }
 
-            var dueDays = ProgramMilestoneSchedule.DueMilestoneDays(
+            var dueDays = ProgramControlSchedule.DueMilestoneDays(
                 todayLocal, candidate.StartLocalDate, settings.Days, settings.GraceDays);
             if (dueDays.Count == 0)
             {
@@ -96,8 +96,8 @@ public sealed class ProgramMilestoneSenderJob
 
             foreach (var day in dueDays)
             {
-                var send = await HandleDayAsync(candidate, day, settings, ct);
-                if (send is null || send.Status == ProgramMilestoneSendStatus.Pending)
+                var control = await HandleDayAsync(candidate, day, settings, ct);
+                if (control is null || control.Status == ProgramControlStatus.Pending)
                 {
                     // null: par ya terminal o reclamación fallida (nada de esta
                     // pasada). Pending: fallo transitorio reintentable — la
@@ -105,28 +105,28 @@ public sealed class ProgramMilestoneSenderJob
                     continue;
                 }
 
-                details.Add(ToResult(send));
-                switch (send.Status)
+                details.Add(ToResult(control));
+                switch (control.Status)
                 {
-                    case ProgramMilestoneSendStatus.Sent:
+                    case ProgramControlStatus.Sent:
                         sent++;
                         break;
-                    case ProgramMilestoneSendStatus.Skipped:
+                    case ProgramControlStatus.Skipped:
                         skipped++;
                         break;
-                    case ProgramMilestoneSendStatus.Failed:
+                    case ProgramControlStatus.Failed:
                         failed++;
                         break;
                 }
             }
         }
 
-        return new ProgramMilestoneRunResult(candidates.Count, sent, skipped, failed, details);
+        return new ProgramControlRunResult(candidates.Count, sent, skipped, failed, details);
     }
 
     /// <summary>
     /// Fuerza el envío del recordatorio de un hito para una inscripción
-    /// (endpoints demo/herramientas <c>POST /program-milestones/force</c>):
+    /// (endpoints demo/herramientas <c>POST /program-controls/force</c>):
     /// corre el MISMO pipeline de <see cref="RunAsync"/> (ventana de entrega y
     /// calendario de días NO aplican — el disparo es explícito), reutilizando
     /// el hook <c>utcNow</c> de la instancia. Idempotente: si el par
@@ -139,7 +139,7 @@ public sealed class ProgramMilestoneSenderJob
     /// Resultado final del par, o null si la inscripción no existe o su
     /// paciente no tiene cuenta de usuario (el controlador traduce a 404).
     /// </returns>
-    public async Task<ProgramMilestoneSendResult?> ForceSendAsync(
+    public async Task<ProgramControlSendResult?> ForceSendAsync(
         Guid enrollmentId,
         int milestoneDay,
         CancellationToken ct = default)
@@ -150,18 +150,18 @@ public sealed class ProgramMilestoneSenderJob
             return null;
         }
 
-        var send = await HandleDayAsync(candidate, milestoneDay, _settings.Value, ct)
+        var control = await HandleDayAsync(candidate, milestoneDay, _settings.Value, ct)
             // HandleDayAsync devuelve null cuando el par ya estaba terminal
             // (no-op): se re-lee la fila para reportar su estado actual.
-            ?? await _repository.GetSendAsync(enrollmentId, milestoneDay, ct);
-        if (send is null)
+            ?? await _repository.GetAsync(enrollmentId, milestoneDay, ct);
+        if (control is null)
         {
             // La reclamación Pending falló (p. ej. pasada concurrente): no se
             // fabrica un resultado — el llamador puede reintentar.
             return null;
         }
 
-        return ToResult(send);
+        return ToResult(control);
     }
 
     /// <summary>
@@ -171,13 +171,13 @@ public sealed class ProgramMilestoneSenderJob
     /// con reintentos agotados, o reclamación fallida) — el llamador distingue
     /// así el trabajo real de la pasada del no-op idempotente.
     /// </summary>
-    private async Task<ProgramMilestoneSend?> HandleDayAsync(
-        MilestoneEnrollmentCandidate candidate,
+    private async Task<ProgramControl?> HandleDayAsync(
+        ProgramControlEnrollmentCandidate candidate,
         int day,
-        ProgramMilestoneSenderSettings settings,
+        ProgramControlSettings settings,
         CancellationToken ct)
     {
-        var existing = await _repository.GetSendAsync(candidate.EnrollmentId, day, ct);
+        var existing = await _repository.GetAsync(candidate.EnrollmentId, day, ct);
 
         // Reintento solo de filas no terminales: Sent/Skipped/Failed ya se
         // procesaron y una fila con Attempts >= MaxAttempts no vuelve a
@@ -185,17 +185,17 @@ public sealed class ProgramMilestoneSenderJob
         // la próxima pasada (un fallo transitorio del notificador no pierde
         // el hito).
         if (existing is not null
-            && (existing.Status != ProgramMilestoneSendStatus.Pending
+            && (existing.Status != ProgramControlStatus.Pending
                 || existing.Attempts >= settings.MaxAttempts))
         {
             return null;
         }
 
-        var send = existing ?? new ProgramMilestoneSend
+        var control = existing ?? new ProgramControl
         {
             EnrollmentId = candidate.EnrollmentId,
             MilestoneDay = day,
-            Status = ProgramMilestoneSendStatus.Pending,
+            Status = ProgramControlStatus.Pending,
         };
 
         if (existing is null)
@@ -205,13 +205,13 @@ public sealed class ProgramMilestoneSenderJob
                 // Inserta la reclamación Pending. Cualquier fallo (p. ej.
                 // violación del único por doble pasada concurrente) se trata
                 // como "no fue este tick": la próxima pasada reintenta.
-                await _repository.AddAsync(send, ct);
+                await _repository.AddAsync(control, ct);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "Program.MilestoneSender: no se pudo reclamar el hito (se reintenta en la próxima pasada). enrollment={EnrollmentId} day={MilestoneDay}",
+                    "Program.Controls: no se pudo reclamar el hito (se reintenta en la próxima pasada). enrollment={EnrollmentId} day={MilestoneDay}",
                     candidate.EnrollmentId, day);
                 return null;
             }
@@ -222,13 +222,13 @@ public sealed class ProgramMilestoneSenderJob
         {
             // Plantilla no configurada para el día: misconfiguración. Se marca
             // Skipped (terminal) y se continúa con el resto de los hitos.
-            send.Status = ProgramMilestoneSendStatus.Skipped;
-            send.UpdatedAt = _utcNow();
-            await _repository.UpdateAsync(send, ct);
+            control.Status = ProgramControlStatus.Skipped;
+            control.UpdatedAt = _utcNow();
+            await _repository.UpdateAsync(control, ct);
             _logger.LogWarning(
-                "Program.MilestoneSender: sin plantilla para el día (Skipped). enrollment={EnrollmentId} day={MilestoneDay}",
+                "Program.Controls: sin plantilla para el día (Skipped). enrollment={EnrollmentId} day={MilestoneDay}",
                 candidate.EnrollmentId, day);
-            return send;
+            return control;
         }
 
         try
@@ -236,36 +236,36 @@ public sealed class ProgramMilestoneSenderJob
             var result = await _notifier.NotifyAsync(
                 candidate.UserId, template.Title, template.Message, template.AgentTypeId, ct);
 
-            send.Status = ProgramMilestoneSendStatus.Sent;
-            send.ThreadId = result.ThreadId;
-            send.SentAt = _utcNow();
-            send.UpdatedAt = send.SentAt;
+            control.Status = ProgramControlStatus.Sent;
+            control.ThreadId = result.ThreadId;
+            control.SentAt = _utcNow();
+            control.UpdatedAt = control.SentAt;
             _logger.LogInformation(
-                "Program.MilestoneSent: enrollment={EnrollmentId} day={MilestoneDay} attempts={Attempts}",
-                candidate.EnrollmentId, day, send.Attempts);
+                "Program.ControlSent: enrollment={EnrollmentId} day={MilestoneDay} attempts={Attempts}",
+                candidate.EnrollmentId, day, control.Attempts);
         }
         catch (Exception ex)
         {
             // Fallo transitorio del canal: se acumula el intento. Al alcanzar
             // MaxAttempts la fila pasa a Failed (terminal); antes, Pending
             // para que la próxima pasada reintente.
-            send.Attempts += 1;
-            send.Status = send.Attempts >= settings.MaxAttempts
-                ? ProgramMilestoneSendStatus.Failed
-                : ProgramMilestoneSendStatus.Pending;
-            send.UpdatedAt = _utcNow();
+            control.Attempts += 1;
+            control.Status = control.Attempts >= settings.MaxAttempts
+                ? ProgramControlStatus.Failed
+                : ProgramControlStatus.Pending;
+            control.UpdatedAt = _utcNow();
             _logger.LogWarning(
                 ex,
-                "Program.MilestoneSender: fallo al notificar (attempts={Attempts}). enrollment={EnrollmentId} day={MilestoneDay}",
-                send.Attempts, candidate.EnrollmentId, day);
+                "Program.Controls: fallo al notificar (attempts={Attempts}). enrollment={EnrollmentId} day={MilestoneDay}",
+                control.Attempts, candidate.EnrollmentId, day);
         }
 
-        await _repository.UpdateAsync(send, ct);
-        return send;
+        await _repository.UpdateAsync(control, ct);
+        return control;
     }
 
-    private static ProgramMilestoneSendResult ToResult(ProgramMilestoneSend send)
-        => new(send.EnrollmentId, send.MilestoneDay, send.Status, send.ThreadId);
+    private static ProgramControlSendResult ToResult(ProgramControl control)
+        => new(control.EnrollmentId, control.MilestoneDay, control.Status, control.ThreadId);
 
     /// <summary>
     /// Hora local del paciente desde su zona IANA. Fallback a UTC si la zona

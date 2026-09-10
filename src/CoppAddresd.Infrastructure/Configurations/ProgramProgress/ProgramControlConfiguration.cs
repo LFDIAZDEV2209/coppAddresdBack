@@ -6,16 +6,19 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace CoppAddresd.Infrastructure.Configurations.ProgramProgress;
 
 /// <summary>
-/// Configuración del registro de envíos de recordatorios de hito del programa
-/// en el schema <c>app</c>. El índice único (enrollment_id, milestone_day)
-/// respalda la idempotencia del job: cada hito de cada inscripción tiene como
-/// máximo una fila (y por lo tanto un solo envío).
+/// Configuración del control conversacional del programa
+/// (<c>program_controls</c>) en el schema <c>app</c>. El índice único
+/// (enrollment_id, milestone_day) respalda la idempotencia del job: cada hito
+/// de cada inscripción tiene como máximo una fila (y por lo tanto un solo
+/// envío). La columna <c>closed_reason</c> se valida con CHECK sobre los dos
+/// motivos de cierre sin examen; <c>exam_batch_id</c> es una referencia
+/// best-effort sin FK (el lote pertenece al módulo de exámenes).
 /// </summary>
-public sealed class ProgramMilestoneSendConfiguration : IEntityTypeConfiguration<ProgramMilestoneSend>
+public sealed class ProgramControlConfiguration : IEntityTypeConfiguration<ProgramControl>
 {
-    public void Configure(EntityTypeBuilder<ProgramMilestoneSend> builder)
+    public void Configure(EntityTypeBuilder<ProgramControl> builder)
     {
-        builder.ToTable("program_milestone_sends", "app");
+        builder.ToTable("program_controls", "app");
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
@@ -32,7 +35,7 @@ public sealed class ProgramMilestoneSendConfiguration : IEntityTypeConfiguration
             .HasColumnName("status")
             .HasMaxLength(20)
             .HasConversion<string>()
-            .HasDefaultValue(ProgramMilestoneSendStatus.Pending);
+            .HasDefaultValue(ProgramControlStatus.Pending);
 
         builder.Property(x => x.Attempts)
             .HasColumnName("attempts")
@@ -46,6 +49,26 @@ public sealed class ProgramMilestoneSendConfiguration : IEntityTypeConfiguration
             .HasColumnName("sent_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(x => x.RespondedAt)
+            .HasColumnName("responded_at")
+            .HasColumnType("timestamptz");
+
+        builder.Property(x => x.FollowupSentAt)
+            .HasColumnName("followup_sent_at")
+            .HasColumnType("timestamptz");
+
+        builder.Property(x => x.CompletedAt)
+            .HasColumnName("completed_at")
+            .HasColumnType("timestamptz");
+
+        builder.Property(x => x.ClosedReason)
+            .HasColumnName("closed_reason")
+            .HasMaxLength(32);
+
+        builder.Property(x => x.ExamBatchId)
+            .HasColumnName("exam_batch_id")
+            .HasColumnType("uuid");
+
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")
             .HasColumnType("timestamptz")
@@ -58,16 +81,22 @@ public sealed class ProgramMilestoneSendConfiguration : IEntityTypeConfiguration
         // Indexes: el único (enrollment_id, milestone_day) es la garantía de
         // idempotencia y a la vez cubre el lookup por inscripción del job.
         builder.HasIndex(x => new { x.EnrollmentId, x.MilestoneDay })
-            .HasDatabaseName("ix_program_milestone_sends_enrollment_day")
+            .HasDatabaseName("ix_program_controls_enrollment_day")
             .IsUnique();
 
         builder.HasIndex(x => x.Status)
-            .HasDatabaseName("ix_program_milestone_sends_status");
+            .HasDatabaseName("ix_program_controls_status");
+
+        // CHECK de closed_reason: solo los dos motivos de cierre sin examen.
+        builder.HasCheckConstraint(
+            "CK_program_controls_closed_reason",
+            "\"closed_reason\" IN ('declined', 'no_upload_timeout')");
 
         // Relationships
         builder.HasOne(x => x.Enrollment)
             .WithMany()
             .HasForeignKey(x => x.EnrollmentId)
+            .HasConstraintName("FK_program_controls_program_enrollments_enrollment_id")
             .OnDelete(DeleteBehavior.Cascade);
     }
 }
