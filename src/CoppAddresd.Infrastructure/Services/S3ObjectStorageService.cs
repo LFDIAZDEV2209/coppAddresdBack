@@ -84,6 +84,11 @@ public sealed class S3ObjectStorageService : IObjectStorageService
             Key = key,
             InputStream = content,
             ContentType = contentType ?? GetContentType(key),
+            // El SDK cierra el stream del llamador por defecto (AutoCloseStream=true),
+            // lo que rompía a los reutilizadores del stream tras la subida
+            // (p. ej. foodai relee la imagen para enviarla al microservicio).
+            // Contrato: PutObject NO consume ni cierra el stream del llamador.
+            AutoCloseStream = false,
         }, ct);
 
         return response.ETag ?? key;
