@@ -59,4 +59,20 @@ public interface IAiServiceClient
         string contentType,
         string? threadId = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Genera la narración empática del examen (segundo request, canal interno
+    /// con X-Internal-Key) a partir de la tabla de evolución pre-computada en
+    /// .NET. Best-effort por contrato: cualquier fallo (404 de un ai-service
+    /// anterior, timeout, red, payload inválido) devuelve cadena vacía y el
+    /// caller usa el summary — nunca lanza ni debe romper el upload ni disparar
+    /// la compensación S3.
+    /// </summary>
+    Task<string> NarrateLabExamAsync(
+        Guid patientId,
+        Guid batchId,
+        IReadOnlyList<LabExamAiMetricDto> metrics,
+        IReadOnlyDictionary<string, MetricEvolution> previousMeasurements,
+        string? language,
+        CancellationToken ct = default);
 }
