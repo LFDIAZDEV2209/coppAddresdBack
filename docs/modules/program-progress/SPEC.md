@@ -1443,6 +1443,16 @@ Endpoint de LECTURA para la pestaña Evolución del móvil: serie semanal ASCEND
 
 > **Enmienda 2026-09-07 — historial POR PROGRAMA (purga en re-inscripción)**: `health_scores`/`transformation_scores` son por PACIENTE; al re-inscribir (tras retiro/completación) `EnrollAsync` **purga** las filas del paciente en la MISMA transacción — las semanas de la corrida anterior colisionarían con la nueva (filas viejas de semanas 3..N mapearían a semanas FUTURAS con puntajes viejos). "Nueva inscripción = historia nueva" (deliberado, mismo espíritu que `streak_states`, por inscripción). El handler de inscripción invalida además el caché `scores-history:{patientId}:v1` post-commit. El fetch del historial se acota a la ventana de la corrida actual (inicio de la semana 1 → fin de la semana actual local).
 
+#### 13.7.4 `GET /api/v1/program/me/metrics-history`
+
+Historial de métricas clínicas REALES del paciente autenticado (Home móvil, enmienda 2026-09-07): series por fecha local de `app.clinical_measurements` (catálogo `app.measurement_metrics`, sembrado en `ClinicalMeasurementsSeeder`) con rangos de `app.measurement_reference_ranges`. SOLO filas persistidas — nunca dispara el motor de puntajes. Self-service del paciente (solo `[Authorize]`, convención `me/*`). Query params: `codes` (CSV, default `bmi,hba1c,body_fat`; códigos inexistentes → 400 `METRICS_UNKNOWN` con la lista de válidos) y `days` (default 180, clamp 7..365; ventana paciente-local convertida a UTC DST-aware).
+
+- **Serie**: un punto por fecha local (el `ObservedAt` más reciente del día gana; empate → mayor `Id`), orden ASC. `target` = rango activo de mayor prioridad (`lo`/`hi` null sin rango). `favorableDirection` = línea base clínica si existe (`down`/`up`); si no, `down` solo para el set bajo-es-mejor con rango (`bmi`, `hba1c`, `body_fat`, `glucose_fasting`); resto → null.
+- **Fallback de IMC (única métrica computada)**: sin filas de `bmi`, con `weight` + `patient_profiles.height_cm` → `bmi = peso/(talla/100)²` por fecha. El resto de métricas usan filas crudas (nada fabricado).
+- `heightCm` se lee de `patient_profiles.height_cm` por SQL directo (columna huérfana del modelo EF; null si no está cargada).
+- **Cache**: clave por paciente `metrics-history:{patientId}:v1`, TTL 5 min, fail-open; sin invalidación explícita (el TTL absorbe el lag de completaciones de signos vitales).
+- **Errors**: `404 NO_ACTIVE_ENROLLMENT` sin inscripción activa (anti-IDOR: cruces → 404, nunca 403); `400 METRICS_UNKNOWN` con códigos inválidos.
+
 **Errors**: `404 NO_ACTIVE_ENROLLMENT` si el llamador no tiene inscripción activa (anti-IDOR: cruces entre pacientes → 404, nunca 403).
 
 ### 13.8 Implementation placement (mirrors §8.1)

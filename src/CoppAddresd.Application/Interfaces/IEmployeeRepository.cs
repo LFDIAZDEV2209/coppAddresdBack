@@ -117,4 +117,42 @@ public interface IEmployeeRepository
         Guid? clinicId,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Horarios semanales de atención de un profesional. Devuelve las filas
+    /// de <c>erp.professional_schedules</c> ordenadas por weekday.
+    /// </summary>
+    Task<IReadOnlyList<ProfessionalSchedule>> GetSchedulesByProfessionalIdAsync(
+        Guid professionalId,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Reemplazo total de los horarios semanales de un profesional: elimina
+    /// todas las filas existentes e inserta las nuevas en una sola transacción.
+    /// </summary>
+    Task ReplaceSchedulesAsync(
+        Guid professionalId,
+        IReadOnlyList<ProfessionalSchedule> schedules,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Membresías de clínicas de profesionales: empleados con extensión
+    /// profesional y sus clínicas activas. Para el backfill de scopes del
+    /// módulo Maintenance. Solo empleados con Professional != null.
+    /// </summary>
+    Task<IReadOnlyList<ProfessionalClinicMembership>> GetProfessionalClinicMembershipsAsync(
+        CancellationToken ct = default
+    );
 }
+
+/// <summary>
+/// Membresía de un profesional en clínicas (para el backfill de scopes).
+/// </summary>
+public record ProfessionalClinicMembership(
+    Guid EmployeeId,
+    Guid ProfessionalId,
+    Guid? UserId,
+    IReadOnlyList<Guid> ActiveClinicIds
+);

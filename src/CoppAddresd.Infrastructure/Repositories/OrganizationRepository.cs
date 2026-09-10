@@ -163,6 +163,45 @@ public sealed class OrganizationRepository(AppDbContext dbContext) : IOrganizati
     public async Task<bool> SpecialtyCodeExistsAsync(string code, CancellationToken ct = default) =>
         await dbContext.Specialties.AnyAsync(x => x.Code == code, ct);
 
+    public async Task<IReadOnlyList<(Guid Id, string Code)>> GetClinicsByCodesAsync(
+        Guid organizationId,
+        IReadOnlyList<string> codes,
+        CancellationToken ct = default)
+    {
+        if (codes.Count == 0)
+            return [];
+
+        // Normalizar códigos a minúsculas para comparación case-insensitive.
+        var lowerCodes = codes.Select(c => c.Trim().ToLowerInvariant()).Distinct().ToList();
+
+        return await dbContext.Clinics
+            .AsNoTracking()
+            .Where(c => c.OrganizationId == organizationId
+                         && c.IsActive
+                         && c.Code != null
+                         && lowerCodes.Contains(c.Code!.ToLower()))
+            .Select(c => new ValueTuple<Guid, string>(c.Id, c.Code!))
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<(Guid Id, string Name)>> GetClinicsByCodeAsync(
+        string code,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return [];
+
+        var lowerCode = code.Trim().ToLowerInvariant();
+
+        return await dbContext.Clinics
+            .AsNoTracking()
+            .Where(c => c.IsActive
+                         && c.Code != null
+                         && c.Code!.ToLower() == lowerCode)
+            .Select(c => new ValueTuple<Guid, string>(c.Id, c.Name))
+            .ToListAsync(ct);
+    }
+
     public async Task<ProfessionalType> AddProfessionalTypeAsync(
         ProfessionalType type,
         CancellationToken ct = default

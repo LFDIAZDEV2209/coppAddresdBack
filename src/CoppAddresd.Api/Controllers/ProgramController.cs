@@ -37,7 +37,9 @@ using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenWeaknesse
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListWeaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.League;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.MetricsHistory;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetLeague;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetMetricsHistory;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.AcceptIntervention;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateInterventionStatus;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleScheduled;
@@ -861,6 +863,39 @@ public sealed class ProgramController(
     }
 
     /// <summary>
+    /// Historial de métricas clínicas del paciente autenticado (metrics-history,
+    /// Home del móvil): series REALES por fecha local de
+    /// <c>app.clinical_measurements</c> para los códigos solicitados
+    /// (<c>codes</c> CSV, default <c>bmi,hba1c,body_fat</c>; códigos
+    /// inexistentes → 400 con la lista de válidos) en la ventana de
+    /// <c>days</c> (default 180, clamp 7..365). Incluye la talla del perfil,
+    /// el rango de referencia (target) y la dirección favorable. Self-service
+    /// del paciente: SOLO <c>[Authorize]</c> (convención <c>me/*</c>); el
+    /// <c>patientId</c> SIEMPRE del JWT vía
+    /// <see cref="IProgramActorContext"/> (anti-IDOR AC-11); sin inscripción
+    /// activa → 404. Cache 5 min por paciente (fail-open).
+    /// </summary>
+    [HttpGet("me/metrics-history")]
+    public async Task<ActionResult<MetricsHistoryResponseDto>> GetMetricsHistory(
+        [FromQuery] string? codes,
+        [FromQuery] int? days,
+        CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+        }
+
+        var parsedCodes = string.IsNullOrWhiteSpace(codes)
+            ? []
+            : codes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return Ok(await mediator.Send(
+            new GetMetricsHistoryQuery(patientId.Value, parsedCodes, days ?? 0), ct));
+    }
+
+    /// <summary>
     /// Recálculo forzado de puntajes por un clínico (SPEC §13.7.2): único
     /// disparador fuera de banda del motor (sin cron en MVP, §13.3). Body
     /// <c>{ patientId, periodEndLocalDate? }</c>; el fin de período opcional
@@ -1345,12 +1380,18 @@ public sealed class ProgramController(
 
     /// <summary>
     /// Vista de cofres/rachas ERP (SPEC §23, AC-53): XP por categoría, milestones
-    /// de racha y tabla de pacientes con nivel/nb_streak.
+    /// de racha y tabla paginada de pacientes con nivel/nb_streak.
     /// </summary>
     [HttpGet("erp/cofres")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<ProgramErpCofresDto>> GetErpCofres(CancellationToken ct)
-        => Ok(await mediator.Send(new GetErpCofresQuery(), ct));
+    public async Task<ActionResult<ProgramErpCofresDto>> GetErpCofres(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDir = null,
+        CancellationToken ct = default)
+        => Ok(await mediator.Send(new GetErpCofresQuery(page, pageSize, search, sortBy, sortDir), ct));
 
     /// <summary>
     /// Perfil 360 de un paciente (SPEC §23, AC-54): inscripción, racha, XP,

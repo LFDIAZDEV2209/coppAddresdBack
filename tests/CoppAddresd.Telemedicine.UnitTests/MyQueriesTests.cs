@@ -141,16 +141,28 @@ public class MyQueriesTests
     public async Task HandleSummary_AcotaKPIsAlProfesional()
     {
         var otherProfessional = Guid.NewGuid();
-        var now = DateTimeOffset.UtcNow;
+        // Anclado a mediodía UTC: evita flake si el test corre cerca de medianoche
+        // (now + 1h cruzaría al día siguiente y AppointmentsToday daría 1 en vez de 2).
+        var utcNow = DateTimeOffset.UtcNow;
+        var startOfDay = new DateTimeOffset(
+            utcNow.Year,
+            utcNow.Month,
+            utcNow.Day,
+            0,
+            0,
+            0,
+            TimeSpan.Zero
+        );
+        var baseTime = startOfDay.AddHours(10);
         _appointments.Items.AddRange([
-            Appointment(AppointmentStatus.Confirmed, now),
-            Appointment(AppointmentStatus.Confirmed, now.AddHours(1)),
+            Appointment(AppointmentStatus.Confirmed, baseTime),
+            Appointment(AppointmentStatus.Confirmed, baseTime.AddHours(1)),
             Appointment(
                 AppointmentStatus.Confirmed,
-                now.AddHours(2),
+                baseTime.AddHours(2),
                 professionalId: otherProfessional
             ),
-            Appointment(AppointmentStatus.Completed, now.AddDays(-1)),
+            Appointment(AppointmentStatus.Completed, startOfDay.AddDays(-1).AddHours(10)),
         ]);
         _requests.Items.Add(
             new TelemedicineRequest

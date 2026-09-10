@@ -218,6 +218,19 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public Task<DateOnly?> GetPatientLocalTodayAsync(Guid enrollmentId, CancellationToken ct = default)
         => Task.FromResult(PatientToday);
 
+    /// <summary>
+    /// Stub del contrato de biometría del procesador de métricas (trabajo
+    /// concurrente): null por defecto (sin datos). Hook opcional por si un
+    /// test necesita fijar un valor.
+    /// </summary>
+    public Func<Guid, CancellationToken, Task<PatientBiometriaInfoDto?>>? OnGetPatientBiometriaInfo { get; set; }
+
+    public Task<PatientBiometriaInfoDto?> GetPatientBiometriaInfoAsync(
+        Guid enrollmentId, CancellationToken ct = default)
+        => OnGetPatientBiometriaInfo is not null
+            ? OnGetPatientBiometriaInfo(enrollmentId, ct)
+            : Task.FromResult<PatientBiometriaInfoDto?>(null);
+
     public Task<ProgramSnapshotDto?> GetSnapshotAsync(Guid enrollmentId, DateOnly todayLocalDate, CancellationToken ct = default)
         => OnGetSnapshot is not null
             ? OnGetSnapshot(enrollmentId, ct)
@@ -897,11 +910,17 @@ internal sealed class FakeProgramRepository : IProgramRepository
             [],
             new PaginatedErpAdherenciaTabla([], 0, page, pageSize, 0)));
 
-    public Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default)
+    public Task<ProgramErpCofresDto> GetErpCofresAsync(
+        int page = 1, int pageSize = 10,
+        string? search = null, string? sortBy = null, string? sortDir = null,
+        CancellationToken ct = default)
         => Task.FromResult(new ProgramErpCofresDto(
+            0,
+            0,
+            0,
             [],
             new ErpMilestoneCounts(0, 0, 0, 0, 0, 0, 0, 0),
-            [],
+            new PaginatedErpCofresTabla([], 0, page, pageSize, 0),
             0));
 
     public Task<PatientOverviewDto?> GetPatientOverviewAsync(Guid patientId, CancellationToken ct = default)

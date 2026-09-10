@@ -39,4 +39,6 @@ public sealed class Professional
     public ICollection<ProfessionalSpecialty> Specialties { get; set; } = [];
 
     public ICollection<ProfessionalLicense> Licenses { get; set; } = [];
+
+    public ICollection<ProfessionalSchedule> WeeklySchedule { get; set; } = [];
 }

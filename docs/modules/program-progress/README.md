@@ -366,6 +366,38 @@ Serie semanal para la pestaña **Evolución** del móvil: los Índices de Salud 
 
 **Historial por programa (enmienda 2026-09-07)**: las filas de puntajes son por paciente y se **purgaron** al re-inscribir (`EnrollAsync`, en la misma transacción) — la historia pertenece a la corrida en curso: las semanas viejas de una corrida anterior colisionarían con las nuevas (filas de semanas 3..N mapearían a semanas futuras con puntajes viejos). La re-inscripción invalida además el caché `scores-history:{patientId}:v1` post-commit. El fetch se acota a la ventana de la corrida actual (inicio de la semana 1 → fin de la semana actual local).
 
+### 2.13 Historial de métricas clínicas (metrics-history)
+
+Series REALES de métricas clínicas para la **Home** del móvil (IMC, HbA1c, % grasa...) reemplazando la historia fabricada del frontend. Todo sale de `app.clinical_measurements` (catálogo sembrado en `ClinicalMeasurementsSeeder`) con rangos de `app.measurement_reference_ranges`. Solo lectura: nunca dispara el motor de puntajes.
+
+**Contrato** (paciente autenticado, `patientId` siempre del JWT — anti-IDOR; solo `[Authorize]`, convención `me/*`):
+
+| Endpoint | Método | Descripción |
+| -------- | ------ | ----------- |
+| `/api/v1/program/me/metrics-history?codes=bmi,hba1c,body_fat&days=180` | GET | Series por fecha local; `codes` CSV (default `bmi,hba1c,body_fat`), `days` (default 180, clamp 7..365) |
+
+```jsonc
+{
+  "heightCm": 168.0,
+  "metrics": [
+    { "code": "bmi", "unit": "kg_m2", "target": { "lo": 18.5, "hi": 24.9 }, "favorableDirection": "down",
+      "points": [ { "date": "2026-06-01", "value": 27.6 }, { "date": "2026-09-07", "value": 26.4 } ] }
+  ]
+}
+```
+
+**Semántica**:
+
+- **Whitelist**: códigos inexistentes en el catálogo → **400** (`METRICS_UNKNOWN`) con la lista COMPLETA de válidos (el catálogo activo completo está cacheado: la lista nunca queda vacía; el 400 se aplica en CADA request, también con caché caliente). Códigos duplicados → una sola entrada (case-insensitive); el `code` emitido es SIEMPRE el del catálogo (nunca el casing del request). Códigos válidos sin filas en la ventana → **omitidos** (requires-data).
+- **Serie**: filas de `clinical_measurements` del paciente filtradas por código + ventana (últimos N días locales, convertida a UTC DST-aware), orden ASC por `ObservedAt`, **un punto por fecha local** (el más reciente del día gana; empate → mayor `Id`). **Unit-consistencia**: solo se conservan filas en la **unidad por defecto del catálogo** de la métrica (el peso en libras no se mezcla con kg); otras unidades se omiten (conversión = trabajo futuro).
+- **`target`**: rango de referencia ACTIVO de mayor prioridad para la métrica (`lo`/`hi` null cuando no hay rango o el extremo es abierto); empate de prioridad → desempate determinista por `Id`.
+- **`favorableDirection`**: `'down' | 'up' | null`. La **línea base clínica** del paciente (`clinical_baselines.favorable_direction`, autoría clínica — SPEC §13.1.2) manda. Sin línea base, se deriva **'down'** solo para el set bajo-es-mejor con rango presente: `bmi`, `hba1c`, `body_fat`, `glucose_fasting`. El resto → null (desconocible).
+- **Fallback de IMC (única métrica computada, documentado)**: si `bmi` no tiene filas en la ventana pero existen filas de `weight` (en su unidad por defecto `kg` — el guard de unidades aplica también al fallback) y el perfil tiene `height_cm`, se computa `bmi = peso/(talla/100)²` por fecha. Ninguna otra métrica se fabrica.
+- **`heightCm`**: `patient_profiles.height_cm` (columna huérfana del modelo EF — se lee por SQL directo; null si no está cargada).
+- Sin inscripción activa → `404 NO_ACTIVE_ENROLLMENT` (verificado en CADA request, fuera del caché).
+
+**Cache** (ver `docs/modules/cache/README.md`): el **contexto COMPLETO** del paciente se cachea por clave `metrics-history:{patientId}:v1` (prefijo del servicio: `erp:`), TTL 5 min, fail-open — la serie de TODAS las métricas activas del catálogo sobre la ventana MÁXIMA (365d), talla, targets y direcciones, **sin codes/days en la clave** (precedente scores-history). El recorte por-request (whitelist → 400, clamp de días, re-filtro de ventana, fallback de IMC) se aplica DESPUÉS del caché y **nunca se cachea**. Sin invalidación explícita: el TTL absorbe el lag de las completaciones de signos vitales (≤ 5 min) — mismo tradeoff que scores-history.
+
 ---
 
 ## 3. Cómo funciona el flujo en la práctica

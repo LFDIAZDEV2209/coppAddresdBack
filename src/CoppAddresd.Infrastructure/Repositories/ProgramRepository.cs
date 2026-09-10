@@ -8212,98 +8212,132 @@ public sealed class ProgramRepository(
             evolucionClinica30d);
     }
 
-    /// <summary>Vista de hoy para el ERP (SPEC §23, AC-51).</summary>
+    /// <summary>Vista de hoy para el ERP (SPEC §23, AC-51) optimizada con CQRS pre-agregación.</summary>
     public async Task<ProgramErpTodayDto> GetErpTodayAsync(CancellationToken ct = default)
     {
         var today = PatientLocalToday(configuration["Program:DefaultTimezone"] ?? "America/Bogota");
+        var weekStart = ErpWeekStart(today);
+        var todayWeekday = ToIsoWeekday(today);
 
         var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             .Where(e => e.Status == ProgramEnrollmentStatus.Active)
             .Select(e => new { e.Id, e.PatientId, e.CurrentWeekNumber })
             .ToListAsync(ct);
 
-        var patientIds = activeEnrollments.Select(e => e.PatientId).Distinct().ToList();
-        var patientNames = await dbContext.PatientProfiles.AsNoTracking()
-            .Where(p => patientIds.Contains(p.Id))
-            .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
-            .ToDictionaryAsync(p => p.Id, p => p.Name, ct);
-
-        string Name(Guid id) => patientNames.TryGetValue(id, out var n) ? n : "Paciente";
         var enrollmentIds = activeEnrollments.Select(e => e.Id).ToList();
+        if (enrollmentIds.Count == 0)
+        {
+            return new ProgramErpTodayDto([], [], [], []);
+        }
 
-        // Mission KPIs
-        var todayCompleted = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
-            .GroupBy(tc => tc.TaskCode)
-            .Select(g => new { Code = g.Key.ToString(), Count = g.Count() })
-            .ToListAsync(ct);
-        var todayWeekday = ToIsoWeekday(today);
+        // 1. Tareas programadas esperadas desde snapshots de las semanas activas
         var activeWeekSnapshots = await dbContext.ProgramWeeks.AsNoTracking()
             .Where(w => enrollmentIds.Contains(w.EnrollmentId) && w.Status == ProgramWeekStatus.Active)
             .Select(w => w.TasksSnapshot)
             .ToListAsync(ct);
-        var scheduledPerMission = activeWeekSnapshots
+
+        var parsedSnapshots = activeWeekSnapshots
             .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
             .SelectMany(s => ParseSnapshot(s))
+            .ToList();
+
+        var scheduledPerMission = parsedSnapshots
             .Where(t => t.Weekday == todayWeekday)
             .GroupBy(t => t.TaskCode)
             .Select(g => new { Code = g.Key, Count = g.Count() })
-            .ToList();
-        var missionLookup = scheduledPerMission.ToDictionary(m => m.Code, m => m.Count);
-        var completedLookup = todayCompleted.ToDictionary(m => m.Code, m => m.Count);
-        var allCodes = missionLookup.Keys.Union(completedLookup.Keys).Distinct().ToList();
+            .ToDictionary(m => m.Code, m => m.Count);
+
+        var scheduledPerWeekday = parsedSnapshots
+            .GroupBy(t => (Weekday: t.Weekday, Code: t.TaskCode))
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        // 2. FAST PATH CQRS: Completaciones de hoy desde app.program_daily_metrics
+        var todayCompletedRollup = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => m.MetricDate == today && m.MetricKey == "tasks_completed_by_code")
+            .ToDictionaryAsync(m => m.DimensionKey, m => (int)m.TotalCount, ct);
+
+        Dictionary<string, int> completedLookup;
+        if (todayCompletedRollup.Count > 0)
+        {
+            completedLookup = todayCompletedRollup;
+        }
+        else
+        {
+            // Fallback OLTP si el rollup aún no tiene registros para hoy
+            var todayCompletedOltp = await dbContext.TaskCompletions.AsNoTracking()
+                .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
+                .GroupBy(tc => tc.TaskCode)
+                .Select(g => new { Code = g.Key.ToString(), Count = g.Count() })
+                .ToListAsync(ct);
+            completedLookup = todayCompletedOltp.ToDictionary(m => m.Code, m => m.Count);
+        }
+
+        var allCodes = scheduledPerMission.Keys.Union(completedLookup.Keys).Distinct().ToList();
         var missionKpis = allCodes.Select(code =>
         {
-            var total = missionLookup.GetValueOrDefault(code, 0);
+            var total = scheduledPerMission.GetValueOrDefault(code, 0);
             var completed = completedLookup.GetValueOrDefault(code, 0);
             return new ErpTodayMissionKpi(code, completed, total, total > 0 ? Math.Round((decimal)completed / total * 100, 1) : 0m);
         }).ToList();
 
-        // Feed: recent completions today
-        var recentCompletions = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
+        // 3. Feed: recientes completaciones de hoy (Top 20 indexado con Join set-based)
+        var feedEntries = await dbContext.TaskCompletions.AsNoTracking()
+            .Where(tc => tc.LocalDate == today && enrollmentIds.Contains(tc.EnrollmentId))
             .OrderByDescending(tc => tc.CompletedAt)
             .Take(20)
+            .Join(dbContext.ProgramEnrollments.AsNoTracking(),
+                tc => tc.EnrollmentId, e => e.Id,
+                (tc, e) => new { tc, e.PatientId })
+            .Join(dbContext.PatientProfiles.AsNoTracking(),
+                x => x.PatientId, p => p.Id,
+                (x, p) => new ErpTodayFeedEntry(
+                    x.tc.Id,
+                    p.Id,
+                    (p.FirstName + " " + p.LastName).Trim(),
+                    x.tc.TaskCode.ToString(),
+                    x.tc.PointsAwarded,
+                    x.tc.CompletedAt))
             .ToListAsync(ct);
-        var enrollmentPatientMap = activeEnrollments.ToDictionary(e => e.Id, e => e.PatientId);
-        var feedEntries = recentCompletions.Select(tc =>
+
+        // 4. Pendientes críticos: pacientes activos con 0 completaciones hoy (Set-based SQL directo)
+        var pendientes = await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Status == ProgramEnrollmentStatus.Active
+                && !dbContext.TaskCompletions.Any(tc => tc.EnrollmentId == e.Id && tc.LocalDate == today))
+            .Join(dbContext.PatientProfiles.AsNoTracking(),
+                e => e.PatientId, p => p.Id,
+                (e, p) => new ErpCriticalPending(
+                    p.Id,
+                    (p.FirstName + " " + p.LastName).Trim(),
+                    e.Id,
+                    e.CurrentWeekNumber,
+                    6))
+            .ToListAsync(ct);
+
+        // 5. FAST PATH CQRS: Heatmap semanal (7 días) desde app.program_daily_metrics
+        var weekRollup = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => m.MetricDate >= weekStart && m.MetricDate < weekStart.AddDays(7)
+                && m.MetricKey == "tasks_completed_by_code")
+            .Select(m => new { Day = m.MetricDate, Code = m.DimensionKey, Count = (int)m.TotalCount })
+            .ToListAsync(ct);
+
+        Dictionary<(DateOnly Day, string Code), int> completedByDay;
+        if (weekRollup.Count > 0)
         {
-            var pid = enrollmentPatientMap.TryGetValue(tc.EnrollmentId, out var p) ? p : Guid.Empty;
-            return new ErpTodayFeedEntry(
-                tc.Id, pid, Name(pid),
-                tc.TaskCode.ToString(), tc.PointsAwarded, tc.CompletedAt);
-        }).ToList();
+            completedByDay = weekRollup.ToDictionary(x => (x.Day, x.Code), x => x.Count);
+        }
+        else
+        {
+            // Fallback OLTP para la semana si el rollup no tiene filas
+            var weekCompletions = await dbContext.TaskCompletions.AsNoTracking()
+                .Where(tc => enrollmentIds.Contains(tc.EnrollmentId)
+                    && tc.LocalDate >= weekStart && tc.LocalDate < weekStart.AddDays(7))
+                .GroupBy(tc => new { tc.LocalDate, tc.TaskCode })
+                .Select(g => new { g.Key.LocalDate, g.Key.TaskCode, Count = g.Count() })
+                .ToListAsync(ct);
+            completedByDay = weekCompletions
+                .ToDictionary(x => (x.LocalDate, x.TaskCode.ToString()), x => x.Count);
+        }
 
-        // Pendientes críticos: enrollments with 0 completions today
-        var completedEnrollIds = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId) && tc.LocalDate == today)
-            .Select(tc => tc.EnrollmentId)
-            .Distinct()
-            .ToListAsync(ct);
-        var pendientes = activeEnrollments
-            .Where(e => !completedEnrollIds.Contains(e.Id))
-            .Select(e => new ErpCriticalPending(
-                e.PatientId, Name(e.PatientId), e.Id, e.CurrentWeekNumber, 6))
-            .ToList();
-
-        // Heatmap: adherence by mission x day of current week.
-        // Denominador real por día laborable (tareas programadas ese weekday en
-        // las semanas activas), nunca un promedio partido entre 7.
-        var weekStart = ErpWeekStart(today);
-        var scheduledPerWeekday = activeWeekSnapshots
-            .Where(s => s.ValueKind == System.Text.Json.JsonValueKind.Array)
-            .SelectMany(s => ParseSnapshot(s))
-            .GroupBy(t => (Weekday: t.Weekday, Code: t.TaskCode))
-            .ToDictionary(g => g.Key, g => g.Count());
-        var weekCompletions = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId)
-                && tc.LocalDate >= weekStart && tc.LocalDate < weekStart.AddDays(7))
-            .GroupBy(tc => new { tc.LocalDate, tc.TaskCode })
-            .Select(g => new { g.Key.LocalDate, g.Key.TaskCode, Count = g.Count() })
-            .ToListAsync(ct);
-        var completedByDay = weekCompletions
-            .Select(x => (Day: x.LocalDate, Code: x.TaskCode.ToString(), x.Count))
-            .ToDictionary(x => (x.Day, x.Code), x => x.Count);
         var heatmap = new List<ErpHeatmapCell>();
         foreach (var code in allCodes)
         {
@@ -8348,15 +8382,35 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
         // prorrateada por días transcurridos); se emiten las 6 misiones siempre
         // para que las líneas del chart sean continuas.
         var missionCodes = new[] { "podcast", "vitals", "nut", "ejercicio", "nutraceutico", "emocional" };
-        var weekCompletions8 = await dbContext.TaskCompletions.AsNoTracking()
-            .Where(tc => enrollmentIds.Contains(tc.EnrollmentId)
-                && tc.LocalDate >= weekStart.AddDays(-49) && tc.LocalDate <= weekStart.AddDays(6))
-            .GroupBy(tc => new { tc.LocalDate, tc.TaskCode })
-            .Select(g => new { g.Key.LocalDate, g.Key.TaskCode, Count = g.Count() })
+        var minDate = weekStart.AddDays(-49);
+        var maxDate = weekStart.AddDays(6);
+
+        // Fast-path: app.program_daily_metrics
+        var rollupData = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => m.MetricKey == "tasks_completed_by_code"
+                && m.MetricDate >= minDate && m.MetricDate <= maxDate)
+            .Select(m => new { m.MetricDate, TaskCode = m.DimensionKey ?? string.Empty, m.TotalCount })
             .ToListAsync(ct);
-        var completionsByDay = weekCompletions8
-            .Select(x => (Day: x.LocalDate, Code: x.TaskCode.ToString(), x.Count))
-            .ToDictionary(x => (x.Day, x.Code), x => x.Count);
+
+        Dictionary<(DateOnly Day, string Code), int> completionsByDay;
+        if (rollupData.Count > 0)
+        {
+            completionsByDay = rollupData
+                .GroupBy(m => (m.MetricDate, m.TaskCode))
+                .ToDictionary(g => g.Key, g => (int)g.Sum(m => m.TotalCount));
+        }
+        else
+        {
+            var weekCompletions8 = await dbContext.TaskCompletions.AsNoTracking()
+                .Where(tc => enrollmentIds.Contains(tc.EnrollmentId)
+                    && tc.LocalDate >= minDate && tc.LocalDate <= maxDate)
+                .GroupBy(tc => new { tc.LocalDate, tc.TaskCode })
+                .Select(g => new { g.Key.LocalDate, TaskCode = g.Key.TaskCode.ToString(), Count = g.Count() })
+                .ToListAsync(ct);
+            completionsByDay = weekCompletions8
+                .ToDictionary(x => (x.LocalDate, x.TaskCode), x => x.Count);
+        }
+
         var activeCount = Math.Max(1, activeEnrollments.Count);
         var tendencia8 = new List<ErpWeeklyMissionPct>();
         for (var w = 7; w >= 0; w--)
@@ -8475,7 +8529,11 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
     }
 
     /// <summary>Vista de cofres/rachas ERP (SPEC §23, AC-53).</summary>
-    public async Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default)    {
+    public async Task<ProgramErpCofresDto> GetErpCofresAsync(
+        int page = 1, int pageSize = 10,
+        string? search = null, string? sortBy = null, string? sortDir = null,
+        CancellationToken ct = default)
+    {
         var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             .Where(e => e.Status == ProgramEnrollmentStatus.Active)
             .Select(e => new { e.Id, e.PatientId, e.CurrentWeekNumber, e.StartLocalDate })
@@ -8483,6 +8541,27 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
 
         var enrollmentIds = activeEnrollments.Select(e => e.Id).ToList();
         var patientIds = activeEnrollments.Select(e => e.PatientId).Distinct().ToList();
+
+        var totalActivePatients = activeEnrollments.Count;
+
+        // 1. FAST PATH CQRS: Totales globales de cohorte
+        var totalPendingClinical = await dbContext.ClinicalXpReviews.AsNoTracking()
+            .CountAsync(r => r.Status == ClinicalXpReviewStatus.pending, ct);
+
+        var rollupTotalXp = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => m.MetricKey == "xp_total_daily" || m.MetricKey == "xp_awarded_by_reason")
+            .SumAsync(m => (long?)m.TotalValue, ct);
+        long totalXpAwarded;
+        if (rollupTotalXp is not null && rollupTotalXp > 0)
+        {
+            totalXpAwarded = rollupTotalXp.Value;
+        }
+        else
+        {
+            totalXpAwarded = await dbContext.XpLedgerEntries.AsNoTracking()
+                .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+                .SumAsync(x => (long)x.Amount, ct);
+        }
 
         var patientNames = await dbContext.PatientProfiles.AsNoTracking()
             .Where(p => patientIds.Contains(p.Id))
@@ -8495,16 +8574,33 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             .Where(s => enrollmentIds.Contains(s.EnrollmentId))
             .ToListAsync(ct);
 
-        // XP by category
-        var xpByCategoryRaw = await dbContext.XpLedgerEntries.AsNoTracking()
-            .Where(x => enrollmentIds.Contains(x.EnrollmentId))
-            .GroupBy(x => x.Reason)
-            .Select(g => new { Reason = g.Key, Total = g.Sum(x => x.Amount) })
+        // FAST PATH CQRS: XP por categoría desde app.program_daily_metrics
+        var rollupXpData = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => m.MetricKey == "xp_awarded_by_reason")
+            .Select(m => new { Reason = m.DimensionKey ?? string.Empty, Total = (int)m.TotalValue })
             .ToListAsync(ct);
-        var xpByCategory = xpByCategoryRaw
-            .Select(x => new ErpXpByCategory(x.Reason.ToString(), x.Total))
-            .OrderByDescending(x => x.Total)
-            .ToList();
+
+        List<ErpXpByCategory> xpByCategory;
+        if (rollupXpData.Count > 0)
+        {
+            xpByCategory = rollupXpData
+                .GroupBy(x => x.Reason)
+                .Select(g => new ErpXpByCategory(g.Key, g.Sum(x => x.Total)))
+                .OrderByDescending(x => x.Total)
+                .ToList();
+        }
+        else
+        {
+            var xpByCategoryRaw = await dbContext.XpLedgerEntries.AsNoTracking()
+                .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+                .GroupBy(x => x.Reason)
+                .Select(g => new { Reason = g.Key, Total = g.Sum(x => x.Amount) })
+                .ToListAsync(ct);
+            xpByCategory = xpByCategoryRaw
+                .Select(x => new ErpXpByCategory(x.Reason.ToString(), x.Total))
+                .OrderByDescending(x => x.Total)
+                .ToList();
+        }
 
         // Milestones
         var milestoneCounts = new ErpMilestoneCounts(
@@ -8517,33 +8613,39 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             streakData.Count(s => s.NbLongestStreak >= 22),
             streakData.Count(s => s.NbLongestStreak >= 50));
 
+        // 2. Set-based batch queries: XP balances y revisiones clínicas pendientes
+        var xpBalancesMap = await dbContext.XpLedgerEntries.AsNoTracking()
+            .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+            .GroupBy(x => x.EnrollmentId)
+            .Select(g => new { EnrollmentId = g.Key, TotalXp = g.Sum(x => x.Amount) })
+            .ToDictionaryAsync(g => g.EnrollmentId, g => g.TotalXp, ct);
+
+        var pendingClinicalMap = await dbContext.ClinicalXpReviews.AsNoTracking()
+            .Where(r => patientIds.Contains(r.PatientId) && r.Status == ClinicalXpReviewStatus.pending)
+            .GroupBy(r => r.PatientId)
+            .Select(g => new { PatientId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.PatientId, g => g.Count, ct);
+
         // Table per patient
-        var tabla = new List<ErpCofresPatientRow>();
+        var streakMilestones = new[] { 7, 11, 22, 50 };
+        var tablaRows = new List<ErpCofresPatientRow>();
         foreach (var enroll in activeEnrollments)
         {
             var streak = streakData.FirstOrDefault(s => s.EnrollmentId == enroll.Id);
-            var balance = await dbContext.XpLedgerEntries.AsNoTracking()
-                .Where(x => x.EnrollmentId == enroll.Id)
-                .OrderByDescending(x => x.BalanceAfter)
-                .Select(x => (int?)x.BalanceAfter)
-                .FirstOrDefaultAsync(ct) ?? 0;
-            var (level, nextLevelAt) = XpLevels.ForBalance(balance);
-
-            var pendingClinical = await dbContext.ClinicalXpReviews.AsNoTracking()
-                .Where(r => r.PatientId == enroll.PatientId && r.Status == ClinicalXpReviewStatus.pending)
-                .CountAsync(ct);
+            var balance = xpBalancesMap.GetValueOrDefault(enroll.Id, 0);
+            var (level, _) = XpLevels.ForBalance(balance);
+            var pendingClinical = pendingClinicalMap.GetValueOrDefault(enroll.PatientId, 0);
 
             var nextMilestone = 0;
             if (streak is not null)
             {
-                var milestones = new[] { 7, 11, 22, 50 };
-                foreach (var m in milestones)
+                foreach (var m in streakMilestones)
                 {
                     if (streak.CurrentStreak < m) { nextMilestone = m - streak.CurrentStreak; break; }
                 }
             }
 
-            tabla.Add(new ErpCofresPatientRow(
+            tablaRows.Add(new ErpCofresPatientRow(
                 enroll.PatientId,
                 Name(enroll.PatientId),
                 streak?.CurrentStreak ?? 0,
@@ -8559,21 +8661,38 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
                 streak?.NbCurrentStreak ?? 0));
         }
 
-        // --- B2: Próximos a desbloquear (racha dentro de 3 días de un hito STREAK_*) ---
-        var streakMilestones = new[] { 7, 11, 22, 50 };
-        var proximosADesbloquear = 0;
-        foreach (var enroll in activeEnrollments)
+        // Search filter
+        if (!string.IsNullOrWhiteSpace(search))
         {
-            var streakForProx = streakData.FirstOrDefault(s => s.EnrollmentId == enroll.Id);
-            if (streakForProx is null || streakForProx.CurrentStreak >= 50) continue;
-            foreach (var m in streakMilestones)
-            {
-                var diff = m - streakForProx.CurrentStreak;
-                if (diff is >= 1 and <= 3) { proximosADesbloquear++; break; }
-            }
+            tablaRows = tablaRows.Where(r => r.PatientName.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
         }
 
-        return new ProgramErpCofresDto(xpByCategory, milestoneCounts, tabla, proximosADesbloquear);
+        // Sort
+        tablaRows = sortBy?.ToLowerInvariant() switch
+        {
+            "xp" => sortDir == "desc" ? tablaRows.OrderByDescending(r => r.TotalXp).ToList() : tablaRows.OrderBy(r => r.TotalXp).ToList(),
+            "streak" => sortDir == "desc" ? tablaRows.OrderByDescending(r => r.CurrentStreak).ToList() : tablaRows.OrderBy(r => r.CurrentStreak).ToList(),
+            "name" => sortDir == "desc" ? tablaRows.OrderByDescending(r => r.PatientName).ToList() : tablaRows.OrderBy(r => r.PatientName).ToList(),
+            _ => tablaRows,
+        };
+
+        var total = tablaRows.Count;
+        var paged = tablaRows.Skip((Math.Max(1, page) - 1) * pageSize).Take(pageSize).ToList();
+        var totalPages = (int)Math.Ceiling((double)total / Math.Max(1, pageSize));
+
+        // Próximos a desbloquear
+        var proximosADesbloquear = streakData
+            .Where(s => s.CurrentStreak < 50)
+            .Count(s => streakMilestones.Any(m => m - s.CurrentStreak is >= 1 and <= 3));
+
+        return new ProgramErpCofresDto(
+            totalActivePatients,
+            totalXpAwarded,
+            totalPendingClinical,
+            xpByCategory,
+            milestoneCounts,
+            new PaginatedErpCofresTabla(paged, total, page, pageSize, totalPages),
+            proximosADesbloquear);
     }
 
     /// <summary>Perfil 360 de un paciente (SPEC §23, AC-54). Devuelve null si no tiene inscripción.</summary>
@@ -8941,9 +9060,77 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
         },
     };
 
+    /// <summary>Información básica del paciente (PatientId, Gender, CityId) para métricas biométricas.</summary>
+    public async Task<PatientBiometriaInfoDto?> GetPatientBiometriaInfoAsync(Guid enrollmentId, CancellationToken ct = default)
+    {
+        return await dbContext.ProgramEnrollments.AsNoTracking()
+            .Where(e => e.Id == enrollmentId)
+            .Join(dbContext.PatientProfiles.AsNoTracking(),
+                e => e.PatientId, p => p.Id,
+                (e, p) => new PatientBiometriaInfoDto(p.Id, p.Gender, p.CityId))
+            .FirstOrDefaultAsync(ct);
+    }
+
     /// <summary>Resumen comunitario de Biometría (SPEC §06, dashboard comunitario).</summary>
     public async Task<BiometriaCommunityDto> GetBiometriaCommunityAsync(CancellationToken ct = default)
     {
+        // --- FAST PATH: Pre-agregación CQRS si existen métricas en app.biometria_daily_metrics ---
+        var hasRollupData = await dbContext.BiometriaDailyMetrics.AsNoTracking().AnyAsync(ct);
+        if (hasRollupData)
+        {
+            var rollup = await dbContext.BiometriaDailyMetrics.AsNoTracking().ToListAsync(ct);
+
+            // Averages
+            var imcAvgRow = rollup.Where(r => r.MetricKey == "community_avg" && r.DimensionKey == "imc").ToList();
+            var grasaAvgRow = rollup.Where(r => r.MetricKey == "community_avg" && r.DimensionKey == "grasa").ToList();
+            var glucosaAvgRow = rollup.Where(r => r.MetricKey == "community_avg" && r.DimensionKey == "glucosa").ToList();
+
+            decimal? rAvgImc = imcAvgRow.Sum(r => r.TotalCount) > 0
+                ? Math.Round(imcAvgRow.Sum(r => r.TotalValue) / imcAvgRow.Sum(r => r.TotalCount), 1)
+                : null;
+            decimal? rAvgGrasa = grasaAvgRow.Sum(r => r.TotalCount) > 0
+                ? Math.Round(grasaAvgRow.Sum(r => r.TotalValue) / grasaAvgRow.Sum(r => r.TotalCount), 1)
+                : null;
+            decimal? rAvgGlucosa = glucosaAvgRow.Sum(r => r.TotalCount) > 0
+                ? Math.Round(glucosaAvgRow.Sum(r => r.TotalValue) / glucosaAvgRow.Sum(r => r.TotalCount), 1)
+                : null;
+
+            // IMC distribution (OMS 5 categories)
+            var imcCatNames = new[] { "Bajo peso", "Normal", "Sobrepeso", "Obesidad I", "Obesidad II-III" };
+            var rImcBuckets = imcCatNames.Select(cat => new ImcBucket(
+                cat,
+                (int)rollup.Where(r => r.MetricKey == "imc_distribution" && r.DimensionKey == cat).Sum(r => r.TotalCount)
+            )).ToArray();
+
+            // Grasa distribution by sex
+            var grasaMaleNames = new[] { "Óptimo", "Normal", "Alto", "Obesidad" };
+            var grasaFemaleNames = new[] { "Óptimo", "Normal", "Alto", "Obesidad" };
+
+            var rGrasaMaleBuckets = grasaMaleNames.Select(cat => new GrBodyFatBucket(
+                cat,
+                (int)rollup.Where(r => r.MetricKey == "grasa_distribution" && (r.DimensionKey == $"male_{cat}" || r.DimensionKey == cat)).Sum(r => r.TotalCount)
+            )).ToArray();
+
+            var rGrasaFemaleBuckets = grasaFemaleNames.Select(cat => new GrBodyFatBucket(
+                cat,
+                (int)rollup.Where(r => r.MetricKey == "grasa_distribution" && r.DimensionKey == $"female_{cat}").Sum(r => r.TotalCount)
+            )).ToArray();
+
+            // Glucosa distribution
+            var glucCatNames = new[] { "Normal", "Prediabetes", "Elevada", "Sin dato" };
+            var rGlucBuckets = glucCatNames.Select(cat => new GlucosaBucket(
+                cat,
+                (int)rollup.Where(r => r.MetricKey == "glucosa_distribution" && r.DimensionKey == cat).Sum(r => r.TotalCount)
+            )).ToArray();
+
+            // Si hay datos agregados en rollup, devolvemos DTO fast-path
+            return new BiometriaCommunityDto(
+                rAvgImc, rAvgGrasa, rAvgGlucosa, 0,
+                rImcBuckets, new GrasaDistribution(rGrasaMaleBuckets, rGrasaFemaleBuckets),
+                rGlucBuckets, [], [], []);
+        }
+
+        // --- FALLBACK OLTP (Scan completo si el rollup está vacío) ---
         var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             .Where(e => e.Status == ProgramEnrollmentStatus.Active)
             .Select(e => new { e.PatientId, e.CurrentWeekNumber, e.StartLocalDate })
