@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
@@ -313,6 +314,59 @@ public class AiServiceClient : IAiServiceClient
         return result;
     }
 
+    /// <summary>
+    /// Narración empática best-effort (R7/R11/R12). El timeout propio
+    /// (<see cref="AiServiceSettings.LabExamNarrationTimeoutSeconds"/>) se aplica
+    /// con un CTS enlazado al token del caller; el timeout global del HttpClient
+    /// (120 s) queda como cota externa. Cualquier fallo degrada a cadena vacía:
+    /// el upload NUNCA se rompe por narración ni dispara compensación S3.
+    /// </summary>
+    public async Task<string> NarrateLabExamAsync(
+        Guid patientId,
+        Guid batchId,
+        IReadOnlyList<LabExamAiMetricDto> metrics,
+        IReadOnlyDictionary<string, MetricEvolution> previousMeasurements,
+        string? language,
+        CancellationToken ct = default)
+    {
+        var payload = new LabExamNarrateRequest(metrics, previousMeasurements, language);
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        linkedCts.CancelAfter(TimeSpan.FromSeconds(_settings.LabExamNarrationTimeoutSeconds));
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.NarrateEndpoint)
+            {
+                Content = JsonContent.Create(payload, options: JsonOpts),
+            };
+            AddInternalKeyHeader(httpRequest);
+
+            using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                await ThrowForResponseAsync(response, linkedCts.Token);
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<NarrateResponseJson>(
+                JsonOpts, cancellationToken: linkedCts.Token);
+
+            return result?.EmpatheticMessage?.Trim() ?? string.Empty;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            // Fallo de narración ≠ fallo de ai-service (spec R12): se registra y
+            // se devuelve vacío para que el handler use el summary. No se loguea
+            // contenido del mensaje, solo latencia y contexto del lote.
+            _logger.LogWarning(
+                ex,
+                "Lab exam narration unavailable: PatientId={PatientId} BatchId={BatchId} LatencyMs={LatencyMs}",
+                patientId, batchId, stopwatch.ElapsedMilliseconds);
+            return string.Empty;
+        }
+    }
+
     private SseEvent? ParseSseEvent(StreamChatChunk chunk)
     {
         var line = chunk.RawData;
@@ -393,4 +447,10 @@ public class AiServiceClient : IAiServiceClient
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("message_count")] int MessageCount,
         [property: JsonPropertyName("last_message")] string? LastMessage);
+
+    // Contrato del endpoint de narración: `empathetic_message` (snake_case). Un
+    // ai-service anterior no expone el endpoint (404) o puede omitir el campo;
+    // ambos casos degradan a cadena vacía en NarrateLabExamAsync.
+    private sealed record NarrateResponseJson(
+        [property: JsonPropertyName("empathetic_message")] string? EmpatheticMessage = null);
 }
