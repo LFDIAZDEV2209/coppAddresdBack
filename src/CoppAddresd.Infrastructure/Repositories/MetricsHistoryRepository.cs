@@ -53,12 +53,16 @@ public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsH
 
         // Catálogo ACTIVO COMPLETO (la whitelist del handler se valida contra
         // esta lista: la lista de "códigos válidos" SIEMPRE está completa).
-        var metrics = await dbContext
+        var metricsRaw = await dbContext
             .MeasurementMetrics.AsNoTracking()
             .Where(m => m.IsActive)
-            .Select(m => new MetricsHistoryMetricRow(m.Id, m.Code, m.DefaultUnit != null ? m.DefaultUnit.Code : null))
+            .Select(m => new { m.Id, m.Code, DefaultUnitCode = m.DefaultUnit != null ? m.DefaultUnit.Code : null })
             .OrderBy(m => m.Code)
             .ToListAsync(ct);
+
+        var metrics = metricsRaw
+            .Select(m => new MetricsHistoryMetricRow(m.Id, m.Code, m.DefaultUnitCode))
+            .ToList();
 
         if (metrics.Count == 0)
         {
@@ -147,20 +151,12 @@ public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsH
             .Select(b => new MetricsHistoryBaselineRow(b.MetricId, b.FavorableDirection))
             .ToListAsync(ct);
 
-        // Talla del perfil (fallback de IMC; null si no está cargada).
-        // NOTA: patient_profiles.height_cm es una columna HUÉRFANA en el
-        // modelo EF (existe en BD desde la migración inicial del módulo de
-        // pacientes, pero el property se retiró del entity PatientProfile sin
-        // migración de drop). Se lee por SQL directo para NO tocar el modelo:
-        // mapearla exigiría sincronizar el snapshot con una migración (no
-        // permitida en este cambio). Patrón SqlQuery AS "Value" (precedente:
-        // tests de FK del módulo).
+        // Talla del perfil (obtenida del registro más reciente de signos vitales).
         var heightCm = await dbContext
-            .Database
-            .SqlQueryRaw<decimal?>(
-                "SELECT height_cm AS \"Value\" FROM app.patient_profiles WHERE id = {0}",
-                patientId
-            )
+            .VitalSigns.AsNoTracking()
+            .Where(v => v.PatientId == patientId && v.HeightCm != null)
+            .OrderByDescending(v => v.MeasuredAt)
+            .Select(v => (decimal?)v.HeightCm)
             .FirstOrDefaultAsync(ct);
 
         return new MetricsHistoryContext(heightCm, todayLocal, metrics, measurementRows, ranges, baselines);
