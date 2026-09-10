@@ -7918,11 +7918,23 @@ public sealed class ProgramRepository(
             ? Math.Round((decimal)todayTaskCount / todayScheduledCount * 100, 1)
             : 0m;
 
-        // XP semana
-        var weekStartUtc = DateTime.SpecifyKind(weekStart.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-        var xpSemana = await dbContext.XpLedgerEntries.AsNoTracking()
-            .Where(x => enrollmentIds.Contains(x.EnrollmentId) && x.AwardedAt >= weekStartUtc)
-            .SumAsync(x => x.Amount, ct);
+        // XP semana (Fast-path CQRS desde app.program_daily_metrics acotado por fecha con fallback OLTP)
+        var xpSemanaRollup = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => (m.MetricKey == "xp_total_daily" || m.MetricKey == "xp_awarded_by_reason") && m.MetricDate >= weekStart && m.MetricDate <= today)
+            .SumAsync(m => (long?)m.TotalValue, ct);
+
+        int xpSemana;
+        if (xpSemanaRollup is not null && xpSemanaRollup > 0)
+        {
+            xpSemana = (int)xpSemanaRollup.Value;
+        }
+        else
+        {
+            var weekStartUtc = DateTime.SpecifyKind(weekStart.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
+            xpSemana = await dbContext.XpLedgerEntries.AsNoTracking()
+                .Where(x => enrollmentIds.Contains(x.EnrollmentId) && x.AwardedAt >= weekStartUtc)
+                .SumAsync(x => x.Amount, ct);
+        }
 
         // Pacientes racha > 7
         var pacientesRachaGt7 = await dbContext.StreakStates.AsNoTracking()
@@ -7969,16 +7981,33 @@ public sealed class ProgramRepository(
             buckets[ErpStreakBucketIndex(s)] = buckets[ErpStreakBucketIndex(s)] with { Count = buckets[ErpStreakBucketIndex(s)].Count + 1 };
         }
 
-        // XP por categoría
-        var xpByCategoryRaw = await dbContext.XpLedgerEntries.AsNoTracking()
-            .Where(x => enrollmentIds.Contains(x.EnrollmentId))
-            .GroupBy(x => x.Reason)
-            .Select(g => new { Reason = g.Key, Total = g.Sum(x => x.Amount) })
+        // XP por categoría (Fast-path CQRS desde app.program_daily_metrics con fallback OLTP)
+        var rollupXpCategoryData = await dbContext.ProgramDailyMetrics.AsNoTracking()
+            .Where(m => m.MetricKey == "xp_awarded_by_reason")
+            .GroupBy(m => m.DimensionKey)
+            .Select(g => new { Reason = g.Key ?? string.Empty, Total = (int)g.Sum(m => m.TotalValue) })
             .ToListAsync(ct);
-        var xpByCategory = xpByCategoryRaw
-            .Select(x => new ErpXpByCategory(x.Reason.ToString(), x.Total))
-            .OrderByDescending(x => x.Total)
-            .ToList();
+
+        List<ErpXpByCategory> xpByCategory;
+        if (rollupXpCategoryData.Count > 0)
+        {
+            xpByCategory = rollupXpCategoryData
+                .Select(x => new ErpXpByCategory(x.Reason, x.Total))
+                .OrderByDescending(x => x.Total)
+                .ToList();
+        }
+        else
+        {
+            var xpByCategoryRaw = await dbContext.XpLedgerEntries.AsNoTracking()
+                .Where(x => enrollmentIds.Contains(x.EnrollmentId))
+                .GroupBy(x => x.Reason)
+                .Select(g => new { Reason = g.Key, Total = g.Sum(x => x.Amount) })
+                .ToListAsync(ct);
+            xpByCategory = xpByCategoryRaw
+                .Select(x => new ErpXpByCategory(x.Reason.ToString(), x.Total))
+                .OrderByDescending(x => x.Total)
+                .ToList();
+        }
 
         // Evolución 30 días optimizada (O(1) con tabla pre-agregada + fallback en 1 sola query agrupada)
         var completionsByDate = await dbContext.ProgramDailyMetrics.AsNoTracking()
@@ -9569,14 +9598,14 @@ var activeEnrollments = await dbContext.ProgramEnrollments.AsNoTracking()
             : null;
 
         // Weekly history (all weeks with measurements, up to 12)
-        var biometriaMetrics = new[] { "bmi", BodyFatMetricCode, GlucoseMetricCode, "weight", "height", WaistMetricCode, HipMetricCode };
+        var biometriaMetrics = new[] { "bmi", BodyFatMetricCode, GlucoseMetricCode, "weight", "height", WaistMetricCode, HipMetricCode, WristMetricCode };
         var patientMeasurements = await dbContext.ClinicalMeasurements.AsNoTracking()
             .Join(dbContext.MeasurementMetrics.AsNoTracking(),
                 m => m.MetricId, metric => metric.Id,
                 (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
             .Where(x => x.PatientId == patientId && biometriaMetrics.Contains(x.Code))
             .OrderByDescending(x => x.ObservedAt)
-            .Take(200) // enough for 12 weeks × 7 metrics
+            .Take(250) // enough for 12 weeks × 8 metrics
             .ToListAsync(ct);
 
         // Group by week
