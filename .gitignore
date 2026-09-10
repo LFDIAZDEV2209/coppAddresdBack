@@ -99,6 +99,19 @@ $RECYCLE.BIN/
 openspec/
 scripts/*.sql
 
+# --- Storage local de desarrollo (uploads/imágenes generados al probar) ---
+# El provider Local escribe bajo el working dir del servicio (Storage:Local:RootPath
+# vacío = "."). Nada de esto se versiona: son datos de prueba / PII de pacientes.
+src/CoppAddresd.Api/foodai/
+src/CoppAddresd.Api/lab-exams/
+src/CoppAddresd.Api/media/
+src/CoppAddresd.Api/agents/
+src/Services/CoppAddresd.Community/foodai/
+src/Services/CoppAddresd.Community/media/
+src/Services/CoppAddresd.Community/agents/
+.local-storage/
+**/*.local-storage/
+
 # appsettings.Example.json SI se versiona: referencia de configuracion para otros desarrolladores
 !appsettings.Example.json
 

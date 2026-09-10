@@ -25,6 +25,9 @@ public class FoodAiAnalyzeEndpointTests
         public Guid? LastAnalysisId { get; private set; }
         public string? LastFileName { get; private set; }
 
+        /// <summary>Porción inyectada por tests (default: sin porción).</summary>
+        public static PortionDto? TestPortion { get; set; }
+
         public Task<FoodAiHealthStatus> GetHealthAsync(CancellationToken ct = default) =>
             Task.FromResult(new FoodAiHealthStatus(true, "food-ai-service"));
 
@@ -45,7 +48,14 @@ public class FoodAiAnalyzeEndpointTests
                 "food-segmenter-v1",
                 "detector-based-v1",
                 182,
-                [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]
+                [
+                    new DetectedFoodDto(
+                        "pizza",
+                        0.94,
+                        new BoundingBoxDto(120, 80, 300, 180),
+                        Portion: TestPortion
+                    ),
+                ]
             );
             return Task.FromResult(LastSend);
         }
@@ -132,6 +142,108 @@ public class FoodAiAnalyzeEndpointTests
         Assert.Equal(0.94, body.Foods[0].Confidence);
         Assert.Equal(120, body.Foods[0].BoundingBox.X);
         Assert.Equal(300, body.Foods[0].BoundingBox.Width);
+    }
+
+    [Fact]
+    public async Task Analyze_con_nutricion_disponible_devuelve_intake_contrato()
+    {
+        StubFoodAiClient.TestPortion = new PortionDto(
+            "reference",
+            150,
+            120,
+            180,
+            0.8,
+            "basic_reference"
+        );
+        var stubProvider = new StubNutritionProvider
+        {
+            Result = new FoodNutritionDto(
+                "Pizza",
+                100m,
+                200m,
+                10m,
+                20m,
+                5m,
+                3m,
+                1m,
+                0.5m,
+                "USDA FoodData Central",
+                "v1"
+            ),
+        };
+        try
+        {
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.UseSetting(
+                    "Storage:SignatureKey",
+                    "test-signature-key-32-chars-long-for-ci"
+                );
+                builder.UseSetting(
+                    "ConnectionStrings:DefaultConnection",
+                    "Host=localhost;Database=coppaddresd_test;Username=test;Password=test;Port=5432"
+                );
+                builder.UseSetting("Jwt:Secret", "test-jwt-secret-32-chars-long-for-ci-xyz123");
+                builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
+                builder.ConfigureServices(services =>
+                    services.AddScoped<INutritionProvider>(_ => stubProvider)
+                );
+            });
+            var client = factory.CreateClient();
+
+            using var form = new MultipartFormDataContent();
+            var imageContent = new ByteArrayContent(Png1x1);
+            imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+            form.Add(imageContent, "image", "pizza.png");
+
+            var response = await client.PostAsync("/api/v1/foodai/analyze", form);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body =
+                await response.Content.ReadFromJsonAsync<FoodAiAnalyzeEndpointTestsResponse>();
+            Assert.NotNull(body);
+            Assert.NotNull(body.Intake);
+            Assert.Equal(300m, body.Intake.Calories);
+            Assert.Equal(15m, body.Intake.ProteinG);
+            Assert.Equal(30m, body.Intake.CarbsG);
+            Assert.Equal(7.5m, body.Intake.FatG);
+            Assert.Equal(4.5m, body.Intake.FiberG);
+        }
+        finally
+        {
+            StubFoodAiClient.TestPortion = null;
+        }
+    }
+
+    [Fact]
+    public async Task Analyze_porcion_degenerada_normaliza_portion_null()
+    {
+        StubFoodAiClient.TestPortion = new PortionDto("reference", 0, 0, 0, 0.1, "basic_reference");
+        try
+        {
+            var client = _factory.CreateClient();
+
+            using var form = new MultipartFormDataContent();
+            var imageContent = new ByteArrayContent(Png1x1);
+            imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+            form.Add(imageContent, "image", "cero.png");
+
+            var response = await client.PostAsync("/api/v1/foodai/analyze", form);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var body =
+                await response.Content.ReadFromJsonAsync<FoodAiAnalyzeEndpointTestsResponse>();
+            Assert.NotNull(body);
+            Assert.Single(body.Foods);
+            Assert.Null(body.Foods[0].Portion);
+            Assert.Equal("portion_unavailable", body.Foods[0].NutritionStatus);
+            Assert.Null(body.Intake);
+        }
+        finally
+        {
+            StubFoodAiClient.TestPortion = null;
+        }
     }
 
     [Fact]
@@ -252,12 +364,24 @@ public class FoodAiAnalyzeEndpointTests
         public string? Status { get; set; }
         public string? ModelVersion { get; set; }
         public List<FoodJson> Foods { get; set; } = [];
+        public IntakeJson? Intake { get; set; }
+
+        public sealed class IntakeJson
+        {
+            public decimal Calories { get; set; }
+            public decimal ProteinG { get; set; }
+            public decimal CarbsG { get; set; }
+            public decimal FatG { get; set; }
+            public decimal FiberG { get; set; }
+        }
 
         public sealed class FoodJson
         {
             public string? Name { get; set; }
             public double Confidence { get; set; }
             public BoxJson? BoundingBox { get; set; }
+            public object? Portion { get; set; }
+            public string? NutritionStatus { get; set; }
         }
 
         public sealed class BoxJson
