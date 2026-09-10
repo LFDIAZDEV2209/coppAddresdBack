@@ -738,6 +738,153 @@
       },
       "notes": "Nachos, cheese only (FNDDS)",
       "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "chicken",
+      "display_name": "Pollo",
+      "category": "protein",
+      "alias": "chicken",
+      "fdc_id": "2705968",
+      "fdc_name": "Chicken breast, grilled without sauce, skin not eaten",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 29.6,
+        "fat": 5.45,
+        "carbohydrates": 0.0,
+        "calories": 176,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 353
+      },
+      "notes": "Pollo genérico = pechuga a la parrilla (FNDDS 2705968, misma que grilled_chicken)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "pork",
+      "display_name": "Cerdo",
+      "category": "protein",
+      "alias": "pork",
+      "fdc_id": "168320",
+      "fdc_name": "Pork, fresh, loin, whole, separable lean only, cooked, roasted",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.75,
+      "nutrition": {
+        "protein": 27.0,
+        "fat": 5.5,
+        "carbohydrates": 0.0,
+        "calories": 165,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 60
+      },
+      "notes": "Lomo de cerdo magro asado (valores típicos USDA por 100 g)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "peanuts",
+      "display_name": "Maní",
+      "category": "snack",
+      "alias": "peanuts",
+      "fdc_id": "16087",
+      "fdc_name": "Peanuts, all types, raw",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "protein": 25.8,
+        "fat": 49.24,
+        "carbohydrates": 16.13,
+        "calories": 567,
+        "sugar": 4.72,
+        "fiber": 8.5,
+        "sodium": 18
+      },
+      "notes": "Maní crudo todos los tipos (SR Legacy 16087)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "peanut",
+      "display_name": "Maní",
+      "category": "snack",
+      "alias": "peanut",
+      "fdc_id": "16087",
+      "fdc_name": "Peanuts, all types, raw",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 25.8,
+        "fat": 49.24,
+        "carbohydrates": 16.13,
+        "calories": 567,
+        "sugar": 4.72,
+        "fiber": 8.5,
+        "sodium": 18
+      },
+      "notes": "Singular de peanuts (misma entrada)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "potato",
+      "display_name": "Papa",
+      "category": "side",
+      "alias": "potato",
+      "fdc_id": "170438",
+      "fdc_name": "Potatoes, boiled, cooked in skin, flesh, without salt",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 1.87,
+        "fat": 0.1,
+        "carbohydrates": 20.13,
+        "calories": 87,
+        "sugar": 0.87,
+        "fiber": 1.8,
+        "sodium": 5
+      },
+      "notes": "Papa hervida con cáscara (SR Legacy 170438)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "beans",
+      "display_name": "Frijoles",
+      "category": "protein",
+      "alias": "beans",
+      "fdc_id": "173735",
+      "fdc_name": "Beans, black, mature seeds, cooked, boiled, without salt",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.8,
+      "nutrition": {
+        "protein": 8.86,
+        "fat": 0.54,
+        "carbohydrates": 23.71,
+        "calories": 132,
+        "sugar": 0.32,
+        "fiber": 8.7,
+        "sodium": 2
+      },
+      "notes": "Frijol negro cocido (SR Legacy 173735)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "beans_yellow_mature_seeds_raw",
+      "display_name": "Frijoles amarillos",
+      "category": "protein",
+      "alias": "beans_yellow_mature_seeds_raw",
+      "fdc_id": "173735",
+      "fdc_name": "Beans, black, mature seeds, cooked, boiled, without salt",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.7,
+      "nutrition": {
+        "protein": 8.86,
+        "fat": 0.54,
+        "carbohydrates": 23.71,
+        "calories": 132,
+        "sugar": 0.32,
+        "fiber": 8.7,
+        "sodium": 2
+      },
+      "notes": "Legumbre amarilla ≈ frijol cocido (equivalencia culinaria)",
+      "data_type": "SR Legacy"
     }
   ]
 }
