@@ -79,7 +79,13 @@ public class FoodAiController : ControllerBase
 
         try
         {
-            await using var stream = image.OpenReadStream();
+            // Buffer en memoria: el stream del request (ReferenceReadStream)
+            // queda disposed cuando el handler MediatR intenta rebobinarlo
+            // (Position = 0), lanzando ObjectDisposedException.
+            await using var source = image.OpenReadStream();
+            using var stream = new MemoryStream((int)image.Length);
+            await source.CopyToAsync(stream, ct);
+            stream.Position = 0;
             var userId = TryGetUserId();
             var command = new AnalyzeFoodImageCommand(
                 stream,
