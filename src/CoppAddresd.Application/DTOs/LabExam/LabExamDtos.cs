@@ -93,6 +93,17 @@ public sealed record LabExamMetricSnapshot(
     DateTime ObservedAt);
 
 /// <summary>
+/// Cuerpo del endpoint de narración empática (<c>POST /chat/lab-exam/narrate</c>).
+/// Espejo de <c>NarrateRequest</c> en <c>ai-service/app/api/schemas.py</c>:
+/// <c>metrics</c> (métricas del examen actual), <c>previous_measurements</c>
+/// (evolución por métrica pre-computada en .NET) y <c>language</c> opcional.
+/// </summary>
+public sealed record LabExamNarrateRequest(
+    [property: JsonPropertyName("metrics")] IReadOnlyList<LabExamAiMetricDto> Metrics,
+    [property: JsonPropertyName("previous_measurements")] IReadOnlyDictionary<string, MetricEvolution> PreviousMeasurements,
+    [property: JsonPropertyName("language"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Language = null);
+
+/// <summary>
 /// Resultado final del procesamiento y persistencia de un examen de laboratorio.
 /// </summary>
 public record LabExamUploadResult(
