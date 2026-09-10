@@ -137,7 +137,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<EmotionalRecord> EmotionalRecords => Set<EmotionalRecord>();
     public DbSet<XpRule> XpRules => Set<XpRule>();
     public DbSet<ProgramDailyMetric> ProgramDailyMetrics => Set<ProgramDailyMetric>();
-    public DbSet<ProgramMilestoneSend> ProgramMilestoneSends => Set<ProgramMilestoneSend>();
+    public DbSet<ProgramControl> ProgramControls => Set<ProgramControl>();
 
     // Program Progress — Scores
     public DbSet<HealthScoreWeight> HealthScoreWeights => Set<HealthScoreWeight>();

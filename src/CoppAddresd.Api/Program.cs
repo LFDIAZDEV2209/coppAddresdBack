@@ -106,10 +106,10 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsBackfillSee
 // POST /program/maintenance/reconcile-streaks.
 builder.Services.AddHostedService<ReconcileStreakHostedService>();
 
-// Recordatorios proactivos de hitos del programa (días 7/14/21/45/60/90):
-// job periódico configurable vía Program:MilestoneSender (Enabled, TickMinutes,
+// Controles proactivos del programa (días 7/14/21/45/60/90):
+// job periódico configurable vía Program:Controls (Enabled, TickMinutes,
 // ventana local, plantillas). Push FCM + mensaje proactivo en el chat.
-builder.Services.AddHostedService<ProgramMilestoneSenderHostedService>();
+builder.Services.AddHostedService<ProgramControlHostedService>();
 
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore

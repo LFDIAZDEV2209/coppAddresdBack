@@ -1,12 +1,11 @@
 namespace CoppAddresd.Application.Services.ProgramProgress;
 
 /// <summary>
-/// Funciones puras de calendarización de los recordatorios de hito del
-/// programa: qué hitos están "en fecha" para una inscripción y si la hora
-/// local actual cae en la ventana de entrega. Sin I/O ni estado — unit
-/// testables de forma directa.
+/// Funciones puras de calendarización de los controles del programa: qué hitos
+/// están "en fecha" para una inscripción y si la hora local actual cae en la
+/// ventana de entrega. Sin I/O ni estado — unit testables de forma directa.
 /// </summary>
-public static class ProgramMilestoneSchedule
+public static class ProgramControlSchedule
 {
     /// <summary>
     /// Días de hito pendientes de una inscripción: para cada hito N, la fecha
