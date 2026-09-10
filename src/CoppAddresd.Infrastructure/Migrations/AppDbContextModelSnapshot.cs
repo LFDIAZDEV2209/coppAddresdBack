@@ -578,6 +578,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
+                    b.Property<Guid?>("BatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("batch_id");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamptz")
@@ -620,6 +624,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("source");
 
+                    b.Property<string>("SourceKey")
+                        .HasColumnType("text")
+                        .HasColumnName("source_key");
+
                     b.Property<Guid>("UnitId")
                         .HasColumnType("uuid")
                         .HasColumnName("unit_id");
@@ -630,6 +638,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("value");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BatchId")
+                        .HasDatabaseName("ix_clinical_measurements_batch_id")
+                        .HasFilter("batch_id IS NOT NULL");
 
                     b.HasIndex("EncounterId")
                         .HasDatabaseName("ix_clinical_measurements_encounter_id");

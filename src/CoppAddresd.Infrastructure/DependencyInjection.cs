@@ -162,6 +162,9 @@ public static class DependencyInjection
         services.AddScoped<IClinicalContextService, ClinicalContextService>();
         services.AddScoped<ISafetyRulesService, SafetyRulesService>();
 
+        // Compresión de exámenes de laboratorio
+        services.AddSingleton<IFileCompressionService, FileCompressionService>();
+
         services.AddMemoryCache();
         services.Configure<PostalCodeLookupOptions>(
             configuration.GetSection(PostalCodeLookupOptions.SectionName)

@@ -66,7 +66,7 @@ public sealed class PatientMetricsProcessorHostedService(
 
         // Upsert atómico para métricas globales (GlobalId) y por clínica
         const string sqlUpsert = """
-            INSERT INTO app.patient_daily_metrics (metric_date, clinic_id, metric_key, dimension_key, total_count, last_updated_at)
+            INSERT INTO app.patient_daily_metrics ("MetricDate", "ClinicId", "MetricKey", "DimensionKey", "TotalCount", "LastUpdatedAt")
             VALUES 
                 (@p0, @p1, 'total_patients', 'general', 1, NOW()),
                 (@p0, @p1, 'new_patients', 'general', 1, NOW()),
@@ -82,10 +82,10 @@ public sealed class PatientMetricsProcessorHostedService(
                 (@p0, @p6, 'age_group', @p4, 1, NOW()),
                 (@p0, @p6, 'insurer_distribution', @p5, 1, NOW()),
                 (@p0, @p6, 'unassigned_patients', 'general', 1, NOW())
-            ON CONFLICT (metric_date, clinic_id, metric_key, dimension_key)
+            ON CONFLICT ("MetricDate", "ClinicId", "MetricKey", "DimensionKey")
             DO UPDATE SET 
-                total_count = app.patient_daily_metrics.total_count + 1,
-                last_updated_at = NOW();
+                "TotalCount" = app.patient_daily_metrics."TotalCount" + 1,
+                "LastUpdatedAt" = NOW();
             """;
 
         await dbContext.Database.ExecuteSqlRawAsync(
@@ -103,19 +103,19 @@ public sealed class PatientMetricsProcessorHostedService(
         var clinicId = e.ClinicId ?? GlobalId;
 
         const string sqlStatus = """
-            INSERT INTO app.patient_daily_metrics (metric_date, clinic_id, metric_key, dimension_key, total_count, last_updated_at)
+            INSERT INTO app.patient_daily_metrics ("MetricDate", "ClinicId", "MetricKey", "DimensionKey", "TotalCount", "LastUpdatedAt")
             VALUES 
                 (@p0, @p1, 'status_count', @p2, 1, NOW()),
                 (@p0, @p3, 'status_count', @p2, 1, NOW())
-            ON CONFLICT (metric_date, clinic_id, metric_key, dimension_key)
+            ON CONFLICT ("MetricDate", "ClinicId", "MetricKey", "DimensionKey")
             DO UPDATE SET 
-                total_count = app.patient_daily_metrics.total_count + 1,
-                last_updated_at = NOW();
+                "TotalCount" = app.patient_daily_metrics."TotalCount" + 1,
+                "LastUpdatedAt" = NOW();
 
             UPDATE app.patient_daily_metrics 
-            SET total_count = GREATEST(0, total_count - 1), last_updated_at = NOW()
-            WHERE metric_date = @p0 AND metric_key = 'status_count' AND dimension_key = @p4 
-              AND (clinic_id = @p1 OR clinic_id = @p3);
+            SET "TotalCount" = GREATEST(0, "TotalCount" - 1), "LastUpdatedAt" = NOW()
+            WHERE "MetricDate" = @p0 AND "MetricKey" = 'status_count' AND "DimensionKey" = @p4 
+              AND ("ClinicId" = @p1 OR "ClinicId" = @p3);
             """;
 
         await dbContext.Database.ExecuteSqlRawAsync(
@@ -137,9 +137,9 @@ public sealed class PatientMetricsProcessorHostedService(
             // Paciente asignado → decrementar sin profesional asignado
             const string sqlDecr = """
                 UPDATE app.patient_daily_metrics 
-                SET total_count = GREATEST(0, total_count - 1), last_updated_at = NOW()
-                WHERE metric_date = @p0 AND metric_key = 'unassigned_patients' AND dimension_key = 'general'
-                  AND (clinic_id = @p1 OR clinic_id = @p2);
+                SET "TotalCount" = GREATEST(0, "TotalCount" - 1), "LastUpdatedAt" = NOW()
+                WHERE "MetricDate" = @p0 AND "MetricKey" = 'unassigned_patients' AND "DimensionKey" = 'general'
+                  AND ("ClinicId" = @p1 OR "ClinicId" = @p2);
                 """;
 
             await dbContext.Database.ExecuteSqlRawAsync(
@@ -151,14 +151,14 @@ public sealed class PatientMetricsProcessorHostedService(
         {
             // Paciente desasignado → incrementar sin profesional asignado
             const string sqlIncr = """
-                INSERT INTO app.patient_daily_metrics (metric_date, clinic_id, metric_key, dimension_key, total_count, last_updated_at)
+                INSERT INTO app.patient_daily_metrics ("MetricDate", "ClinicId", "MetricKey", "DimensionKey", "TotalCount", "LastUpdatedAt")
                 VALUES 
                     (@p0, @p1, 'unassigned_patients', 'general', 1, NOW()),
                     (@p0, @p2, 'unassigned_patients', 'general', 1, NOW())
-                ON CONFLICT (metric_date, clinic_id, metric_key, dimension_key)
+                ON CONFLICT ("MetricDate", "ClinicId", "MetricKey", "DimensionKey")
                 DO UPDATE SET 
-                    total_count = app.patient_daily_metrics.total_count + 1,
-                    last_updated_at = NOW();
+                    "TotalCount" = app.patient_daily_metrics."TotalCount" + 1,
+                    "LastUpdatedAt" = NOW();
                 """;
 
             await dbContext.Database.ExecuteSqlRawAsync(

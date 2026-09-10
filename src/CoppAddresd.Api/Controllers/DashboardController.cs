@@ -1,5 +1,7 @@
 using System.Globalization;
+using CoppAddresd.Api.Seeders;
 using CoppAddresd.Application.Features.Dashboard;
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -22,7 +24,7 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/dashboard")]
 [Authorize]
-public class DashboardController(AppDbContext dbContext) : ControllerBase
+public class DashboardController(AppDbContext dbContext, MetricsBackfillSeeder backfillSeeder) : ControllerBase
 {
     /// <summary>ClinicId de las filas globales consolidadas (vista Admin) en los rollups por clínica.</summary>
     private static readonly Guid GlobalId = Guid.Empty;
@@ -43,10 +45,8 @@ public class DashboardController(AppDbContext dbContext) : ControllerBase
         var from = to.AddDays(-(days - 1));
 
         // ── Total de pacientes de la plataforma ────────────────────────────────
-        // El rollup acumula +1 por alta en la fecha del evento y nunca decrementa
-        // (los soft deletes no tocan total_patients): la suma histórica hasta hoy
-        // equivale al total de pacientes registrados (misma semántica que el stats
-        // del módulo de pacientes, que suma sin límite inferior de fecha).
+        // El rollup acumula +1 por alta en la fecha del evento y nunca decrementa.
+        // Regla 8 CQRS: rollup-first con fallback OLTP si el rollup está vacío.
         var totalPatients = await dbContext.PatientDailyMetrics.AsNoTracking()
             .Where(m => m.ClinicId == GlobalId
                         && m.MetricKey == "total_patients"
@@ -54,14 +54,55 @@ public class DashboardController(AppDbContext dbContext) : ControllerBase
                         && m.MetricDate <= to)
             .SumAsync(m => m.TotalCount, ct);
 
+        if (totalPatients == 0)
+        {
+            var hasRollup = await dbContext.PatientDailyMetrics.AsNoTracking()
+                .AnyAsync(m => m.MetricKey == "total_patients", ct);
+            if (!hasRollup)
+            {
+                totalPatients = await dbContext.PatientProfiles.AsNoTracking().CountAsync(ct);
+            }
+        }
+
         // ── Ventanas diarias del período por rollup ────────────────────────────
-        // Pacientes: altas del período (nueva_patients fila global).
+        // Pacientes: altas del período (new_patients fila global).
         var patientDaily = await dbContext.PatientDailyMetrics.AsNoTracking()
             .Where(m => m.ClinicId == GlobalId
                         && m.MetricKey == "new_patients"
                         && m.DimensionKey == "general"
                         && m.MetricDate >= from && m.MetricDate <= to)
             .ToListAsync(ct);
+
+        if (patientDaily.Count == 0)
+        {
+            var hasRollup = await dbContext.PatientDailyMetrics.AsNoTracking()
+                .AnyAsync(m => m.MetricKey == "new_patients", ct);
+            if (!hasRollup)
+            {
+                var fromDateTime = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                var toDateTime = to.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
+
+                var dbDaily = await dbContext.PatientProfiles.AsNoTracking()
+                    .Where(p => p.CreatedAt >= fromDateTime && p.CreatedAt <= toDateTime)
+                    .GroupBy(p => DateOnly.FromDateTime(p.CreatedAt))
+                    .Select(g => new
+                    {
+                        MetricDate = g.Key,
+                        TotalCount = (long)g.Count()
+                    })
+                    .ToListAsync(ct);
+
+                patientDaily = dbDaily.Select(d => new PatientDailyMetric
+                {
+                    ClinicId = GlobalId,
+                    MetricKey = "new_patients",
+                    DimensionKey = "general",
+                    MetricDate = d.MetricDate,
+                    TotalCount = d.TotalCount,
+                    LastUpdatedAt = DateTime.UtcNow
+                }).ToList();
+            }
+        }
 
         // Tests de salud: asignaciones completadas en el período (fila global).
         var healthTestsDaily = await dbContext.HealthTestDailyMetrics.AsNoTracking()
@@ -129,5 +170,20 @@ public class DashboardController(AppDbContext dbContext) : ControllerBase
             (int)inventoryExits30d,
             (int)programTasks30d,
             series));
+    }
+
+    /// <summary>
+    /// Reconciliación bajo demanda de todas las tablas de métricas CQRS (Backfill).
+    /// Recalcula de forma idempotente los agregados diarios históricos desde las tablas OLTP.
+    /// </summary>
+    [HttpPost("maintenance/reconcile-metrics")]
+    public async Task<IActionResult> ReconcileMetrics(CancellationToken ct = default)
+    {
+        var count = await backfillSeeder.RunBackfillAsync(ct);
+        return Ok(new
+        {
+            message = "Reconciliación de tablas de métricas CQRS completada con éxito.",
+            operations = count
+        });
     }
 }

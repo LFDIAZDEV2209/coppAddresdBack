@@ -26,4 +26,7 @@ public class AiServiceSettings
     /// Service use el thread estable <c>proactive-{userId}</c>.
     /// </summary>
     public string ProactiveMessageEndpoint { get; set; } = "/internal/agents/proactive-message";
+
+    /// <summary>Endpoint interno de extracción de métricas de exámenes de laboratorio (AI Service).</summary>
+    public string LabExamEndpoint { get; set; } = "/chat/lab-exam";
 }

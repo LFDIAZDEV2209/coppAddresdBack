@@ -36,6 +36,14 @@ public sealed class ClinicalMeasurement
     /// <summary>Origen: <c>device</c> | <c>patient</c> | <c>professional</c> | <c>lab</c>.</summary>
     public string Source { get; set; } = default!;
 
+    /// <summary>Lote de examen que originó la medición. Null si no proviene de lab upload.</summary>
+    public Guid? BatchId { get; set; }
+
+    /// <summary>
+    /// Clave S3 del archivo fuente. Formato: lab-exams/{patientId}/{batchId}.{ext}
+    /// </summary>
+    public string? SourceKey { get; set; }
+
     public string? Notes { get; set; }
 
     /// <summary>Usuario de <c>auth.users</c> que registró la medición (auditoría).</summary>

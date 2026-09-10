@@ -261,7 +261,7 @@ El paciente registra comida por comida (`des`, `alm`, `mer`, `cen`) e hidrataci�
 | Comida (`NUTRITION_MEAL_COMPLETE`)  | +10          | 4 por día |
 | Hidratación (`NUTRITION_HYDRATION`) | +5           | 1 por día |
 
-Los registros duplicados del mismo día devuelven `409 HABIT_ALREADY_LOGGED` (sin doble XP). **Adicional, no sustituto**: la tarea diaria `nut` del programa sigue dando sus 150 puntos de plantilla; los registros granulares premian el detalle. El doble premio es visible y se puede ajustar bajando `base_xp` o subiendo topes en `xp_rules` sin migrar.
+Los registros duplicados del mismo día devuelven `409 HABIT_ALREADY_LOGGED` (sin doble XP) para las **comidas**. La **hidratación** (`agua`) es acumulable: repetirla el mismo día responde `200` con XP 0 y actualiza el total de ml acumulado del día (tarjeta de 8 vasos del móvil: cada tap envía el total, p. ej. 250 → 500 → 750, y el total solo sube); la XP de hidratación (+5) se otorga una sola vez por día, en el primer registro. **Adicional, no sustituto**: la tarea diaria `nut` del programa sigue dando sus 150 puntos de plantilla; los registros granulares premian el detalle. El doble premio es visible y se puede ajustar bajando `base_xp` o subiendo topes en `xp_rules` sin migrar.
 
 Al calcularse el Índice de Salud del período:
 

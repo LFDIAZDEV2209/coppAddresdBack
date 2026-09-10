@@ -973,8 +973,11 @@ public sealed class ProgramController(
     /// otorga la XP granular por el camino del catálogo
     /// (<c>NUTRITION_MEAL_COMPLETE</c> 10/día ×4, <c>NUTRITION_HYDRATION</c>
     /// 5/día ×1) — ADITIVO a la tarea <c>nut</c> existente (la tarea del
-    /// programa no se auto-completa aquí). Un log duplicado → 409
-    /// <c>HABIT_ALREADY_LOGGED</c>; la XP nunca se duplica.
+    /// programa no se auto-completa aquí). Un log duplicado de una comida
+    /// (des/alm/mer/cen) → 409 <c>HABIT_ALREADY_LOGGED</c>; la XP nunca se
+    /// duplica. El <c>agua</c> es acumulable: repetirla el mismo día responde
+    /// 200 con XP 0 y actualiza el total acumulado <c>waterMl</c> (la XP de
+    /// hidratación es 1/día, primer log).
     /// El <c>patientId</c> se resuelve del JWT (nunca del body): sin perfil de
     /// paciente → 404 (anti-IDOR AC-11).
     /// </summary>

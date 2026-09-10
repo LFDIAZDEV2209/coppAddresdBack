@@ -49,6 +49,12 @@ public sealed class ClinicalMeasurementConfiguration : IEntityTypeConfiguration<
             .HasColumnName("source")
             .HasMaxLength(20);
 
+        builder.Property(x => x.BatchId)
+            .HasColumnName("batch_id");
+
+        builder.Property(x => x.SourceKey)
+            .HasColumnName("source_key");
+
         builder.Property(x => x.Notes)
             .HasColumnName("notes")
             .HasColumnType("text");
@@ -69,6 +75,10 @@ public sealed class ClinicalMeasurementConfiguration : IEntityTypeConfiguration<
 
         builder.HasIndex(x => x.EncounterId)
             .HasDatabaseName("ix_clinical_measurements_encounter_id");
+
+        builder.HasIndex(x => x.BatchId)
+            .HasDatabaseName("ix_clinical_measurements_batch_id")
+            .HasFilter("batch_id IS NOT NULL");
 
         // Serie temporal por paciente: soporta "último valor por métrica" y
         // tendencias ordenadas por fecha de observación (descendente).

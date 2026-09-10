@@ -97,6 +97,10 @@ builder.Services.AddHostedService<ExerciseRoutineSeeder>();
 // ProgramProgressSeeder y ExerciseRoutineSeeder.
 builder.Services.AddHostedService<DevProgramSeeder>();
 
+// Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
+builder.Services.AddSingleton<MetricsBackfillSeeder>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsBackfillSeeder>());
+
 // Reconciliación nocturna de rachas (B12, T-28): job diario configurable vía
 // Program:Reconciliation (Enabled/HourUtc); disparo manual en
 // POST /program/maintenance/reconcile-streaks.

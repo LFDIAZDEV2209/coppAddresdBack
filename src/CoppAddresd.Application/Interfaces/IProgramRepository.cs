@@ -381,11 +381,16 @@ public interface IProgramRepository
     ///
     /// El <c>localDate</c> opcional se resuelve contra el hoy local del
     /// paciente (una fecha futura → 422 <c>INVALID_DATE</c>). Un log duplicado
-    /// (la comida/hidratación de esa fecha ya está registrada) →
+    /// de una comida (des/alm/mer/cen) →
     /// <see cref="Domain.Exceptions.BusinessRuleViolationException"/>
     /// <c>HABIT_ALREADY_LOGGED</c> (409); la XP nunca se duplica (dedupe
     /// parcial <c>('habit_log', habit_check.id, reason)</c> como backstop de
-    /// carrera). Paciente sin inscripción activa → 404
+    /// carrera). El <c>agua</c> es acumulable: repetir el mismo día responde
+    /// 200 con XP 0 y actualiza el total acumulado <c>waterMl</c> de la fila de
+    /// intake anclada al habit_check existente (solo sube — monotónico;
+    /// menor/igual o sin <c>waterMl</c> → no-op idempotente; fila faltante →
+    /// se crea sin XP), mientras la XP de hidratación sigue siendo 1/día
+    /// (primer log). Paciente sin inscripción activa → 404
     /// <c>NO_ACTIVE_ENROLLMENT</c>.
     ///
     /// Con <paramref name="intake"/> (SPEC nutrition-intake-adherence) además

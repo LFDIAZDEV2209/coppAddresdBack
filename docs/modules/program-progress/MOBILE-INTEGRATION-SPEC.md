@@ -33,7 +33,7 @@
 | `GET /api/v1/program/calendar?from=&to=` | rango ≤ 92 días, fechas locales | `{ days[], summary }` | `404` |
 | `GET /api/v1/program/path` | — | `{ weeks[] }` | `404` |
 | `GET /api/v1/program/scores` | — | `ScoresResponseDto` (+ headers `X-Score-Stale` / `X-Score-Recalculated`) | `404` |
-| `POST /api/v1/program/nutrition/log` | `{ mealCode: des\|alm\|mer\|cen\|agua, localDate? }` | `NutritionLogResultDto` | `409 HABIT_ALREADY_LOGGED` |
+| `POST /api/v1/program/nutrition/log` | `{ mealCode: des\|alm\|mer\|cen\|agua, localDate?, intake? }` | `NutritionLogResultDto` | `409 HABIT_ALREADY_LOGGED` (solo comidas; repetir `agua` → `200` con `xpAwarded = 0` y total acumulado actualizado) |
 
 | # | Requisito |
 |---|-----------|
@@ -42,12 +42,13 @@
 | R2.3 | `calendar` DEBE solicitar un rango ≤ 92 días; `StreakView` usa `days[].isPerfectDay` para el mapa de consistencia. |
 | R2.4 | `path` DEBE renderizar nodos por estado `Locked`/`Active`/`Completed` y `isPerfectWeek`. |
 | R2.5 | `scores` DEBE alimentar `EvolutionView` (Health + Transformation con breakdown por pilar); la UI DEBE etiquetarlos como "Índice" (no XP) y mostrar la fecha de cálculo. |
-| R2.6 | `nutrition/log` DEBE permitir una comida/hidratación por código y día; duplicado → `409` y la UI refleja el estado ya registrado sin XP nueva. |
+| R2.6 | `nutrition/log` DEBE permitir una comida por código y día (comidas: duplicado → `409`, la UI refleja el estado ya registrado sin XP nueva). El `agua` DEBE acumular: repetir el mismo día → `200` con `xpAwarded = 0` (sin XP ni habit_check nuevos) y la UI actualiza el total de vasos con el `waterMl` enviado (el total registrado solo sube). |
 
 **Escenarios**
 - DADO paciente con inscripción activa / CUANDO `GET /me/snapshot` / ENTONCES `200` y las vistas renderizan datos del server (sin mocks).
 - DADO tarea `podcast` del día / CUANDO `POST tasks/complete` con `clientRequestId` nuevo / ENTONCES `200` con `pointsAwarded = 80` y `xpBalanceAfter` incrementado.
 - DADO `des` ya registrado hoy / CUANDO `POST nutrition/log` con `mealCode: "des"` / ENTONCES `409 HABIT_ALREADY_LOGGED` y la UI muestra la comida como ya logueada.
+- DADO `agua` ya registrado hoy con `waterMl: 250` / CUANDO `POST nutrition/log` con `mealCode: "agua"` e intake `{ waterMl: 750 }` / ENTONCES `200` con `xpAwarded = 0` y el snapshot del día refleja el total acumulado 750 (repetir el mismo tap con 250 → `200` sin cambios; sin XP duplicada ni habit_check nuevo).
 - DADO rango de 31 días válido / CUANDO `GET calendar` / ENTONCES `200` con `days[]` y `summary`; la vista de consistencia usa `isPerfectDay` por día.
 
 ## R3 — Idempotencia y reintentos (`clientRequestId`)
