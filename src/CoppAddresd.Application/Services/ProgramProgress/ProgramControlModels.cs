@@ -1,3 +1,4 @@
+using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 
 namespace CoppAddresd.Application.Services.ProgramProgress;
@@ -14,6 +15,15 @@ public sealed record ProgramControlEnrollmentCandidate(
     Guid UserId,
     string Timezone,
     DateOnly StartLocalDate);
+
+/// <summary>
+/// Control de la fase 2 vencido (follow-up, miss o no_upload_timeout) junto con
+/// la zona horaria IANA de su inscripción: el job convierte el instante UTC
+/// actual a la hora local del paciente antes de evaluar las funciones puras de
+/// vencimiento (<see cref="ProgramControlSchedule"/>), que nunca comparan en
+/// UTC del servidor.
+/// </summary>
+public sealed record ProgramControlDueItem(ProgramControl Control, string Timezone);
 
 /// <summary>
 /// Resultado de una pasada completa de <c>ProgramControlJob.RunAsync</c>

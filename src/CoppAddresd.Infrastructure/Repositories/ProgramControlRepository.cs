@@ -116,4 +116,183 @@ public sealed class ProgramControlRepository(AppDbContext dbContext) : IProgramC
         await dbContext.SaveChangesAsync(ct);
         return rows.Count;
     }
+
+    public async Task<ProgramControl?> FindOpenControlForUserAsync(
+        Guid authUserId, string? threadId = null, CancellationToken ct = default)
+    {
+        // Mapeo auth-user → paciente IDÉNTICO al de UploadLabExamCommandHandler
+        // (GetByUserIdAsync): patient_profiles.user_id == authUserId, sin soft
+        // delete. El join por navegaciones traduce el mismo predicado en una
+        // sola query — no se inventa una segunda vía de resolución.
+        IQueryable<ProgramControl> query = dbContext.ProgramControls
+            .AsNoTracking()
+            .Where(c => c.Enrollment != null
+                && c.Enrollment.Patient != null
+                && c.Enrollment.Patient.UserId == authUserId
+                && c.Enrollment.Patient.DeletedAt == null
+                && (c.Status == ProgramControlStatus.Sent
+                    || c.Status == ProgramControlStatus.Responded
+                    || c.Status == ProgramControlStatus.FollowedUp));
+
+        if (!string.IsNullOrWhiteSpace(threadId))
+        {
+            // Filtro de seguridad: el mensaje entrante debe pertenecer al
+            // thread del control (un thread ajeno nunca abre otro control).
+            query = query.Where(c => c.ThreadId == threadId);
+        }
+
+        return await query
+            .OrderByDescending(c => c.SentAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    public async Task<bool> MarkRespondedAsync(
+        Guid id, DateTime respondedAt, CancellationToken ct = default)
+    {
+        var updated = await dbContext.ProgramControls
+            .Where(c => c.Id == id
+                && (c.Status == ProgramControlStatus.Sent
+                    || c.Status == ProgramControlStatus.FollowedUp))
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(c => c.Status, ProgramControlStatus.Responded)
+                    .SetProperty(c => c.RespondedAt, respondedAt)
+                    .SetProperty(c => c.UpdatedAt, respondedAt),
+                ct);
+
+        return updated > 0;
+    }
+
+    public async Task<bool> MarkCompletedAsync(
+        Guid id, Guid examBatchId, DateTime completedAt, CancellationToken ct = default)
+    {
+        var updated = await dbContext.ProgramControls
+            .Where(c => c.Id == id
+                && (c.Status == ProgramControlStatus.Sent
+                    || c.Status == ProgramControlStatus.Responded
+                    || c.Status == ProgramControlStatus.FollowedUp))
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(c => c.Status, ProgramControlStatus.Completed)
+                    .SetProperty(c => c.CompletedAt, completedAt)
+                    .SetProperty(c => c.ExamBatchId, examBatchId)
+                    .SetProperty(c => c.UpdatedAt, completedAt),
+                ct);
+
+        return updated > 0;
+    }
+
+    public async Task<bool> MarkClosedDeclinedAsync(
+        Guid id, DateTime closedAt, CancellationToken ct = default)
+    {
+        var updated = await dbContext.ProgramControls
+            .Where(c => c.Id == id
+                && (c.Status == ProgramControlStatus.Sent
+                    || c.Status == ProgramControlStatus.Responded
+                    || c.Status == ProgramControlStatus.FollowedUp))
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(c => c.Status, ProgramControlStatus.ClosedWithoutExam)
+                    .SetProperty(c => c.ClosedReason, "declined")
+                    .SetProperty(c => c.UpdatedAt, closedAt),
+                ct);
+
+        return updated > 0;
+    }
+
+    public async Task<bool> MarkFollowedUpAsync(
+        Guid id, DateTime followupSentAt, CancellationToken ct = default)
+    {
+        var updated = await dbContext.ProgramControls
+            .Where(c => c.Id == id && c.Status == ProgramControlStatus.Sent)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(c => c.Status, ProgramControlStatus.FollowedUp)
+                    .SetProperty(c => c.FollowupSentAt, followupSentAt)
+                    .SetProperty(c => c.UpdatedAt, followupSentAt),
+                ct);
+
+        return updated > 0;
+    }
+
+    public async Task<bool> MarkMissedAsync(
+        Guid id, DateTime missedAt, CancellationToken ct = default)
+    {
+        var updated = await dbContext.ProgramControls
+            .Where(c => c.Id == id && c.Status == ProgramControlStatus.FollowedUp)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(c => c.Status, ProgramControlStatus.Missed)
+                    .SetProperty(c => c.UpdatedAt, missedAt),
+                ct);
+
+        return updated > 0;
+    }
+
+    public async Task<bool> MarkNoUploadTimeoutAsync(
+        Guid id, DateTime closedAt, CancellationToken ct = default)
+    {
+        var updated = await dbContext.ProgramControls
+            .Where(c => c.Id == id && c.Status == ProgramControlStatus.Responded)
+            .ExecuteUpdateAsync(
+                s => s
+                    .SetProperty(c => c.Status, ProgramControlStatus.ClosedWithoutExam)
+                    .SetProperty(c => c.ClosedReason, "no_upload_timeout")
+                    .SetProperty(c => c.UpdatedAt, closedAt),
+                ct);
+
+        return updated > 0;
+    }
+
+    public async Task<IReadOnlyList<ProgramControlDueItem>> ListDueForFollowupAsync(
+        DateTime utcNow, int followupHours, int limit = 100, CancellationToken ct = default)
+    {
+        var cutoff = utcNow.AddHours(-followupHours);
+
+        return await dbContext.ProgramControls
+            .AsNoTracking()
+            .Where(c => c.Status == ProgramControlStatus.Sent
+                && c.FollowupSentAt == null
+                && c.SentAt != null
+                && c.SentAt <= cutoff
+                && c.Enrollment != null)
+            .OrderBy(c => c.SentAt)
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone))
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<ProgramControlDueItem>> ListDueForMissAsync(
+        DateTime utcNow, int missAfterFollowupHours, int limit = 100, CancellationToken ct = default)
+    {
+        var cutoff = utcNow.AddHours(-missAfterFollowupHours);
+
+        return await dbContext.ProgramControls
+            .AsNoTracking()
+            .Where(c => c.Status == ProgramControlStatus.FollowedUp
+                && c.FollowupSentAt != null
+                && c.FollowupSentAt <= cutoff
+                && c.Enrollment != null)
+            .OrderBy(c => c.FollowupSentAt)
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone))
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<ProgramControlDueItem>> ListTimedOutNoUploadAsync(
+        DateTime utcNow, int noUploadCloseHours, int limit = 100, CancellationToken ct = default)
+    {
+        var cutoff = utcNow.AddHours(-noUploadCloseHours);
+
+        return await dbContext.ProgramControls
+            .AsNoTracking()
+            .Where(c => c.Status == ProgramControlStatus.Responded
+                && c.RespondedAt != null
+                && c.RespondedAt <= cutoff
+                && c.Enrollment != null)
+            .OrderBy(c => c.RespondedAt)
+            .Take(Math.Clamp(limit, 1, 500))
+            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone))
+            .ToListAsync(ct);
+    }
 }
