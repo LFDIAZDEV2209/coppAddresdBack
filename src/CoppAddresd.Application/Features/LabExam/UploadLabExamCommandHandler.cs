@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Exceptions;
 using CoppAddresd.Application.Interfaces;
@@ -7,6 +8,7 @@ using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Exceptions;
 using MediatR;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Application.Features.LabExam;
 
@@ -123,6 +125,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
     private readonly IAiServiceClient _aiServiceClient;
     private readonly IClinicalMeasurementRepository _measurementRepository;
     private readonly IPatientRepository _patientRepository;
+    private readonly IProgramControlRepository _programControlRepository;
+    private readonly IOptions<ProgramControlSettings> _settings;
     private readonly ILogger<UploadLabExamCommandHandler> _logger;
 
     public UploadLabExamCommandHandler(
@@ -131,6 +135,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         IAiServiceClient aiServiceClient,
         IClinicalMeasurementRepository measurementRepository,
         IPatientRepository patientRepository,
+        IProgramControlRepository programControlRepository,
+        IOptions<ProgramControlSettings> settings,
         ILogger<UploadLabExamCommandHandler> logger)
     {
         _compressionService = compressionService;
@@ -138,6 +144,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         _aiServiceClient = aiServiceClient;
         _measurementRepository = measurementRepository;
         _patientRepository = patientRepository;
+        _programControlRepository = programControlRepository;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -293,12 +301,55 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
             }
         }
 
+        // 8. Link de control abierto (fase 2, controles conversacionales):
+        // DESPUÉS de la persistencia y de la narración, best-effort — misma
+        // filosofía de aislamiento que la narración: un fallo aquí NUNCA rompe
+        // el upload ni dispara la compensación S3 (el HTTP 200 ya está
+        // ganado). Con el killswitch apagado no hay ninguna llamada nueva.
+        if (_settings.Value.ControlsEnabled && patientProfile.UserId is { } authUserId)
+        {
+            await TryLinkOpenControlAsync(authUserId, request.ThreadId, batchId, ct);
+        }
+
         return new LabExamUploadResult(
             batchId,
             summary,
             measurements.Count,
             detectedMetricNames,
             storageKey);
+    }
+
+    /// <summary>
+    /// Link best-effort del lote recién persistido al control de programa
+    /// abierto del paciente (fase 2): si existe un control no terminal
+    /// (Sent/Responded/FollowedUp) en el thread del upload, lo marca Completed
+    /// con <paramref name="batchId"/> (la transición guardada funciona incluso
+    /// desde Sent). Sin control abierto o con cualquier fallo: no-op silencioso
+    /// — el upload ya devolvió su resultado.
+    /// </summary>
+    private async Task TryLinkOpenControlAsync(
+        Guid authUserId, string? threadId, Guid batchId, CancellationToken ct)
+    {
+        try
+        {
+            var control = await _programControlRepository.FindOpenControlForUserAsync(authUserId, threadId, ct);
+            if (control is null)
+            {
+                return;
+            }
+
+            var claimed = await _programControlRepository.MarkCompletedAsync(
+                control.Id, batchId, DateTime.UtcNow, ct);
+            _logger.LogInformation(
+                "Program.ControlCompletedByUpload: controlId={ControlId} day={MilestoneDay} batchId={BatchId} claimed={Claimed}",
+                control.Id, control.MilestoneDay, batchId, claimed);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Program.Controls: fallo al vincular upload con control abierto (best-effort). userId={UserId} batchId={BatchId}",
+                authUserId, batchId);
+        }
     }
 
     /// <summary>
