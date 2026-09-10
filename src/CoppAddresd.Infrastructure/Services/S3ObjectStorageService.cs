@@ -23,6 +23,9 @@ namespace CoppAddresd.Infrastructure.Services;
 /// - Los errores de objeto inexistente se traducen a
 ///   <c>FileNotFoundException</c>/<c>null</c> para mantener el contrato de
 ///   <see cref="IObjectStorageService"/> independiente del proveedor.
+/// - <c>PutObjectAsync</c> NO consume ni cierra el stream del llamador
+///   (<c>AutoCloseStream=false</c>): los reutilizadores del stream (p. ej.
+///   foodai relee la imagen tras guardarla) pueden seguir leyéndolo.
 /// </remarks>
 public sealed class S3ObjectStorageService : IObjectStorageService
 {
