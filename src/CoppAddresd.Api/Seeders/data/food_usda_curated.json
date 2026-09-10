@@ -885,6 +885,90 @@
       },
       "notes": "Legumbre amarilla ≈ frijol cocido (equivalencia culinaria)",
       "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "cheese",
+      "display_name": "Queso",
+      "category": "dairy",
+      "alias": "cheese",
+      "fdc_id": "170862",
+      "fdc_name": "Cheese, cheddar",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.7,
+      "nutrition": {
+        "protein": 25.0,
+        "fat": 33.0,
+        "carbohydrates": 0.4,
+        "calories": 402,
+        "sugar": 0.5,
+        "fiber": 0.0,
+        "sodium": 621
+      },
+      "notes": "Queso genérico ≈ cheddar (valores típicos USDA por 100 g)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "egg",
+      "display_name": "Huevo",
+      "category": "breakfast",
+      "alias": "egg",
+      "fdc_id": "173445",
+      "fdc_name": "Egg, whole, cooked, hard-boiled",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.8,
+      "nutrition": {
+        "protein": 12.6,
+        "fat": 10.6,
+        "carbohydrates": 1.1,
+        "calories": 155,
+        "sugar": 1.1,
+        "fiber": 0.0,
+        "sodium": 124
+      },
+      "notes": "Huevo cocido (SR Legacy 173445)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "fish",
+      "display_name": "Pescado",
+      "category": "protein",
+      "alias": "fish",
+      "fdc_id": "175087",
+      "fdc_name": "Fish, tilapia, cooked, dry heat",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.7,
+      "nutrition": {
+        "protein": 26.0,
+        "fat": 2.7,
+        "carbohydrates": 0.0,
+        "calories": 128,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 56
+      },
+      "notes": "Pescado genérico ≈ tilapia cocida (valores típicos USDA por 100 g)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "milk",
+      "display_name": "Leche",
+      "category": "dairy",
+      "alias": "milk",
+      "fdc_id": "171265",
+      "fdc_name": "Milk, whole, 3.25% milkfat, with added vitamin D",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 3.2,
+        "fat": 3.3,
+        "carbohydrates": 4.8,
+        "calories": 61,
+        "sugar": 5.1,
+        "fiber": 0.0,
+        "sodium": 43
+      },
+      "notes": "Leche entera (SR Legacy 171265)",
+      "data_type": "SR Legacy"
     }
   ]
 }
