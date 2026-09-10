@@ -41,6 +41,7 @@ public class LabExamController(
     public async Task<ActionResult<LabExamUploadResult>> Upload(
         [FromForm] IFormFile? file,
         [FromForm] string? threadId = null,
+        [FromForm] string? language = null,
         CancellationToken ct = default)
     {
         var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -91,7 +92,8 @@ public class LabExamController(
                 file.ContentType ?? "application/octet-stream",
                 file.Length,
                 patientId,
-                threadId);
+                threadId,
+                language);
 
             var result = await mediator.Send(command, ct);
             return Ok(result);

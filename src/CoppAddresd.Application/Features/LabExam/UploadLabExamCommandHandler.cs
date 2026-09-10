@@ -176,7 +176,13 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
 
         await _storageService.PutObjectAsync(storageKey, compressedStream, finalContentType, ct);
 
-        // 5. In try/catch
+        // 5. Extracción + persistencia en try/catch (compensación S3 si falla)
+        LabExamAiResponse aiResponse;
+        var measurements = new List<ClinicalMeasurement>();
+        var detectedMetricNames = new List<string>();
+        var detectedMetricCodes = new List<string>();
+        var currentSnapshots = new List<LabExamMetricSnapshot>();
+
         try
         {
             if (compressedStream.CanSeek && compressedStream.Position != 0)
@@ -186,7 +192,7 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
 
             var fileNameForAi = Path.GetFileNameWithoutExtension(request.FileName) + extension;
 
-            var aiResponse = await _aiServiceClient.ExtractLabMetricsAsync(
+            aiResponse = await _aiServiceClient.ExtractLabMetricsAsync(
                 patientId,
                 batchId,
                 compressedStream,
@@ -210,9 +216,6 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
             var activeMetrics = await _measurementRepository.GetActiveMetricsWithUnitsAsync(ct);
             var activeUnits = await _measurementRepository.GetActiveUnitsAsync(ct);
 
-            var measurements = new List<ClinicalMeasurement>();
-            var detectedMetricNames = new List<string>();
-
             foreach (var aiMetric in aiResponse.Metrics)
             {
                 var matchedMetric = ResolveMetric(aiMetric.MetricName, activeMetrics);
@@ -224,7 +227,7 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
                     continue;
                 }
 
-                var unitId = ResolveUnitId(aiMetric.UnitSymbol, matchedMetric, activeUnits);
+                var unit = ResolveUnit(aiMetric.UnitSymbol, matchedMetric, activeUnits) ?? matchedMetric.DefaultUnit;
                 var observedAt = aiMetric.ObservedAt.HasValue
                     ? aiMetric.ObservedAt.Value.ToUniversalTime()
                     : DateTime.UtcNow;
@@ -234,7 +237,7 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
                     Id = Guid.NewGuid(),
                     PatientId = patientId,
                     MetricId = matchedMetric.Id,
-                    UnitId = unitId,
+                    UnitId = unit?.Id ?? matchedMetric.DefaultUnitId,
                     Value = aiMetric.Value,
                     ObservedAt = observedAt,
                     RecordedAt = DateTime.UtcNow,
@@ -246,20 +249,15 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
                 });
 
                 detectedMetricNames.Add(matchedMetric.Name);
+                detectedMetricCodes.Add(matchedMetric.Code);
+                currentSnapshots.Add(new LabExamMetricSnapshot(
+                    matchedMetric.Code, aiMetric.Value, unit?.Symbol, observedAt));
             }
 
             if (measurements.Count > 0)
             {
                 await _measurementRepository.AddBatchAsync(measurements, ct);
             }
-
-            // d. Return result
-            return new LabExamUploadResult(
-                batchId,
-                aiResponse.Summary,
-                measurements.Count,
-                detectedMetricNames,
-                storageKey);
         }
         catch (Exception ex)
         {
@@ -280,6 +278,61 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
             }
 
             throw;
+        }
+
+        // 7. Narración empática: DESPUÉS de la persistencia y FUERA del try de
+        // compensación — un fallo de narración jamás alcanza DeleteObjectAsync (R12).
+        var summary = aiResponse.Summary;
+        if (measurements.Count > 0)
+        {
+            var empathetic = await BuildNarrationAsync(
+                patientId, batchId, aiResponse, currentSnapshots, detectedMetricCodes, request.Language, ct);
+            if (!string.IsNullOrWhiteSpace(empathetic))
+            {
+                summary = empathetic;
+            }
+        }
+
+        return new LabExamUploadResult(
+            batchId,
+            summary,
+            measurements.Count,
+            detectedMetricNames,
+            storageKey);
+    }
+
+    /// <summary>
+    /// Narración best-effort (R7/R8/R11/R12): query de historia → deltas en C# →
+    /// llamada al ai-service. Cualquier fallo (incluida la query de contexto)
+    /// degrada a null y el upload continúa con el summary técnico; nunca se
+    /// persiste el mensaje empático (R9).
+    /// </summary>
+    private async Task<string?> BuildNarrationAsync(
+        Guid patientId,
+        Guid batchId,
+        LabExamAiResponse aiResponse,
+        IReadOnlyList<LabExamMetricSnapshot> currentSnapshots,
+        IReadOnlyList<string> detectedMetricCodes,
+        string? language,
+        CancellationToken ct)
+    {
+        try
+        {
+            var previous = await _measurementRepository.GetLastPerMetricAsync(
+                patientId, detectedMetricCodes, batchId, ct);
+
+            var evolutions = LabExamEvolutionBuilder.Build(currentSnapshots, previous);
+
+            return await _aiServiceClient.NarrateLabExamAsync(
+                patientId, batchId, aiResponse.Metrics, evolutions, language, ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                ex,
+                "Lab exam narration context failed for patient {PatientId} batch {BatchId}. Falling back to summary.",
+                patientId, batchId);
+            return null;
         }
     }
 
@@ -385,30 +438,18 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         return sb.ToString().Replace(" ", "").Replace("_", "");
     }
 
-    private static Guid ResolveUnitId(
+    private static UnitOfMeasure? ResolveUnit(
         string? unitSymbol,
         MeasurementMetric metric,
         IReadOnlyList<UnitOfMeasure> activeUnits)
     {
         if (string.IsNullOrWhiteSpace(unitSymbol))
         {
-            return metric.DefaultUnitId;
+            return activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId) ?? metric.DefaultUnit;
         }
 
         var trimmed = unitSymbol.Trim();
-
-        var normalizedSymbol = trimmed.ToLowerInvariant() switch
-        {
-            "%" or "pct" or "porcentaje" => "%",
-            "c" or "°c" or "celsius" or "grados celsius" => "°C",
-            "bpm" or "lpm" or "latidos/min" or "latidos por minuto" => "bpm",
-            "mg/dl" or "mg_dl" => "mg/dL",
-            "mmhg" => "mmHg",
-            "kg/m2" or "kg/m²" or "kg_m2" => "kg/m²",
-            "kg" or "kilos" or "kilogramos" => "kg",
-            "cm" or "centimetros" or "centímetros" => "cm",
-            _ => trimmed
-        };
+        var normalizedSymbol = NormalizeUnitSymbol(trimmed);
 
         var matched = activeUnits.FirstOrDefault(u =>
             string.Equals(u.Symbol, normalizedSymbol, StringComparison.OrdinalIgnoreCase) ||
@@ -416,6 +457,19 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
             string.Equals(u.Code, trimmed, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(u.Name, trimmed, StringComparison.OrdinalIgnoreCase));
 
-        return matched?.Id ?? metric.DefaultUnitId;
+        return matched ?? activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId) ?? metric.DefaultUnit;
     }
+
+    private static string NormalizeUnitSymbol(string trimmedUnitSymbol) => trimmedUnitSymbol.ToLowerInvariant() switch
+    {
+        "%" or "pct" or "porcentaje" => "%",
+        "c" or "°c" or "celsius" or "grados celsius" => "°C",
+        "bpm" or "lpm" or "latidos/min" or "latidos por minuto" => "bpm",
+        "mg/dl" or "mg_dl" => "mg/dL",
+        "mmhg" => "mmHg",
+        "kg/m2" or "kg/m²" or "kg_m2" => "kg/m²",
+        "kg" or "kilos" or "kilogramos" => "kg",
+        "cm" or "centimetros" or "centímetros" => "cm",
+        _ => trimmedUnitSymbol
+    };
 }
