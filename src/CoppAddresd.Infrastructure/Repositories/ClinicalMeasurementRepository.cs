@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.Ai;
+using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Features.Patients;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
@@ -65,6 +66,59 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
             .AsNoTracking()
             .Where(u => u.IsActive)
             .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Última medición por métrica (R1). GroupBy + OrderByDescending + First se
+    /// traduce a <c>SELECT DISTINCT ON (code) ... ORDER BY code, observed_at DESC,
+    /// recorded_at DESC</c> en Npgsql: una sola query con desempate determinista.
+    /// </summary>
+    /// <remarks>
+    /// La guarda 3VL es obligatoria: <c>m.BatchId != excludeBatchId</c> por sí sola
+    /// evalúa <c>NULL != guid</c> ⇒ UNKNOWN y descarta silenciosamente las filas con
+    /// <c>batch_id</c> NULL (device/checkin/manual). La rama explícita
+    /// <c>m.BatchId == null</c> conserva ese historial cross-source (spec
+    /// "History found across sources").
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<string, LabExamMetricSnapshot>> GetLastPerMetricAsync(
+        Guid patientId,
+        IEnumerable<string> metricNames,
+        Guid excludeBatchId,
+        CancellationToken ct = default)
+    {
+        var names = metricNames
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (names.Length == 0)
+        {
+            return new Dictionary<string, LabExamMetricSnapshot>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var rows = await dbContext.ClinicalMeasurements
+            .AsNoTracking()
+            .Where(m => m.PatientId == patientId
+                        && (m.BatchId == null || m.BatchId != excludeBatchId)
+                        && names.Contains(m.Metric!.Code))
+            .Select(m => new
+            {
+                Code = m.Metric!.Code,
+                m.Value,
+                UnitSymbol = m.Unit!.Symbol,
+                m.ObservedAt,
+                m.RecordedAt
+            })
+            .GroupBy(x => x.Code)
+            .Select(g => g.OrderByDescending(x => x.ObservedAt)
+                           .ThenByDescending(x => x.RecordedAt)
+                           .First())
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(
+            r => r.Code,
+            r => new LabExamMetricSnapshot(r.Code, r.Value, r.UnitSymbol, r.ObservedAt),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
