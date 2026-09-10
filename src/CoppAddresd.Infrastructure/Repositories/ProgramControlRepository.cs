@@ -249,16 +249,21 @@ public sealed class ProgramControlRepository(AppDbContext dbContext) : IProgramC
     {
         var cutoff = utcNow.AddHours(-followupHours);
 
+        // El join al paciente (con usuario auth) es obligatorio: el follow-up
+        // se envía por el MISMO canal que el envío de apertura (push + chat) y
+        // sin usuario no hay push ni inyección proactiva.
         return await dbContext.ProgramControls
             .AsNoTracking()
             .Where(c => c.Status == ProgramControlStatus.Sent
                 && c.FollowupSentAt == null
                 && c.SentAt != null
                 && c.SentAt <= cutoff
-                && c.Enrollment != null)
+                && c.Enrollment != null
+                && c.Enrollment.Patient != null
+                && c.Enrollment.Patient.UserId != null)
             .OrderBy(c => c.SentAt)
             .Take(Math.Clamp(limit, 1, 500))
-            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone))
+            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone, c.Enrollment!.Patient!.UserId!.Value))
             .ToListAsync(ct);
     }
 
@@ -272,10 +277,12 @@ public sealed class ProgramControlRepository(AppDbContext dbContext) : IProgramC
             .Where(c => c.Status == ProgramControlStatus.FollowedUp
                 && c.FollowupSentAt != null
                 && c.FollowupSentAt <= cutoff
-                && c.Enrollment != null)
+                && c.Enrollment != null
+                && c.Enrollment.Patient != null
+                && c.Enrollment.Patient.UserId != null)
             .OrderBy(c => c.FollowupSentAt)
             .Take(Math.Clamp(limit, 1, 500))
-            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone))
+            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone, c.Enrollment!.Patient!.UserId!.Value))
             .ToListAsync(ct);
     }
 
@@ -289,10 +296,12 @@ public sealed class ProgramControlRepository(AppDbContext dbContext) : IProgramC
             .Where(c => c.Status == ProgramControlStatus.Responded
                 && c.RespondedAt != null
                 && c.RespondedAt <= cutoff
-                && c.Enrollment != null)
+                && c.Enrollment != null
+                && c.Enrollment.Patient != null
+                && c.Enrollment.Patient.UserId != null)
             .OrderBy(c => c.RespondedAt)
             .Take(Math.Clamp(limit, 1, 500))
-            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone))
+            .Select(c => new ProgramControlDueItem(c, c.Enrollment!.Timezone, c.Enrollment!.Patient!.UserId!.Value))
             .ToListAsync(ct);
     }
 }

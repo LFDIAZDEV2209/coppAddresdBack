@@ -51,8 +51,11 @@ public sealed class ProgramControlJob
     /// Una pasada del job: recorre los candidatos activos con hito en fecha y
     /// dentro de la ventana local y notifica cada par (inscripción, día) que
     /// todavía no está en estado terminal. Idempotente: una segunda pasada no
-    /// re-notifica los pares ya Sent/Skipped/Failed. Devuelve el resumen de la
-    /// pasada (<see cref="ProgramControlRunResult"/>) para el endpoint demo
+    /// re-notifica los pares ya Sent/Skipped/Failed. Con el killswitch
+    /// <see cref="ProgramControlSettings.ControlsEnabled"/> activo, además
+    /// corre la fase 2 en el mismo tick (follow-ups, cierres por Missed y por
+    /// no subida de examen). Devuelve el resumen de la pasada
+    /// (<see cref="ProgramControlRunResult"/>) para el endpoint demo
     /// <c>POST /program-controls/run</c>; el hosted service ignora el
     /// resultado.
     /// </summary>
@@ -70,55 +73,62 @@ public sealed class ProgramControlJob
         var skipped = 0;
         var failed = 0;
         var details = new List<ProgramControlSendResult>();
-        if (candidates.Count == 0)
+        if (candidates.Count > 0)
         {
-            return new ProgramControlRunResult(0, sent, skipped, failed, details);
-        }
-
-        foreach (var candidate in candidates)
-        {
-            var localNow = ToPatientLocal(candidate.Timezone);
-            var todayLocal = DateOnly.FromDateTime(localNow);
-
-            if (!ProgramControlSchedule.WithinDeliveryWindow(
-                    TimeOnly.FromDateTime(localNow), settings.StartLocalHour, settings.EndLocalHour))
+            foreach (var candidate in candidates)
             {
-                // Fuera de la ventana 9–21 local: la próxima pasada reintenta.
-                continue;
-            }
+                var localNow = ToPatientLocal(candidate.Timezone);
+                var todayLocal = DateOnly.FromDateTime(localNow);
 
-            var dueDays = ProgramControlSchedule.DueMilestoneDays(
-                todayLocal, candidate.StartLocalDate, settings.Days, settings.GraceDays);
-            if (dueDays.Count == 0)
-            {
-                continue;
-            }
-
-            foreach (var day in dueDays)
-            {
-                var control = await HandleDayAsync(candidate, day, settings, ct);
-                if (control is null || control.Status == ProgramControlStatus.Pending)
+                if (!ProgramControlSchedule.WithinDeliveryWindow(
+                        TimeOnly.FromDateTime(localNow), settings.StartLocalHour, settings.EndLocalHour))
                 {
-                    // null: par ya terminal o reclamación fallida (nada de esta
-                    // pasada). Pending: fallo transitorio reintentable — la
-                    // próxima pasada reintenta. Ninguno cuenta como resultado.
+                    // Fuera de la ventana 9–21 local: la próxima pasada reintenta.
                     continue;
                 }
 
-                details.Add(ToResult(control));
-                switch (control.Status)
+                var dueDays = ProgramControlSchedule.DueMilestoneDays(
+                    todayLocal, candidate.StartLocalDate, settings.Days, settings.GraceDays);
+                if (dueDays.Count == 0)
                 {
-                    case ProgramControlStatus.Sent:
-                        sent++;
-                        break;
-                    case ProgramControlStatus.Skipped:
-                        skipped++;
-                        break;
-                    case ProgramControlStatus.Failed:
-                        failed++;
-                        break;
+                    continue;
+                }
+
+                foreach (var day in dueDays)
+                {
+                    var control = await HandleDayAsync(candidate, day, settings, ct);
+                    if (control is null || control.Status == ProgramControlStatus.Pending)
+                    {
+                        // null: par ya terminal o reclamación fallida (nada de esta
+                        // pasada). Pending: fallo transitorio reintentable — la
+                        // próxima pasada reintenta. Ninguno cuenta como resultado.
+                        continue;
+                    }
+
+                    details.Add(ToResult(control));
+                    switch (control.Status)
+                    {
+                        case ProgramControlStatus.Sent:
+                            sent++;
+                            break;
+                        case ProgramControlStatus.Skipped:
+                            skipped++;
+                            break;
+                        case ProgramControlStatus.Failed:
+                            failed++;
+                            break;
+                    }
                 }
             }
+        }
+
+        // Fase 2 (solo con el killswitch activo): follow-ups y cierres por
+        // temporizador de los controles ya enviados. Con ControlsEnabled=false
+        // esta pasada no hace ninguna llamada nueva — comportamiento UC-001
+        // puro.
+        if (settings.ControlsEnabled)
+        {
+            await RunPhase2Async(settings, ct);
         }
 
         return new ProgramControlRunResult(candidates.Count, sent, skipped, failed, details);
@@ -266,6 +276,178 @@ public sealed class ProgramControlJob
 
     private static ProgramControlSendResult ToResult(ProgramControl control)
         => new(control.EnrollmentId, control.MilestoneDay, control.Status, control.ThreadId);
+
+    /// <summary>
+    /// Fase 2 del job (solo con <see cref="ProgramControlSettings.ControlsEnabled"/>):
+    /// procesa los controles vencidos del flujo conversacional en el MISMO tick
+    /// y con el mismo DI que la fase 1 (envíos). Tres sub-fases:
+    /// (1) follow-up de controles Sent sin respuesta, (2) cierre silencioso por
+    /// Missed tras el follow-up, (3) cierre silencioso por no subida de examen.
+    /// Las consultas gruesas del repositorio SIEMPRE se afinan con las funciones
+    /// puras de <see cref="ProgramControlSchedule"/> (zona IANA del paciente +
+    /// ventana de entrega donde aplica) — la base nunca decide el envío. Cada
+    /// transición es guardada (claim atómico): un false significa que otra
+    /// pasada/usuario se adelantó y se trata como no-op silencioso.
+    /// </summary>
+    private async Task RunPhase2Async(ProgramControlSettings settings, CancellationToken ct)
+    {
+        var utcNow = _utcNow();
+
+        // 1) Follow-up: controles Sent vencidos, dentro de la ventana 9–21 local.
+        var dueFollowups = await _repository.ListDueForFollowupAsync(utcNow, settings.FollowupHours, ct: ct);
+        foreach (var item in dueFollowups)
+        {
+            var localNow = ToPatientLocalOffset(item.Timezone);
+            if (!ProgramControlSchedule.IsFollowupDue(item.Control, localNow, settings))
+            {
+                // Fuera de la ventana local o el reloj del paciente todavía no
+                // venció: la próxima pasada reintenta (nunca se salta la
+                // función pura).
+                continue;
+            }
+
+            await SendFollowupAsync(item, settings, ct);
+        }
+
+        // 2) Missed: FollowedUp sin respuesta tras MissedAfterFollowupHours.
+        // Cierre silencioso (sin mensaje), a cualquier hora.
+        var dueMisses = await _repository.ListDueForMissAsync(utcNow, settings.MissedAfterFollowupHours, ct: ct);
+        foreach (var item in dueMisses)
+        {
+            var localNow = ToPatientLocalOffset(item.Timezone);
+            if (!ProgramControlSchedule.IsMissDue(item.Control, localNow, settings))
+            {
+                continue;
+            }
+
+            try
+            {
+                var claimed = await _repository.MarkMissedAsync(item.Control.Id, utcNow, ct);
+                _logger.LogInformation(
+                    "Program.ControlMissed: controlId={ControlId} day={MilestoneDay} transition={Transition} claimed={Claimed}",
+                    item.Control.Id, item.Control.MilestoneDay, "FollowedUp->Missed", claimed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Program.Controls: fallo al marcar Missed. controlId={ControlId}",
+                    item.Control.Id);
+            }
+        }
+
+        // 3) No-upload timeout: Responded sin subida tras NoUploadCloseDays.
+        // Cierre silencioso, a cualquier hora. (El job convierte días a horas.)
+        var dueNoUpload = await _repository.ListTimedOutNoUploadAsync(
+            utcNow, settings.NoUploadCloseDays * 24, ct: ct);
+        foreach (var item in dueNoUpload)
+        {
+            var localNow = ToPatientLocalOffset(item.Timezone);
+            if (!ProgramControlSchedule.IsNoUploadTimeoutDue(item.Control, localNow, settings))
+            {
+                continue;
+            }
+
+            try
+            {
+                var claimed = await _repository.MarkNoUploadTimeoutAsync(item.Control.Id, utcNow, ct);
+                _logger.LogInformation(
+                    "Program.ControlNoUploadTimeout: controlId={ControlId} day={MilestoneDay} transition={Transition} claimed={Claimed}",
+                    item.Control.Id, item.Control.MilestoneDay, "Responded->ClosedWithoutExam", claimed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Program.Controls: fallo al marcar no_upload_timeout. controlId={ControlId}",
+                    item.Control.Id);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Envía el follow-up de un control vencido por el MISMO canal que el envío
+    /// de apertura (<see cref="IProgramControlNotifier"/>: push + inyección
+    /// proactiva) y luego reclama la transición Sent → FollowedUp. Si el claim
+    /// falla (false) otro tick o el propio paciente se adelantó (p. ej. ya
+    /// respondió): el envío ya ocurrió pero no se fuerza la transición — no-op
+    /// silencioso. Fallos del canal: se registran y la próxima pasada reintenta
+    /// (el control sigue Sent).
+    /// </summary>
+    private async Task SendFollowupAsync(ProgramControlDueItem item, ProgramControlSettings settings, CancellationToken ct)
+    {
+        var day = item.Control.MilestoneDay;
+        var message = BuildFollowupMessage(settings.FollowupTemplate, day);
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            // Misconfiguración (template vacía): se omite el envío y se deja el
+            // control Sent para la próxima pasada (nunca se manda un mensaje en
+            // blanco).
+            _logger.LogWarning(
+                "Program.Controls: FollowupTemplate vacía — follow-up omitido. controlId={ControlId} day={MilestoneDay}",
+                item.Control.Id, day);
+            return;
+        }
+
+        try
+        {
+            // Título y agente del día del hito (plantilla de apertura si
+            // existe); el cuerpo es la plantilla de follow-up con {day} resuelto.
+            var template = await _templates.GetAsync(day, ct);
+            var title = template?.Title ?? $"Control del día {day}";
+            var agentTypeId = template?.AgentTypeId ?? "base";
+
+            var result = await _notifier.NotifyAsync(item.UserId, title, message, agentTypeId, ct);
+
+            var claimed = await _repository.MarkFollowedUpAsync(item.Control.Id, _utcNow(), ct);
+            _logger.LogInformation(
+                "Program.ControlFollowupSent: controlId={ControlId} day={MilestoneDay} transition={Transition} claimed={Claimed} threadId={ThreadId}",
+                item.Control.Id, day, "Sent->FollowedUp", claimed, result.ThreadId);
+            if (!claimed)
+            {
+                _logger.LogInformation(
+                    "Program.ControlFollowupClaimLost: controlId={ControlId} day={MilestoneDay}",
+                    item.Control.Id, day);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Program.Controls: fallo al enviar follow-up. controlId={ControlId} day={MilestoneDay}",
+                item.Control.Id, day);
+        }
+    }
+
+    /// <summary>
+    /// Resuelve el placeholder <c>{day}</c> de la plantilla de follow-up. Sin
+    /// reemplazo si la plantilla no lo contiene (el texto se envía tal cual).
+    /// </summary>
+    private static string BuildFollowupMessage(string template, int day)
+        => template.Replace("{day}", day.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// Hora local del paciente como <see cref="DateTimeOffset"/> (reloj de
+    /// pared del offset de su zona + instante UTC exacto): el formato que
+    /// esperan las funciones puras de vencimiento de la fase 2
+    /// (<see cref="ProgramControlSchedule"/>). Fallback a UTC si la zona no
+    /// está disponible en el SO.
+    /// </summary>
+    private DateTimeOffset ToPatientLocalOffset(string timezone)
+    {
+        try
+        {
+            var tz = TimeZoneInfo.FindSystemTimeZoneById(timezone);
+            var utcNow = _utcNow();
+            var offset = tz.GetUtcOffset(utcNow);
+            return new DateTimeOffset(utcNow.Ticks + offset.Ticks, offset);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return new DateTimeOffset(_utcNow());
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return new DateTimeOffset(_utcNow());
+        }
+    }
 
     /// <summary>
     /// Hora local del paciente desde su zona IANA. Fallback a UTC si la zona

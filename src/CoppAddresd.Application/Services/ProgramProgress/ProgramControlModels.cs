@@ -18,12 +18,14 @@ public sealed record ProgramControlEnrollmentCandidate(
 
 /// <summary>
 /// Control de la fase 2 vencido (follow-up, miss o no_upload_timeout) junto con
-/// la zona horaria IANA de su inscripción: el job convierte el instante UTC
-/// actual a la hora local del paciente antes de evaluar las funciones puras de
-/// vencimiento (<see cref="ProgramControlSchedule"/>), que nunca comparan en
-/// UTC del servidor.
+/// la zona horaria IANA de su inscripción y el usuario auth de su paciente: el
+/// job convierte el instante UTC actual a la hora local del paciente antes de
+/// evaluar las funciones puras de vencimiento
+/// (<see cref="ProgramControlSchedule"/>), que nunca comparan en UTC del
+/// servidor, y usa <c>UserId</c> para enviar el follow-up por el mismo canal
+/// que el envío de apertura (<see cref="IProgramControlNotifier"/>).
 /// </summary>
-public sealed record ProgramControlDueItem(ProgramControl Control, string Timezone);
+public sealed record ProgramControlDueItem(ProgramControl Control, string Timezone, Guid UserId);
 
 /// <summary>
 /// Resultado de una pasada completa de <c>ProgramControlJob.RunAsync</c>
