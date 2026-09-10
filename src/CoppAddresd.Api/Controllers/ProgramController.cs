@@ -1,8 +1,10 @@
+using System.Globalization;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.AcceptIntervention;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ArchiveTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkEnrollPatients;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.CalculateScores;
@@ -14,6 +16,9 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.DecideClinicalRe
 using CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatient;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.LogNutrition;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkNotificationRead;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleAttended;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleComply;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleScheduled;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PauseEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PublishTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
@@ -22,59 +27,54 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceWeekdayTa
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ResumeEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.SetWeekContent;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.SetWeekContentRange;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateInterventionStatus;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateLeaguePreferences;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateTemplate;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateWeaknessStatus;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateXpRule;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.WithdrawEnrollment;
-using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Erp;
-using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
-using CoppAddresd.Application.Features.ProgramProgress.DTOs.Notifications;
-using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateWeaknessStatus;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenWeaknesses;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.ListWeaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Interventions;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.League;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.MetricsHistory;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Notifications;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.Erp;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetAdaptation;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetBaselines;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetCalendar;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetEnrollment;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetEnrollmentWeek;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetLeague;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetMetricsHistory;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.AcceptIntervention;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateInterventionStatus;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleScheduled;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleAttended;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleComply;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.UpdateLeaguePreferences;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.ListInterventions;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenInterventions;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.GetAdaptation;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.GetCalendar;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetPath;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetScores;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetScoresHistory;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetSnapshot;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.GetTemplate;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.GetBaselines;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.GetXpLedger;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListAdaptations;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListClinicalReviews;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListEnrollments;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListInterventions;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListNotifications;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenInterventions;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListOpenWeaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListProgramActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListTemplates;
+using CoppAddresd.Application.Features.ProgramProgress.Queries.ListWeaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ListXpRules;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.GetEnrollment;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.GetEnrollmentWeek;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.Erp;
-using CoppAddresd.Application.Features.ProgramProgress.Queries.GetXpLedger;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Globalization;
 
 namespace CoppAddresd.Api.Controllers;
 
@@ -99,7 +99,8 @@ public sealed class ProgramController(
     IConfiguration configuration,
     IProgramActorContext actorContext,
     IObjectStorageService objectStorage,
-    StorageSignatureService? signatureService = null) : ControllerBase
+    StorageSignatureService? signatureService = null
+) : ControllerBase
 {
     private const string DefaultTemplateCodeKey = "Program:DefaultTemplate:Code";
     private const string DefaultTemplateCodeFallback = "default-83w";
@@ -118,7 +119,12 @@ public sealed class ProgramController(
         var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
         if (enrollmentId is null)
         {
-            return NotFound(new { message = "NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente." });
+            return NotFound(
+                new
+                {
+                    message = "NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente.",
+                }
+            );
         }
 
         var snapshot = await mediator.Send(new GetSnapshotQuery(enrollmentId.Value), ct);
@@ -136,8 +142,8 @@ public sealed class ProgramController(
     [RequirePermission("Program.View")]
     public async Task<ActionResult<ProgramSnapshotDto>> GetEnrollmentSnapshot(
         Guid id,
-        CancellationToken ct)
-        => Ok(await ResolveMediaUrlsAsync(await mediator.Send(new GetSnapshotQuery(id), ct), ct));
+        CancellationToken ct
+    ) => Ok(await ResolveMediaUrlsAsync(await mediator.Send(new GetSnapshotQuery(id), ct), ct));
 
     // ===================== PACIENTE: completar tarea =====================
 
@@ -150,28 +156,37 @@ public sealed class ProgramController(
     [HttpPost("tasks/complete")]
     public async Task<ActionResult<CompleteTaskResponseDto>> CompleteTask(
         [FromBody] CompleteTaskRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await actorContext.EnrollmentBelongsToCurrentPatientAsync(request.EnrollmentId, ct))
         {
             return NotFound(new { message = "Inscripción no encontrada" });
         }
 
-        var result = await mediator.Send(new CompleteTaskCommand(
-            request.EnrollmentId,
-            request.LocalDate,
-            request.TaskCode,
-            request.ClientRequestId,
-            request.ClientCompletedAt,
-            request.MoodScore,
-            request.Barriers,
-            request.ContentFingerprint,
-            ActorId: actorContext.UserId,
-            Vitals: request.Vitals), ct);
+        var result = await mediator.Send(
+            new CompleteTaskCommand(
+                request.EnrollmentId,
+                request.LocalDate,
+                request.TaskCode,
+                request.ClientRequestId,
+                request.ClientCompletedAt,
+                request.MoodScore,
+                request.Barriers,
+                request.ContentFingerprint,
+                ActorId: actorContext.UserId,
+                Vitals: request.Vitals
+            ),
+            ct
+        );
 
         logger.LogInformation(
             "Program.CompleteTask: enrollment={EnrollmentId} fecha={LocalDate} tarea={TaskCode} actor={ActorId}",
-            request.EnrollmentId, request.LocalDate, request.TaskCode, actorContext.UserId);
+            request.EnrollmentId,
+            request.LocalDate,
+            request.TaskCode,
+            actorContext.UserId
+        );
 
         return Ok(result);
     }
@@ -186,12 +201,18 @@ public sealed class ProgramController(
     public async Task<ActionResult<ProgramCalendarDto>> GetCalendar(
         [FromQuery] DateOnly from,
         [FromQuery] DateOnly to,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
         if (enrollmentId is null)
         {
-            return NotFound(new { message = "NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente." });
+            return NotFound(
+                new
+                {
+                    message = "NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente.",
+                }
+            );
         }
 
         return Ok(await mediator.Send(new GetCalendarQuery(enrollmentId.Value, from, to), ct));
@@ -209,7 +230,12 @@ public sealed class ProgramController(
         var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
         if (enrollmentId is null)
         {
-            return NotFound(new { message = "NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente." });
+            return NotFound(
+                new
+                {
+                    message = "NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente.",
+                }
+            );
         }
 
         return Ok(await mediator.Send(new GetPathQuery(enrollmentId.Value), ct));
@@ -226,21 +252,28 @@ public sealed class ProgramController(
     [HttpPost("enrollments/me")]
     public async Task<ActionResult<ProgramEnrollmentDto>> EnrollSelf(
         [FromBody] EnrollRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
-        var result = await mediator.Send(new EnrollPatientCommand(
-            patientId.Value,
-            request.TemplateId,
-            request.Timezone,
-            request.StartLocalDate,
-            DefaultTemplateCode: DefaultTemplateCode(),
-            ActorId: actorContext.UserId), ct);
+        var result = await mediator.Send(
+            new EnrollPatientCommand(
+                patientId.Value,
+                request.TemplateId,
+                request.Timezone,
+                request.StartLocalDate,
+                DefaultTemplateCode: DefaultTemplateCode(),
+                ActorId: actorContext.UserId
+            ),
+            ct
+        );
 
         return Ok(result);
     }
@@ -256,20 +289,25 @@ public sealed class ProgramController(
     [RequirePermission("Program.Enroll")]
     public async Task<ActionResult<ProgramEnrollmentDto>> EnrollPatient(
         [FromBody] EnrollRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (request.PatientId is null || request.PatientId == Guid.Empty)
         {
             return BadRequest(new { message = "El patientId es requerido." });
         }
 
-        var result = await mediator.Send(new EnrollPatientCommand(
-            request.PatientId.Value,
-            request.TemplateId,
-            request.Timezone,
-            request.StartLocalDate,
-            DefaultTemplateCode: DefaultTemplateCode(),
-            ActorId: actorContext.UserId), ct);
+        var result = await mediator.Send(
+            new EnrollPatientCommand(
+                request.PatientId.Value,
+                request.TemplateId,
+                request.Timezone,
+                request.StartLocalDate,
+                DefaultTemplateCode: DefaultTemplateCode(),
+                ActorId: actorContext.UserId
+            ),
+            ct
+        );
 
         return Ok(result);
     }
@@ -282,21 +320,30 @@ public sealed class ProgramController(
     public async Task<ActionResult<ProgramEnrollmentDto>> PauseEnrollment(
         Guid id,
         [FromBody] EnrollmentActionRequest? request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await actorContext.ActorScopedToEnrollmentAsync(id, ct))
         {
             return NotFound(new { message = "Inscripción no encontrada" });
         }
 
-        return Ok(await mediator.Send(new PauseEnrollmentCommand(id, request?.Reason, actorContext.UserId), ct));
+        return Ok(
+            await mediator.Send(
+                new PauseEnrollmentCommand(id, request?.Reason, actorContext.UserId),
+                ct
+            )
+        );
     }
 
     /// <summary>Reanuda una inscripción pausada (Paused → Active, SPEC §7.5).
     /// Scoping T-81: mismo alcance que pause.</summary>
     [HttpPost("enrollments/{id:guid}/resume")]
     [RequirePermission("Program.Enroll")]
-    public async Task<ActionResult<ProgramEnrollmentDto>> ResumeEnrollment(Guid id, CancellationToken ct)
+    public async Task<ActionResult<ProgramEnrollmentDto>> ResumeEnrollment(
+        Guid id,
+        CancellationToken ct
+    )
     {
         if (!await actorContext.ActorScopedToEnrollmentAsync(id, ct))
         {
@@ -313,14 +360,20 @@ public sealed class ProgramController(
     public async Task<ActionResult<ProgramEnrollmentDto>> WithdrawEnrollment(
         Guid id,
         [FromBody] EnrollmentActionRequest? request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await actorContext.ActorScopedToEnrollmentAsync(id, ct))
         {
             return NotFound(new { message = "Inscripción no encontrada" });
         }
 
-        return Ok(await mediator.Send(new WithdrawEnrollmentCommand(id, request?.Reason, actorContext.UserId), ct));
+        return Ok(
+            await mediator.Send(
+                new WithdrawEnrollmentCommand(id, request?.Reason, actorContext.UserId),
+                ct
+            )
+        );
     }
 
     /// <summary>Listado paginado de inscripciones con filtros (SPEC §7.5, ERP).
@@ -335,7 +388,8 @@ public sealed class ProgramController(
         [FromQuery] ProgramEnrollmentStatus? status,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         // Filtro por GUID opcional: texto no-GUID (búsqueda a medias del ERP)
         // → resultado vacío en vez de 400 de model binding.
@@ -350,11 +404,23 @@ public sealed class ProgramController(
 
         if (hasPatientFilter && patientFilter == Guid.Empty)
         {
-            return Ok(new PaginatedEnrollmentsResult([], 0, Math.Max(1, page), Math.Clamp(pageSize, 1, 100), 1));
+            return Ok(
+                new PaginatedEnrollmentsResult(
+                    [],
+                    0,
+                    Math.Max(1, page),
+                    Math.Clamp(pageSize, 1, 100),
+                    1
+                )
+            );
         }
 
-        return Ok(await mediator.Send(
-            new ListEnrollmentsQuery(patientFilter, status, page, pageSize, scopedPatientIds), ct));
+        return Ok(
+            await mediator.Send(
+                new ListEnrollmentsQuery(patientFilter, status, page, pageSize, scopedPatientIds),
+                ct
+            )
+        );
     }
 
     /// <summary>
@@ -369,16 +435,27 @@ public sealed class ProgramController(
     [RequirePermission(PermissionCodes.ProgramEnroll)]
     public async Task<ActionResult<BulkEnrollPatientsResultDto>> BulkEnroll(
         [FromBody] BulkEnrollRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (request.PatientIds is { Count: 0 })
         {
             return BadRequest(new { message = "La lista de patientIds es requerida." });
         }
 
-        return Ok(await mediator.Send(new BulkEnrollPatientsCommand(
-            request.PatientIds, request.TemplateId, request.Timezone, request.StartLocalDate,
-            DefaultTemplateCode(), actorContext.UserId), ct));
+        return Ok(
+            await mediator.Send(
+                new BulkEnrollPatientsCommand(
+                    request.PatientIds,
+                    request.TemplateId,
+                    request.Timezone,
+                    request.StartLocalDate,
+                    DefaultTemplateCode(),
+                    actorContext.UserId
+                ),
+                ct
+            )
+        );
     }
 
     /// <summary>
@@ -393,7 +470,8 @@ public sealed class ProgramController(
         [FromQuery] Guid? clinicId,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var scopedPatientIds = await actorContext.ResolveScopedPatientIdsAsync(ct);
 
@@ -408,7 +486,8 @@ public sealed class ProgramController(
                 return string.Empty;
             }
 
-            var needsQuotes = value.Contains(',')
+            var needsQuotes =
+                value.Contains(',')
                 || value.Contains('"')
                 || value.Contains('\n')
                 || value.Contains('\r');
@@ -419,15 +498,21 @@ public sealed class ProgramController(
         await Response.WriteAsync("\uFEFF", ct);
         await Response.WriteAsync(
             "enrollment_id,patient_id,patient_name,document,status,timezone,"
-            + "start_local_date,current_week,total_weeks,xp_balance,"
-            + "streak_current,streak_longest,freezes_remaining,created_at\n", ct);
+                + "start_local_date,current_week,total_weeks,xp_balance,"
+                + "streak_current,streak_longest,freezes_remaining,created_at\n",
+            ct
+        );
 
         var rows = mediator.CreateStream(
-            new ExportEnrollmentsQuery(clinicId, from, to, scopedPatientIds), ct);
+            new ExportEnrollmentsQuery(clinicId, from, to, scopedPatientIds),
+            ct
+        );
         await foreach (var row in rows.WithCancellation(ct))
         {
-            var line = string.Create(CultureInfo.InvariantCulture,
-                $"{row.EnrollmentId},{row.PatientId},{CsvCell(row.PatientName)},{CsvCell(row.DocumentNumber)},{row.Status},{row.Timezone},{row.StartLocalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)},{row.CurrentWeekNumber},{row.TotalWeeks},{row.XpBalance},{row.StreakCurrent},{row.StreakLongest},{row.FreezesRemaining},{row.CreatedAt:yyyy-MM-dd HH:mm:ss}");
+            var line = string.Create(
+                CultureInfo.InvariantCulture,
+                $"{row.EnrollmentId},{row.PatientId},{CsvCell(row.PatientName)},{CsvCell(row.DocumentNumber)},{row.Status},{row.Timezone},{row.StartLocalDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)},{row.CurrentWeekNumber},{row.TotalWeeks},{row.XpBalance},{row.StreakCurrent},{row.StreakLongest},{row.FreezesRemaining},{row.CreatedAt:yyyy-MM-dd HH:mm:ss}"
+            );
             await Response.WriteAsync(line + "\n", ct);
         }
 
@@ -441,7 +526,10 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("enrollments/{id:guid}")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<ProgramEnrollmentDto>> GetEnrollment(Guid id, CancellationToken ct)
+    public async Task<ActionResult<ProgramEnrollmentDto>> GetEnrollment(
+        Guid id,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetEnrollmentQuery(id), ct);
         return result is null
@@ -460,7 +548,8 @@ public sealed class ProgramController(
         Guid id,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var result = await mediator.Send(new GetXpLedgerQuery(id, page, pageSize), ct);
         if (result is null)
@@ -480,7 +569,8 @@ public sealed class ProgramController(
     [RequirePermission("Program.View")]
     public async Task<ActionResult<IReadOnlyList<ClinicalBaselineDto>>> GetBaselines(
         Guid id,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetBaselinesQuery(id), ct);
         if (result is null)
@@ -503,23 +593,28 @@ public sealed class ProgramController(
     public async Task<ActionResult<ClinicalBaselineDto>> CreateBaseline(
         Guid id,
         [FromBody] CreateBaselineRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (actorContext.UserId is not { } userId)
         {
             return Unauthorized(new { message = "Usuario no identificado." });
         }
 
-        var result = await mediator.Send(new CreateBaselineCommand(
-            id,
-            request.MetricId,
-            request.Value,
-            request.UnitId,
-            request.FavorableDirection,
-            request.MeasuredAt,
-            request.TargetValue,
-            userId,
-            actorContext.Roles), ct);
+        var result = await mediator.Send(
+            new CreateBaselineCommand(
+                id,
+                request.MetricId,
+                request.Value,
+                request.UnitId,
+                request.FavorableDirection,
+                request.MeasuredAt,
+                request.TargetValue,
+                userId,
+                actorContext.Roles
+            ),
+            ct
+        );
 
         return Ok(result);
     }
@@ -536,7 +631,8 @@ public sealed class ProgramController(
     [RequirePermission("Program.View")]
     public async Task<ActionResult<ProgramContentResponse>> GetProgramContent(
         Guid id,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await actorContext.ActorScopedToEnrollmentAsync(id, ct))
         {
@@ -564,16 +660,26 @@ public sealed class ProgramController(
         Guid id,
         int weekNumber,
         [FromBody] SetWeekContentRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (!await actorContext.ActorScopedToEnrollmentAsync(id, ct))
         {
             return NotFound(new { message = "Inscripción no encontrada" });
         }
 
-        return Ok(await mediator.Send(new SetWeekContentCommand(
-            id, weekNumber, request.NutritionPlanId, request.ExerciseRoutineId,
-            actorContext.UserId), ct));
+        return Ok(
+            await mediator.Send(
+                new SetWeekContentCommand(
+                    id,
+                    weekNumber,
+                    request.NutritionPlanId,
+                    request.ExerciseRoutineId,
+                    actorContext.UserId
+                ),
+                ct
+            )
+        );
     }
 
     /// <summary>
@@ -587,10 +693,21 @@ public sealed class ProgramController(
     public async Task<ActionResult<IReadOnlyList<ProgramContentWeekDto>>> SetWeekContentRange(
         Guid id,
         [FromBody] SetWeekContentRangeRequest request,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new SetWeekContentRangeCommand(
-            id, request.FromWeek, request.ToWeek,
-            request.NutritionPlanId, request.ExerciseRoutineId, actorContext.UserId), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new SetWeekContentRangeCommand(
+                    id,
+                    request.FromWeek,
+                    request.ToWeek,
+                    request.NutritionPlanId,
+                    request.ExerciseRoutineId,
+                    actorContext.UserId
+                ),
+                ct
+            )
+        );
 
     /// <summary>
     /// Detalle de una semana específica de una inscripción (tareas programadas,
@@ -603,7 +720,8 @@ public sealed class ProgramController(
     public async Task<ActionResult<EnrollmentWeekDetailDto>> GetEnrollmentWeek(
         Guid id,
         int weekNumber,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var userId = actorContext.UserId;
         if (userId is null)
@@ -617,7 +735,9 @@ public sealed class ProgramController(
         }
 
         var result = await mediator.Send(
-            new GetEnrollmentWeekQuery(id, weekNumber, userId.Value), ct);
+            new GetEnrollmentWeekQuery(id, weekNumber, userId.Value),
+            ct
+        );
 
         if (result is null)
         {
@@ -637,8 +757,14 @@ public sealed class ProgramController(
         Guid id,
         int weekNumber,
         [FromBody] IReadOnlyList<WeeklyDayTemplateRequest> tasks,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new ReplaceEnrollmentWeekTasksCommand(id, weekNumber, tasks, actorContext.UserId), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new ReplaceEnrollmentWeekTasksCommand(id, weekNumber, tasks, actorContext.UserId),
+                ct
+            )
+        );
 
     // ===================== CLÍNICO/ERP: plantillas =====================
 
@@ -650,30 +776,37 @@ public sealed class ProgramController(
         [FromQuery] TemplateStatus? status,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(new ListTemplatesQuery(search, status, page, pageSize), ct));
+        CancellationToken ct = default
+    ) => Ok(await mediator.Send(new ListTemplatesQuery(search, status, page, pageSize), ct));
 
     /// <summary>Detalle de una plantilla con sus filas por día (SPEC §7.6).</summary>
     [HttpGet("templates/{id:guid}")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<ProgramTemplateDto>> GetTemplate(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new GetTemplateQuery(id), ct));
+    public async Task<ActionResult<ProgramTemplateDto>> GetTemplate(
+        Guid id,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new GetTemplateQuery(id), ct));
 
     /// <summary>Crea una plantilla en estado Draft (SPEC §7.6).</summary>
     [HttpPost("templates")]
     [RequirePermission("Program.Edit")]
     public async Task<ActionResult<ProgramTemplateDto>> CreateTemplate(
         [FromBody] CreateTemplateRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var result = await mediator.Send(new CreateTemplateCommand(
-            request.Code,
-            request.Name,
-            request.Description,
-            request.TotalWeeks,
-            request.Days,
-            actorContext.UserId,
-            request.TotalDays), ct);
+        var result = await mediator.Send(
+            new CreateTemplateCommand(
+                request.Code,
+                request.Name,
+                request.Description,
+                request.TotalWeeks,
+                request.Days,
+                actorContext.UserId,
+                request.TotalDays
+            ),
+            ct
+        );
 
         return CreatedAtAction(nameof(GetTemplate), new { id = result.Id }, result);
     }
@@ -684,22 +817,39 @@ public sealed class ProgramController(
     public async Task<ActionResult<ProgramTemplateDto>> UpdateTemplate(
         Guid id,
         [FromBody] UpdateTemplateRequest request,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new UpdateTemplateCommand(
-            id, request.Code, request.Name, request.Description, request.TotalWeeks,
-            request.Days, actorContext.UserId, request.TotalDays), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new UpdateTemplateCommand(
+                    id,
+                    request.Code,
+                    request.Name,
+                    request.Description,
+                    request.TotalWeeks,
+                    request.Days,
+                    actorContext.UserId,
+                    request.TotalDays
+                ),
+                ct
+            )
+        );
 
     /// <summary>Publica una plantilla: bump de versión y Draft → Active (SPEC §7.6).</summary>
     [HttpPost("templates/{id:guid}/publish")]
     [RequirePermission("Program.Edit")]
-    public async Task<ActionResult<ProgramTemplateDto>> PublishTemplate(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new PublishTemplateCommand(id, actorContext.UserId), ct));
+    public async Task<ActionResult<ProgramTemplateDto>> PublishTemplate(
+        Guid id,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new PublishTemplateCommand(id, actorContext.UserId), ct));
 
     /// <summary>Archiva una plantilla (idempotente, conserva historia, SPEC §7.6).</summary>
     [HttpPost("templates/{id:guid}/archive")]
     [RequirePermission("Program.Edit")]
-    public async Task<ActionResult<ProgramTemplateDto>> ArchiveTemplate(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new ArchiveTemplateCommand(id, actorContext.UserId), ct));
+    public async Task<ActionResult<ProgramTemplateDto>> ArchiveTemplate(
+        Guid id,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new ArchiveTemplateCommand(id, actorContext.UserId), ct));
 
     /// <summary>
     /// Lista las filas por día de una plantilla (SPEC §7.6). Es la misma forma
@@ -708,7 +858,9 @@ public sealed class ProgramController(
     [HttpGet("templates/{id:guid}/weekday-tasks")]
     [RequirePermission("Program.View")]
     public async Task<ActionResult<IReadOnlyList<WeeklyDayTemplateDto>>> GetWeekdayTasks(
-        Guid id, CancellationToken ct)
+        Guid id,
+        CancellationToken ct
+    )
     {
         var template = await mediator.Send(new GetTemplateQuery(id), ct);
         return Ok(template.Days);
@@ -720,8 +872,9 @@ public sealed class ProgramController(
     public async Task<ActionResult<IReadOnlyList<WeeklyDayTemplateDto>>> ReplaceWeekdayTasks(
         Guid id,
         [FromBody] IReadOnlyList<WeeklyDayTemplateRequest> tasks,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new ReplaceWeekdayTasksCommand(id, tasks, actorContext.UserId), ct));
+        CancellationToken ct
+    ) =>
+        Ok(await mediator.Send(new ReplaceWeekdayTasksCommand(id, tasks, actorContext.UserId), ct));
 
     // ===================== CLÍNICO/ERP: adaptaciones =====================
 
@@ -733,14 +886,17 @@ public sealed class ProgramController(
         [FromQuery] AdaptationStatus? status,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(new ListAdaptationsQuery(enrollmentId, status, page, pageSize), ct));
+        CancellationToken ct = default
+    ) =>
+        Ok(await mediator.Send(new ListAdaptationsQuery(enrollmentId, status, page, pageSize), ct));
 
     /// <summary>Detalle de una recomendación de adaptación (SPEC §7.7).</summary>
     [HttpGet("adaptations/{id:guid}")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<AdaptationRecommendationDto>> GetAdaptation(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new GetAdaptationQuery(id), ct));
+    public async Task<ActionResult<AdaptationRecommendationDto>> GetAdaptation(
+        Guid id,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new GetAdaptationQuery(id), ct));
 
     /// <summary>Aprueba o rechaza una recomendación de adaptación (SPEC §7.7).</summary>
     [HttpPost("adaptations/{id:guid}/decide")]
@@ -748,8 +904,19 @@ public sealed class ProgramController(
     public async Task<ActionResult<AdaptationRecommendationDto>> DecideAdaptation(
         Guid id,
         [FromBody] DecideAdaptationRequest request,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new DecideAdaptationCommand(id, request.Decision, request.Note, actorContext.UserId), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new DecideAdaptationCommand(
+                    id,
+                    request.Decision,
+                    request.Note,
+                    actorContext.UserId
+                ),
+                ct
+            )
+        );
 
     // ===================== PUNTUACIONES (SPEC §13) =====================
 
@@ -769,7 +936,9 @@ public sealed class ProgramController(
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
         return Ok(await mediator.Send(new GetScoresQuery(patientId.Value), ct));
@@ -792,16 +961,26 @@ public sealed class ProgramController(
     [HttpGet("me/scores-history")]
     public async Task<ActionResult<ScoresHistoryResponseDto>> GetScoresHistory(
         int? weeks,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
-        return Ok(await mediator.Send(
-            new GetScoresHistoryQuery(patientId.Value, weeks ?? GetScoresHistoryQuery.DefaultWeeks), ct));
+        return Ok(
+            await mediator.Send(
+                new GetScoresHistoryQuery(
+                    patientId.Value,
+                    weeks ?? GetScoresHistoryQuery.DefaultWeeks
+                ),
+                ct
+            )
+        );
     }
 
     // ===================== PACIENTE: liga (LEAGUE v1) =====================
@@ -824,16 +1003,27 @@ public sealed class ProgramController(
     [HttpPut("me/league-preferences")]
     public async Task<ActionResult<LeaguePreferencesDto>> UpdateLeaguePreferences(
         [FromBody] UpdateLeaguePreferencesRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
-        return Ok(await mediator.Send(
-            new UpdateLeaguePreferencesCommand(patientId.Value, request.Nickname, request.OptIn), ct));
+        return Ok(
+            await mediator.Send(
+                new UpdateLeaguePreferencesCommand(
+                    patientId.Value,
+                    request.Nickname,
+                    request.OptIn
+                ),
+                ct
+            )
+        );
     }
 
     /// <summary>
@@ -856,7 +1046,9 @@ public sealed class ProgramController(
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
         return Ok(await mediator.Send(new GetLeagueQuery(patientId.Value), ct));
@@ -879,20 +1071,30 @@ public sealed class ProgramController(
     public async Task<ActionResult<MetricsHistoryResponseDto>> GetMetricsHistory(
         [FromQuery] string? codes,
         [FromQuery] int? days,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
         var parsedCodes = string.IsNullOrWhiteSpace(codes)
             ? []
-            : codes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            : codes.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+            );
 
-        return Ok(await mediator.Send(
-            new GetMetricsHistoryQuery(patientId.Value, parsedCodes, days ?? 0), ct));
+        return Ok(
+            await mediator.Send(
+                new GetMetricsHistoryQuery(patientId.Value, parsedCodes, days ?? 0),
+                ct
+            )
+        );
     }
 
     /// <summary>
@@ -909,7 +1111,8 @@ public sealed class ProgramController(
     [RequirePermission("Program.Edit")]
     public async Task<ActionResult<ScoresResponseDto>> CalculateScores(
         [FromBody] CalculateScoresRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (request.PatientId == Guid.Empty)
         {
@@ -918,8 +1121,12 @@ public sealed class ProgramController(
 
         Response.Headers["X-Score-Recalculated"] = "true";
 
-        return Ok(await mediator.Send(
-            new CalculateScoresCommand(request.PatientId, request.PeriodEndLocalDate), ct));
+        return Ok(
+            await mediator.Send(
+                new CalculateScoresCommand(request.PatientId, request.PeriodEndLocalDate),
+                ct
+            )
+        );
     }
 
     // ===================== CLÍNICO/ERP: catálogo de reglas XP (SPEC §14) =====================
@@ -933,8 +1140,8 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("xp-rules")]
     [RequirePermission("Program.Edit")]
-    public async Task<ActionResult<IReadOnlyList<XpRuleDto>>> ListXpRules(CancellationToken ct)
-        => Ok(await mediator.Send(new ListXpRulesQuery(), ct));
+    public async Task<ActionResult<IReadOnlyList<XpRuleDto>>> ListXpRules(CancellationToken ct) =>
+        Ok(await mediator.Send(new ListXpRulesQuery(), ct));
 
     /// <summary>
     /// Actualiza una regla del catálogo de XP (SPEC §14.4, ERP, prospective
@@ -949,17 +1156,24 @@ public sealed class ProgramController(
     public async Task<ActionResult<XpRuleDto>> UpdateXpRule(
         string code,
         [FromBody] UpdateXpRuleRequest request,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new UpdateXpRuleCommand(
-            code,
-            request.BaseXp,
-            request.Multiplier,
-            request.MaxPerDay,
-            request.MaxPerWeek,
-            request.RequiresValidation,
-            request.Active,
-            request.ValidUntil,
-            actorContext.UserId), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new UpdateXpRuleCommand(
+                    code,
+                    request.BaseXp,
+                    request.Multiplier,
+                    request.MaxPerDay,
+                    request.MaxPerWeek,
+                    request.RequiresValidation,
+                    request.Active,
+                    request.ValidUntil,
+                    actorContext.UserId
+                ),
+                ct
+            )
+        );
 
     // ============ CLÍNICO: revisiones clínicas de XP (SPEC §15, D) ============
 
@@ -975,8 +1189,8 @@ public sealed class ProgramController(
     public async Task<ActionResult<PaginatedClinicalReviewsResult>> ListClinicalReviews(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(new ListClinicalReviewsQuery(page, pageSize), ct));
+        CancellationToken ct = default
+    ) => Ok(await mediator.Send(new ListClinicalReviewsQuery(page, pageSize), ct));
 
     /// <summary>
     /// Decide una revisión clínica de XP (SPEC §15, D): <c>{ approve: boolean }</c>.
@@ -992,9 +1206,19 @@ public sealed class ProgramController(
     public async Task<ActionResult<ClinicalReviewDto>> DecideClinicalReview(
         Guid id,
         [FromBody] DecideClinicalReviewRequest request,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new DecideClinicalReviewCommand(
-            id, request.Approve, actorContext.UserId, actorContext.Roles), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new DecideClinicalReviewCommand(
+                    id,
+                    request.Approve,
+                    actorContext.UserId,
+                    actorContext.Roles
+                ),
+                ct
+            )
+        );
 
     // ============ PACIENTE: nutrición granular (SPEC §18, B) ============
 
@@ -1020,20 +1244,81 @@ public sealed class ProgramController(
     [RequirePermission("Program.View")]
     public async Task<ActionResult<NutritionLogResultDto>> LogNutrition(
         [FromBody] LogNutritionRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
-        var result = await mediator.Send(new LogNutritionCommand(
-            patientId.Value, request.MealCode, request.LocalDate, actorContext.UserId, request.Intake), ct);
+        var result = await mediator.Send(
+            new LogNutritionCommand(
+                patientId.Value,
+                request.MealCode,
+                request.LocalDate,
+                actorContext.UserId,
+                request.Intake
+            ),
+            ct
+        );
 
         logger.LogInformation(
             "Program.NutritionLog: meal={MealCode} fecha={LocalDate} xpAwarded={XpAwarded}",
-            result.MealCode, result.LocalDate, result.XpAwarded);
+            result.MealCode,
+            result.LocalDate,
+            result.XpAwarded
+        );
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Edita el intake de una comida/hidratación ya registrada (móvil):
+    /// actualiza la fila anclada al MISMO <c>habit_check</c> (sin duplicados,
+    /// sin XP adicional). Sin log para esa comida/fecha → 404
+    /// <c>NUTRITION_LOG_NOT_FOUND</c>. Mismo permiso y resolución de paciente
+    /// que el POST.
+    /// </summary>
+    [HttpPut("nutrition/log/{mealCode}")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<NutritionLogResultDto>> UpdateNutritionLog(
+        string mealCode,
+        [FromBody] UpdateNutritionIntakeRequest? request,
+        CancellationToken ct
+    )
+    {
+        if (
+            !Enum.TryParse<MealCode>(mealCode, ignoreCase: true, out var code)
+            || !Enum.IsDefined(code)
+        )
+        {
+            return BadRequest(
+                new { message = "Código de comida/hidratación inválido (des/alm/mer/cen/agua)." }
+            );
+        }
+
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        if (patientId is null)
+        {
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
+        }
+
+        var result = await mediator.Send(
+            new UpdateNutritionIntakeCommand(
+                patientId.Value,
+                code,
+                request?.LocalDate,
+                actorContext.UserId,
+                request?.Intake
+            ),
+            ct
+        );
 
         return Ok(result);
     }
@@ -1053,15 +1338,20 @@ public sealed class ProgramController(
     public async Task<ActionResult<PaginatedNotificationsResult>> ListNotifications(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
-        return Ok(await mediator.Send(new ListNotificationsQuery(patientId.Value, page, pageSize), ct));
+        return Ok(
+            await mediator.Send(new ListNotificationsQuery(patientId.Value, page, pageSize), ct)
+        );
     }
 
     /// <summary>
@@ -1076,7 +1366,9 @@ public sealed class ProgramController(
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
         var marked = await mediator.Send(new MarkNotificationReadCommand(id, patientId.Value), ct);
@@ -1102,15 +1394,20 @@ public sealed class ProgramController(
     public async Task<ActionResult<PaginatedWeaknessesResult>> ListWeaknesses(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
-        return Ok(await mediator.Send(new ListWeaknessesQuery(patientId.Value, page, pageSize), ct));
+        return Ok(
+            await mediator.Send(new ListWeaknessesQuery(patientId.Value, page, pageSize), ct)
+        );
     }
 
     /// <summary>
@@ -1126,8 +1423,8 @@ public sealed class ProgramController(
     public async Task<ActionResult<PaginatedWeaknessesResult>> ListOpenWeaknesses(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(new ListOpenWeaknessesQuery(page, pageSize), ct));
+        CancellationToken ct = default
+    ) => Ok(await mediator.Send(new ListOpenWeaknessesQuery(page, pageSize), ct));
 
     /// <summary>
     /// Transición de estado de una debilidad (SPEC §21, D — AC-44):
@@ -1142,9 +1439,19 @@ public sealed class ProgramController(
     public async Task<ActionResult<WeaknessDto>> UpdateWeaknessStatus(
         Guid id,
         [FromBody] UpdateWeaknessStatusRequest request,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new UpdateWeaknessStatusCommand(
-            id, request.Status, actorContext.UserId, actorContext.Roles), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new UpdateWeaknessStatusCommand(
+                    id,
+                    request.Status,
+                    actorContext.UserId,
+                    actorContext.Roles
+                ),
+                ct
+            )
+        );
 
     // ============ INTERVENCIONES (SPEC §22, "Paso 7d") ============
 
@@ -1160,15 +1467,20 @@ public sealed class ProgramController(
     public async Task<ActionResult<PaginatedInterventionsResult>> ListInterventions(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
-        return Ok(await mediator.Send(new ListInterventionsQuery(patientId.Value, page, pageSize), ct));
+        return Ok(
+            await mediator.Send(new ListInterventionsQuery(patientId.Value, page, pageSize), ct)
+        );
     }
 
     /// <summary>
@@ -1180,12 +1492,17 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("interventions/{id:guid}/accept")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<InterventionDto>> AcceptIntervention(Guid id, CancellationToken ct)
+    public async Task<ActionResult<InterventionDto>> AcceptIntervention(
+        Guid id,
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
-            return NotFound(new { message = "No existe un perfil de paciente para el usuario autenticado." });
+            return NotFound(
+                new { message = "No existe un perfil de paciente para el usuario autenticado." }
+            );
         }
 
         return Ok(await mediator.Send(new AcceptInterventionCommand(id, patientId.Value), ct));
@@ -1202,8 +1519,8 @@ public sealed class ProgramController(
     public async Task<ActionResult<PaginatedInterventionsResult>> ListOpenInterventions(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(new ListOpenInterventionsQuery(page, pageSize), ct));
+        CancellationToken ct = default
+    ) => Ok(await mediator.Send(new ListOpenInterventionsQuery(page, pageSize), ct));
 
     /// <summary>
     /// Clínico actualiza el estado de una intervención (SPEC §22, D — AC-48):
@@ -1216,10 +1533,21 @@ public sealed class ProgramController(
     public async Task<ActionResult<InterventionDto>> UpdateInterventionStatus(
         Guid id,
         [FromBody] UpdateInterventionStatusRequest request,
-        CancellationToken ct)
-        => Ok(await mediator.Send(new UpdateInterventionStatusCommand(
-            id, request.Status, actorContext.UserId, actorContext.Roles,
-            request.Result, request.AssignedTo), ct));
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new UpdateInterventionStatusCommand(
+                    id,
+                    request.Status,
+                    actorContext.UserId,
+                    actorContext.Roles,
+                    request.Result,
+                    request.AssignedTo
+                ),
+                ct
+            )
+        );
 
     /// <summary>
     /// Hook de telemedicina: teleconsulta agendada (SPEC §22, D — AC-49):
@@ -1228,8 +1556,10 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("interventions/{id:guid}/tele-scheduled")]
     [RequirePermission("Program.Adapt")]
-    public async Task<ActionResult<InterventionDto>> MarkTeleScheduled(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new MarkTeleScheduledCommand(id), ct));
+    public async Task<ActionResult<InterventionDto>> MarkTeleScheduled(
+        Guid id,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new MarkTeleScheduledCommand(id), ct));
 
     /// <summary>
     /// Hook de telemedicina: asistencia confirmada por el clínico
@@ -1255,8 +1585,10 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("interventions/{id:guid}/tele-comply")]
     [RequirePermission("Program.Adapt")]
-    public async Task<ActionResult<InterventionDto>> MarkTeleComply(Guid id, CancellationToken ct)
-        => Ok(await mediator.Send(new MarkTeleComplyCommand(id), ct));
+    public async Task<ActionResult<InterventionDto>> MarkTeleComply(
+        Guid id,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new MarkTeleComplyCommand(id), ct));
 
     // ===================== ERP: gamificación (SPEC §23) =====================
 
@@ -1266,8 +1598,8 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("erp/dashboard")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<ProgramErpDashboardDto>> GetErpDashboard(CancellationToken ct)
-        => Ok(await mediator.Send(new GetErpDashboardQuery(), ct));
+    public async Task<ActionResult<ProgramErpDashboardDto>> GetErpDashboard(CancellationToken ct) =>
+        Ok(await mediator.Send(new GetErpDashboardQuery(), ct));
 
     // ===================== ERP: Biometría (SPEC §06) =====================
 
@@ -1277,8 +1609,9 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("erp/biometria/community")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<BiometriaCommunityDto>> GetBiometriaCommunity(CancellationToken ct)
-        => Ok(await mediator.Send(new GetBiometriaCommunityQuery(), ct));
+    public async Task<ActionResult<BiometriaCommunityDto>> GetBiometriaCommunity(
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new GetBiometriaCommunityQuery(), ct));
 
     /// <summary>
     /// Listado paginado de pacientes con indicadores de biometría (última medición por paciente).
@@ -1286,7 +1619,9 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("erp/biometria/patients")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<PaginatedResult<BiometriaPatientListItemDto>>> ListBiometriaPatients(
+    public async Task<
+        ActionResult<PaginatedResult<BiometriaPatientListItemDto>>
+    > ListBiometriaPatients(
         [FromQuery] string? search = null,
         [FromQuery] string? gender = null,
         [FromQuery] string? imcCategory = null,
@@ -1297,13 +1632,35 @@ public sealed class ProgramController(
         [FromQuery] string? stateAbbr = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var (items, total) = await mediator.Send(
-            new ListBiometriaPatientsQuery(search, gender, imcCategory, glucosaCategory, grasaCategory, trend, cityId, stateAbbr, page, pageSize), ct);
+            new ListBiometriaPatientsQuery(
+                search,
+                gender,
+                imcCategory,
+                glucosaCategory,
+                grasaCategory,
+                trend,
+                cityId,
+                stateAbbr,
+                page,
+                pageSize
+            ),
+            ct
+        );
 
         var totalPages = (int)Math.Ceiling((double)total / Math.Clamp(pageSize, 1, 100));
-        return Ok(new PaginatedResult<BiometriaPatientListItemDto>(items, total, page, pageSize, totalPages));
+        return Ok(
+            new PaginatedResult<BiometriaPatientListItemDto>(
+                items,
+                total,
+                page,
+                pageSize,
+                totalPages
+            )
+        );
     }
 
     /// <summary>
@@ -1311,7 +1668,10 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("erp/biometria/patients/{id:guid}")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<BiometriaPatientDetailDto>> GetBiometriaPatient(Guid id, CancellationToken ct)
+    public async Task<ActionResult<BiometriaPatientDetailDto>> GetBiometriaPatient(
+        Guid id,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetBiometriaPatientQuery(id), ct);
         if (result is null)
@@ -1335,20 +1695,24 @@ public sealed class ProgramController(
         await Response.WriteAsync("\uFEFF", ct);
         await Response.WriteAsync(
             "patient_id,name,gender,age,city,weight,height,imc,imc_category,"
-            + "waist,hip,icc,pct_grasa,pct_grasa_category,glucosa,glucosa_category,"
-            + "week_number,streak,trend\n", ct);
+                + "waist,hip,icc,pct_grasa,pct_grasa_category,glucosa,glucosa_category,"
+                + "week_number,streak,trend\n",
+            ct
+        );
 
         var rows = mediator.CreateStream(new StreamBiometriaPatientsExportQuery(), ct);
         await foreach (var row in rows.WithCancellation(ct))
         {
             await Response.WriteAsync(
                 $"{row.PatientId},{CsvCell(row.Name)},{row.Gender ?? ""},{row.Age?.ToString() ?? ""},"
-                + $"{CsvCell(row.City)},{row.Weight?.ToString() ?? ""},{row.Height?.ToString() ?? ""},"
-                + $"{row.Imc?.ToString() ?? ""},{CsvCell(row.ImcCategory)},"
-                + $"{row.Waist?.ToString() ?? ""},{row.Hip?.ToString() ?? ""},{row.Icc?.ToString() ?? ""},"
-                + $"{row.PctGrasa?.ToString() ?? ""},{CsvCell(row.PctGrasaCategory)},"
-                + $"{row.Glucosa?.ToString() ?? ""},{CsvCell(row.GlucosaCategory)},"
-                + $"{row.WeekNumber?.ToString() ?? ""},{row.Streak},{CsvCell(row.Trend)}\n", ct);
+                    + $"{CsvCell(row.City)},{row.Weight?.ToString() ?? ""},{row.Height?.ToString() ?? ""},"
+                    + $"{row.Imc?.ToString() ?? ""},{CsvCell(row.ImcCategory)},"
+                    + $"{row.Waist?.ToString() ?? ""},{row.Hip?.ToString() ?? ""},{row.Icc?.ToString() ?? ""},"
+                    + $"{row.PctGrasa?.ToString() ?? ""},{CsvCell(row.PctGrasaCategory)},"
+                    + $"{row.Glucosa?.ToString() ?? ""},{CsvCell(row.GlucosaCategory)},"
+                    + $"{row.WeekNumber?.ToString() ?? ""},{row.Streak},{CsvCell(row.Trend)}\n",
+                ct
+            );
         }
 
         return new EmptyResult();
@@ -1360,8 +1724,8 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("erp/today")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<ProgramErpTodayDto>> GetErpToday(CancellationToken ct)
-        => Ok(await mediator.Send(new GetErpTodayQuery(), ct));
+    public async Task<ActionResult<ProgramErpTodayDto>> GetErpToday(CancellationToken ct) =>
+        Ok(await mediator.Send(new GetErpTodayQuery(), ct));
 
     /// <summary>
     /// Vista de adherencia ERP (SPEC §23, AC-52): tendencia 8 semanas, ranking de
@@ -1375,8 +1739,14 @@ public sealed class ProgramController(
         [FromQuery] string? search = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortDir = null,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(new GetErpAdherenciaQuery(page, pageSize, search, sortBy, sortDir), ct));
+        CancellationToken ct = default
+    ) =>
+        Ok(
+            await mediator.Send(
+                new GetErpAdherenciaQuery(page, pageSize, search, sortBy, sortDir),
+                ct
+            )
+        );
 
     /// <summary>
     /// Vista de cofres/rachas ERP (SPEC §23, AC-53): XP por categoría, milestones
@@ -1390,8 +1760,9 @@ public sealed class ProgramController(
         [FromQuery] string? search = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortDir = null,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(new GetErpCofresQuery(page, pageSize, search, sortBy, sortDir), ct));
+        CancellationToken ct = default
+    ) =>
+        Ok(await mediator.Send(new GetErpCofresQuery(page, pageSize, search, sortBy, sortDir), ct));
 
     /// <summary>
     /// Perfil 360 de un paciente (SPEC §23, AC-54): inscripción, racha, XP,
@@ -1399,7 +1770,10 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("erp/patients/{patientId:guid}/overview")]
     [RequirePermission("Program.View")]
-    public async Task<ActionResult<PatientOverviewDto>> GetPatientOverview(Guid patientId, CancellationToken ct)
+    public async Task<ActionResult<PatientOverviewDto>> GetPatientOverview(
+        Guid patientId,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetPatientOverviewQuery(patientId), ct);
         if (result is null)
@@ -1422,8 +1796,8 @@ public sealed class ProgramController(
     [HttpPost("maintenance/reconcile-streaks")]
     [RequirePermission(PermissionCodes.ProgramEdit)]
     public async Task<ActionResult<StreakReconciliationSummary>> ReconcileStreaks(
-        CancellationToken ct)
-        => Ok(await mediator.Send(new ReconcileStreaksCommand(), ct));
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new ReconcileStreaksCommand(), ct));
 
     // ===================== ERP: bitácora de actividad =====================
 
@@ -1445,9 +1819,14 @@ public sealed class ProgramController(
         [FromQuery] DateTimeOffset? from = null,
         [FromQuery] DateTimeOffset? to = null,
         [FromQuery] string? actor = null,
-        CancellationToken ct = default)
-        => Ok(await mediator.Send(
-            new ListProgramActivityLogQuery(page, pageSize, table, action, from, to, actor), ct));
+        CancellationToken ct = default
+    ) =>
+        Ok(
+            await mediator.Send(
+                new ListProgramActivityLogQuery(page, pageSize, table, action, from, to, actor),
+                ct
+            )
+        );
 
     // ===================== helpers =====================
 
@@ -1459,7 +1838,9 @@ public sealed class ProgramController(
     /// preservando la totalidad de propiedades del DTO (audio, autor, capítulos, etc.).
     /// </summary>
     private async Task<ProgramSnapshotDto> ResolveMediaUrlsAsync(
-        ProgramSnapshotDto snapshot, CancellationToken ct)
+        ProgramSnapshotDto snapshot,
+        CancellationToken ct
+    )
     {
         if (snapshot.TodayTasks.Count == 0)
         {
@@ -1478,17 +1859,22 @@ public sealed class ProgramController(
             var resolvedThumbnail = await ResolveMediaUrlAsync(task.Content.ThumbnailUrl, ct);
             var resolvedMedia = await ResolveMediaUrlAsync(task.Content.MediaUrl, ct);
 
-            tasks.Add(task with
-            {
-                Content = task.Content with
+            tasks.Add(
+                task with
                 {
-                    ThumbnailUrl = resolvedThumbnail,
-                    MediaUrl = resolvedMedia,
-                },
-            });
+                    Content = task.Content with
+                    {
+                        ThumbnailUrl = resolvedThumbnail,
+                        MediaUrl = resolvedMedia,
+                    },
+                }
+            );
         }
 
-        return snapshot with { TodayTasks = tasks };
+        return snapshot with
+        {
+            TodayTasks = tasks,
+        };
     }
 
     /// <summary>Forma final de URL de un objeto de storage (key → URL).</summary>
@@ -1500,16 +1886,17 @@ public sealed class ProgramController(
         }
 
         // Ya es una URL absoluta (precedente: media ya resueltos por el repo).
-        if (key.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || key.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        if (
+            key.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || key.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+        )
         {
             return key;
         }
 
         if (objectStorage.IsCloudStorage)
         {
-            return await objectStorage.GetPreSignedUrlAsync(
-                key, TimeSpan.FromHours(1), ct);
+            return await objectStorage.GetPreSignedUrlAsync(key, TimeSpan.FromHours(1), ct);
         }
 
         if (signatureService is not null)
@@ -1523,8 +1910,8 @@ public sealed class ProgramController(
     }
 
     /// <summary>Código de la plantilla por defecto (config, fallback <c>default-83w</c>).</summary>
-    private string DefaultTemplateCode()
-        => configuration[DefaultTemplateCodeKey] ?? DefaultTemplateCodeFallback;
+    private string DefaultTemplateCode() =>
+        configuration[DefaultTemplateCodeKey] ?? DefaultTemplateCodeFallback;
 
     /// <summary>Escapa un valor para celda CSV.</summary>
     private static string CsvCell(string? value)
@@ -1534,7 +1921,8 @@ public sealed class ProgramController(
             return string.Empty;
         }
 
-        var needsQuotes = value.Contains(',')
+        var needsQuotes =
+            value.Contains(',')
             || value.Contains('"')
             || value.Contains('\n')
             || value.Contains('\r');
@@ -1552,7 +1940,8 @@ public sealed record CompleteTaskRequest(
     short? MoodScore,
     string? Barriers,
     string? ContentFingerprint,
-    VitalsPayload? Vitals = null);
+    VitalsPayload? Vitals = null
+);
 
 /// <summary>
 /// Payload de inscripción (<c>POST /enrollments</c> clínico y
@@ -1563,7 +1952,8 @@ public sealed record EnrollRequest(
     Guid? PatientId,
     Guid? TemplateId,
     string Timezone,
-    DateOnly? StartLocalDate);
+    DateOnly? StartLocalDate
+);
 
 /// <summary>Body de pause/withdraw: motivo informativo (no persiste en MVP, se loguea).</summary>
 public sealed record EnrollmentActionRequest(string? Reason);
@@ -1573,7 +1963,8 @@ public sealed record BulkEnrollRequest(
     IReadOnlyList<Guid> PatientIds,
     Guid? TemplateId,
     string Timezone,
-    DateOnly? StartLocalDate);
+    DateOnly? StartLocalDate
+);
 
 /// <summary>
 /// Payload de <c>POST /api/v1/program/enrollments/{id}/baselines</c>
@@ -1586,7 +1977,8 @@ public sealed record CreateBaselineRequest(
     Guid UnitId,
     FavorableDirection FavorableDirection,
     DateOnly MeasuredAt,
-    decimal? TargetValue);
+    decimal? TargetValue
+);
 
 /// <summary>
 /// Payload de <c>PUT /api/v1/program/enrollments/{id}/content/range</c>
@@ -1597,7 +1989,8 @@ public sealed record SetWeekContentRangeRequest(
     int FromWeek,
     int ToWeek,
     Guid? NutritionPlanId,
-    Guid? ExerciseRoutineId);
+    Guid? ExerciseRoutineId
+);
 
 /// <summary>Payload de creación de plantilla (SPEC §7.6).</summary>
 public sealed record CreateTemplateRequest(
@@ -1606,7 +1999,8 @@ public sealed record CreateTemplateRequest(
     string? Description,
     int? TotalWeeks = null,
     IReadOnlyList<WeeklyDayTemplateRequest>? Days = null,
-    int? TotalDays = null);
+    int? TotalDays = null
+);
 
 /// <summary>Payload de actualización de plantilla (SPEC §7.6).</summary>
 public sealed record UpdateTemplateRequest(
@@ -1615,7 +2009,8 @@ public sealed record UpdateTemplateRequest(
     string? Description,
     int? TotalWeeks = null,
     IReadOnlyList<WeeklyDayTemplateRequest>? Days = null,
-    int? TotalDays = null);
+    int? TotalDays = null
+);
 
 /// <summary>Payload de <c>POST /adaptations/{id}/decide</c> (SPEC §7.7).</summary>
 public sealed record DecideAdaptationRequest(AdaptationDecisionAction Decision, string? Note);
@@ -1642,7 +2037,8 @@ public sealed record UpdateXpRuleRequest(
     int? MaxPerWeek,
     bool RequiresValidation,
     bool Active,
-    DateOnly? ValidUntil);
+    DateOnly? ValidUntil
+);
 
 /// <summary>
 /// Payload de <c>POST /api/v1/program/xp-rules/clinical-pending/{id}/decide</c>
@@ -1664,7 +2060,18 @@ public sealed record DecideClinicalReviewRequest(bool Approve);
 public sealed record LogNutritionRequest(
     MealCode MealCode,
     DateOnly? LocalDate,
-    NutritionIntakePayload? Intake = null);
+    NutritionIntakePayload? Intake = null
+);
+
+/// <summary>
+/// Payload de <c>PUT /api/v1/program/nutrition/log/{mealCode}</c>: el código
+/// viaja en la ruta; el body lleva fecha opcional e intake de reemplazo
+/// completo (null limpia los valores).
+/// </summary>
+public sealed record UpdateNutritionIntakeRequest(
+    DateOnly? LocalDate,
+    NutritionIntakePayload? Intake = null
+);
 
 /// <summary>
 /// Payload de <c>PUT /api/v1/program/me/league-preferences</c> (LEAGUE v1):
