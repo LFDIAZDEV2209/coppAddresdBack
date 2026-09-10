@@ -12,7 +12,18 @@ public interface IAiServiceClient
 
     IAsyncEnumerable<SseEvent> StreamChatAsync(ChatRequest request, CancellationToken ct = default);
 
-    IAsyncEnumerable<StreamChatChunk> StreamRawAsync(ChatRequest request, CancellationToken ct = default);
+    /// <summary>
+    /// Stream crudo (líneas SSE verbatim) del chat. Cuando
+    /// <paramref name="onControlSignal"/> no es null, las líneas
+    /// <c>event: control_signal</c> + la siguiente <c>data:</c> (señal interna
+    /// de la fase 2 de controles) se CONSUMEN en el cliente y se entregan por
+    /// el callback — jamás se yield downstream; el resto del stream viaja
+    /// byte a byte.
+    /// </summary>
+    IAsyncEnumerable<StreamChatChunk> StreamRawAsync(
+        ChatRequest request,
+        Action<string>? onControlSignal = null,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Solicita la generación de un plan (<c>nutrition</c> | <c>exercise</c>)

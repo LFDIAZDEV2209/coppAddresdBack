@@ -98,6 +98,110 @@ public class AiServiceClientTests
         var request = handler.Requests.Single();
         Assert.DoesNotContain("agent_type_id", request.Body);
         Assert.DoesNotContain("user_id", request.Body);
+        Assert.DoesNotContain("control_context", request.Body);
+    }
+
+    [Fact]
+    public async Task ChatAsync_con_control_abierto_envia_control_context_snake_case()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"answer":"x","thread_id":"t"}"""),
+        });
+        var client = BuildClient(handler);
+
+        var sendId = Guid.NewGuid();
+        await client.ChatAsync(new ChatRequest(
+            Message: "hola",
+            UserId: "user-1",
+            ControlContext: new ControlContextPayload(sendId, 14, "responded", ExamPending: true)));
+
+        using var json = JsonDocument.Parse(handler.Requests.Single().Body);
+        var ctx = json.RootElement.GetProperty("control_context");
+        Assert.Equal(sendId, ctx.GetProperty("send_id").GetGuid());
+        Assert.Equal(14, ctx.GetProperty("milestone_day").GetInt32());
+        Assert.Equal("responded", ctx.GetProperty("status").GetString());
+        Assert.True(ctx.GetProperty("exam_pending").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ChatAsync_mapea_control_signal_de_la_respuesta()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"answer":"ok","thread_id":"t1","control_signal":"declined"}"""),
+        });
+        var client = BuildClient(handler);
+
+        var result = await client.ChatAsync(new ChatRequest(Message: "hola"));
+
+        Assert.Equal("declined", result.ControlSignal);
+        Assert.Equal("ok", result.Reply);
+    }
+
+    [Fact]
+    public async Task StreamRawAsync_consume_evento_control_signal_y_reenvia_el_resto_byte_a_byte()
+    {
+        // Secuencia sintética del ai-service: el par `event: control_signal` +
+        // `data: declined` se consume (callback) y NUNCA se reenvía; el resto
+        // de las líneas viaja exactamente como llegó.
+        const string raw =
+            "event: start\n" +
+            "data: {}\n" +
+            "event: message\n" +
+            "data: {\"token\":\"hola\"}\n" +
+            "event: control_signal\n" +
+            "data: declined\n" +
+            "event: done\n" +
+            "data: {\"thread_id\":\"t1\"}\n";
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(raw),
+        });
+        var client = BuildClient(handler);
+
+        var signals = new List<string>();
+        var chunks = new List<StreamChatChunk>();
+        await foreach (var chunk in client.StreamRawAsync(
+            new ChatRequest(Message: "hola"), signal => signals.Add(signal)))
+        {
+            chunks.Add(chunk);
+        }
+
+        var signal = Assert.Single(signals);
+        Assert.Equal("declined", signal);
+
+        var forwarded = chunks.Select(c => c.RawData).ToList();
+        Assert.Equal(
+            [
+                "event: start",
+                "data: {}",
+                "event: message",
+                "data: {\"token\":\"hola\"}",
+                "event: done",
+                "data: {\"thread_id\":\"t1\"}",
+            ],
+            forwarded);
+        Assert.DoesNotContain(forwarded, l => l.Contains("control_signal", StringComparison.Ordinal));
+        Assert.DoesNotContain(forwarded, l => l == "data: declined");
+    }
+
+    [Fact]
+    public async Task StreamRawAsync_sin_callback_no_consume_nada_extra()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("event: done\ndata: {\"thread_id\":\"t1\"}\n\n"),
+        });
+        var client = BuildClient(handler);
+
+        var chunks = new List<StreamChatChunk>();
+        await foreach (var chunk in client.StreamRawAsync(new ChatRequest(Message: "hola")))
+            chunks.Add(chunk);
+
+        // Sin callback, el stream viaja completo (compatibilidad total con hoy).
+        Assert.Equal(["event: done", "data: {\"thread_id\":\"t1\"}", ""], chunks.Select(c => c.RawData).ToList());
     }
 
     [Fact]
