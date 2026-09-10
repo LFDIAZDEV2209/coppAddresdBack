@@ -154,3 +154,17 @@ public record EmployeeDto(
             entity.Professional is null ? null : ProfessionalDto.FromEntity(entity.Professional)
         );
 }
+
+/// <summary>
+/// Franja horaria semanal de atención de un profesional (contrato JSON).
+/// Los tiempos se representan como strings <c>HH:mm</c> (sin zona horaria).
+/// </summary>
+public record ProfessionalScheduleDto(int Weekday, string StartTime, string EndTime)
+{
+    public static ProfessionalScheduleDto FromEntity(ProfessionalSchedule entity) =>
+        new(
+            entity.Weekday,
+            entity.StartTime.ToString("HH:mm"),
+            entity.EndTime.ToString("HH:mm")
+        );
+}

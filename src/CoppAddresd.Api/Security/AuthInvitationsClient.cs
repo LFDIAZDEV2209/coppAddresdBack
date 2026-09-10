@@ -9,6 +9,7 @@ namespace CoppAddresd.Api.Security;
 /// <summary>
 /// Cliente del endpoint interno de invitaciones del Auth Service
 /// (<c>POST /api/auth/internal/invitations</c>, header X-Internal-Key).
+/// Soporta adoptExisting: vincula usuarios existentes sin duplicar.
 /// </summary>
 public class AuthInvitationsClient(
     HttpClient httpClient,
@@ -21,9 +22,10 @@ public class AuthInvitationsClient(
         string email,
         string firstName,
         string lastName,
+        bool adoptExisting = false,
         CancellationToken ct = default)
     {
-        var payload = new { email, firstName, lastName };
+        var payload = new { email, firstName, lastName, adoptExisting };
 
         var response = await httpClient.PostAsJsonAsync(
             "/api/auth/internal/invitations", payload, JsonSerializerOptions.Default, ct);
@@ -42,13 +44,33 @@ public class AuthInvitationsClient(
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         var root = doc.RootElement;
 
+        var adopted = root.TryGetProperty("adopted", out var adoptedProp) && adoptedProp.GetBoolean();
+        var hasPassword = root.TryGetProperty("hasPassword", out var hpProp) && hpProp.GetBoolean();
+
+        // InvitationId y ExpiresAt pueden ser null en el caso adopt + hasPassword.
+        var invitationId = Guid.Empty;
+        if (root.TryGetProperty("invitationId", out var invIdProp) && invIdProp.ValueKind != JsonValueKind.Null)
+        {
+            invitationId = invIdProp.GetGuid();
+        }
+
+        var expiresAt = DateTime.MinValue;
+        if (root.TryGetProperty("expiresAt", out var expProp) && expProp.ValueKind != JsonValueKind.Null)
+        {
+            expiresAt = expProp.GetDateTimeOffset().UtcDateTime;
+        }
+
+        var link = root.TryGetProperty("link", out var linkProp) && linkProp.ValueKind == JsonValueKind.String
+            ? linkProp.GetString()
+            : null;
+
         return new InvitationCreationResult(
             root.GetProperty("userId").GetGuid(),
-            root.GetProperty("invitationId").GetGuid(),
-            root.GetProperty("expiresAt").GetDateTimeOffset().UtcDateTime,
-            root.TryGetProperty("link", out var link) && link.ValueKind == JsonValueKind.String
-                ? link.GetString()
-                : null);
+            invitationId,
+            expiresAt,
+            link,
+            adopted,
+            hasPassword);
     }
 
     public async Task RevokeAsync(Guid invitationId, CancellationToken ct = default)

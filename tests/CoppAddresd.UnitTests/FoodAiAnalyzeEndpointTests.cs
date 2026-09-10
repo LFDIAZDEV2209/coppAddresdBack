@@ -16,7 +16,8 @@ namespace CoppAddresd.UnitTests;
 /// pipeline HTTP real (multipart binding, validación, mapeo de errores),
 /// con IFoodAiClient e IImageStorage sustituidos por stubs.
 /// </summary>
-public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint>>
+public class FoodAiAnalyzeEndpointTests
+    : IClassFixture<WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint>>
 {
     private sealed class StubFoodAiClient : IFoodAiClient
     {
@@ -24,18 +25,28 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
         public Guid? LastAnalysisId { get; private set; }
         public string? LastFileName { get; private set; }
 
-        public Task<FoodAiHealthStatus> GetHealthAsync(CancellationToken ct = default)
-            => Task.FromResult(new FoodAiHealthStatus(true, "food-ai-service"));
+        public Task<FoodAiHealthStatus> GetHealthAsync(CancellationToken ct = default) =>
+            Task.FromResult(new FoodAiHealthStatus(true, "food-ai-service"));
 
         public Task<FoodAiAnalyzeResult> SendImageAsync(
-            Guid analysisId, Stream image, string fileName, string contentType,
-            CancellationToken ct = default)
+            Guid analysisId,
+            Stream image,
+            string fileName,
+            string contentType,
+            CancellationToken ct = default
+        )
         {
             LastAnalysisId = analysisId;
             LastFileName = fileName;
             LastSend = new FoodAiAnalyzeResult(
-                analysisId.ToString(), "completed", "food-detector-v1", "food-segmenter-v1", "detector-based-v1", 182,
-                [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]);
+                analysisId.ToString(),
+                "completed",
+                "food-detector-v1",
+                "food-segmenter-v1",
+                "detector-based-v1",
+                182,
+                [new DetectedFoodDto("pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180))]
+            );
             return Task.FromResult(LastSend);
         }
     }
@@ -43,23 +54,32 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
     private sealed class StubImageStorage : IImageStorage
     {
         public Task<string> SaveImageAsync(
-            Guid analysisId, string fileName, Stream content, CancellationToken ct = default)
-            => Task.FromResult($"foodai/{analysisId:N}.png");
+            Guid analysisId,
+            string fileName,
+            Stream content,
+            CancellationToken ct = default
+        ) => Task.FromResult($"foodai/{analysisId:N}.png");
 
         public Task<string> SaveMaskAsync(
-            Guid analysisId, int itemIndex, Stream pngContent, CancellationToken ct = default)
-            => Task.FromResult($"foodai/masks/{analysisId:N}/{itemIndex}.png");
+            Guid analysisId,
+            int itemIndex,
+            Stream pngContent,
+            CancellationToken ct = default
+        ) => Task.FromResult($"foodai/masks/{analysisId:N}/{itemIndex}.png");
     }
 
     private static readonly byte[] Png1x1 = Convert.FromBase64String(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    );
 
     private sealed class StubNutritionProvider : INutritionProvider
     {
         public FoodNutritionDto? Result { get; set; }
 
-        public Task<FoodNutritionDto?> GetNutritionAsync(string foodKey, CancellationToken ct = default)
-            => Task.FromResult(Result);
+        public Task<FoodNutritionDto?> GetNutritionAsync(
+            string foodKey,
+            CancellationToken ct = default
+        ) => Task.FromResult(Result);
     }
 
     private readonly WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> _factory;
@@ -74,6 +94,13 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
+            builder.UseSetting("Storage:SignatureKey", "test-signature-key-32-chars-long-for-ci");
+            builder.UseSetting(
+                "ConnectionStrings:DefaultConnection",
+                "Host=localhost;Database=coppaddresd_test;Username=test;Password=test;Port=5432"
+            );
+            builder.UseSetting("Jwt:Secret", "test-jwt-secret-32-chars-long-for-ci-xyz123");
+            builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
             builder.ConfigureServices(services =>
             {
                 services.AddScoped<IFoodAiClient, StubFoodAiClient>();
@@ -145,12 +172,33 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
         var stubProvider = new StubNutritionProvider
         {
             Result = new FoodNutritionDto(
-                "Banana, raw", 100m, 89m, 1.09m, 22.84m, 0.33m, 2.6m, 12.23m, 1m,
-                "USDA FoodData Central", "2026-08-27"),
+                "Banana, raw",
+                100m,
+                89m,
+                1.09m,
+                22.84m,
+                0.33m,
+                2.6m,
+                12.23m,
+                1m,
+                "USDA FoodData Central",
+                "2026-08-27"
+            ),
         };
         var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("Storage:SignatureKey", "test-signature-key-32-chars-long-for-ci");
+            builder.UseSetting(
+                "ConnectionStrings:DefaultConnection",
+                "Host=localhost;Database=coppaddresd_test;Username=test;Password=test;Port=5432"
+            );
+            builder.UseSetting("Jwt:Secret", "test-jwt-secret-32-chars-long-for-ci-xyz123");
+            builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
             builder.ConfigureServices(services =>
-                services.AddScoped<INutritionProvider>(_ => stubProvider)));
+                services.AddScoped<INutritionProvider>(_ => stubProvider)
+            );
+        });
         var client = factory.CreateClient();
 
         var response = await client.GetAsync("/api/v1/foodai/nutrition/banana");
@@ -167,8 +215,22 @@ public class FoodAiAnalyzeEndpointTests : IClassFixture<WebApplicationFactory<Co
     public async Task Nutrition_alimento_inexistente_responde_404_FOOD_NOT_FOUND()
     {
         var factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Testing");
+            builder.UseSetting("Storage:SignatureKey", "test-signature-key-32-chars-long-for-ci");
+            builder.UseSetting(
+                "ConnectionStrings:DefaultConnection",
+                "Host=localhost;Database=coppaddresd_test;Username=test;Password=test;Port=5432"
+            );
+            builder.UseSetting("Jwt:Secret", "test-jwt-secret-32-chars-long-for-ci-xyz123");
+            builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
             builder.ConfigureServices(services =>
-                services.AddScoped<INutritionProvider>(_ => new StubNutritionProvider { Result = null })));
+                services.AddScoped<INutritionProvider>(_ => new StubNutritionProvider
+                {
+                    Result = null,
+                })
+            );
+        });
         var client = factory.CreateClient();
 
         var response = await client.GetAsync("/api/v1/foodai/nutrition/arepa");

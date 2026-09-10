@@ -182,6 +182,39 @@ public class ProfessionalsController(
         );
     }
 
+    /// <summary>Horarios semanales de atención del profesional.</summary>
+    [HttpGet("{id:guid}/schedules")]
+    [RequirePermission(PermissionCodes.ProfessionalsView)]
+    public async Task<ActionResult<IReadOnlyList<ProfessionalScheduleDto>>> GetSchedules(
+        Guid id,
+        CancellationToken ct
+    )
+    {
+        var schedules = await mediator.Send(
+            new GetProfessionalSchedulesQuery(id),
+            ct
+        );
+
+        return Ok(schedules);
+    }
+
+    /// <summary>Reemplaza los horarios semanales de atención del profesional.</summary>
+    [HttpPut("{id:guid}/schedules")]
+    [RequirePermission(PermissionCodes.ProfessionalsUpdate)]
+    public async Task<IActionResult> UpdateSchedules(
+        Guid id,
+        [FromBody] PutSchedulesRequest request,
+        CancellationToken ct
+    )
+    {
+        await mediator.Send(
+            new PutProfessionalSchedulesCommand(id, request.Schedules),
+            ct
+        );
+
+        return NoContent();
+    }
+
     private Guid? GetCallerId()
     {
         var claim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -213,3 +246,5 @@ public record UpdateProfessionalScopesRequest(
     IReadOnlyList<ScopedRoleAssignmentInput> Roles,
     IReadOnlyList<ScopedPermissionAssignmentInput> Permissions
 );
+
+public record PutSchedulesRequest(IReadOnlyList<ScheduleSlotInput> Schedules);

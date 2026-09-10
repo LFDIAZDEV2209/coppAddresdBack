@@ -15,7 +15,10 @@ $ports = @(
   @{ Name = 'gateway';      Port = 5080 },
   @{ Name = 'telemedicine'; Port = 5130 },
   @{ Name = 'api';          Port = 5122 },
-  @{ Name = 'ai';           Port = 8000 }
+  @{ Name = 'ai';           Port = 8000 },
+  @{ Name = 'front';        Port = 3000 },
+  @{ Name = 'antares';      Port = 5173 },
+  @{ Name = 'foodai';       Port = 8010 }
 )
 
 function Draw-Banner {
