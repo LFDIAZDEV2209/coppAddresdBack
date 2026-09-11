@@ -66,6 +66,23 @@ Integración con el AI Service (Python) vía HTTP, con soporte para chat síncro
 8. Cliente recibe eventos: start, token, node, done, error
 ```
 
+## Historial de thread (proxy de lectura)
+
+La app móvil reconstruye la conversación tras un re-login con
+`GET /api/v1/threads/{threadId}/messages` (`ThreadsController`):
+
+```
+1. La identidad del dueño sale del JWT; el query param `userId` es solo respaldo del flujo demo.
+2. Backend → AI Service GET /api/v1/threads/{thread_id}/state?user_id=… (canal interno X-Internal-Key).
+3. Respuesta: { threadId, messageCount, lastMessage, messages: [{ role: "user"|"bot", text }] }
+4. Si el AI Service falla o el thread no existe → 200 con estado vacío (nunca 500).
+```
+
+Contrato aditivo: `messages` viaja en orden cronológico y el AI Service lo
+limita a los últimos 100 mensajes visibles. Un ai-service anterior no envía el
+campo: el backend lo degrada a lista vacía sin romper `messageCount` ni
+`lastMessage`.
+
 ## Resilience (Polly)
 
 ```csharp

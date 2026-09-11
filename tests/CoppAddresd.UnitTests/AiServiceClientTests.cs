@@ -290,4 +290,53 @@ public class AiServiceClientTests
         Assert.Equal(502, ex.StatusCode);
         Assert.Contains("LLM provider unreachable", ex.Detail);
     }
+
+    [Fact]
+    public async Task GetThreadStateAsync_mapea_messages_preservando_orden_y_roles()
+    {
+        // Contrato aditivo del ai-service: `messages` (rol + texto) viaja junto a
+        // message_count/last_message y debe mapearse en el mismo orden del thread.
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"thread_id":"t1","message_count":3,"last_message":"chau","messages":[{"role":"user","text":"hola"},{"role":"bot","text":"buenas"},{"role":"user","text":"chau"}]}"""),
+        });
+        var client = BuildClient(handler);
+
+        var result = await client.GetThreadStateAsync("t1", "user-1");
+
+        var request = handler.Requests.Single();
+        Assert.Equal("GET", request.Method);
+        Assert.Equal("secret-internal-key", request.Headers["X-Internal-Key"]);
+        Assert.Equal("/api/v1/threads/t1/state", request.Path);
+
+        Assert.Equal("t1", result.ThreadId);
+        Assert.Equal(3, result.MessageCount);
+        Assert.Equal("chau", result.LastMessage);
+        Assert.NotNull(result.Messages);
+        Assert.Equal(
+            [("user", "hola"), ("bot", "buenas"), ("user", "chau")],
+            result.Messages!.Select(m => (m.Role, m.Text)).ToList());
+    }
+
+    [Fact]
+    public async Task GetThreadStateAsync_sin_messages_degrada_a_lista_vacia()
+    {
+        // Compatibilidad hacia atrás: un ai-service anterior no envía `messages`;
+        // el resultado debe quedar con lista vacía, sin error y conservando el resumen.
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"thread_id":"t1","message_count":2,"last_message":"viejo"}"""),
+        });
+        var client = BuildClient(handler);
+
+        var result = await client.GetThreadStateAsync("t1", "user-1");
+
+        Assert.NotNull(result.Messages);
+        Assert.Empty(result.Messages!);
+        Assert.Equal("t1", result.ThreadId);
+        Assert.Equal(2, result.MessageCount);
+        Assert.Equal("viejo", result.LastMessage);
+    }
 }

@@ -48,9 +48,11 @@ public interface IAiServiceClient
         CancellationToken ct = default);
 
     /// <summary>
-    /// Lee el resumen del historial de un thread del AI Service (canal interno
-    /// con X-Internal-Key). Devuelve el último mensaje del thread, que es lo
-    /// que el paciente debe ver al abrir el chat tras un push proactivo.
+    /// Lee el estado del historial de un thread del AI Service (canal interno
+    /// con X-Internal-Key): resumen (messageCount + lastMessage) y —contrato
+    /// aditivo— los mensajes visibles en orden (el AI Service los limita a los
+    /// últimos 100). Es lo que el paciente debe ver al abrir el chat tras un
+    /// re-login o un push proactivo.
     /// </summary>
     Task<ThreadStateResult> GetThreadStateAsync(
         string threadId,
