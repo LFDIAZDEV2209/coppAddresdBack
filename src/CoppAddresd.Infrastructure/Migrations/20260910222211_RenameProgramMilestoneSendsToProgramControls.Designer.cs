@@ -14,8 +14,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260909212458_AddLabExamBatchColumns")]
-    partial class AddLabExamBatchColumns
+    [Migration("20260910222211_RenameProgramMilestoneSendsToProgramControls")]
+    partial class RenameProgramMilestoneSendsToProgramControls
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -5379,6 +5379,52 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("professional_locations", "erp");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProfessionalSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<TimeOnly>("EndTime")
+                        .HasColumnType("time")
+                        .HasColumnName("end_time");
+
+                    b.Property<Guid>("ProfessionalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("professional_id");
+
+                    b.Property<TimeOnly>("StartTime")
+                        .HasColumnType("time")
+                        .HasColumnName("start_time");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Weekday")
+                        .HasColumnType("integer")
+                        .HasColumnName("weekday");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProfessionalId")
+                        .HasDatabaseName("ix_professional_schedules_professional_id");
+
+                    b.HasIndex("ProfessionalId", "Weekday")
+                        .IsUnique()
+                        .HasDatabaseName("uq_professional_schedules_professional_weekday");
+
+                    b.ToTable("professional_schedules", "erp");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProfessionalSpecialty", b =>
                 {
                     b.Property<Guid>("ProfessionalId")
@@ -6377,6 +6423,91 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("nutrition_intake_logs", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("ClosedReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("closed_reason");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<Guid?>("ExamBatchId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("exam_batch_id");
+
+                    b.Property<DateTime?>("FollowupSentAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("followup_sent_at");
+
+                    b.Property<int>("MilestoneDay")
+                        .HasColumnType("integer")
+                        .HasColumnName("milestone_day");
+
+                    b.Property<DateTime?>("RespondedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("responded_at");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Pending")
+                        .HasColumnName("status");
+
+                    b.Property<string>("ThreadId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("thread_id");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("ix_program_controls_status");
+
+                    b.HasIndex("EnrollmentId", "MilestoneDay")
+                        .IsUnique()
+                        .HasDatabaseName("ix_program_controls_enrollment_day");
+
+                    b.ToTable("program_controls", "app", t =>
+                        {
+                            t.HasCheckConstraint("CK_program_controls_closed_reason", "\"closed_reason\" IN ('declined', 'no_upload_timeout')");
+                        });
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramDailyMetric", b =>
                 {
                     b.Property<DateOnly>("MetricDate")
@@ -6523,67 +6654,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("ck_program_enrollments_current_week_positive", "\"current_week_number\" >= 1");
                         });
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id")
-                        .HasDefaultValueSql("gen_random_uuid()");
-
-                    b.Property<int>("Attempts")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("attempts");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<Guid>("EnrollmentId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("enrollment_id");
-
-                    b.Property<int>("MilestoneDay")
-                        .HasColumnType("integer")
-                        .HasColumnName("milestone_day");
-
-                    b.Property<DateTime?>("SentAt")
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("sent_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("Pending")
-                        .HasColumnName("status");
-
-                    b.Property<string>("ThreadId")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("thread_id");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamptz")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Status")
-                        .HasDatabaseName("ix_program_milestone_sends_status");
-
-                    b.HasIndex("EnrollmentId", "MilestoneDay")
-                        .IsUnique()
-                        .HasDatabaseName("ix_program_milestone_sends_enrollment_day");
-
-                    b.ToTable("program_milestone_sends", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramTemplate", b =>
@@ -8813,6 +8883,17 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Professional");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProfessionalSchedule", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.Professional", "Professional")
+                        .WithMany("WeeklySchedule")
+                        .HasForeignKey("ProfessionalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Professional");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProfessionalSpecialty", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.Professional", "Professional")
@@ -9043,6 +9124,18 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Patient");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany()
+                        .HasForeignKey("EnrollmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("FK_program_controls_program_enrollments_enrollment_id");
+
+                    b.Navigation("Enrollment");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
@@ -9060,17 +9153,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Patient");
 
                     b.Navigation("Template");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>
-                {
-                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
-                        .WithMany()
-                        .HasForeignKey("EnrollmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Enrollment");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramWeek", b =>
@@ -9514,6 +9596,8 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("LocationAssignments");
 
                     b.Navigation("Specialties");
+
+                    b.Navigation("WeeklySchedule");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProfessionalType", b =>

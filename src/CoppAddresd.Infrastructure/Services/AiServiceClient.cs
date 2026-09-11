@@ -52,6 +52,9 @@ public class AiServiceClient : IAiServiceClient
         thread_id = request.ThreadId,
         agent_type_id = request.AgentTypeId,
         user_id = request.UserId,
+        // Contexto de control abierto (fase 2): JsonOpts omite el campo cuando
+        // es null (contrato = hoy); un ai-service anterior ignora el campo.
+        control_context = request.ControlContext,
     };
 
     /// <summary>
@@ -107,7 +110,8 @@ public class AiServiceClient : IAiServiceClient
 
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
-        return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent, result.Suggestions);
+        return new ChatResponse(
+            result!.Reply, result.ThreadId, result.ExecutionId, result.Agent, result.Suggestions, result.ControlSignal);
     }
 
     public async Task<AiPlanResult> GeneratePlanAsync(
@@ -146,7 +150,7 @@ public class AiServiceClient : IAiServiceClient
         ChatRequest request,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var chunk in StreamRawInternalAsync(request, ct))
+        await foreach (var chunk in StreamRawInternalAsync(request, null, ct))
         {
             var evt = ParseSseEvent(chunk);
             if (evt is not null)
@@ -156,9 +160,10 @@ public class AiServiceClient : IAiServiceClient
 
     public async IAsyncEnumerable<StreamChatChunk> StreamRawAsync(
         ChatRequest request,
+        Action<string>? onControlSignal = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var chunk in StreamRawInternalAsync(request, ct))
+        await foreach (var chunk in StreamRawInternalAsync(request, onControlSignal, ct))
         {
             yield return chunk;
         }
@@ -166,6 +171,7 @@ public class AiServiceClient : IAiServiceClient
 
     private async IAsyncEnumerable<StreamChatChunk> StreamRawInternalAsync(
         ChatRequest request,
+        Action<string>? onControlSignal,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         _logger.LogDebug("Starting stream to AI service");
@@ -190,7 +196,22 @@ public class AiServiceClient : IAiServiceClient
             ct.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(ct);
             if (line is null) break;
-            
+
+            // Señal interna de la fase 2 (controles): `event: control_signal`
+            // + la siguiente línea `data:` se CONSUMEN aquí y viajan por el
+            // callback — el paciente jamás las recibe. El resto del stream se
+            // reenvía byte a byte.
+            if (onControlSignal is not null
+                && line.StartsWith("event: control_signal", StringComparison.Ordinal))
+            {
+                var dataLine = await reader.ReadLineAsync(ct);
+                if (dataLine is not null && dataLine.StartsWith("data: ", StringComparison.Ordinal))
+                {
+                    onControlSignal(dataLine["data: ".Length..]);
+                }
+                continue;
+            }
+
             yield return new StreamChatChunk(line);
         }
         
@@ -423,7 +444,8 @@ public class AiServiceClient : IAiServiceClient
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("execution_id")] string? ExecutionId = null,
         [property: JsonPropertyName("agent")] string? Agent = null,
-        [property: JsonPropertyName("suggestions")] IReadOnlyList<ChatSuggestion>? Suggestions = null);
+        [property: JsonPropertyName("suggestions")] IReadOnlyList<ChatSuggestion>? Suggestions = null,
+        [property: JsonPropertyName("control_signal")] string? ControlSignal = null);
     private record DoneJson(string ThreadId);
     private record NodeJson(string Node);
     private record MessageJson(string Type, string? Content);

@@ -8,19 +8,18 @@ using Microsoft.Extensions.Options;
 namespace CoppAddresd.Api.BackgroundJobs;
 
 /// <summary>
-/// Envío periódico de recordatorios proactivos de hito del programa (días 7,
-/// 14, 21, 45, 60, 90): cada <c>Program:MilestoneSender:TickMinutes</c> (60)
-/// corre <see cref="ProgramMilestoneSenderJob"/> — push FCM + mensaje
-/// proactivo en el chat para inscripciones activas con hito en fecha y dentro
-/// de la ventana local 9–21 del paciente. Apagable con
-/// <c>Program:MilestoneSender:Enabled=false</c> (default true). Idempotente:
-/// cada (inscripción, día) se notifica como máximo una vez
-/// (<c>program_milestone_sends</c>).
+/// Envío periódico de controles proactivos del programa (días 7, 14, 21, 45,
+/// 60, 90): cada <c>Program:Controls:TickMinutes</c> (60) corre
+/// <see cref="ProgramControlJob"/> — push FCM + mensaje proactivo en el chat
+/// para inscripciones activas con hito en fecha y dentro de la ventana local
+/// 9–21 del paciente. Apagable con <c>Program:Controls:Enabled=false</c>
+/// (default true). Idempotente: cada (inscripción, día) se notifica como
+/// máximo una vez (<c>program_controls</c>).
 /// </summary>
-public sealed class ProgramMilestoneSenderHostedService(
+public sealed class ProgramControlHostedService(
     IServiceScopeFactory scopeFactory,
-    IOptions<ProgramMilestoneSenderSettings> options,
-    ILogger<ProgramMilestoneSenderHostedService> logger) : BackgroundService
+    IOptions<ProgramControlSettings> options,
+    ILogger<ProgramControlHostedService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -28,7 +27,7 @@ public sealed class ProgramMilestoneSenderHostedService(
         if (!settings.Enabled)
         {
             logger.LogInformation(
-                "Recordatorios de hitos del programa deshabilitados (Program:MilestoneSender:Enabled=false).");
+                "Controles del programa deshabilitados (Program:Controls:Enabled=false).");
             return;
         }
 
@@ -37,7 +36,7 @@ public sealed class ProgramMilestoneSenderHostedService(
         // 0 o negativo no debe convertir el loop en un spin.
         var interval = TimeSpan.FromMinutes(Math.Clamp(settings.TickMinutes, 1, 1440));
         logger.LogInformation(
-            "Recordatorios de hitos del programa activos: cada {Interval} minutos (ventana local {StartLocalHour}:00–{EndLocalHour}:00).",
+            "Controles del programa activos: cada {Interval} minutos (ventana local {StartLocalHour}:00–{EndLocalHour}:00).",
             interval.TotalMinutes, settings.StartLocalHour, settings.EndLocalHour);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -45,7 +44,7 @@ public sealed class ProgramMilestoneSenderHostedService(
             try
             {
                 using var scope = scopeFactory.CreateScope();
-                var job = scope.ServiceProvider.GetRequiredService<ProgramMilestoneSenderJob>();
+                var job = scope.ServiceProvider.GetRequiredService<ProgramControlJob>();
                 await job.RunAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -55,7 +54,7 @@ public sealed class ProgramMilestoneSenderHostedService(
             catch (Exception ex)
             {
                 // El job nunca tira abajo el host: la próxima pasada reintenta.
-                logger.LogError(ex, "Falló la pasada de recordatorios de hitos del programa.");
+                logger.LogError(ex, "Falló la pasada de controles del programa.");
             }
 
             try

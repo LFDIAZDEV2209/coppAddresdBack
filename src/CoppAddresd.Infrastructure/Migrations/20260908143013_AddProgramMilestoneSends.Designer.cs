@@ -6476,7 +6476,7 @@ namespace CoppAddresd.Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramMilestoneSend", b =>
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -9013,7 +9013,7 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Template");
                 });
 
-            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramMilestoneSend", b =>
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
                         .WithMany()
