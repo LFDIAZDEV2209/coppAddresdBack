@@ -91,10 +91,12 @@ public sealed class CreateProfessionalCommandHandler(
         try
         {
             // 2. Invitación (crea usuario en Auth + correo con enlace).
+            //    adoptExisting: true — vincula usuarios existentes sin duplicar.
             if (request.SendInvitation)
             {
                 invitation = await auth.CreateInvitationAsync(
-                    created.Email, created.FirstName, created.LastName, ct);
+                    created.Email, created.FirstName, created.LastName,
+                    adoptExisting: true, ct: ct);
 
                 await employees.SetUserIdAsync(created.Id, invitation.UserId, ct);
             }
@@ -114,7 +116,9 @@ public sealed class CreateProfessionalCommandHandler(
         {
             // Compensación: revoca la invitación y elimina el empleado recién
             // creado para no dejar estados a medias.
-            if (invitation is not null)
+            // Si el usuario ya tenía password (adopt+hasPassword), no hay invitación
+            // que revocar (InvitationId = Guid.Empty).
+            if (invitation is not null && invitation.InvitationId != Guid.Empty)
             {
                 try
                 {

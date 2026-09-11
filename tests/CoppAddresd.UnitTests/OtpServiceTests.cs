@@ -590,6 +590,9 @@ public sealed class OtpServiceTests
         public Task<(bool Success, string? Error)> RemoveFromRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default)
             => Task.FromResult((false, (string?)"no implementado"));
 
+        public Task<(bool Success, string? Error)> SetForRoleAsync(Guid roleId, IReadOnlyList<Guid> permissionIds, CancellationToken ct = default)
+            => Task.FromResult((false, (string?)"no implementado"));
+
         public Task<(bool Success, string? Error)> AssignToUserAsync(Guid userId, Guid permissionId, CancellationToken ct = default)
             => Task.FromResult((false, (string?)"no implementado"));
 

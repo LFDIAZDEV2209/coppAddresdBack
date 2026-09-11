@@ -22,7 +22,8 @@ namespace CoppAddresd.Api.Seeders;
 /// </summary>
 public sealed class FoodAiNutritionSeeder(
     IServiceScopeFactory scopeFactory,
-    ILogger<FoodAiNutritionSeeder> logger) : IHostedService
+    ILogger<FoodAiNutritionSeeder> logger
+) : IHostedService
 {
     private const string CuratedDataPath = "Seeders/data/food_usda_curated.json";
 
@@ -35,7 +36,8 @@ public sealed class FoodAiNutritionSeeder(
         string? FdcName,
         string MappingStatus,
         decimal MappingConfidence,
-        CuratedNutrition? Nutrition);
+        CuratedNutrition? Nutrition
+    );
 
     private sealed record CuratedNutrition(
         decimal Calories,
@@ -44,7 +46,8 @@ public sealed class FoodAiNutritionSeeder(
         decimal Fat,
         decimal Fiber,
         decimal Sugar,
-        decimal Sodium);
+        decimal Sodium
+    );
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -82,57 +85,74 @@ public sealed class FoodAiNutritionSeeder(
             }
 
             var exists = await WithContext(
-                db => db.FoodAliases.AnyAsync(a => a.Alias == seed.Alias, ct), ct);
+                db => db.FoodAliases.AnyAsync(a => a.Alias == seed.Alias, ct),
+                ct
+            );
             if (exists)
             {
                 continue;
             }
 
-            await WithContext(async db =>
-            {
-                var food = new Food
+            await WithContext(
+                async db =>
                 {
-                    Name = seed.FdcName ?? seed.Canonical,
-                    DisplayName = seed.DisplayName,
-                    Category = seed.Category,
-                    MappingStatus = seed.MappingStatus,
-                    MappingConfidence = seed.MappingConfidence,
-                };
-                food.NutritionEntries.Add(new FoodNutrition
-                {
-                    ServingGrams = 100m,
-                    Calories = seed.Nutrition.Calories,
-                    Protein = seed.Nutrition.Protein,
-                    Carbohydrates = seed.Nutrition.Carbohydrates,
-                    Fat = seed.Nutrition.Fat,
-                    Fiber = seed.Nutrition.Fiber,
-                    Sugar = seed.Nutrition.Sugar,
-                    Sodium = seed.Nutrition.Sodium,
-                    Source = "USDA FoodData Central",
-                    SourceVersion = "2026-08-28",
-                    SourceId = seed.FdcId,
-                });
-                food.Aliases.Add(new FoodAlias
-                {
-                    Alias = seed.Alias,
-                    Source = "food-catalog-clip",
-                });
-                db.Foods.Add(food);
-                await db.SaveChangesAsync(ct);
-            }, ct);
+                    // Varias entradas curadas pueden compartir el mismo alimento
+                    // FDC (p. ej. "chicken" y "grilled chicken"): se reutiliza la
+                    // fila existente y solo se agrega el alias (Name es único).
+                    var foodName = seed.FdcName ?? seed.Canonical;
+                    var food = await db
+                        .Foods.Include(f => f.Aliases)
+                        .FirstOrDefaultAsync(f => f.Name == foodName, ct);
+                    if (food is null)
+                    {
+                        food = new Food
+                        {
+                            Name = foodName,
+                            DisplayName = seed.DisplayName,
+                            Category = seed.Category,
+                            MappingStatus = seed.MappingStatus,
+                            MappingConfidence = seed.MappingConfidence,
+                        };
+                        food.NutritionEntries.Add(
+                            new FoodNutrition
+                            {
+                                ServingGrams = 100m,
+                                Calories = seed.Nutrition.Calories,
+                                Protein = seed.Nutrition.Protein,
+                                Carbohydrates = seed.Nutrition.Carbohydrates,
+                                Fat = seed.Nutrition.Fat,
+                                Fiber = seed.Nutrition.Fiber,
+                                Sugar = seed.Nutrition.Sugar,
+                                Sodium = seed.Nutrition.Sodium,
+                                Source = "USDA FoodData Central",
+                                SourceVersion = "2026-08-28",
+                                SourceId = seed.FdcId,
+                            }
+                        );
+                        db.Foods.Add(food);
+                    }
+
+                    food.Aliases.Add(
+                        new FoodAlias { Alias = seed.Alias, Source = "food-catalog-clip" }
+                    );
+                    await db.SaveChangesAsync(ct);
+                },
+                ct
+            );
 
             seeded++;
         }
 
         logger.LogInformation(
             "Catálogo nutricional sembrado: {Seeded} nuevos de {Total} curados",
-            seeded, foods.Count);
+            seeded,
+            foods.Count
+        );
     }
 
     private static List<CuratedFood> LoadCurated()
     {
-        var path = Path.Combine(
-            AppContext.BaseDirectory, CuratedDataPath);
+        var path = Path.Combine(AppContext.BaseDirectory, CuratedDataPath);
         if (!File.Exists(path))
         {
             return [];
@@ -153,41 +173,46 @@ public sealed class FoodAiNutritionSeeder(
                     Fat: nutritionElement.GetProperty("fat").GetDecimal(),
                     Fiber: nutritionElement.GetProperty("fiber").GetDecimal(),
                     Sugar: nutritionElement.GetProperty("sugar").GetDecimal(),
-                    Sodium: nutritionElement.GetProperty("sodium").GetDecimal());
+                    Sodium: nutritionElement.GetProperty("sodium").GetDecimal()
+                );
             }
 
-            list.Add(new CuratedFood(
-                Canonical: element.GetProperty("canonical").GetString()!,
-                DisplayName: element.GetProperty("display_name").GetString()!,
-                Category: element.GetProperty("category").GetString()!,
-                Alias: element.GetProperty("alias").GetString()!,
-                FdcId: element.GetProperty("fdc_id").ValueKind == JsonValueKind.String
-                    ? element.GetProperty("fdc_id").GetString() : null,
-                FdcName: element.GetProperty("fdc_name").ValueKind == JsonValueKind.String
-                    ? element.GetProperty("fdc_name").GetString() : null,
-                MappingStatus: element.GetProperty("mapping_status").GetString()!,
-                MappingConfidence: element.GetProperty("mapping_confidence").GetDecimal(),
-                Nutrition: nutrition));
+            list.Add(
+                new CuratedFood(
+                    Canonical: element.GetProperty("canonical").GetString()!,
+                    DisplayName: element.GetProperty("display_name").GetString()!,
+                    Category: element.GetProperty("category").GetString()!,
+                    Alias: element.GetProperty("alias").GetString()!,
+                    FdcId: element.GetProperty("fdc_id").ValueKind == JsonValueKind.String
+                        ? element.GetProperty("fdc_id").GetString()
+                        : null,
+                    FdcName: element.GetProperty("fdc_name").ValueKind == JsonValueKind.String
+                        ? element.GetProperty("fdc_name").GetString()
+                        : null,
+                    MappingStatus: element.GetProperty("mapping_status").GetString()!,
+                    MappingConfidence: element.GetProperty("mapping_confidence").GetDecimal(),
+                    Nutrition: nutrition
+                )
+            );
         }
 
         return list;
     }
 
-    private async Task<T> WithContext<T>(
-        Func<AppDbContext, Task<T>> action,
-        CancellationToken ct)
+    private async Task<T> WithContext<T>(Func<AppDbContext, Task<T>> action, CancellationToken ct)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         return await action(db);
     }
 
-    private Task WithContext(
-        Func<AppDbContext, Task> action,
-        CancellationToken ct)
-        => WithContext(async db =>
-        {
-            await action(db);
-            return true;
-        }, ct);
+    private Task WithContext(Func<AppDbContext, Task> action, CancellationToken ct) =>
+        WithContext(
+            async db =>
+            {
+                await action(db);
+                return true;
+            },
+            ct
+        );
 }

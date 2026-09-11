@@ -58,9 +58,11 @@ public sealed record NutritionIntakePayload(
 /// <summary>
 /// Respuesta de <c>POST /api/v1/program/nutrition/log</c> (SPEC §18, B): el
 /// <c>habit_check</c> creado/actualizado y la XP granular otorgada. Un replay
-/// idempotente devuelve 409 <c>HABIT_ALREADY_LOGGED</c> (la comida/hidratación
-/// de la fecha ya fue registrada); la XP nunca se duplica (dedupe parcial del
-/// libro mayor con <c>source_ref_type = 'habit_log'</c>).
+/// idempotente de una COMIDA devuelve 409 <c>HABIT_ALREADY_LOGGED</c> (la
+/// comida de la fecha ya fue registrada); el AGUA acumula — la repetición del
+/// mismo día responde 200 con <c>xpAwarded = 0</c> tras actualizar el total
+/// acumulado <c>waterMl</c>. La XP nunca se duplica (dedupe parcial del libro
+/// mayor con <c>source_ref_type = 'habit_log'</c>).
 /// </summary>
 public sealed record NutritionLogResultDto(
     [property: JsonPropertyName("habitCheckId")] Guid HabitCheckId,

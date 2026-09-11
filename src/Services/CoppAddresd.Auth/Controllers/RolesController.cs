@@ -14,11 +14,17 @@ namespace CoppAddresd.Auth.Controllers;
 public class RolesController : ControllerBase
 {
     private readonly IRoleService _roleService;
+    private readonly IPermissionService _permissionService;
     private readonly IAuthorizationService _authorizationService;
 
-    public RolesController(IRoleService roleService, IAuthorizationService authorizationService)
+    public RolesController(
+        IRoleService roleService,
+        IPermissionService permissionService,
+        IAuthorizationService authorizationService
+    )
     {
         _roleService = roleService;
+        _permissionService = permissionService;
         _authorizationService = authorizationService;
     }
 
@@ -135,6 +141,31 @@ public class RolesController : ControllerBase
     {
         var roles = await _roleService.GetUserRolesAsync(userId, ct);
         return Ok(roles);
+    }
+
+    [HttpPut("{roleId:guid}/permissions")]
+    [RequirePermission(PermissionCodes.PermissionsAssign)]
+    public async Task<IActionResult> SyncPermissions(
+        Guid roleId,
+        [FromBody] SyncRolePermissionsRequest request,
+        CancellationToken ct
+    )
+    {
+        if (!await HasSystemAdminSettingsAsync())
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { message = "Se requiere System.AdminSettings para asignar permisos." }
+            );
+
+        var (success, error) = await _permissionService.SetForRoleAsync(
+            roleId,
+            request.PermissionIds,
+            ct
+        );
+        if (!success)
+            return BadRequest(new { message = error });
+
+        return NoContent();
     }
 
     [HttpPost("user/{userId:guid}")]

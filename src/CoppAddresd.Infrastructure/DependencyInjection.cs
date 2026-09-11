@@ -64,9 +64,18 @@ public static class DependencyInjection
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
 
+        // Recordatorios de hitos del programa (Program Milestone Reminder):
+        // repositorio enfocado de program_milestone_sends (precedente:
+        // DeviceTokenRepository/LeagueRepository — no crece ProgramRepository).
+        services.AddScoped<IProgramMilestoneRepository, ProgramMilestoneRepository>();
+
         // Liga del paciente (LEAGUE v1): repositorio enfocado de solo lectura
         // + update mínimo de preferencias (no crece ProgramRepository).
         services.AddScoped<ILeagueRepository, LeagueRepository>();
+
+        // Historial de métricas clínicas (metrics-history): repositorio
+        // enfocado de solo lectura (precedente ScoresHistoryRepository).
+        services.AddScoped<IMetricsHistoryRepository, MetricsHistoryRepository>();
 
         // Historial de puntajes del paciente (scores-history): repositorio
         // enfocado de solo lectura (no crece ProgramRepository, precedente:
@@ -124,6 +133,10 @@ public static class DependencyInjection
         services.AddSingleton<IInventoryMetricsQueue, InventoryMetricsQueue>();
         services.AddHostedService<InventoryMetricsProcessorHostedService>();
 
+        // Pre-agregación de métricas Biométricas Clínicas (CQRS Channel Pattern)
+        services.AddSingleton<IBiometriaMetricsQueue, BiometriaMetricsQueue>();
+        services.AddHostedService<BiometriaMetricsProcessorHostedService>();
+
         // Calculadores del motor de puntajes (SPEC §13, T-37/T-41): funciones
         // puras consumidas por ProgramRepository; registrados con su ILogger
         // real para que el log estructurado Program.ScoreComputed se emita
@@ -161,6 +174,9 @@ public static class DependencyInjection
         services.AddScoped<ISafetyRuleRepository, SafetyRuleRepository>();
         services.AddScoped<IClinicalContextService, ClinicalContextService>();
         services.AddScoped<ISafetyRulesService, SafetyRulesService>();
+
+        // Compresión de exámenes de laboratorio
+        services.AddSingleton<IFileCompressionService, FileCompressionService>();
 
         services.AddMemoryCache();
         services.Configure<PostalCodeLookupOptions>(
@@ -235,7 +251,8 @@ public static class DependencyInjection
                 // las operaciones sobre una conexión (pooling nativo).
                 services.AddSingleton<IConnectionMultiplexer>(_ =>
                 {
-                    var raw = connectionString ?? "localhost:6379";
+                    // localhost resuelve primero a ::1 (IPv6) y falla cuando Valkey solo escucha IPv4.
+                    var raw = connectionString ?? "127.0.0.1:6379";
                     var options = ConfigurationOptions.Parse(raw);
                     // Contrato fail-open: el arranque NUNCA se bloquea por
                     // caché ausente; las operaciones degradan por operación.

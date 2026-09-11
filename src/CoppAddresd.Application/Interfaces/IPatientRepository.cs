@@ -97,6 +97,16 @@ public interface IPatientRepository
         IReadOnlyCollection<Guid> professionalIds,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Documentos que ya existen en la BD (case-insensitive), útiles para
+    /// bulk create: una sola query con WHERE LOWER(document_number) = ANY(batch).
+    /// Devuelve los documentos encontrados (lowercase).
+    /// </summary>
+    Task<IReadOnlyList<string>> GetExistingDocumentNumbersAsync(
+        IReadOnlyCollection<string> documentNumbers,
+        CancellationToken ct = default
+    );
 }
 
 /// <summary>Vista de una asignación paciente ↔ profesional (para la UI del detalle).</summary>

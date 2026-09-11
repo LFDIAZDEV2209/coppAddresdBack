@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Erp;
@@ -7,7 +8,6 @@ using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.ProgramProgress;
@@ -44,16 +44,29 @@ public interface IProgramRepository
         string timezone,
         DateOnly startLocalDate,
         Guid? createdBy = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Pausa la inscripción (Active → Paused). Requiere estado Active.</summary>
-    Task<ProgramEnrollment> PauseAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default);
+    Task<ProgramEnrollment> PauseAsync(
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    );
 
     /// <summary>Reanuda la inscripción (Paused → Active). Requiere estado Paused.</summary>
-    Task<ProgramEnrollment> ResumeAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default);
+    Task<ProgramEnrollment> ResumeAsync(
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    );
 
     /// <summary>Retira la inscripción (terminal, conserva historial). No admite Completed/Withdrawn.</summary>
-    Task<ProgramEnrollment> WithdrawAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default);
+    Task<ProgramEnrollment> WithdrawAsync(
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Proyección de una inscripción con su estado de gamificación (racha,
@@ -61,7 +74,10 @@ public interface IProgramRepository
     /// los handlers de enroll/pause/resume/withdraw y por el listado del ERP.
     /// Devuelve null si la inscripción no existe.
     /// </summary>
-    Task<ProgramEnrollmentDto?> GetEnrollmentAsync(Guid enrollmentId, CancellationToken ct = default);
+    Task<ProgramEnrollmentDto?> GetEnrollmentAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Listado paginado de inscripciones con filtros opcionales por paciente y
@@ -76,7 +92,8 @@ public interface IProgramRepository
         int page,
         int pageSize,
         IReadOnlyList<Guid>? scopedPatientIds = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Completación de tareas ---
 
@@ -91,7 +108,10 @@ public interface IProgramRepository
     /// (Replay, sin doble XP) y clave de idempotencia reutilizada con otra
     /// tarea/fecha (IdempotencyKeyReused → 409 AC-04).
     /// </summary>
-    Task<CompleteTaskResult> CompleteTaskAsync(CompleteTaskInput input, CancellationToken ct = default);
+    Task<CompleteTaskResult> CompleteTaskAsync(
+        CompleteTaskInput input,
+        CancellationToken ct = default
+    );
 
     // --- Lecturas del paciente ---
 
@@ -102,7 +122,8 @@ public interface IProgramRepository
     Task<ProgramSnapshotDto?> GetSnapshotAsync(
         Guid enrollmentId,
         DateOnly todayLocalDate,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Hoy en zona local del paciente para una inscripción (SPEC §6.11), o null
@@ -116,7 +137,8 @@ public interface IProgramRepository
         Guid enrollmentId,
         DateOnly from,
         DateOnly to,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Sendero completo de semanas (SPEC §7.4).</summary>
     Task<ProgramPathDto> GetPathAsync(Guid enrollmentId, CancellationToken ct = default);
@@ -128,7 +150,8 @@ public interface IProgramRepository
         string? status,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Plantilla con sus filas por día ordenadas.</summary>
     Task<ProgramTemplate?> GetTemplateAsync(Guid id, CancellationToken ct = default);
@@ -149,14 +172,16 @@ public interface IProgramRepository
         ProgramTemplate template,
         IReadOnlyList<WeeklyDayTemplate> dayTemplates,
         Guid? actorId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Reemplazo en bloque de las tareas por día de una plantilla.</summary>
     Task<IReadOnlyList<WeeklyDayTemplate>> ReplaceWeekdayTasksAsync(
         Guid templateId,
         IReadOnlyList<WeeklyDayTemplate> tasks,
         Guid? actorId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Reemplazo en bloque del TasksSnapshot de una semana específica en la inscripción del paciente.</summary>
     Task<EnrollmentWeekDetailDto> ReplaceEnrollmentWeekTasksAsync(
@@ -164,7 +189,8 @@ public interface IProgramRepository
         int weekNumber,
         IReadOnlyList<WeeklyDayTemplate> tasks,
         Guid? actorId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Adaptaciones (ERP) ---
 
@@ -173,7 +199,8 @@ public interface IProgramRepository
         AdaptationStatus? status,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     Task<AdaptationRecommendation?> GetAdaptationAsync(Guid id, CancellationToken ct = default);
 
@@ -192,7 +219,8 @@ public interface IProgramRepository
         AdaptationDecisionAction action,
         Guid? actorId = null,
         string? auditActionOnApply = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Marca como <c>Superseded</c> las recomendaciones <c>Pending</c> previas de
@@ -207,7 +235,8 @@ public interface IProgramRepository
         AdaptationKind kind,
         Guid targetEntityId,
         Guid newRecommendationId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Registra una fila semántica en <c>audit.activity_logs</c> (SPEC §5.6 y
@@ -224,7 +253,8 @@ public interface IProgramRepository
         string tableName,
         Guid recordId,
         Guid? actorId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Motor de puntajes (SPEC §13, T-37) ---
 
@@ -251,7 +281,8 @@ public interface IProgramRepository
         ScoreTrigger trigger,
         bool force = false,
         DateOnly? periodEndLocalDate = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Índice de Transformación de la semana actual del paciente (SPEC
@@ -266,12 +297,14 @@ public interface IProgramRepository
         Guid patientId,
         ScoreTrigger trigger,
         bool force = false,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Líneas base clínicas del paciente (SPEC §13.1.2, lectura).</summary>
     Task<IReadOnlyList<ClinicalBaselineDto>> ListClinicalBaselinesAsync(
         Guid patientId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// UPSERT de una línea base clínica con la guardia AC-22: <c>set_by</c> es
@@ -286,7 +319,8 @@ public interface IProgramRepository
     Task<ClinicalBaselineDto> UpsertClinicalBaselineAsync(
         ClinicalBaselineWrite input,
         IReadOnlyList<string> callerRoles,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Valor de la medición más reciente de una métrica en la ventana de fechas
@@ -299,7 +333,8 @@ public interface IProgramRepository
         Guid metricId,
         DateOnly fromDate,
         DateOnly toDate,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- XP clínica (SPEC §15, T-46..T-49) ---
 
@@ -330,7 +365,8 @@ public interface IProgramRepository
     Task<ClinicalXpEvaluationResult> EvaluateClinicalXpAwardsAsync(
         Guid patientId,
         DateOnly? periodEndLocalDate = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Cola paginada de revisiones clínicas de XP pendientes (SPEC §15, D):
@@ -342,7 +378,8 @@ public interface IProgramRepository
     Task<(IReadOnlyList<ClinicalReviewDto> Items, int Total)> ListPendingClinicalReviewsAsync(
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Decide una revisión clínica de XP (SPEC §15, D): requiere que el
@@ -366,7 +403,8 @@ public interface IProgramRepository
         bool approve,
         Guid? actorId,
         IReadOnlyList<string> callerRoles,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Nutrición granular (SPEC §18, "Paso 6") ---
 
@@ -381,11 +419,16 @@ public interface IProgramRepository
     ///
     /// El <c>localDate</c> opcional se resuelve contra el hoy local del
     /// paciente (una fecha futura → 422 <c>INVALID_DATE</c>). Un log duplicado
-    /// (la comida/hidratación de esa fecha ya está registrada) →
+    /// de una comida (des/alm/mer/cen) →
     /// <see cref="Domain.Exceptions.BusinessRuleViolationException"/>
     /// <c>HABIT_ALREADY_LOGGED</c> (409); la XP nunca se duplica (dedupe
     /// parcial <c>('habit_log', habit_check.id, reason)</c> como backstop de
-    /// carrera). Paciente sin inscripción activa → 404
+    /// carrera). El <c>agua</c> es acumulable: repetir el mismo día responde
+    /// 200 con XP 0 y actualiza el total acumulado <c>waterMl</c> de la fila de
+    /// intake anclada al habit_check existente (solo sube — monotónico;
+    /// menor/igual o sin <c>waterMl</c> → no-op idempotente; fila faltante →
+    /// se crea sin XP), mientras la XP de hidratación sigue siendo 1/día
+    /// (primer log). Paciente sin inscripción activa → 404
     /// <c>NO_ACTIVE_ENROLLMENT</c>.
     ///
     /// Con <paramref name="intake"/> (SPEC nutrition-intake-adherence) además
@@ -402,7 +445,26 @@ public interface IProgramRepository
         DateOnly? localDate = null,
         NutritionIntakePayload? intake = null,
         Guid? actorId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Actualiza el intake de un log nutricional EXISTENTE (edición del móvil):
+    /// misma <c>HabitCheck</c> (sin duplicados), recalcula la fila de
+    /// <c>app.nutrition_intake_logs</c> con los valores del payload
+    /// (reemplazo completo, null limpia) y conserva las referencias del plan.
+    /// Sin XP (el otorgamiento vive solo en el primer log). Sin log para esa
+    /// comida/fecha → 404 <c>NUTRITION_LOG_NOT_FOUND</c>. Misma resolución de
+    /// fecha local, plantilla y ownership de <c>foodAnalysisId</c> que el POST.
+    /// </summary>
+    Task<NutritionLogResultDto> UpdateNutritionIntakeAsync(
+        Guid patientId,
+        MealCode mealCode,
+        DateOnly? localDate = null,
+        NutritionIntakePayload? intake = null,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Otorgamientos semanales de nutrición (SPEC §18, C): se evalúan SOLO en
@@ -428,7 +490,8 @@ public interface IProgramRepository
     Task<NutritionWeeklyAwardsResult> EvaluateNutritionAwardsAsync(
         Guid patientId,
         DateOnly? periodEndLocalDate = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Detección de debilidades (SPEC §21, "Paso 7c") ---
 
@@ -444,7 +507,8 @@ public interface IProgramRepository
     Task<PatientWeeklyData?> BuildPatientWeeklyDataAsync(
         Guid patientId,
         DateOnly? periodEndLocalDate = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Persiste las debilidades NUEVAS detectadas (SPEC §21, C — AC-43): omite
@@ -458,7 +522,8 @@ public interface IProgramRepository
     Task<IReadOnlyList<Weakness>> PersistDetectedWeaknessesAsync(
         Guid patientId,
         IReadOnlyList<WeaknessDescriptor> descriptors,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Debilidades del paciente (SPEC §21, D): listado paginado ordenado por
@@ -468,7 +533,8 @@ public interface IProgramRepository
         Guid patientId,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Cola clínica de debilidades abiertas (SPEC §21, D): listado paginado de
@@ -479,7 +545,8 @@ public interface IProgramRepository
     Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListOpenWeaknessesAsync(
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Transición de estado de una debilidad (SPEC §21, D — AC-44): requiere
@@ -497,7 +564,8 @@ public interface IProgramRepository
         WeaknessStatus status,
         Guid? actorId,
         IReadOnlyList<string> callerRoles,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Intervenciones (SPEC §22, "Paso 7d") ---
 
@@ -516,7 +584,8 @@ public interface IProgramRepository
         string title,
         string? description,
         Guid? actorId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Intervenciones del paciente (SPEC §22, D): listado paginado ordenado por
@@ -526,7 +595,8 @@ public interface IProgramRepository
         Guid patientId,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Cola clínica de intervenciones abiertas (SPEC §22, D): listado paginado
@@ -536,7 +606,8 @@ public interface IProgramRepository
     Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListOpenInterventionsAsync(
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Paciente acepta una intervención (SPEC §22, D — AC-47):
@@ -548,7 +619,8 @@ public interface IProgramRepository
     Task<InterventionDto> AcceptInterventionAsync(
         Guid interventionId,
         Guid patientId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Clínico actualiza el estado de una intervención (SPEC §22, D — AC-48):
@@ -564,7 +636,8 @@ public interface IProgramRepository
         IReadOnlyList<string> callerRoles,
         string? result = null,
         Guid? assignedTo = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Hook de telemedicina: teleconsulta agendada (SPEC §22, D — AC-49):
@@ -573,7 +646,8 @@ public interface IProgramRepository
     /// </summary>
     Task<InterventionDto> MarkTeleScheduledAsync(
         Guid interventionId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Hook de telemedicina: asistencia confirmada por el clínico
@@ -583,16 +657,15 @@ public interface IProgramRepository
     Task<InterventionDto> MarkTeleAttendedAsync(
         Guid interventionId,
         Guid clinicianId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Hook de telemedicina: cumplimiento evaluado (SPEC §22, D — AC-49):
     /// otorga <c>TELE_COMPLY</c> (+50) y puede avanzar hacia
     /// <c>completed</c>.
     /// </summary>
-    Task<InterventionDto> MarkTeleComplyAsync(
-        Guid interventionId,
-        CancellationToken ct = default);
+    Task<InterventionDto> MarkTeleComplyAsync(Guid interventionId, CancellationToken ct = default);
 
     // --- T-77: Helpers para el configurador de contenido ---
 
@@ -607,7 +680,10 @@ public interface IProgramRepository
     /// Nombre y código de una rutina de ejercicio por ID (T-77). Devuelve null
     /// si la rutina no existe. Usado por el handler de GetProgramContent.
     /// </summary>
-    Task<(string Code, string Name)?> GetRoutineNameAsync(Guid routineId, CancellationToken ct = default);
+    Task<(string Code, string Name)?> GetRoutineNameAsync(
+        Guid routineId,
+        CancellationToken ct = default
+    );
 
     // --- Detalle de semana (GET /enrollments/{id}/week/{weekNumber}) ---
 
@@ -621,7 +697,8 @@ public interface IProgramRepository
         Guid enrollmentId,
         int weekNumber,
         Guid clinicianUserId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- ERP gamificación (SPEC §23) ---
 
@@ -633,15 +710,29 @@ public interface IProgramRepository
 
     /// <summary>Vista de adherencia ERP con tabla paginada (SPEC §23, AC-52).</summary>
     Task<ProgramErpAdherenciaDto> GetErpAdherenciaAsync(
-        int page, int pageSize,
-        string? search, string? sortBy, string? sortDir,
-        CancellationToken ct = default);
+        int page,
+        int pageSize,
+        string? search,
+        string? sortBy,
+        string? sortDir,
+        CancellationToken ct = default
+    );
 
     /// <summary>Vista de cofres/rachas ERP (SPEC §23, AC-53).</summary>
-    Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default);
+    Task<ProgramErpCofresDto> GetErpCofresAsync(
+        int page = 1,
+        int pageSize = 10,
+        string? search = null,
+        string? sortBy = null,
+        string? sortDir = null,
+        CancellationToken ct = default
+    );
 
     /// <summary>Perfil 360 de un paciente (SPEC §23, AC-54). Devuelve null si el paciente no tiene inscripción.</summary>
-    Task<PatientOverviewDto?> GetPatientOverviewAsync(Guid patientId, CancellationToken ct = default);
+    Task<PatientOverviewDto?> GetPatientOverviewAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    );
 
     // --- Bitácora de actividad (ERP) ---
 
@@ -661,12 +752,19 @@ public interface IProgramRepository
         DateTimeOffset? from,
         DateTimeOffset? to,
         string? actor,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Biometría (SPEC §06) ---
 
     /// <summary>Resumen comunitario de biometría: promedios, distribuciones, evolución semanal, ciudades y alertas.</summary>
     Task<BiometriaCommunityDto> GetBiometriaCommunityAsync(CancellationToken ct = default);
+
+    /// <summary>Información básica del paciente (PatientId, Gender, CityId) para métricas biométricas.</summary>
+    Task<PatientBiometriaInfoDto?> GetPatientBiometriaInfoAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    );
 
     /// <summary>Listado paginado de pacientes con indicadores de biometría (última medición).</summary>
     Task<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)> ListBiometriaPatientsAsync(
@@ -680,14 +778,19 @@ public interface IProgramRepository
         string? stateAbbr,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>Detalle de biometría de un paciente: historial semanal, heatmap y datos exactos.</summary>
-    Task<BiometriaPatientDetailDto?> GetBiometriaPatientAsync(Guid patientId, CancellationToken ct = default);
+    Task<BiometriaPatientDetailDto?> GetBiometriaPatientAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    );
 
     /// <summary>Exporte CSV de biometría de pacientes.</summary>
     IAsyncEnumerable<BiometriaPatientListItemDto> StreamBiometriaPatientsForExportAsync(
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Exporte CSV (B14) ---
 
@@ -704,7 +807,8 @@ public interface IProgramRepository
         DateTime? from,
         DateTime? to,
         IReadOnlyList<Guid>? scopedPatientIds,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     // --- Reconciliación de rachas (B12) ---
 
@@ -743,5 +847,6 @@ public interface IProgramRepository
         Guid enrollmentId,
         int page,
         int pageSize,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 }

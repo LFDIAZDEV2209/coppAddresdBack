@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.Ai;
+using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Features.Chat;
 using CoppAddresd.Application.Features.Threads;
 using CoppAddresd.Application.Features.Wellness;
@@ -43,5 +44,35 @@ public interface IAiServiceClient
     Task<ThreadStateResult> GetThreadStateAsync(
         string threadId,
         string userId,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Envía un archivo de examen de laboratorio al AI Service vía multipart/form-data
+    /// y devuelve las métricas extraídas y el resumen textual para el chat.
+    /// Canal interno (X-Internal-Key); el frontend jamás llama directo.
+    /// </summary>
+    Task<LabExamAiResponse> ExtractLabMetricsAsync(
+        Guid patientId,
+        Guid batchId,
+        Stream fileStream,
+        string fileName,
+        string contentType,
+        string? threadId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Genera la narración empática del examen (segundo request, canal interno
+    /// con X-Internal-Key) a partir de la tabla de evolución pre-computada en
+    /// .NET. Best-effort por contrato: cualquier fallo (404 de un ai-service
+    /// anterior, timeout, red, payload inválido) devuelve cadena vacía y el
+    /// caller usa el summary — nunca lanza ni debe romper el upload ni disparar
+    /// la compensación S3.
+    /// </summary>
+    Task<string> NarrateLabExamAsync(
+        Guid patientId,
+        Guid batchId,
+        IReadOnlyList<LabExamAiMetricDto> metrics,
+        IReadOnlyDictionary<string, MetricEvolution> previousMeasurements,
+        string? language,
         CancellationToken ct = default);
 }

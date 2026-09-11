@@ -5,7 +5,9 @@ public record InvitationCreationResult(
     Guid UserId,
     Guid InvitationId,
     DateTime ExpiresAt,
-    string? Link);
+    string? Link,
+    bool Adopted = false,
+    bool HasPassword = false);
 
 /// <summary>
 /// Cliente hacia los endpoints internos del Auth Service (X-Internal-Key)
@@ -19,6 +21,7 @@ public interface IAuthInvitationsClient
         string email,
         string firstName,
         string lastName,
+        bool adoptExisting = false,
         CancellationToken ct = default);
 
     /// <summary>Revoca la invitación pendiente (compensación del flujo de creación).</summary>

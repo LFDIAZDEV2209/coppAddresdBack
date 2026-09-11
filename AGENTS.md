@@ -49,6 +49,7 @@ Schema app:     ~69 tablas: núcleo de pacientes (patient_profiles → auth.user
 Schema erp:     21 tablas (organizations → clinics → locations; employees como
                 núcleo HR con extensión clínica 1:0..1 professionals; catálogos
                 professional_types/specialties + puentes N:N + professional_licenses;
+                erp.professional_schedules (id uuid PK gen_random_uuid(), professional_id uuid FK→erp.professionals cascade, weekday int 1–7 ISO lunes=1, start_time/end_time time, created_at/updated_at timestamptz; índices uq_professional_schedules_professional_weekday [professional_id+weekday] + ix_professional_schedules_professional_id);
                 inventory_*/products/store_items; legal_documents*).
                 Plan de evolución del módulo: docs/modules/patients/PLAN.md
 Schema audit:   1 tabla (activity_logs)
@@ -85,6 +86,7 @@ GET    /api/auth/me                 # Info del usuario actual + roles + permisos
 
 GET    /api/auth/users               # Listar usuarios [RequirePermission("Users.View")]
 POST   /api/auth/users               # Crear usuario [AllowAnonymous]
+POST   /api/auth/users/bulk           # Creación masiva [AllowAnonymous] (máx 500 filas; cada fila independiente; contraseñas temporales generadas server-side, retornadas una sola vez; clinicCode? tiene precedencia sobre clinicName?, ambos con roleName? → asignación scoped de clínica en vez de rol global)
 GET    /api/auth/users/{id}          # Obtener usuario [RequirePermission("Users.View")]
 PUT    /api/auth/users/{id}          # Actualizar usuario [RequirePermission("Users.Update")]
 DELETE /api/auth/users/{id}          # Eliminar usuario [RequirePermission("Users.Delete")]
@@ -93,6 +95,7 @@ GET    /api/auth/roles               # Listar roles [RequirePermission("Roles.Vi
 POST   /api/auth/roles               # Crear rol [RequirePermission("Roles.Create")]
 PUT    /api/auth/roles/{id}          # Actualizar rol [RequirePermission("Roles.Update")]
 DELETE /api/auth/roles/{id}          # Eliminar rol [RequirePermission("Roles.Delete")]
+PUT    /api/auth/roles/{id}/permissions # Sincronizar permisos del rol (sync-total) [RequirePermission("Permissions.Assign")] + System.AdminSettings
 POST   /api/auth/roles/{id}/assign   # Asignar rol a usuario [RequirePermission("Roles.Assign")]
 DELETE /api/auth/roles/{id}/assign   # Remover rol de usuario [RequirePermission("Roles.Assign")]
 
@@ -115,6 +118,7 @@ DELETE /api/auth/users/{id}/scoped/permissions     # Remover override scoped [Re
 GET    /api/auth/internal/authorize           # ¿Permiso en cadena de scopes? (?userId&permissionCode&scopes=Clinic:id|Organization:id|Global)
 GET    /api/auth/internal/scoped-permissions  # Permisos efectivos para una cadena de scopes (?userId&scopes=...)
 POST   /api/auth/internal/invitations         # Crear usuario sin password + acceso ERP + invitación + email (body: email, firstName, lastName)
+GET    /api/auth/internal/roles/by-name/{name} # Buscar rol por nombre (case-insensitive) → { id, name, isActive } o 404
 
 # Invitaciones de primer acceso (onboarding del profesional)
 GET    /api/auth/invitations/validate?token=       # Validar token (público, no consume)
@@ -123,7 +127,7 @@ POST   /api/auth/invitations/{id}/resend           # Reenviar (revoca la pendien
 POST   /api/auth/invitations/{id}/revoke           # Revocar [RequirePermission("Users.Update")]
 ```
 
-**Permisos seedeados** (84 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`, `Telemedicine.*` (incluye `Telemedicine.AdminView` para listados admin globales), `Appointments.*`, `Finance.*` (`Finance.View`/`Finance.Manage`), `Reports.View`, `Inventory.*`, `Store.*`, `Media.*`, `Audit.*`, `System.AdminSettings`, `Community.*`. Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Professional` (rol clínico consolidado; **los roles Physician/Nutritionist/Psychologist son aliases legado** — no se asignan a usuarios nuevos), `Nurse`, `Receptionist`, `CareCoordinator`, `Coordinator` (alias de CareCoordinator), `Finance` (sin acceso clínico), `Auditor` (solo lectura) — asignables con scope de clínica/org. **Convención de escalabilidad**: roles FUNCIONALES por capacidad, no por profesión; la especialidad nunca determina permisos. Los roles de sistema llevan `IsSystem = true` (no renombrables/eliminables sin `System.AdminSettings`); las mutaciones de roles/permisos/usuarios exigen `System.AdminSettings` (Admin la tiene vía AdminSeeder).
+**Permisos seedeados** (84 total): `Users.*`, `Roles.*`, `Permissions.*`, `Agents.*`, `Organizations.*`, `Clinics.*`, `Locations.*`, `Employees.*`, `Professionals.*`, `Patients.*`, `Documents.*`, `ClinicalRecords.*`, `Telemedicine.*` (incluye `Telemedicine.AdminView` para listados admin globales), `Appointments.*`, `Finance.*` (`Finance.View`/`Finance.Manage`), `Reports.View`, `Inventory.*`, `Store.*`, `Media.*`, `Audit.*`, `System.AdminSettings`, `Community.*`. Roles: `Admin` (global, todos los permisos) + `OrganizationAdmin`, `ClinicAdmin`, `ClinicalDirector`, `Professional` (rol clínico consolidado; **los roles legado Physician/Nutritionist/Psychologist/Coordinator son ELIMINADOS por el seeder con conversión automática de holders → Professional / CareCoordinator**), `Nurse`, `Receptionist`, `CareCoordinator`, `Finance` (sin acceso clínico), `Auditor` (solo lectura) — asignables con scope de clínica/org. **Convención de escalabilidad**: roles FUNCIONALES por capacidad, no por profesión; la especialidad nunca determina permisos. Los roles de sistema llevan `IsSystem = true` (no renombrables/eliminables sin `System.AdminSettings`); las mutaciones de roles/permisos/usuarios exigen `System.AdminSettings` (Admin la tiene vía AdminSeeder).
 
 **Credenciales admin**: `admin@coppaddresd.com` / `Test@1234` (configurable en `appsettings.json` → `Auth` section).
 
@@ -205,6 +209,29 @@ La primera versión de un agente se inserta y activa en UNA transacción
 NpgsqlRetryingExecutionStrategy no soporta transacciones manuales). La activación de una
 versión usa `SetActiveVersionAsync` (ExecuteUpdate directo) — el tracking de la navegación
 `ActiveVersion` (cargada con Include) reescribía `active_version_id` al guardar.
+
+## Gestión de personas (ERP) — Endpoints
+
+```
+GET    /api/v1/employees                      # Listar empleados con filtros y paginación [Employees.View]
+GET    /api/v1/employees/{id}                 # Obtener empleado por id [Employees.View]
+POST   /api/v1/employees                      # Crear empleado [Employees.Create]
+PUT    /api/v1/employees/{id}                 # Actualizar empleado [Employees.Update]
+POST   /api/v1/employees/{id}/invite          # Invitar empleado (crea usuario Auth + envía enlace) [Employees.Create]
+POST   /api/v1/employees/bulk                 # Creación masiva desde CSV [Employees.Create] (body: { organizationId, rows: [{ firstName, lastName, email, professionalTypeName?, status activo|invitado|inactivo, clinics?: [{code, roleName}] }] }; cada fila independiente; clinics[]: resuelve code→clínica en la org, roleName→roleId (case-insensitive), crea asignaciones de clínica (primera IsPrimary) + scoped roles en invitación; si falla la invitación, la fila se compensa (no queda empleado))
+POST   /api/v1/patients/bulk                  # Creación masiva desde CSV [Patients.Create] (body: { clinicId?, rows: [{ firstName, lastName, documentNumber?, email?, status?, clinicCode? }] }; clinicCode tiene precedencia sobre clinicId del envelope; status ∈ activo|inactivo (null→Activo); duplicado documentNumber detecta batch+BD; MRN auto-generado; 500 filas max)
+GET    /api/v1/professionals/stats            # Estadísticas del directorio (totales + desglose por tipo) [Professionals.View]
+POST   /api/v1/professionals                  # Crear profesional orquestado (empleado + extensión clínica + clínicas + invitación + scopes) [Professionals.Create]
+GET    /api/v1/professionals/{id}/scopes      # Asignaciones scoped del profesional (roles + overrides por clínica) [Professionals.View]
+PUT    /api/v1/professionals/{id}/scopes      # Reemplazar asignaciones scoped [Professionals.Update]
+GET    /api/v1/professionals/{id}/schedules   # Horarios semanales de atención [Professionals.View] → [{ weekday 1–7 ISO, startTime HH:mm, endTime HH:mm }]
+PUT    /api/v1/professionals/{id}/schedules   # Reemplazar horarios semanales [Professionals.Update] (body: { schedules: [{ weekday 1–7, startTime, endTime }] }; máx. 7 filas, weekday único, endTime > startTime)
+POST   /api/v1/maintenance/backfill-professional-scopes  # Backfill de scopes de profesional (idempotente) [System.AdminSettings]
+```
+
+Horarios (`erp.professional_schedules`) viven por profesional: hasta 7 filas (una por día); días sin atención no tienen fila. El PUT reemplaza el set completo de forma transaccional.
+
+**Invariante de scopes de profesional**: al actualizar un empleado con extensión profesional (`PUT /api/v1/employees/{id}`) que tenga `userId` vinculado, se sincroniza automáticamente (best-effort) el rol `Professional` con scope de clínica para cada clínica activa recién agregada. Si el empleado acaba de convertirse de HR a profesional (extensión recién creada), se otorgan scopes para TODAS las clínicas activas. La reconciliación manual del backfill completo se ejecuta vía `POST /api/v1/maintenance/backfill-professional-scopes` (requiere `System.AdminSettings`).
 
 ## Audit System
 

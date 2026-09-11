@@ -186,10 +186,20 @@ public sealed record ErpCofresPatientRow(
     [property: JsonPropertyName("pending_clinical_count")] int PendingClinicalCount,
     [property: JsonPropertyName("nb_current_streak")] int NbCurrentStreak);
 
+public sealed record PaginatedErpCofresTabla(
+    [property: JsonPropertyName("data")] IReadOnlyList<ErpCofresPatientRow> Data,
+    [property: JsonPropertyName("total")] int Total,
+    [property: JsonPropertyName("page")] int Page,
+    [property: JsonPropertyName("pageSize")] int PageSize,
+    [property: JsonPropertyName("totalPages")] int TotalPages);
+
 public sealed record ProgramErpCofresDto(
+    [property: JsonPropertyName("total_active_patients")] int TotalActivePatients,
+    [property: JsonPropertyName("total_xp_awarded")] long TotalXpAwarded,
+    [property: JsonPropertyName("total_pending_clinical")] int TotalPendingClinical,
     [property: JsonPropertyName("xp_por_categoria")] IReadOnlyList<ErpXpByCategory> XpPorCategoria,
     [property: JsonPropertyName("milestones")] ErpMilestoneCounts Milestones,
-    [property: JsonPropertyName("tabla")] IReadOnlyList<ErpCofresPatientRow> Tabla,
+    [property: JsonPropertyName("tabla")] PaginatedErpCofresTabla Tabla,
     [property: JsonPropertyName("proximos_a_desbloquear")] int ProximosADesbloquear);
 
 // ===================== Patient Overview (360) =====================

@@ -1,6 +1,8 @@
 using CoppAddresd.Application.DTOs.Ai;
+using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Features.Patients;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -35,6 +37,89 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
                 x.Unit!.Code,
                 x.ObservedAt))
             .ToListAsync(ct);
+
+    public async Task AddBatchAsync(
+        IReadOnlyList<ClinicalMeasurement> measurements,
+        CancellationToken ct = default)
+    {
+        if (measurements.Count == 0)
+        {
+            return;
+        }
+
+        await dbContext.ClinicalMeasurements.AddRangeAsync(measurements, ct);
+        await dbContext.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<MeasurementMetric>> GetActiveMetricsWithUnitsAsync(CancellationToken ct = default)
+    {
+        return await dbContext.MeasurementMetrics
+            .AsNoTracking()
+            .Include(m => m.DefaultUnit)
+            .Where(m => m.IsActive)
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<UnitOfMeasure>> GetActiveUnitsAsync(CancellationToken ct = default)
+    {
+        return await dbContext.UnitOfMeasures
+            .AsNoTracking()
+            .Where(u => u.IsActive)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>
+    /// Última medición por métrica (R1). GroupBy + OrderByDescending + First se
+    /// traduce a <c>SELECT DISTINCT ON (code) ... ORDER BY code, observed_at DESC,
+    /// recorded_at DESC</c> en Npgsql: una sola query con desempate determinista.
+    /// </summary>
+    /// <remarks>
+    /// La guarda 3VL es obligatoria: <c>m.BatchId != excludeBatchId</c> por sí sola
+    /// evalúa <c>NULL != guid</c> ⇒ UNKNOWN y descarta silenciosamente las filas con
+    /// <c>batch_id</c> NULL (device/checkin/manual). La rama explícita
+    /// <c>m.BatchId == null</c> conserva ese historial cross-source (spec
+    /// "History found across sources").
+    /// </remarks>
+    public async Task<IReadOnlyDictionary<string, LabExamMetricSnapshot>> GetLastPerMetricAsync(
+        Guid patientId,
+        IEnumerable<string> metricNames,
+        Guid excludeBatchId,
+        CancellationToken ct = default)
+    {
+        var names = metricNames
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (names.Length == 0)
+        {
+            return new Dictionary<string, LabExamMetricSnapshot>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        var rows = await dbContext.ClinicalMeasurements
+            .AsNoTracking()
+            .Where(m => m.PatientId == patientId
+                        && (m.BatchId == null || m.BatchId != excludeBatchId)
+                        && names.Contains(m.Metric!.Code))
+            .Select(m => new
+            {
+                Code = m.Metric!.Code,
+                m.Value,
+                UnitSymbol = m.Unit!.Symbol,
+                m.ObservedAt,
+                m.RecordedAt
+            })
+            .GroupBy(x => x.Code)
+            .Select(g => g.OrderByDescending(x => x.ObservedAt)
+                           .ThenByDescending(x => x.RecordedAt)
+                           .First())
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(
+            r => r.Code,
+            r => new LabExamMetricSnapshot(r.Code, r.Value, r.UnitSymbol, r.ObservedAt),
+            StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Proyección ERP de las mediciones de un paciente. Dos queries set-based:
@@ -78,10 +163,10 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
                 m.Unit!.Symbol,
                 m.ObservedAt,
                 m.Source,
-                m.EncounterId))
+                m.BatchId ?? m.EncounterId))
             .ToListAsync(ct);
 
-        // Remap en memoria: el BatchId proyectado (EncounterId) se reemplaza
+        // Remap en memoria: el BatchId proyectado (BatchId ?? EncounterId) se reemplaza
         // solo cuando es null. La derivación es la función pura ResolveBatchId.
         return rows
             .Select(r =>
@@ -95,13 +180,13 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
 
     /// <summary>
     /// Derivación pura del <c>batchId</c> de una fila (D1 del diseño):
-    /// 1) <paramref name="encounterId"/> no nulo → el encuentro;
+    /// 1) <paramref name="existingBatchId"/> no nulo → el batch o encuentro existente;
     /// 2) la fila es ancla (su Id está en <paramref name="anchorIds"/>) → su Id;
     /// 3) match EXACTO de (Source, ObservedAt) contra las anclas → el Id de
     ///    ancla menor (Min, determinista ante lotes del mismo instante);
     /// 4) sin match → null. Orden equivalente al del sketch del diseño
-    ///    (EncounterId tiene precedencia vía la proyección; las anclas siempre
-    ///    tienen EncounterId null).
+    ///    (EncounterId/BatchId tiene precedencia vía la proyección; las anclas siempre
+    ///    tienen EncounterId/BatchId null).
     /// </summary>
     public static Guid? ResolveBatchId(
         Guid rowId,

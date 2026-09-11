@@ -81,6 +81,33 @@ public class S3ObjectStorageServiceTests
     }
 
     [Fact]
+    public async Task PutObject_no_cierra_ni_consum_el_stream_del_llamador()
+    {
+        // Regresión (foodai en prod): AutoCloseStream por defecto del SDK
+        // cerraba el stream tras la subida y la segunda lectura
+        // (request.ImageStream.Position = 0) lanzaba
+        // ObjectDisposedException 'Cannot access a closed Stream'.
+        var client = NewClient();
+        client
+            .Setup(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PutObjectResponse { ETag = "\"e\"" });
+
+        var service = Build(client);
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("imagen"));
+
+        await service.PutObjectAsync("foodai/1.png", stream, "image/png");
+
+        Assert.True(stream.CanRead, "el stream debe seguir legible tras PutObjectAsync");
+        Assert.True(stream.CanSeek, "el stream debe seguir 'seekable' tras PutObjectAsync");
+        stream.Position = 0;
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        Assert.Equal("imagen", await reader.ReadToEndAsync());
+        client.Verify(c => c.PutObjectAsync(
+            It.Is<PutObjectRequest>(r => r.AutoCloseStream == false),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task GetObject_404_se_traduce_a_FileNotFound()
     {
         var client = NewClient();

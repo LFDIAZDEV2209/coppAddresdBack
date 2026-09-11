@@ -12,8 +12,8 @@ public record AnalyzeFoodImageCommand(
     string FileName,
     string ContentType,
     long Length,
-    Guid? UserId = null)
-    : IRequest<AnalyzeFoodImageResult>;
+    Guid? UserId = null
+) : IRequest<AnalyzeFoodImageResult>;
 
 public record AnalyzeFoodImageResult(
     string AnalysisId,
@@ -24,4 +24,6 @@ public record AnalyzeFoodImageResult(
     int InferenceTimeMs,
     IReadOnlyList<DetectedFoodDto> Foods,
     NutritionValueDto? Summary = null,
-    NutritionRangeDto? SummaryRange = null);
+    NutritionRangeDto? SummaryRange = null,
+    MealIntakeDto? Intake = null
+);
