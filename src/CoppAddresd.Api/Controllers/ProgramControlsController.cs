@@ -12,26 +12,26 @@ using Microsoft.Extensions.Options;
 namespace CoppAddresd.Api.Controllers;
 
 /// <summary>
-/// Endpoints demo/herramientas del recordatorio proactivo de hitos del programa
-/// (Program Milestone Reminder, <c>Program:MilestoneSender</c>): permiten correr
-/// el job a demanda, FORZAR el envío de un hito para una inscripción real
-/// (sin esperar la ventana 9–21 local ni el tick), inspeccionar el historial
-/// de <c>app.program_milestone_sends</c>, resetearlo y ver las plantillas
-/// configuradas. Pensados para demostraciones y diagnóstico — el envío
-/// programado sigue gobernado por <c>ProgramMilestoneSenderHostedService</c>.
-/// Mutaciones (run/force/reset) requieren <c>Program.ForceComplete</c>;
-/// lecturas, <c>Program.View</c>. Deliberadamente sin MediatR: son llamadas
-/// delgadas a servicios de aplicación ya registrados en DI (precedente de
-/// tooling: FoodAiController/AgentsController resuelven servicios directo).
+/// Endpoints demo/herramientas del control conversacional del programa
+/// (Controles, <c>Program:Controls</c>): permiten correr el job a demanda,
+/// FORZAR el envío de un hito para una inscripción real (sin esperar la
+/// ventana 9–21 local ni el tick), inspeccionar el historial de
+/// <c>app.program_controls</c>, resetearlo y ver las plantillas configuradas.
+/// Pensados para demostraciones y diagnóstico — el envío programado sigue
+/// gobernado por <c>ProgramControlHostedService</c>. Mutaciones
+/// (run/force/reset) requieren <c>Program.ForceComplete</c>; lecturas,
+/// <c>Program.View</c>. Deliberadamente sin MediatR: son llamadas delgadas a
+/// servicios de aplicación ya registrados en DI (precedente de tooling:
+/// FoodAiController/AgentsController resuelven servicios directo).
 /// </summary>
 [ApiController]
-[Route("api/v1/program-milestones")]
+[Route("api/v1/program-controls")]
 [Authorize]
-public sealed class ProgramMilestonesController(
-    ProgramMilestoneSenderJob job,
-    IProgramMilestoneRepository repository,
-    IOptions<ProgramMilestoneSenderSettings> settings,
-    ILogger<ProgramMilestonesController> logger) : ControllerBase
+public sealed class ProgramControlsController(
+    ProgramControlJob job,
+    IProgramControlRepository repository,
+    IOptions<ProgramControlSettings> settings,
+    ILogger<ProgramControlsController> logger) : ControllerBase
 {
     /// <summary>
     /// Corre una pasada del job ahora mismo (demo: "ejecutá el job"). Devuelve
@@ -43,12 +43,12 @@ public sealed class ProgramMilestonesController(
     /// </summary>
     [HttpPost("run")]
     [RequirePermission(PermissionCodes.ProgramForceComplete)]
-    [ProducesResponseType(typeof(ProgramMilestoneRunResult), StatusCodes.Status200OK)]
-    public async Task<ActionResult<ProgramMilestoneRunResult>> Run(CancellationToken ct)
+    [ProducesResponseType(typeof(ProgramControlRunResult), StatusCodes.Status200OK)]
+    public async Task<ActionResult<ProgramControlRunResult>> Run(CancellationToken ct)
     {
         var result = await job.RunAsync(ct);
         logger.LogInformation(
-            "Program.MilestoneSenderDemo: pasada manual. candidates={Candidates} sent={Sent} skipped={Skipped} failed={Failed}",
+            "Program.ControlsDemo: pasada manual. candidates={Candidates} sent={Sent} skipped={Skipped} failed={Failed}",
             result.Candidates, result.Sent, result.Skipped, result.Failed);
         return Ok(result);
     }
@@ -64,11 +64,11 @@ public sealed class ProgramMilestonesController(
     /// </summary>
     [HttpPost("force")]
     [RequirePermission(PermissionCodes.ProgramForceComplete)]
-    [ProducesResponseType(typeof(ProgramMilestoneSendResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProgramControlSendResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ProgramMilestoneSendResult>> ForceSend(
-        [FromBody] ForceMilestoneSendRequest request,
+    public async Task<ActionResult<ProgramControlSendResult>> ForceSend(
+        [FromBody] ForceProgramControlSendRequest request,
         CancellationToken ct)
     {
         if (request.EnrollmentId == Guid.Empty)
@@ -91,61 +91,60 @@ public sealed class ProgramMilestonesController(
         }
 
         logger.LogInformation(
-            "Program.MilestoneSenderDemo: force-send. enrollment={EnrollmentId} day={MilestoneDay} status={Status}",
+            "Program.ControlsDemo: force-send. enrollment={EnrollmentId} day={MilestoneDay} status={Status}",
             result.EnrollmentId, result.MilestoneDay, result.Status);
         return Ok(result);
     }
 
     /// <summary>
-    /// Historial de envíos de recordatorios de hito
-    /// (<c>app.program_milestone_sends</c>), ordenado por creación descendente
-    /// (demo/ERP). Filtros opcionales por inscripción, paciente y estado;
-    /// <c>limit</c> default 100, máximo 500.
+    /// Historial de controles del programa (<c>app.program_controls</c>),
+    /// ordenado por creación descendente (demo/ERP). Filtros opcionales por
+    /// inscripción, paciente y estado; <c>limit</c> default 100, máximo 500.
     /// </summary>
-    [HttpGet("sends")]
+    [HttpGet("list")]
     [RequirePermission(PermissionCodes.ProgramView)]
-    [ProducesResponseType(typeof(IReadOnlyList<MilestoneSendDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<MilestoneSendDto>>> ListSends(
+    [ProducesResponseType(typeof(IReadOnlyList<ProgramControlSendDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<ProgramControlSendDto>>> List(
         [FromQuery] Guid? enrollmentId,
         [FromQuery] Guid? patientId,
-        [FromQuery] ProgramMilestoneSendStatus? status,
+        [FromQuery] ProgramControlStatus? status,
         [FromQuery] int? limit,
         CancellationToken ct)
     {
-        var sends = await repository.ListSendsAsync(enrollmentId, patientId, status, limit, ct);
-        return Ok(sends.Select(MilestoneSendDto.FromEntity).ToList());
+        var controls = await repository.ListAsync(enrollmentId, patientId, status, limit, ct);
+        return Ok(controls.Select(ProgramControlSendDto.FromEntity).ToList());
     }
 
     /// <summary>
-    /// Reset del historial de envíos para demo: elimina los registros de la
+    /// Reset del historial de controles para demo: elimina los registros de la
     /// inscripción indicada o TODOS si se omite <c>enrollmentId</c>. Devuelve
     /// la cantidad eliminada. Pensado para re-demostrar el ciclo completo
     /// (force-send → listar → reset).
     /// </summary>
-    [HttpDelete("sends")]
+    [HttpDelete("list")]
     [RequirePermission(PermissionCodes.ProgramForceComplete)]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public async Task<IActionResult> DeleteSends([FromQuery] Guid? enrollmentId, CancellationToken ct)
+    public async Task<IActionResult> Delete([FromQuery] Guid? enrollmentId, CancellationToken ct)
     {
-        var deleted = await repository.DeleteSendsAsync(enrollmentId, ct);
+        var deleted = await repository.DeleteAsync(enrollmentId, ct);
         logger.LogInformation(
-            "Program.MilestoneSenderDemo: reset de envíos. enrollment={EnrollmentId} deleted={Deleted}",
+            "Program.ControlsDemo: reset de controles. enrollment={EnrollmentId} deleted={Deleted}",
             enrollmentId, deleted);
         return Ok(new { deleted });
     }
 
     /// <summary>
-    /// Configuración vigente del recordatorio de hitos para demo/visibilidad
-    /// (<c>Program:MilestoneSender</c>): días de hito, ventana, gracia,
-    /// reintentos y las plantillas por día (título, mensaje, agente).
+    /// Configuración vigente de los controles para demo/visibilidad
+    /// (<c>Program:Controls</c>): días de hito, ventana, gracia, reintentos y
+    /// las plantillas por día (título, mensaje, agente).
     /// </summary>
     [HttpGet("templates")]
     [RequirePermission(PermissionCodes.ProgramView)]
-    [ProducesResponseType(typeof(MilestoneTemplatesView), StatusCodes.Status200OK)]
-    public ActionResult<MilestoneTemplatesView> GetTemplates()
+    [ProducesResponseType(typeof(ProgramControlTemplatesView), StatusCodes.Status200OK)]
+    public ActionResult<ProgramControlTemplatesView> GetTemplates()
     {
         var s = settings.Value;
-        return Ok(new MilestoneTemplatesView(
+        return Ok(new ProgramControlTemplatesView(
             s.Enabled,
             s.Days.ToList(),
             s.StartLocalHour,
@@ -154,18 +153,18 @@ public sealed class ProgramMilestonesController(
             s.MaxAttempts,
             s.Templates
                 .OrderBy(t => t.Day)
-                .Select(t => new MilestoneTemplateView(t.Day, t.Title, t.Message, t.AgentTypeId))
+                .Select(t => new ProgramControlTemplateView(t.Day, t.Title, t.Message, t.AgentTypeId))
                 .ToList()));
     }
 }
 
-/// <summary>Fila del historial de envíos (GET /sends) con el paciente resuelto por join.</summary>
-public sealed record MilestoneSendDto(
+/// <summary>Fila del historial de controles (GET /list) con el paciente resuelto por join.</summary>
+public sealed record ProgramControlSendDto(
     Guid Id,
     Guid EnrollmentId,
     Guid PatientId,
     int MilestoneDay,
-    ProgramMilestoneSendStatus Status,
+    ProgramControlStatus Status,
     int Attempts,
     string? ThreadId,
     DateTime? SentAt,
@@ -177,32 +176,32 @@ public sealed record MilestoneSendDto(
     /// repositorio) a la fila expuesta; la FK enrollment_id no es nullable, así
     /// que la navegación siempre viene poblada.
     /// </summary>
-    public static MilestoneSendDto FromEntity(ProgramMilestoneSend send)
+    public static ProgramControlSendDto FromEntity(ProgramControl control)
         => new(
-            send.Id,
-            send.EnrollmentId,
-            send.Enrollment!.PatientId,
-            send.MilestoneDay,
-            send.Status,
-            send.Attempts,
-            send.ThreadId,
-            send.SentAt,
-            send.CreatedAt,
-            send.UpdatedAt);
+            control.Id,
+            control.EnrollmentId,
+            control.Enrollment!.PatientId,
+            control.MilestoneDay,
+            control.Status,
+            control.Attempts,
+            control.ThreadId,
+            control.SentAt,
+            control.CreatedAt,
+            control.UpdatedAt);
 }
 
 /// <summary>Plantilla configurada por día (GET /templates).</summary>
-public sealed record MilestoneTemplateView(int Day, string Title, string Message, string AgentTypeId);
+public sealed record ProgramControlTemplateView(int Day, string Title, string Message, string AgentTypeId);
 
-/// <summary>Vista de configuración vigente del recordatorio de hitos (GET /templates).</summary>
-public sealed record MilestoneTemplatesView(
+/// <summary>Vista de configuración vigente de los controles (GET /templates).</summary>
+public sealed record ProgramControlTemplatesView(
     bool Enabled,
     IReadOnlyList<int> Days,
     int StartLocalHour,
     int EndLocalHour,
     int GraceDays,
     int MaxAttempts,
-    IReadOnlyList<MilestoneTemplateView> Templates);
+    IReadOnlyList<ProgramControlTemplateView> Templates);
 
 /// <summary>Payload de <c>POST /force</c>: inscripción + día de hito a forzar.</summary>
-public sealed record ForceMilestoneSendRequest(Guid EnrollmentId, int MilestoneDay);
+public sealed record ForceProgramControlSendRequest(Guid EnrollmentId, int MilestoneDay);

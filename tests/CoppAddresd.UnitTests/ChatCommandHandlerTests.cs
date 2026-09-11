@@ -5,15 +5,21 @@ using CoppAddresd.Application.Features.Chat;
 using CoppAddresd.Application.Features.Threads;
 using CoppAddresd.Application.Features.Wellness;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums;
+using CoppAddresd.Domain.Enums.ProgramProgress;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.UnitTests;
 
 /// <summary>
 /// Tests del flujo de chat: mapeo de respuesta, propagación de errores del AI
-/// Service y re-sync del runtime cuando el agente no está sincronizado.
+/// Service, re-sync del runtime cuando el agente no está sincronizado y los
+/// hooks de controles (fase 2): Responded + control_context y consumo de la
+/// señal control_signal — siempre best-effort.
 /// </summary>
 public class ChatCommandHandlerTests
 {
@@ -29,7 +35,7 @@ public class ChatCommandHandlerTests
             => throw new NotImplementedException();
 
         public IAsyncEnumerable<StreamChatChunk> StreamRawAsync(
-            ChatRequest request, CancellationToken ct = default)
+            ChatRequest request, Action<string>? onControlSignal = null, CancellationToken ct = default)
             => throw new NotImplementedException();
 
         public Task<AiPlanResult> GeneratePlanAsync(
@@ -214,12 +220,109 @@ public class ChatCommandHandlerTests
             => throw new NotImplementedException();
     }
 
+    /// <summary>
+    /// Repositorio de controles fake: resolución configurable del control
+    /// abierto y registro de las transiciones de la fase 2 (Responded y
+    /// ClosedDeclined). El resto de los miembros no se usan en estos tests.
+    /// </summary>
+    private sealed class FakeProgramControlRepository : IProgramControlRepository
+    {
+        public ProgramControl? OpenControl { get; set; }
+
+        public Func<Task<ProgramControl?>>? OnFindOpen { get; set; }
+
+        public bool MarkRespondedResult { get; set; } = true;
+
+        public int FindOpenCalls { get; private set; }
+
+        public List<Guid> MarkRespondedCalls { get; } = [];
+
+        public List<Guid> MarkClosedDeclinedCalls { get; } = [];
+
+        public Task<ProgramControl?> FindOpenControlForUserAsync(
+            Guid authUserId, string? threadId = null, CancellationToken ct = default)
+        {
+            FindOpenCalls++;
+            return OnFindOpen?.Invoke() ?? Task.FromResult(OpenControl);
+        }
+
+        public Task<bool> MarkRespondedAsync(Guid id, DateTime respondedAt, CancellationToken ct = default)
+        {
+            MarkRespondedCalls.Add(id);
+            return Task.FromResult(MarkRespondedResult);
+        }
+
+        public Task<bool> MarkClosedDeclinedAsync(Guid id, DateTime closedAt, CancellationToken ct = default)
+        {
+            MarkClosedDeclinedCalls.Add(id);
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlyList<ProgramControlEnrollmentCandidate>> ListActiveCandidatesAsync(
+            DateOnly startLocalDateCutoff, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<ProgramControl?> GetAsync(
+            Guid enrollmentId, int milestoneDay, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task AddAsync(ProgramControl control, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task UpdateAsync(ProgramControl control, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<ProgramControlEnrollmentCandidate?> GetCandidateAsync(
+            Guid enrollmentId, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<ProgramControl>> ListAsync(
+            Guid? enrollmentId = null,
+            Guid? patientId = null,
+            ProgramControlStatus? status = null,
+            int? limit = null,
+            CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<int> DeleteAsync(Guid? enrollmentId = null, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<bool> MarkCompletedAsync(
+            Guid id, Guid examBatchId, DateTime completedAt, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<bool> MarkFollowedUpAsync(Guid id, DateTime followupSentAt, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<bool> MarkMissedAsync(Guid id, DateTime missedAt, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<bool> MarkNoUploadTimeoutAsync(Guid id, DateTime closedAt, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<ProgramControlDueItem>> ListDueForFollowupAsync(
+            DateTime utcNow, int followupHours, int limit = 100, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<ProgramControlDueItem>> ListDueForMissAsync(
+            DateTime utcNow, int missAfterFollowupHours, int limit = 100, CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<IReadOnlyList<ProgramControlDueItem>> ListTimedOutNoUploadAsync(
+            DateTime utcNow, int noUploadCloseHours, int limit = 100, CancellationToken ct = default)
+            => throw new NotImplementedException();
+    }
+
     private static ChatCommandHandler BuildHandler(
         IAiServiceClient aiClient,
-        IAgentRuntimeSyncService? sync = null) => new(
+        IAgentRuntimeSyncService? sync = null,
+        IProgramControlRepository? programControls = null,
+        bool controlsEnabled = true) => new(
             aiClient,
             new EmptyCatalogRepository(),
             sync ?? new FakeRuntimeSync(),
+            programControls ?? new FakeProgramControlRepository(),
+            Options.Create(new ProgramControlSettings { ControlsEnabled = controlsEnabled }),
             NullLogger<ChatCommandHandler>.Instance);
 
     [Fact]
@@ -310,5 +413,162 @@ public class ChatCommandHandlerTests
             handler.Handle(
                 new ChatCommand("hola", AgentTypeId: Guid.NewGuid().ToString()),
                 CancellationToken.None));
+    }
+
+    // -------------------------------------------------- Hooks de controles (fase 2)
+
+    [Fact]
+    public async Task Handle_control_abierto_en_Sent_marca_Responded_y_adjunta_contexto()
+    {
+        var userId = Guid.NewGuid().ToString();
+        var control = new ProgramControl
+        {
+            Id = Guid.NewGuid(),
+            MilestoneDay = 14,
+            Status = ProgramControlStatus.Sent,
+            ThreadId = "t-control",
+        };
+        var repo = new FakeProgramControlRepository { OpenControl = control };
+
+        ChatRequest? captured = null;
+        var ai = new FakeAiClient
+        {
+            OnChat = req =>
+            {
+                captured = req;
+                return Task.FromResult(new ChatResponse("reply", "t1", "e1", "base"));
+            },
+        };
+        var handler = BuildHandler(ai, programControls: repo);
+
+        var result = await handler.Handle(
+            new ChatCommand("hola", ThreadId: "t-control", UserId: userId), CancellationToken.None);
+
+        Assert.Equal("reply", result.Reply);
+        var marked = Assert.Single(repo.MarkRespondedCalls);
+        Assert.Equal(control.Id, marked);
+
+        Assert.NotNull(captured!.ControlContext);
+        var payload = Assert.IsType<ControlContextPayload>(captured.ControlContext);
+        Assert.Equal(control.Id, payload.SendId);
+        Assert.Equal(14, payload.MilestoneDay);
+        Assert.Equal("responded", payload.Status); // tras marcar Responded
+        Assert.True(payload.ExamPending);
+    }
+
+    [Fact]
+    public async Task Handle_sin_control_abierto_no_marca_ni_adjunta_contexto()
+    {
+        var userId = Guid.NewGuid().ToString();
+        var repo = new FakeProgramControlRepository(); // sin control abierto
+
+        ChatRequest? captured = null;
+        var ai = new FakeAiClient
+        {
+            OnChat = req =>
+            {
+                captured = req;
+                return Task.FromResult(new ChatResponse("reply", "t1", "e1", "base"));
+            },
+        };
+        var handler = BuildHandler(ai, programControls: repo);
+
+        await handler.Handle(
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+
+        Assert.Null(captured!.ControlContext);
+        Assert.Empty(repo.MarkRespondedCalls);
+    }
+
+    [Fact]
+    public async Task Handle_flag_off_no_consulta_controles()
+    {
+        var userId = Guid.NewGuid().ToString();
+        var repo = new FakeProgramControlRepository
+        {
+            OpenControl = new ProgramControl { Id = Guid.NewGuid(), MilestoneDay = 7, Status = ProgramControlStatus.Sent },
+        };
+        var ai = new FakeAiClient
+        {
+            OnChat = _ => Task.FromResult(new ChatResponse("reply", "t1", "e1", "base")),
+        };
+        var handler = BuildHandler(ai, programControls: repo, controlsEnabled: false);
+
+        await handler.Handle(
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+
+        Assert.Equal(0, repo.FindOpenCalls);
+        Assert.Empty(repo.MarkRespondedCalls);
+    }
+
+    [Fact]
+    public async Task Handle_signal_declined_cierra_control_y_no_expone_la_senal()
+    {
+        var userId = Guid.NewGuid().ToString();
+        var control = new ProgramControl
+        {
+            Id = Guid.NewGuid(),
+            MilestoneDay = 7,
+            Status = ProgramControlStatus.Responded,
+        };
+        var repo = new FakeProgramControlRepository { OpenControl = control };
+        var ai = new FakeAiClient
+        {
+            OnChat = _ => Task.FromResult(new ChatResponse(
+                "reply", "t1", "e1", "base", ControlSignal: "declined")),
+        };
+        var handler = BuildHandler(ai, programControls: repo);
+
+        var result = await handler.Handle(
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+
+        // La señal se consume (cierre por rechazo) pero jamás llega al ChatResult.
+        var closed = Assert.Single(repo.MarkClosedDeclinedCalls);
+        Assert.Equal(control.Id, closed);
+        Assert.Equal("reply", result.Reply);
+        Assert.Equal("t1", result.ThreadId);
+    }
+
+    [Fact]
+    public async Task Handle_signal_otro_valor_no_cierra_el_control()
+    {
+        var userId = Guid.NewGuid().ToString();
+        var repo = new FakeProgramControlRepository
+        {
+            OpenControl = new ProgramControl { Id = Guid.NewGuid(), MilestoneDay = 7, Status = ProgramControlStatus.Sent },
+        };
+        var ai = new FakeAiClient
+        {
+            OnChat = _ => Task.FromResult(new ChatResponse(
+                "reply", "t1", "e1", "base", ControlSignal: "otra_cosa")),
+        };
+        var handler = BuildHandler(ai, programControls: repo);
+
+        await handler.Handle(
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+
+        Assert.Empty(repo.MarkClosedDeclinedCalls);
+    }
+
+    [Fact]
+    public async Task Handle_repo_thrower_no_rompe_el_chat()
+    {
+        var userId = Guid.NewGuid().ToString();
+        var repo = new FakeProgramControlRepository
+        {
+            // La base de controles está caída: el chat debe seguir funcionando.
+            OnFindOpen = () => throw new InvalidOperationException("db caída"),
+        };
+        var ai = new FakeAiClient
+        {
+            OnChat = _ => Task.FromResult(new ChatResponse("reply", "t1", "e1", "base")),
+        };
+        var handler = BuildHandler(ai, programControls: repo);
+
+        var result = await handler.Handle(
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+
+        Assert.Equal("reply", result.Reply);
+        Assert.Equal("t1", result.ThreadId);
     }
 }

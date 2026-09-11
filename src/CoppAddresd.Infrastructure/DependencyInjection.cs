@@ -64,10 +64,10 @@ public static class DependencyInjection
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
 
-        // Recordatorios de hitos del programa (Program Milestone Reminder):
-        // repositorio enfocado de program_milestone_sends (precedente:
-        // DeviceTokenRepository/LeagueRepository — no crece ProgramRepository).
-        services.AddScoped<IProgramMilestoneRepository, ProgramMilestoneRepository>();
+        // Controles del programa (Program Controls): repositorio enfocado de
+        // program_controls (precedente: DeviceTokenRepository/LeagueRepository
+        // — no crece ProgramRepository).
+        services.AddScoped<IProgramControlRepository, ProgramControlRepository>();
 
         // Liga del paciente (LEAGUE v1): repositorio enfocado de solo lectura
         // + update mínimo de preferencias (no crece ProgramRepository).
