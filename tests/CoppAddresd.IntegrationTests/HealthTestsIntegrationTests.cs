@@ -898,4 +898,243 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
         );
         Assert.Null(foreign);
     }
+
+    /// <summary>
+    /// Filtro geográfico del dashboard: resuelve pacientes por estado (código
+    /// normalizado) o ciudad (con precedencia) y devuelve vacío sin filtros
+    /// (nunca expone el padrón completo por accidente).
+    /// </summary>
+    [Fact]
+    public async Task GetPatientIdsByGeo_FiltraPorEstadoYCiudad()
+    {
+        if (_skipped)
+        {
+            return;
+        }
+
+        var country = await NewTestCountryAsync();
+        var (stateA, cityA1) = await NewTestStateWithCityAsync(country, "QA", "Ciudad Uno");
+        var (_, cityA2) = await NewTestStateWithCityAsync(country, "QB", "Ciudad Dos");
+        var (stateB, cityB1) = await NewTestStateWithCityAsync(country, "QC", "Ciudad Tres");
+
+        var patientA1 = await NewPatientInCityAsync("doc-geo-a1", stateA.Id, cityA1.Id);
+        var patientA2 = await NewPatientInCityAsync("doc-geo-a2", stateA.Id, cityA2.Id);
+        var patientB1 = await NewPatientInCityAsync("doc-geo-b1", stateB.Id, cityB1.Id);
+
+        // Por estado (el código se normaliza a mayúsculas).
+        var byState = await _repository.GetPatientIdsByGeoAsync(
+            stateA.Code.ToLowerInvariant(),
+            null
+        );
+        Assert.Contains(patientA1.Id, byState);
+        Assert.Contains(patientA2.Id, byState);
+        Assert.DoesNotContain(patientB1.Id, byState);
+
+        // cityId tiene precedencia sobre el estado.
+        var byCity = await _repository.GetPatientIdsByGeoAsync(stateB.Code, cityA2.Id);
+        Assert.Single(byCity);
+        Assert.Equal(patientA2.Id, byCity[0]);
+
+        // Sin filtros → vacío.
+        var blank = await _repository.GetPatientIdsByGeoAsync("   ", null);
+        Assert.Empty(blank);
+    }
+
+    /// <summary>
+    /// La tabla maestra filtrada por zona recibe la lista de pacientes y solo
+    /// devuelve las asignaciones de esos pacientes.
+    /// </summary>
+    [Fact]
+    public async Task ListAssignmentsWithPatientData_FiltraPorPacientesDeLaZona()
+    {
+        if (_skipped)
+        {
+            return;
+        }
+
+        var instrument = await NewInstrumentWithVersionAsync("it_geo_master");
+        var version = instrument.Versions.Single();
+        var patientIn = await NewPatientAsync("doc-master-in");
+        var patientOut = await NewPatientAsync("doc-master-out");
+
+        await _repository.AddAssignmentAsync(
+            new HealthTestAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientIn.Id,
+                VersionId = version.Id,
+                Status = HealthTestAssignmentStatus.pending,
+                AssignedAt = DateTime.UtcNow,
+            }
+        );
+        await _repository.AddAssignmentAsync(
+            new HealthTestAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientOut.Id,
+                VersionId = version.Id,
+                Status = HealthTestAssignmentStatus.pending,
+                AssignedAt = DateTime.UtcNow,
+            }
+        );
+
+        var filtered = await _repository.ListAssignmentsWithPatientDataAsync(
+            null,
+            [patientIn.Id]
+        );
+        Assert.Single(filtered);
+        Assert.Equal(patientIn.Id, filtered[0].PatientId);
+
+        var unfiltered = await _repository.ListAssignmentsWithPatientDataAsync(null);
+        Assert.Equal(2, unfiltered.Count);
+    }
+
+    /// <summary>
+    /// Handler de la tabla maestra con filtro geo: solo las filas de la zona y
+    /// lista vacía cuando la zona no tiene pacientes.
+    /// </summary>
+    [Fact]
+    public async Task GetMasterRows_ConFiltroGeo_AcotaPacientesDeLaZona()
+    {
+        if (_skipped)
+        {
+            return;
+        }
+
+        var country = await NewTestCountryAsync();
+        var (stateIn, cityIn) = await NewTestStateWithCityAsync(country, "QD", "Ciudad Zona");
+        var (stateOut, cityOut) = await NewTestStateWithCityAsync(
+            country,
+            "QE",
+            "Ciudad Fuera"
+        );
+
+        var instrument = await NewInstrumentWithVersionAsync("it_geo_rows");
+        var version = instrument.Versions.Single();
+        var patientIn = await NewPatientInCityAsync("doc-rows-in", stateIn.Id, cityIn.Id);
+        var patientOut = await NewPatientInCityAsync("doc-rows-out", stateOut.Id, cityOut.Id);
+
+        await _repository.AddAssignmentAsync(
+            new HealthTestAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientIn.Id,
+                VersionId = version.Id,
+                Status = HealthTestAssignmentStatus.pending,
+                AssignedAt = DateTime.UtcNow,
+            }
+        );
+        await _repository.AddAssignmentAsync(
+            new HealthTestAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientOut.Id,
+                VersionId = version.Id,
+                Status = HealthTestAssignmentStatus.pending,
+                AssignedAt = DateTime.UtcNow,
+            }
+        );
+
+        var handler = new GetMasterRowsQueryHandler(_repository, new NoopCacheService());
+
+        var rows = await handler.Handle(new GetMasterRowsQuery(null, stateIn.Code, null), default);
+        Assert.Single(rows);
+        Assert.Equal(patientIn.Id, rows[0].Patient.Id);
+
+        // Zona sin pacientes → vacío (early return cacheado).
+        var empty = await handler.Handle(
+            new GetMasterRowsQuery(null, null, Guid.NewGuid()),
+            default
+        );
+        Assert.Empty(empty);
+    }
+
+    /// <summary>
+    /// Crea un país de prueba con un código ISO libre (la BD es real y puede
+    /// tener el catálogo completo; la transacción del test revierte todo).
+    /// </summary>
+    private async Task<Country> NewTestCountryAsync()
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            var code =
+                $"{(char)Random.Shared.Next('A', 'Z' + 1)}{(char)Random.Shared.Next('A', 'Z' + 1)}";
+            if (await _db.Countries.AnyAsync(c => c.Code == code))
+            {
+                continue;
+            }
+
+            var country = new Country
+            {
+                Id = Guid.NewGuid(),
+                Code = code,
+                Name = $"País test {code}",
+                PhoneCode = "999",
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            };
+            _db.Countries.Add(country);
+            await _db.SaveChangesAsync();
+            return country;
+        }
+
+        throw new InvalidOperationException("No hay códigos ISO libres para el país de prueba.");
+    }
+
+    private async Task<(State State, City City)> NewTestStateWithCityAsync(
+        Country country,
+        string stateCode,
+        string cityName
+    )
+    {
+        var state = new State
+        {
+            Id = Guid.NewGuid(),
+            CountryId = country.Id,
+            Code = stateCode,
+            Name = $"Estado {stateCode}",
+            CreatedAt = DateTime.UtcNow,
+        };
+        var city = new City
+        {
+            Id = Guid.NewGuid(),
+            StateId = state.Id,
+            Name = cityName,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.States.Add(state);
+        _db.Cities.Add(city);
+        await _db.SaveChangesAsync();
+        return (state, city);
+    }
+
+    private async Task<PatientProfile> NewPatientInCityAsync(string doc, Guid stateId, Guid cityId)
+    {
+        var patient = await NewPatientAsync(doc);
+        patient.StateId = stateId;
+        patient.CityId = cityId;
+        await _db.SaveChangesAsync();
+        return patient;
+    }
+
+    /// <summary>Cache de prueba sin persistencia (siempre miss) para handlers.</summary>
+    private sealed class NoopCacheService : ICacheService
+    {
+        public Task<T?> GetAsync<T>(string key, CancellationToken ct = default)
+            where T : class => Task.FromResult<T?>(null);
+
+        public Task SetAsync<T>(string key, T value, TimeSpan ttl, CancellationToken ct = default)
+            where T : class => Task.CompletedTask;
+
+        public Task RemoveAsync(string key, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task<T> GetOrCreateAsync<T>(
+            string key,
+            TimeSpan ttl,
+            Func<CancellationToken, Task<T>> factory,
+            CancellationToken ct = default
+        )
+            where T : class => factory(ct);
+    }
 }
