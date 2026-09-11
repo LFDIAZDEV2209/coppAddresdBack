@@ -277,9 +277,16 @@ public class AiServiceClient : IAiServiceClient
 
         var result = await response.Content.ReadFromJsonAsync<ThreadStateResponseJson>(JsonOpts, ct);
         if (result is null)
-            return new ThreadStateResult(threadId, 0, null);
+            return new ThreadStateResult(threadId, 0, null, []);
 
-        return new ThreadStateResult(result.ThreadId, result.MessageCount, result.LastMessage);
+        // `messages` es aditivo: un ai-service anterior no lo envía (null) y se
+        // degrada a lista vacía sin romper el resumen. El orden del thread y el
+        // cap de 100 visibles los garantiza el AI Service.
+        return new ThreadStateResult(
+            result.ThreadId,
+            result.MessageCount,
+            result.LastMessage,
+            result.Messages?.Select(m => new ThreadMessageResult(m.Role, m.Text)).ToList() ?? []);
     }
 
     public async Task<LabExamAiResponse> ExtractLabMetricsAsync(
@@ -464,11 +471,19 @@ public class AiServiceClient : IAiServiceClient
         [property: JsonPropertyName("message_id")] string MessageId);
 
     // Contrato del AI Service para el estado de un thread: `thread_id`,
-    // `message_count` y `last_message` (snake_case).
+    // `message_count`, `last_message` y —de forma aditiva— `messages`
+    // (role + text, últimos 100 visibles). Un ai-service anterior omite
+    // `messages` y se degrada a lista vacía.
     private sealed record ThreadStateResponseJson(
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("message_count")] int MessageCount,
-        [property: JsonPropertyName("last_message")] string? LastMessage);
+        [property: JsonPropertyName("last_message")] string? LastMessage,
+        [property: JsonPropertyName("messages")] IReadOnlyList<ThreadMessageJson>? Messages = null);
+
+    // Mensaje visible del thread según el contrato del AI Service.
+    private sealed record ThreadMessageJson(
+        [property: JsonPropertyName("role")] string Role,
+        [property: JsonPropertyName("text")] string Text);
 
     // Contrato del endpoint de narración: `empathetic_message` (snake_case). Un
     // ai-service anterior no expone el endpoint (404) o puede omitir el campo;
