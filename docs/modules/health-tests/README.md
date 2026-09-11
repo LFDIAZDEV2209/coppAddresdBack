@@ -121,6 +121,23 @@ La batería con `auto_assign_on_patient_create = true` (la inicial ANTARES) se a
 a cada paciente recién creado (estado `Pending`), sin duplicar si ya existe una asignación
 pendiente/en curso. El profesional puede asignar más baterías manualmente.
 
+### ADR-008 — Filtro geográfico acumulado del dashboard (lectura en vivo, sin pre-agregación)
+
+El dashboard ERP permite acotar las series y el mapa por estado (`state`, código, ej. `CA`) o ciudad
+(`cityId`, con precedencia) de forma acumulada. El filtro se resuelve en lectura con
+`IHealthTestRepository.GetPatientIdsByGeoAsync` (`patient_profiles.CityId → cities.StateId → states.Code`),
+se intersecta con el alcance del JWT (`ViewOwn`) y alimenta las mismas consultas de conteo existentes
+(`...ForPatientsAsync`) con la lista de pacientes de la zona. `GET /geo` se mantiene **siempre global**
+(alimenta el mapa y las opciones del selector).
+
+- **Evaluación CQRS (pre-agregación)**: **no aplica** — no se agrega ningún dato nuevo a contar ni se
+  modifican las agregaciones existentes; es filtrado query-time sobre las mismas consultas. El rollup
+  diario (`health_test_daily_metrics`) sigue sirviendo al alcance global (agrega por `clinic_id`, una
+  dimensión distinta a la geografía); las consultas por zona usan la OLTP en vivo.
+- La clave de caché de `GET /master` y `GET /stats` incluye el hash del filtro
+  (`CacheKeys.HashScope(profesional|global, state, cityId)`), por lo que zonas distintas no comparten
+  caché ni exponen datos de otra zona.
+
 ## Flujo de datos
 
 ```
@@ -167,7 +184,9 @@ GET    /health-tests/indicators                                 View
 GET    /health-tests/alerts?patientId&status&severity&page      View/ViewOwn (scoped)
 POST   /health-tests/alerts/{id}/review|resolve|close           Review
 POST   /health-tests/comments                                   Review
-GET    /health-tests/stats                                      View/ViewOwn (dashboard ERP)
+GET    /health-tests/master?state&cityId                        View/ViewOwn (tabla maestra del dashboard; filtro geo acumulado)
+GET    /health-tests/stats?state&cityId                         View/ViewOwn (KPIs/series del dashboard; filtro geo acumulado)
+GET    /health-tests/geo                                        View/ViewOwn (mapa de calor; SIEMPRE global)
 ```
 
 ### Mobile — `/api/v1/health-tests/me` (JWT `aud=app`, paciente por `user_id`)
