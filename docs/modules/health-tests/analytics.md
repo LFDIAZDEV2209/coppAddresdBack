@@ -91,3 +91,20 @@ public async Task<int> CountAssignmentsByStatusAsync(HealthTestAssignmentStatus 
     return await dbContext.HealthTestAssignments.AsNoTracking().CountAsync(x => x.Status == status, ct);
 }
 ```
+
+---
+
+## 6. Query-time geo filtering (CQRS evaluation)
+
+The ERP dashboard's accumulated geographic filter (`state` / `cityId` on `GET /master` and
+`GET /stats`) does **not** introduce new metrics: it narrows existing aggregations to a set of
+patient ids resolved at read time (`IHealthTestRepository.GetPatientIdsByGeoAsync`, joining
+`patient_profiles → cities → states`). Zone-scoped counts go through the existing
+`...ForPatientsAsync` OLTP count methods, not the daily rollup — the pre-aggregation table
+aggregates by `clinic_id`, which is a different dimension than geography.
+
+**Evaluation result: pre-aggregation (Channel Pattern) is NOT applicable** — no new counted
+data, no changes to existing aggregations, no events/queue/processor. Cache keys for the two
+endpoints include a hash of the filter scope, so different zones never share cached payloads.
+See `docs/modules/health-tests/README.md` (ADR-008) for the full decision record.
+
