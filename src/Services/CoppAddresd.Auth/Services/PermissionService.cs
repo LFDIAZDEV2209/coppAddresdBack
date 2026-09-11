@@ -226,6 +226,97 @@ public class PermissionService : IPermissionService
         return (true, null);
     }
 
+    public async Task<(bool Success, string? Error)> SetForRoleAsync(
+        Guid roleId,
+        IReadOnlyList<Guid> permissionIds,
+        CancellationToken ct = default
+    )
+    {
+        // Validar que el rol exista.
+        var roleExists = await _dbContext.Roles.AnyAsync(r => r.Id == roleId, ct);
+        if (!roleExists)
+        {
+            return (false, "Rol no encontrado");
+        }
+
+        // Validar que TODOS los permisos existan (el set completo, no individualmente).
+        if (permissionIds.Count > 0)
+        {
+            var existingCount = await _dbContext
+                .Permissions.Where(p => permissionIds.Contains(p.Id))
+                .CountAsync(ct);
+
+            if (existingCount != permissionIds.Count)
+            {
+                return (false, "Permiso no encontrado");
+            }
+        }
+
+        // Obtener el set actual de permisos del rol.
+        var currentPermissionIds = await _dbContext
+            .RolePermissions.Where(rp => rp.RoleId == roleId)
+            .Select(rp => rp.PermissionId)
+            .ToListAsync(ct);
+
+        var targetSet = new HashSet<Guid>(permissionIds);
+        var currentSet = new HashSet<Guid>(currentPermissionIds);
+
+        // Calcular diffs: permisos a agregar y a remover.
+        var toAdd = targetSet.Except(currentSet).ToList();
+        var toRemove = currentSet.Except(targetSet).ToList();
+
+        // Si no hay cambios, es un no-op idempotente.
+        if (toAdd.Count == 0 && toRemove.Count == 0)
+        {
+            return (true, null);
+        }
+
+        // Agregar permisos faltantes.
+        foreach (var permId in toAdd)
+        {
+            _dbContext.RolePermissions.Add(
+                new Entities.RolePermission { RoleId = roleId, PermissionId = permId }
+            );
+        }
+
+        // Remover permisos sobrantes.
+        if (toRemove.Count > 0)
+        {
+            var toRemoveEntities = await _dbContext
+                .RolePermissions.Where(rp =>
+                    rp.RoleId == roleId && toRemove.Contains(rp.PermissionId)
+                )
+                .ToListAsync(ct);
+
+            _dbContext.RolePermissions.RemoveRange(toRemoveEntities);
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
+
+        // Invalidación de tokens de todos los usuarios afectados por el rol.
+        var affectedUserIds = await _dbContext
+            .UserRoles.Where(ur => ur.RoleId == roleId)
+            .Select(ur => ur.UserId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        if (affectedUserIds.Count > 0)
+        {
+            await _tokenInvalidation.InvalidateUsersTokensAsync(affectedUserIds, ct);
+        }
+
+        // Invalidación del caché de códigos por rol.
+        await _cache.RemoveAsync(AuthCacheKeys.RoleCodes(roleId), ct);
+
+        _logger.LogInformation(
+            "Permissions synced for role {RoleId}: added {Added}, removed {Removed}",
+            roleId,
+            toAdd.Count,
+            toRemove.Count
+        );
+        return (true, null);
+    }
+
     public async Task<(bool Success, string? Error)> AssignToUserAsync(
         Guid userId,
         Guid permissionId,

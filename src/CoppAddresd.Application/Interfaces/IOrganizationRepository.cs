@@ -55,6 +55,25 @@ public interface IOrganizationRepository
 
     Task<bool> SpecialtyCodeExistsAsync(string code, CancellationToken ct = default);
 
+    /// <summary>
+    /// Busca clínicas activas por código dentro de una organización, case-insensitive.
+    /// Devuelve solo las que existen y están activas; códigos duplicados o inexistentes se ignoran.
+    /// Usado por bulk create para resolver clínicas por código en cada fila.
+    /// </summary>
+    Task<IReadOnlyList<(Guid Id, string Code)>> GetClinicsByCodesAsync(
+        Guid organizationId,
+        IReadOnlyList<string> codes,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Busca clínicas activas por código de forma global (todas las organizaciones),
+    /// case-insensitive. Devuelve todas las coincidencias (0, 1 o N).
+    /// Usado por bulk create de pacientes y usuarios Auth.
+    /// </summary>
+    Task<IReadOnlyList<(Guid Id, string Name)>> GetClinicsByCodeAsync(
+        string code,
+        CancellationToken ct = default);
+
     Task<ProfessionalType> AddProfessionalTypeAsync(
         ProfessionalType type,
         CancellationToken ct = default

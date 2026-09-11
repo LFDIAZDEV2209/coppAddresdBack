@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Erp;
@@ -7,7 +8,6 @@ using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.Weaknesses;
 using CoppAddresd.Application.Features.ProgramProgress.Queries.ExportEnrollments;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities;
@@ -46,14 +46,24 @@ internal sealed class FakeProgramRepository : IProgramRepository
     /// </summary>
     public List<MeasurementMetric> Metrics { get; } = [];
 
-    public List<(string Action, string SchemaName, string TableName, Guid RecordId, Guid? ActorId)> AuditRows { get; } = [];
+    public List<(
+        string Action,
+        string SchemaName,
+        string TableName,
+        Guid RecordId,
+        Guid? ActorId
+    )> AuditRows { get; } = [];
 
     /// <summary>"Hoy" local del paciente que devuelve <c>GetPatientLocalTodayAsync</c> (null = inscripción inexistente).</summary>
     public DateOnly? PatientToday { get; set; }
 
     // ------------------------------------------------------------ Hooks
 
-    public Func<CompleteTaskInput, CancellationToken, Task<CompleteTaskResult>>? OnCompleteTask { get; set; }
+    public Func<
+        CompleteTaskInput,
+        CancellationToken,
+        Task<CompleteTaskResult>
+    >? OnCompleteTask { get; set; }
 
     public Func<Guid, CancellationToken, Task<ProgramSnapshotDto?>>? OnGetSnapshot { get; set; }
 
@@ -64,16 +74,30 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public Func<Guid, CancellationToken, Task<ProgramEnrollmentDto?>>? OnGetEnrollment { get; set; }
 
     /// <summary>Hook opcional para <c>ListClinicalBaselinesAsync</c> (TASK-05).</summary>
-    public Func<Guid, CancellationToken, Task<IReadOnlyList<ClinicalBaselineDto>>>? OnListClinicalBaselines { get; set; }
+    public Func<
+        Guid,
+        CancellationToken,
+        Task<IReadOnlyList<ClinicalBaselineDto>>
+    >? OnListClinicalBaselines { get; set; }
 
     /// <summary>Hook opcional para <c>UpsertClinicalBaselineAsync</c> (TASK-05).</summary>
-    public Func<ClinicalBaselineWrite, IReadOnlyList<string>, CancellationToken, Task<ClinicalBaselineDto>>? OnUpsertClinicalBaseline { get; set; }
+    public Func<
+        ClinicalBaselineWrite,
+        IReadOnlyList<string>,
+        CancellationToken,
+        Task<ClinicalBaselineDto>
+    >? OnUpsertClinicalBaseline { get; set; }
 
     // ------------------------------------------------------------ Inscripciones
 
     public Task<ProgramEnrollment> EnrollAsync(
-        Guid patientId, Guid templateId, string timezone, DateOnly startLocalDate,
-        Guid? createdBy = null, CancellationToken ct = default)
+        Guid patientId,
+        Guid templateId,
+        string timezone,
+        DateOnly startLocalDate,
+        Guid? createdBy = null,
+        CancellationToken ct = default
+    )
     {
         var enrollment = new ProgramEnrollment
         {
@@ -91,21 +115,45 @@ internal sealed class FakeProgramRepository : IProgramRepository
         return Task.FromResult(enrollment);
     }
 
-    public Task<ProgramEnrollment> PauseAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default)
-        => TransitionAsync(enrollmentId, ProgramEnrollmentStatus.Paused, e => e.PausedAt = DateTime.UtcNow);
+    public Task<ProgramEnrollment> PauseAsync(
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    ) =>
+        TransitionAsync(
+            enrollmentId,
+            ProgramEnrollmentStatus.Paused,
+            e => e.PausedAt = DateTime.UtcNow
+        );
 
-    public Task<ProgramEnrollment> ResumeAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default)
-        => TransitionAsync(enrollmentId, ProgramEnrollmentStatus.Active, e => e.PausedAt = null);
+    public Task<ProgramEnrollment> ResumeAsync(
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    ) => TransitionAsync(enrollmentId, ProgramEnrollmentStatus.Active, e => e.PausedAt = null);
 
-    public Task<ProgramEnrollment> WithdrawAsync(Guid enrollmentId, Guid? actorId = null, CancellationToken ct = default)
-        => TransitionAsync(enrollmentId, ProgramEnrollmentStatus.Withdrawn, e => e.WithdrawnAt = DateTime.UtcNow);
+    public Task<ProgramEnrollment> WithdrawAsync(
+        Guid enrollmentId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    ) =>
+        TransitionAsync(
+            enrollmentId,
+            ProgramEnrollmentStatus.Withdrawn,
+            e => e.WithdrawnAt = DateTime.UtcNow
+        );
 
     private Task<ProgramEnrollment> TransitionAsync(
-        Guid enrollmentId, ProgramEnrollmentStatus status, Action<ProgramEnrollment> apply)
+        Guid enrollmentId,
+        ProgramEnrollmentStatus status,
+        Action<ProgramEnrollment> apply
+    )
     {
         if (!Enrollments.TryGetValue(enrollmentId, out var enrollment))
         {
-            throw new CoppAddresd.Domain.Exceptions.NotFoundException($"Inscripción {enrollmentId} no encontrada.");
+            throw new CoppAddresd.Domain.Exceptions.NotFoundException(
+                $"Inscripción {enrollmentId} no encontrada."
+            );
         }
 
         enrollment.Status = status;
@@ -113,7 +161,10 @@ internal sealed class FakeProgramRepository : IProgramRepository
         return Task.FromResult(enrollment);
     }
 
-    public Task<ProgramEnrollmentDto?> GetEnrollmentAsync(Guid enrollmentId, CancellationToken ct = default)
+    public Task<ProgramEnrollmentDto?> GetEnrollmentAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    )
     {
         if (OnGetEnrollment is not null)
         {
@@ -125,15 +176,37 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult<ProgramEnrollmentDto?>(null);
         }
 
-        return Task.FromResult<ProgramEnrollmentDto?>(new ProgramEnrollmentDto(
-            e.Id, e.PatientId, e.TemplateId, e.Timezone, e.Status,
-            e.StartedAt, e.StartLocalDate, e.CurrentWeekNumber, 83, 0, 0, 0, 0,
-            e.CompletedAt, e.PausedAt, e.WithdrawnAt, e.CreatedAt));
+        return Task.FromResult<ProgramEnrollmentDto?>(
+            new ProgramEnrollmentDto(
+                e.Id,
+                e.PatientId,
+                e.TemplateId,
+                e.Timezone,
+                e.Status,
+                e.StartedAt,
+                e.StartLocalDate,
+                e.CurrentWeekNumber,
+                83,
+                0,
+                0,
+                0,
+                0,
+                e.CompletedAt,
+                e.PausedAt,
+                e.WithdrawnAt,
+                e.CreatedAt
+            )
+        );
     }
 
     public Task<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)> ListEnrollmentsAsync(
-        Guid? patientId, ProgramEnrollmentStatus? status, int page, int pageSize,
-        IReadOnlyList<Guid>? scopedPatientIds = null, CancellationToken ct = default)
+        Guid? patientId,
+        ProgramEnrollmentStatus? status,
+        int page,
+        int pageSize,
+        IReadOnlyList<Guid>? scopedPatientIds = null,
+        CancellationToken ct = default
+    )
     {
         var query = Enrollments.Values.AsEnumerable();
         if (patientId.HasValue)
@@ -156,33 +229,73 @@ internal sealed class FakeProgramRepository : IProgramRepository
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
             .Select(e => new ProgramEnrollmentDto(
-                e.Id, e.PatientId, e.TemplateId, e.Timezone, e.Status,
-                e.StartedAt, e.StartLocalDate, e.CurrentWeekNumber, 83, 0, 0, 0, 0,
-                e.CompletedAt, e.PausedAt, e.WithdrawnAt, e.CreatedAt))
+                e.Id,
+                e.PatientId,
+                e.TemplateId,
+                e.Timezone,
+                e.Status,
+                e.StartedAt,
+                e.StartLocalDate,
+                e.CurrentWeekNumber,
+                83,
+                0,
+                0,
+                0,
+                0,
+                e.CompletedAt,
+                e.PausedAt,
+                e.WithdrawnAt,
+                e.CreatedAt
+            ))
             .ToList();
 
-        return Task.FromResult<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)>((items, query.Count()));
+        return Task.FromResult<(IReadOnlyList<ProgramEnrollmentDto> Items, int Total)>(
+            (items, query.Count())
+        );
     }
 
     // ------------------------------------------------------------ Completación
 
-    public async Task<CompleteTaskResult> CompleteTaskAsync(CompleteTaskInput input, CancellationToken ct = default)
+    public async Task<CompleteTaskResult> CompleteTaskAsync(
+        CompleteTaskInput input,
+        CancellationToken ct = default
+    )
     {
         CompletedTaskInputs.Add(input);
         var result = OnCompleteTask is not null
             ? await OnCompleteTask(input, ct)
             : new CompleteTaskResult(
-                CompleteTaskOutcome.Created, Guid.NewGuid(), 80, 80, false, 0, 0, 0, 80, 750);
+                CompleteTaskOutcome.Created,
+                Guid.NewGuid(),
+                80,
+                80,
+                false,
+                0,
+                0,
+                0,
+                80,
+                750
+            );
         CompletedTaskResults.Add(result);
         return result;
     }
 
     // ------------------------------------------------------------ Libro mayor de XP (TASK-04)
 
-    public Func<Guid, int, int, CancellationToken, Task<(IReadOnlyList<XpLedgerEntry>, int)>>? OnGetXpLedgerPage { get; set; }
+    public Func<
+        Guid,
+        int,
+        int,
+        CancellationToken,
+        Task<(IReadOnlyList<XpLedgerEntry>, int)>
+    >? OnGetXpLedgerPage { get; set; }
 
     public Task<(IReadOnlyList<XpLedgerEntry> Entries, int Total)> GetXpLedgerPageAsync(
-        Guid enrollmentId, int page, int pageSize, CancellationToken ct = default)
+        Guid enrollmentId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
         if (OnGetXpLedgerPage is not null)
         {
@@ -204,49 +317,89 @@ internal sealed class FakeProgramRepository : IProgramRepository
 
     // ------------------------------------------------------------ Catálogo clínico (línea base)
 
-    public Task<IReadOnlyList<MeasurementMetric>> ListClinicalMetricsAsync(CancellationToken ct = default)
+    public Task<IReadOnlyList<MeasurementMetric>> ListClinicalMetricsAsync(
+        CancellationToken ct = default
+    )
     {
-        var items = Metrics
-            .Where(m => m.IsActive)
-            .OrderBy(m => m.Name)
-            .ToList();
+        var items = Metrics.Where(m => m.IsActive).OrderBy(m => m.Name).ToList();
         return Task.FromResult<IReadOnlyList<MeasurementMetric>>(items);
     }
 
     // ------------------------------------------------------------ Lecturas del paciente
 
-    public Task<DateOnly?> GetPatientLocalTodayAsync(Guid enrollmentId, CancellationToken ct = default)
-        => Task.FromResult(PatientToday);
+    public Task<DateOnly?> GetPatientLocalTodayAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    ) => Task.FromResult(PatientToday);
 
-    public Task<ProgramSnapshotDto?> GetSnapshotAsync(Guid enrollmentId, DateOnly todayLocalDate, CancellationToken ct = default)
-        => OnGetSnapshot is not null
+    /// <summary>
+    /// Stub del contrato de biometría del procesador de métricas (trabajo
+    /// concurrente): null por defecto (sin datos). Hook opcional por si un
+    /// test necesita fijar un valor.
+    /// </summary>
+    public Func<
+        Guid,
+        CancellationToken,
+        Task<PatientBiometriaInfoDto?>
+    >? OnGetPatientBiometriaInfo { get; set; }
+
+    public Task<PatientBiometriaInfoDto?> GetPatientBiometriaInfoAsync(
+        Guid enrollmentId,
+        CancellationToken ct = default
+    ) =>
+        OnGetPatientBiometriaInfo is not null
+            ? OnGetPatientBiometriaInfo(enrollmentId, ct)
+            : Task.FromResult<PatientBiometriaInfoDto?>(null);
+
+    public Task<ProgramSnapshotDto?> GetSnapshotAsync(
+        Guid enrollmentId,
+        DateOnly todayLocalDate,
+        CancellationToken ct = default
+    ) =>
+        OnGetSnapshot is not null
             ? OnGetSnapshot(enrollmentId, ct)
             : Task.FromResult<ProgramSnapshotDto?>(null);
 
-    public Task<ProgramCalendarDto> GetCalendarAsync(Guid enrollmentId, DateOnly from, DateOnly to, CancellationToken ct = default)
-        => OnGetCalendar is not null
+    public Task<ProgramCalendarDto> GetCalendarAsync(
+        Guid enrollmentId,
+        DateOnly from,
+        DateOnly to,
+        CancellationToken ct = default
+    ) =>
+        OnGetCalendar is not null
             ? OnGetCalendar(enrollmentId, ct)
-            : Task.FromResult(new ProgramCalendarDto(from, to, [], new CalendarSummaryDto(0, 0, 0)));
+            : Task.FromResult(
+                new ProgramCalendarDto(from, to, [], new CalendarSummaryDto(0, 0, 0))
+            );
 
-    public Task<ProgramPathDto> GetPathAsync(Guid enrollmentId, CancellationToken ct = default)
-        => OnGetPath is not null
+    public Task<ProgramPathDto> GetPathAsync(Guid enrollmentId, CancellationToken ct = default) =>
+        OnGetPath is not null
             ? OnGetPath(enrollmentId, ct)
             : Task.FromResult(new ProgramPathDto([]));
 
     // ------------------------------------------------------------ Plantillas
 
     public Task<(IReadOnlyList<ProgramTemplate> Items, int Total)> ListTemplatesAsync(
-        string? search, string? status, int page, int pageSize, CancellationToken ct = default)
+        string? search,
+        string? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
         var query = Templates.Values.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(search))
         {
-            query = query.Where(t => t.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
-                || t.Code.Contains(search, StringComparison.OrdinalIgnoreCase));
+            query = query.Where(t =>
+                t.Name.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || t.Code.Contains(search, StringComparison.OrdinalIgnoreCase)
+            );
         }
 
-        if (!string.IsNullOrWhiteSpace(status)
-            && Enum.TryParse<TemplateStatus>(status, ignoreCase: true, out var parsed))
+        if (
+            !string.IsNullOrWhiteSpace(status)
+            && Enum.TryParse<TemplateStatus>(status, ignoreCase: true, out var parsed)
+        )
         {
             query = query.Where(t => t.Status == parsed);
         }
@@ -260,15 +413,20 @@ internal sealed class FakeProgramRepository : IProgramRepository
         return Task.FromResult<(IReadOnlyList<ProgramTemplate>, int)>((items, query.Count()));
     }
 
-    public Task<ProgramTemplate?> GetTemplateAsync(Guid id, CancellationToken ct = default)
-        => Task.FromResult(Templates.TryGetValue(id, out var template) ? template : null);
+    public Task<ProgramTemplate?> GetTemplateAsync(Guid id, CancellationToken ct = default) =>
+        Task.FromResult(Templates.TryGetValue(id, out var template) ? template : null);
 
-    public Task<ProgramTemplate?> GetTemplateByCodeAsync(string code, CancellationToken ct = default)
-        => Task.FromResult(Templates.Values.FirstOrDefault(t => t.Code == code));
+    public Task<ProgramTemplate?> GetTemplateByCodeAsync(
+        string code,
+        CancellationToken ct = default
+    ) => Task.FromResult(Templates.Values.FirstOrDefault(t => t.Code == code));
 
     public Task<ProgramTemplate> UpsertTemplateAsync(
-        ProgramTemplate template, IReadOnlyList<WeeklyDayTemplate> dayTemplates,
-        Guid? actorId = null, CancellationToken ct = default)
+        ProgramTemplate template,
+        IReadOnlyList<WeeklyDayTemplate> dayTemplates,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
     {
         template.DayTemplates = dayTemplates.ToList();
         Templates[template.Id] = template;
@@ -276,12 +434,17 @@ internal sealed class FakeProgramRepository : IProgramRepository
     }
 
     public Task<IReadOnlyList<WeeklyDayTemplate>> ReplaceWeekdayTasksAsync(
-        Guid templateId, IReadOnlyList<WeeklyDayTemplate> tasks,
-        Guid? actorId = null, CancellationToken ct = default)
+        Guid templateId,
+        IReadOnlyList<WeeklyDayTemplate> tasks,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
     {
         if (!Templates.TryGetValue(templateId, out var template))
         {
-            throw new CoppAddresd.Domain.Exceptions.NotFoundException($"Plantilla {templateId} no encontrada.");
+            throw new CoppAddresd.Domain.Exceptions.NotFoundException(
+                $"Plantilla {templateId} no encontrada."
+            );
         }
 
         template.DayTemplates = tasks.ToList();
@@ -291,7 +454,12 @@ internal sealed class FakeProgramRepository : IProgramRepository
     // ------------------------------------------------------------ Adaptaciones
 
     public Task<(IReadOnlyList<AdaptationRecommendation> Items, int Total)> ListAdaptationsAsync(
-        Guid? enrollmentId, AdaptationStatus? status, int page, int pageSize, CancellationToken ct = default)
+        Guid? enrollmentId,
+        AdaptationStatus? status,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
         var query = Adaptations.Values.AsEnumerable();
         if (enrollmentId.HasValue)
@@ -310,26 +478,36 @@ internal sealed class FakeProgramRepository : IProgramRepository
             .Take(Math.Clamp(pageSize, 1, 100))
             .ToList();
 
-        return Task.FromResult<(IReadOnlyList<AdaptationRecommendation>, int)>((items, query.Count()));
+        return Task.FromResult<(IReadOnlyList<AdaptationRecommendation>, int)>(
+            (items, query.Count())
+        );
     }
 
-    public Task<AdaptationRecommendation?> GetAdaptationAsync(Guid id, CancellationToken ct = default)
-        => Task.FromResult(Adaptations.TryGetValue(id, out var adaptation) ? adaptation : null);
+    public Task<AdaptationRecommendation?> GetAdaptationAsync(
+        Guid id,
+        CancellationToken ct = default
+    ) => Task.FromResult(Adaptations.TryGetValue(id, out var adaptation) ? adaptation : null);
 
     public Task<AdaptationRecommendation> DecideAdaptationAsync(
-        Guid adaptationId, AdaptationDecisionAction action, Guid? actorId = null,
-        string? auditActionOnApply = null, CancellationToken ct = default)
+        Guid adaptationId,
+        AdaptationDecisionAction action,
+        Guid? actorId = null,
+        string? auditActionOnApply = null,
+        CancellationToken ct = default
+    )
     {
         if (!Adaptations.TryGetValue(adaptationId, out var adaptation))
         {
             throw new CoppAddresd.Domain.Exceptions.NotFoundException(
-                $"Recomendación de adaptación {adaptationId} no encontrada.");
+                $"Recomendación de adaptación {adaptationId} no encontrada."
+            );
         }
 
         var now = DateTime.UtcNow;
         switch (action)
         {
-            case AdaptationDecisionAction.Approve when adaptation.Status == AdaptationStatus.Pending:
+            case AdaptationDecisionAction.Approve
+                when adaptation.Status == AdaptationStatus.Pending:
                 adaptation.Status = AdaptationStatus.Approved;
                 adaptation.DecidedBy = actorId;
                 adaptation.DecidedAt = now;
@@ -345,33 +523,44 @@ internal sealed class FakeProgramRepository : IProgramRepository
                 break;
             default:
                 throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException(
-                    "ADAPTATION_STATE: transición no permitida.");
+                    "ADAPTATION_STATE: transición no permitida."
+                );
         }
 
         adaptation.UpdatedAt = now;
 
         // Espejo del repositorio real: la fila semántica se registra junto con
         // la transición a Applied (AC-17), no por el handler post-commit.
-        if (action == AdaptationDecisionAction.Apply
+        if (
+            action == AdaptationDecisionAction.Apply
             && adaptation.Status == AdaptationStatus.Applied
-            && !string.IsNullOrWhiteSpace(auditActionOnApply))
+            && !string.IsNullOrWhiteSpace(auditActionOnApply)
+        )
         {
-            AuditRows.Add((auditActionOnApply, "app", "adaptation_recommendations", adaptation.Id, actorId));
+            AuditRows.Add(
+                (auditActionOnApply, "app", "adaptation_recommendations", adaptation.Id, actorId)
+            );
         }
 
         return Task.FromResult(adaptation);
     }
 
     public Task<int> SupersedePendingAsync(
-        Guid enrollmentId, AdaptationKind kind, Guid targetEntityId,
-        Guid newRecommendationId, CancellationToken ct = default)
+        Guid enrollmentId,
+        AdaptationKind kind,
+        Guid targetEntityId,
+        Guid newRecommendationId,
+        CancellationToken ct = default
+    )
     {
-        var superseded = Adaptations.Values
-            .Where(a => a.EnrollmentId == enrollmentId
+        var superseded = Adaptations
+            .Values.Where(a =>
+                a.EnrollmentId == enrollmentId
                 && a.Kind == kind
                 && a.TargetEntityId == targetEntityId
                 && a.Status == AdaptationStatus.Pending
-                && a.Id != newRecommendationId)
+                && a.Id != newRecommendationId
+            )
             .ToList();
 
         foreach (var adaptation in superseded)
@@ -383,8 +572,13 @@ internal sealed class FakeProgramRepository : IProgramRepository
     }
 
     public Task WriteAuditRowAsync(
-        string action, string schemaName, string tableName, Guid recordId,
-        Guid? actorId = null, CancellationToken ct = default)
+        string action,
+        string schemaName,
+        string tableName,
+        Guid recordId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
     {
         AuditRows.Add((action, schemaName, tableName, recordId, actorId));
         return Task.CompletedTask;
@@ -399,62 +593,97 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public TransformationScoreDto? TransformationScore { get; set; }
 
     public Task<HealthScoreDto?> GetOrComputeHealthScoreAsync(
-        Guid patientId, ScoreTrigger trigger, bool force = false,
-        DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
-        => Task.FromResult(HealthScore);
+        Guid patientId,
+        ScoreTrigger trigger,
+        bool force = false,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    ) => Task.FromResult(HealthScore);
 
     public Task<TransformationScoreDto?> GetOrComputeTransformationScoreAsync(
-        Guid patientId, ScoreTrigger trigger, bool force = false, CancellationToken ct = default)
-        => Task.FromResult(TransformationScore);
+        Guid patientId,
+        ScoreTrigger trigger,
+        bool force = false,
+        CancellationToken ct = default
+    ) => Task.FromResult(TransformationScore);
 
     public Task<IReadOnlyList<ClinicalBaselineDto>> ListClinicalBaselinesAsync(
-        Guid patientId, CancellationToken ct = default)
-        => OnListClinicalBaselines is not null
+        Guid patientId,
+        CancellationToken ct = default
+    ) =>
+        OnListClinicalBaselines is not null
             ? OnListClinicalBaselines(patientId, ct)
             : Task.FromResult<IReadOnlyList<ClinicalBaselineDto>>([]);
 
     public Task<ClinicalBaselineDto> UpsertClinicalBaselineAsync(
-        ClinicalBaselineWrite input, IReadOnlyList<string> callerRoles, CancellationToken ct = default)
-        => OnUpsertClinicalBaseline is not null
+        ClinicalBaselineWrite input,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default
+    ) =>
+        OnUpsertClinicalBaseline is not null
             ? OnUpsertClinicalBaseline(input, callerRoles, ct)
             : throw new NotSupportedException(
-                "FakeProgramRepository no persiste líneas base: usa los tests de integración.");
+                "FakeProgramRepository no persiste líneas base: usa los tests de integración."
+            );
 
     public Task<decimal?> GetLatestMeasurementAsync(
-        Guid patientId, Guid metricId, DateOnly fromDate, DateOnly toDate, CancellationToken ct = default)
-        => Task.FromResult<decimal?>(null);
+        Guid patientId,
+        Guid metricId,
+        DateOnly fromDate,
+        DateOnly toDate,
+        CancellationToken ct = default
+    ) => Task.FromResult<decimal?>(null);
 
     // ------------------------------------------------------------ XP clínica (SPEC §15)
 
     /// <summary>Resultado configurado para <c>EvaluateClinicalXpAwardsAsync</c>.</summary>
-    public ClinicalXpEvaluationResult ClinicalXpEvaluation { get; set; } = ClinicalXpEvaluationResult.Empty;
+    public ClinicalXpEvaluationResult ClinicalXpEvaluation { get; set; } =
+        ClinicalXpEvaluationResult.Empty;
 
     /// <summary>Revisiones clínicas configuradas para <c>ListPendingClinicalReviewsAsync</c>.</summary>
     public List<ClinicalReviewDto> PendingClinicalReviews { get; set; } = [];
 
-    public Func<Guid, bool, Guid?, IReadOnlyList<string>, CancellationToken, Task<ClinicalReviewDto>>? OnDecideClinicalReview { get; set; }
+    public Func<
+        Guid,
+        bool,
+        Guid?,
+        IReadOnlyList<string>,
+        CancellationToken,
+        Task<ClinicalReviewDto>
+    >? OnDecideClinicalReview { get; set; }
 
     public Task<ClinicalXpEvaluationResult> EvaluateClinicalXpAwardsAsync(
-        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
-        => Task.FromResult(ClinicalXpEvaluation);
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    ) => Task.FromResult(ClinicalXpEvaluation);
 
-    public Task<(IReadOnlyList<ClinicalReviewDto> Items, int Total)> ListPendingClinicalReviewsAsync(
-        int page, int pageSize, CancellationToken ct = default)
+    public Task<(
+        IReadOnlyList<ClinicalReviewDto> Items,
+        int Total
+    )> ListPendingClinicalReviewsAsync(int page, int pageSize, CancellationToken ct = default)
     {
         var items = PendingClinicalReviews
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
             .ToList();
-        return Task.FromResult<(IReadOnlyList<ClinicalReviewDto>, int)>((items, PendingClinicalReviews.Count));
+        return Task.FromResult<(IReadOnlyList<ClinicalReviewDto>, int)>(
+            (items, PendingClinicalReviews.Count)
+        );
     }
 
     public Task<ClinicalReviewDto> DecideClinicalXpReviewAsync(
-        Guid reviewId, bool approve, Guid? actorId,
-        IReadOnlyList<string> callerRoles, CancellationToken ct = default)
-        => OnDecideClinicalReview is not null
+        Guid reviewId,
+        bool approve,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default
+    ) =>
+        OnDecideClinicalReview is not null
             ? OnDecideClinicalReview(reviewId, approve, actorId, callerRoles, ct)
             : throw new NotSupportedException(
-                "FakeProgramRepository no decide revisiones: configura OnDecideClinicalReview.");
+                "FakeProgramRepository no decide revisiones: configura OnDecideClinicalReview."
+            );
 
     // ------------------------------------------------------------ Nutrición granular (SPEC §18)
 
@@ -468,7 +697,33 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public Guid? LastNutritionActorId { get; private set; }
 
     /// <summary>Resultado configurado para <c>EvaluateNutritionAwardsAsync</c>.</summary>
-    public NutritionWeeklyAwardsResult NutritionWeeklyAwards { get; set; } = NutritionWeeklyAwardsResult.Empty;
+    public NutritionWeeklyAwardsResult NutritionWeeklyAwards { get; set; } =
+        NutritionWeeklyAwardsResult.Empty;
+
+    public Task<NutritionLogResultDto> UpdateNutritionIntakeAsync(
+        Guid patientId,
+        MealCode mealCode,
+        DateOnly? localDate = null,
+        NutritionIntakePayload? intake = null,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
+    {
+        LastNutritionIntake = intake;
+        LastNutritionActorId = actorId;
+        return NutritionLogResult is not null
+            ? Task.FromResult(NutritionLogResult)
+            : Task.FromResult(
+                new NutritionLogResultDto(
+                    Guid.NewGuid(),
+                    mealCode.ToString(),
+                    localDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                    true,
+                    0,
+                    0
+                )
+            );
+    }
 
     public Task<NutritionLogResultDto> LogNutritionAsync(
         Guid patientId,
@@ -476,20 +731,30 @@ internal sealed class FakeProgramRepository : IProgramRepository
         DateOnly? localDate = null,
         NutritionIntakePayload? intake = null,
         Guid? actorId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         LastNutritionIntake = intake;
         LastNutritionActorId = actorId;
         return NutritionLogResult is not null
             ? Task.FromResult(NutritionLogResult)
-            : Task.FromResult(new NutritionLogResultDto(
-                Guid.NewGuid(), mealCode.ToString(), localDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
-                true, 0, 0));
+            : Task.FromResult(
+                new NutritionLogResultDto(
+                    Guid.NewGuid(),
+                    mealCode.ToString(),
+                    localDate ?? DateOnly.FromDateTime(DateTime.UtcNow),
+                    true,
+                    0,
+                    0
+                )
+            );
     }
 
     public Task<NutritionWeeklyAwardsResult> EvaluateNutritionAwardsAsync(
-        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
-        => Task.FromResult(NutritionWeeklyAwards);
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    ) => Task.FromResult(NutritionWeeklyAwards);
 
     // ------------------------------------------------------------ Debilidades (SPEC §21, "Paso 7c")
 
@@ -503,17 +768,32 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public List<Weakness> PersistedWeaknesses { get; set; } = [];
 
     /// <summary>Inputs registrados por <c>PersistDetectedWeaknessesAsync</c>.</summary>
-    public List<(Guid PatientId, IReadOnlyList<WeaknessDescriptor> Descriptors)> PersistedWeaknessInputs { get; } = [];
+    public List<(
+        Guid PatientId,
+        IReadOnlyList<WeaknessDescriptor> Descriptors
+    )> PersistedWeaknessInputs { get; } = [];
 
     /// <summary>Hook opcional para <c>UpdateWeaknessStatusAsync</c>.</summary>
-    public Func<Guid, WeaknessStatus, Guid?, IReadOnlyList<string>, CancellationToken, Task<WeaknessDto>>? OnUpdateWeaknessStatus { get; set; }
+    public Func<
+        Guid,
+        WeaknessStatus,
+        Guid?,
+        IReadOnlyList<string>,
+        CancellationToken,
+        Task<WeaknessDto>
+    >? OnUpdateWeaknessStatus { get; set; }
 
     public Task<PatientWeeklyData?> BuildPatientWeeklyDataAsync(
-        Guid patientId, DateOnly? periodEndLocalDate = null, CancellationToken ct = default)
-        => Task.FromResult(PatientWeeklyData);
+        Guid patientId,
+        DateOnly? periodEndLocalDate = null,
+        CancellationToken ct = default
+    ) => Task.FromResult(PatientWeeklyData);
 
     public Task<IReadOnlyList<Weakness>> PersistDetectedWeaknessesAsync(
-        Guid patientId, IReadOnlyList<WeaknessDescriptor> descriptors, CancellationToken ct = default)
+        Guid patientId,
+        IReadOnlyList<WeaknessDescriptor> descriptors,
+        CancellationToken ct = default
+    )
     {
         PersistedWeaknessInputs.Add((patientId, descriptors));
         if (PersistedWeaknesses.Count > 0)
@@ -521,28 +801,34 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult<IReadOnlyList<Weakness>>(PersistedWeaknesses);
         }
 
-        var list = descriptors.Select(d => new Weakness
-        {
-            Id = Guid.NewGuid(),
-            PatientId = patientId,
-            Code = d.Code,
-            Category = d.Category,
-            Severity = d.Severity,
-            Title = d.Title,
-            Description = d.Description,
-            DetectedAt = DateTime.UtcNow,
-            MetricId = d.MetricId,
-            IndicatorValue = d.IndicatorValue,
-            Source = WeaknessSource.ai,
-            Status = WeaknessStatus.open,
-            CreatedAt = DateTime.UtcNow,
-        }).ToList();
+        var list = descriptors
+            .Select(d => new Weakness
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientId,
+                Code = d.Code,
+                Category = d.Category,
+                Severity = d.Severity,
+                Title = d.Title,
+                Description = d.Description,
+                DetectedAt = DateTime.UtcNow,
+                MetricId = d.MetricId,
+                IndicatorValue = d.IndicatorValue,
+                Source = WeaknessSource.ai,
+                Status = WeaknessStatus.open,
+                CreatedAt = DateTime.UtcNow,
+            })
+            .ToList();
 
         return Task.FromResult<IReadOnlyList<Weakness>>(list);
     }
 
     public Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListWeaknessesAsync(
-        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+        Guid patientId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
         var items = Weaknesses
             .Where(w => w.PatientId == patientId || patientId == Guid.Empty)
@@ -553,19 +839,33 @@ internal sealed class FakeProgramRepository : IProgramRepository
     }
 
     public Task<(IReadOnlyList<WeaknessDto> Items, int Total)> ListOpenWeaknessesAsync(
-        int page, int pageSize, CancellationToken ct = default)
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
         var items = Weaknesses
             .Where(w => string.Equals(w.Status, "open", StringComparison.OrdinalIgnoreCase))
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
             .ToList();
-        return Task.FromResult<(IReadOnlyList<WeaknessDto>, int)>((items, Weaknesses.Count(w => string.Equals(w.Status, "open", StringComparison.OrdinalIgnoreCase))));
+        return Task.FromResult<(IReadOnlyList<WeaknessDto>, int)>(
+            (
+                items,
+                Weaknesses.Count(w =>
+                    string.Equals(w.Status, "open", StringComparison.OrdinalIgnoreCase)
+                )
+            )
+        );
     }
 
     public Task<WeaknessDto> UpdateWeaknessStatusAsync(
-        Guid weaknessId, WeaknessStatus status, Guid? actorId,
-        IReadOnlyList<string> callerRoles, CancellationToken ct = default)
+        Guid weaknessId,
+        WeaknessStatus status,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        CancellationToken ct = default
+    )
     {
         if (OnUpdateWeaknessStatus is not null)
         {
@@ -579,10 +879,26 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult(updated);
         }
 
-        return Task.FromResult(new WeaknessDto(
-            weaknessId, Guid.NewGuid(), "WK_SAMPLE", "nutricion", "low",
-            "Muestra", null, DateTime.UtcNow, null, null, "ai",
-            status.ToString(), null, null, DateTime.UtcNow, null));
+        return Task.FromResult(
+            new WeaknessDto(
+                weaknessId,
+                Guid.NewGuid(),
+                "WK_SAMPLE",
+                "nutricion",
+                "low",
+                "Muestra",
+                null,
+                DateTime.UtcNow,
+                null,
+                null,
+                "ai",
+                status.ToString(),
+                null,
+                null,
+                DateTime.UtcNow,
+                null
+            )
+        );
     }
 
     // ------------------------------------------------------------ Intervenciones (SPEC §22, "Paso 7d")
@@ -597,13 +913,27 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public InterventionDto? SingleInterventionResult { get; set; }
 
     /// <summary>Inputs registrados por <c>EnsureInterventionFromWeaknessAsync</c>.</summary>
-    public List<(Guid PatientId, Guid WeaknessId, InterventionType Type, string Title, string? Description, Guid? ActorId)> EnsureInterventionInputs { get; } = [];
+    public List<(
+        Guid PatientId,
+        Guid WeaknessId,
+        InterventionType Type,
+        string Title,
+        string? Description,
+        Guid? ActorId
+    )> EnsureInterventionInputs { get; } = [];
 
     /// <summary>Inputs registrados por <c>AcceptInterventionAsync</c>.</summary>
     public List<(Guid InterventionId, Guid PatientId)> AcceptInterventionInputs { get; } = [];
 
     /// <summary>Inputs registrados por <c>UpdateInterventionStatusAsync</c>.</summary>
-    public List<(Guid InterventionId, InterventionStatus Status, Guid? ActorId, IReadOnlyList<string> CallerRoles, string? Result, Guid? AssignedTo)> UpdateInterventionStatusInputs { get; } = [];
+    public List<(
+        Guid InterventionId,
+        InterventionStatus Status,
+        Guid? ActorId,
+        IReadOnlyList<string> CallerRoles,
+        string? Result,
+        Guid? AssignedTo
+    )> UpdateInterventionStatusInputs { get; } = [];
 
     /// <summary>Inputs registrados por <c>MarkTeleScheduledAsync</c>.</summary>
     public List<Guid> MarkTeleScheduledInputs { get; } = [];
@@ -615,31 +945,73 @@ internal sealed class FakeProgramRepository : IProgramRepository
     public List<Guid> MarkTeleComplyInputs { get; } = [];
 
     /// <summary>Hook opcional para <c>EnsureInterventionFromWeaknessAsync</c>.</summary>
-    public Func<Guid, Guid, InterventionType, string, string?, Guid?, CancellationToken, Task<Intervention>>? OnEnsureInterventionFromWeakness { get; set; }
+    public Func<
+        Guid,
+        Guid,
+        InterventionType,
+        string,
+        string?,
+        Guid?,
+        CancellationToken,
+        Task<Intervention>
+    >? OnEnsureInterventionFromWeakness { get; set; }
 
     /// <summary>Hook opcional para <c>AcceptInterventionAsync</c>.</summary>
-    public Func<Guid, Guid, CancellationToken, Task<InterventionDto>>? OnAcceptIntervention { get; set; }
+    public Func<
+        Guid,
+        Guid,
+        CancellationToken,
+        Task<InterventionDto>
+    >? OnAcceptIntervention { get; set; }
 
     /// <summary>Hook opcional para <c>UpdateInterventionStatusAsync</c>.</summary>
-    public Func<Guid, InterventionStatus, Guid?, IReadOnlyList<string>, string?, Guid?, CancellationToken, Task<InterventionDto>>? OnUpdateInterventionStatus { get; set; }
+    public Func<
+        Guid,
+        InterventionStatus,
+        Guid?,
+        IReadOnlyList<string>,
+        string?,
+        Guid?,
+        CancellationToken,
+        Task<InterventionDto>
+    >? OnUpdateInterventionStatus { get; set; }
 
     /// <summary>Hook opcional para <c>MarkTeleScheduledAsync</c>.</summary>
     public Func<Guid, CancellationToken, Task<InterventionDto>>? OnMarkTeleScheduled { get; set; }
 
     /// <summary>Hook opcional para <c>MarkTeleAttendedAsync</c>.</summary>
-    public Func<Guid, Guid, CancellationToken, Task<InterventionDto>>? OnMarkTeleAttended { get; set; }
+    public Func<
+        Guid,
+        Guid,
+        CancellationToken,
+        Task<InterventionDto>
+    >? OnMarkTeleAttended { get; set; }
 
     /// <summary>Hook opcional para <c>MarkTeleComplyAsync</c>.</summary>
     public Func<Guid, CancellationToken, Task<InterventionDto>>? OnMarkTeleComply { get; set; }
 
     public Task<Intervention> EnsureInterventionFromWeaknessAsync(
-        Guid patientId, Guid weaknessId, InterventionType type,
-        string title, string? description, Guid? actorId, CancellationToken ct = default)
+        Guid patientId,
+        Guid weaknessId,
+        InterventionType type,
+        string title,
+        string? description,
+        Guid? actorId,
+        CancellationToken ct = default
+    )
     {
         EnsureInterventionInputs.Add((patientId, weaknessId, type, title, description, actorId));
         if (OnEnsureInterventionFromWeakness is not null)
         {
-            return OnEnsureInterventionFromWeakness(patientId, weaknessId, type, title, description, actorId, ct);
+            return OnEnsureInterventionFromWeakness(
+                patientId,
+                weaknessId,
+                type,
+                title,
+                description,
+                actorId,
+                ct
+            );
         }
 
         var existing = Interventions.Values.FirstOrDefault(i => i.WeaknessId == weaknessId);
@@ -665,11 +1037,18 @@ internal sealed class FakeProgramRepository : IProgramRepository
     }
 
     public Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListInterventionsAsync(
-        Guid patientId, int page, int pageSize, CancellationToken ct = default)
+        Guid patientId,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
-        var source = InterventionDtos.Count > 0
-            ? InterventionDtos.Where(i => i.PatientId == patientId || patientId == Guid.Empty)
-            : Interventions.Values.Where(i => i.PatientId == patientId || patientId == Guid.Empty).Select(ToDto);
+        var source =
+            InterventionDtos.Count > 0
+                ? InterventionDtos.Where(i => i.PatientId == patientId || patientId == Guid.Empty)
+                : Interventions
+                    .Values.Where(i => i.PatientId == patientId || patientId == Guid.Empty)
+                    .Select(ToDto);
 
         var items = source
             .OrderByDescending(i => i.CreatedAt)
@@ -681,11 +1060,19 @@ internal sealed class FakeProgramRepository : IProgramRepository
     }
 
     public Task<(IReadOnlyList<InterventionDto> Items, int Total)> ListOpenInterventionsAsync(
-        int page, int pageSize, CancellationToken ct = default)
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
     {
-        var source = InterventionDtos.Count > 0
-            ? InterventionDtos.Where(i => !string.Equals(i.Status, "completed", StringComparison.OrdinalIgnoreCase))
-            : Interventions.Values.Where(i => i.Status != InterventionStatus.completed).Select(ToDto);
+        var source =
+            InterventionDtos.Count > 0
+                ? InterventionDtos.Where(i =>
+                    !string.Equals(i.Status, "completed", StringComparison.OrdinalIgnoreCase)
+                )
+                : Interventions
+                    .Values.Where(i => i.Status != InterventionStatus.completed)
+                    .Select(ToDto);
 
         var items = source
             .OrderBy(i => i.CreatedAt)
@@ -697,7 +1084,10 @@ internal sealed class FakeProgramRepository : IProgramRepository
     }
 
     public Task<InterventionDto> AcceptInterventionAsync(
-        Guid interventionId, Guid patientId, CancellationToken ct = default)
+        Guid interventionId,
+        Guid patientId,
+        CancellationToken ct = default
+    )
     {
         AcceptInterventionInputs.Add((interventionId, patientId));
         if (OnAcceptIntervention is not null)
@@ -718,21 +1108,53 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult(ToDto(intervention));
         }
 
-        return Task.FromResult(new InterventionDto(
-            interventionId, patientId, null, "telehealth_referral",
-            "Intervención aceptada", null, "accepted", "medium",
-            null, null, DateTime.UtcNow, null, null, null, 15, DateTime.UtcNow, DateTime.UtcNow));
+        return Task.FromResult(
+            new InterventionDto(
+                interventionId,
+                patientId,
+                null,
+                "telehealth_referral",
+                "Intervención aceptada",
+                null,
+                "accepted",
+                "medium",
+                null,
+                null,
+                DateTime.UtcNow,
+                null,
+                null,
+                null,
+                15,
+                DateTime.UtcNow,
+                DateTime.UtcNow
+            )
+        );
     }
 
     public Task<InterventionDto> UpdateInterventionStatusAsync(
-        Guid interventionId, InterventionStatus status, Guid? actorId,
-        IReadOnlyList<string> callerRoles, string? result = null,
-        Guid? assignedTo = null, CancellationToken ct = default)
+        Guid interventionId,
+        InterventionStatus status,
+        Guid? actorId,
+        IReadOnlyList<string> callerRoles,
+        string? result = null,
+        Guid? assignedTo = null,
+        CancellationToken ct = default
+    )
     {
-        UpdateInterventionStatusInputs.Add((interventionId, status, actorId, callerRoles, result, assignedTo));
+        UpdateInterventionStatusInputs.Add(
+            (interventionId, status, actorId, callerRoles, result, assignedTo)
+        );
         if (OnUpdateInterventionStatus is not null)
         {
-            return OnUpdateInterventionStatus(interventionId, status, actorId, callerRoles, result, assignedTo, ct);
+            return OnUpdateInterventionStatus(
+                interventionId,
+                status,
+                actorId,
+                callerRoles,
+                result,
+                assignedTo,
+                ct
+            );
         }
 
         if (SingleInterventionResult is not null)
@@ -756,15 +1178,33 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult(ToDto(intervention));
         }
 
-        return Task.FromResult(new InterventionDto(
-            interventionId, Guid.NewGuid(), null, "clinical_consult",
-            "Intervención actualizada", null, status.ToString(), "medium",
-            assignedTo, null, null, status == InterventionStatus.completed ? DateTime.UtcNow : null,
-            null, result, 0, DateTime.UtcNow, DateTime.UtcNow));
+        return Task.FromResult(
+            new InterventionDto(
+                interventionId,
+                Guid.NewGuid(),
+                null,
+                "clinical_consult",
+                "Intervención actualizada",
+                null,
+                status.ToString(),
+                "medium",
+                assignedTo,
+                null,
+                null,
+                status == InterventionStatus.completed ? DateTime.UtcNow : null,
+                null,
+                result,
+                0,
+                DateTime.UtcNow,
+                DateTime.UtcNow
+            )
+        );
     }
 
     public Task<InterventionDto> MarkTeleScheduledAsync(
-        Guid interventionId, CancellationToken ct = default)
+        Guid interventionId,
+        CancellationToken ct = default
+    )
     {
         MarkTeleScheduledInputs.Add(interventionId);
         if (OnMarkTeleScheduled is not null)
@@ -783,14 +1223,34 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult(ToDto(intervention));
         }
 
-        return Task.FromResult(new InterventionDto(
-            interventionId, Guid.NewGuid(), null, "telehealth_referral",
-            "Teleconsulta agendada", null, "detected", "medium",
-            null, null, null, null, null, null, 50, DateTime.UtcNow, DateTime.UtcNow));
+        return Task.FromResult(
+            new InterventionDto(
+                interventionId,
+                Guid.NewGuid(),
+                null,
+                "telehealth_referral",
+                "Teleconsulta agendada",
+                null,
+                "detected",
+                "medium",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                50,
+                DateTime.UtcNow,
+                DateTime.UtcNow
+            )
+        );
     }
 
     public Task<InterventionDto> MarkTeleAttendedAsync(
-        Guid interventionId, Guid clinicianId, CancellationToken ct = default)
+        Guid interventionId,
+        Guid clinicianId,
+        CancellationToken ct = default
+    )
     {
         MarkTeleAttendedInputs.Add((interventionId, clinicianId));
         if (OnMarkTeleAttended is not null)
@@ -810,14 +1270,33 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult(ToDto(intervention));
         }
 
-        return Task.FromResult(new InterventionDto(
-            interventionId, Guid.NewGuid(), null, "telehealth_referral",
-            "Teleconsulta asistida", null, "in_progress", "medium",
-            clinicianId, null, null, null, null, null, 100, DateTime.UtcNow, DateTime.UtcNow));
+        return Task.FromResult(
+            new InterventionDto(
+                interventionId,
+                Guid.NewGuid(),
+                null,
+                "telehealth_referral",
+                "Teleconsulta asistida",
+                null,
+                "in_progress",
+                "medium",
+                clinicianId,
+                null,
+                null,
+                null,
+                null,
+                null,
+                100,
+                DateTime.UtcNow,
+                DateTime.UtcNow
+            )
+        );
     }
 
     public Task<InterventionDto> MarkTeleComplyAsync(
-        Guid interventionId, CancellationToken ct = default)
+        Guid interventionId,
+        CancellationToken ct = default
+    )
     {
         MarkTeleComplyInputs.Add(interventionId);
         if (OnMarkTeleComply is not null)
@@ -836,25 +1315,61 @@ internal sealed class FakeProgramRepository : IProgramRepository
             return Task.FromResult(ToDto(intervention));
         }
 
-        return Task.FromResult(new InterventionDto(
-            interventionId, Guid.NewGuid(), null, "telehealth_referral",
-            "Cumplimiento evaluado", null, "in_progress", "medium",
-            null, null, null, null, null, null, 50, DateTime.UtcNow, DateTime.UtcNow));
+        return Task.FromResult(
+            new InterventionDto(
+                interventionId,
+                Guid.NewGuid(),
+                null,
+                "telehealth_referral",
+                "Cumplimiento evaluado",
+                null,
+                "in_progress",
+                "medium",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                50,
+                DateTime.UtcNow,
+                DateTime.UtcNow
+            )
+        );
     }
 
-    private static InterventionDto ToDto(Intervention i) => new(
-        i.Id, i.PatientId, i.WeaknessId, i.Type.ToString(), i.Title,
-        i.Description, i.Status.ToString(), i.Severity, i.AssignedTo,
-        i.RecommendedAt, i.AcceptedAt, i.CompletedAt, i.PatientAction,
-        i.Result, i.XpAwardedTotal, i.CreatedAt, i.UpdatedAt);
+    private static InterventionDto ToDto(Intervention i) =>
+        new(
+            i.Id,
+            i.PatientId,
+            i.WeaknessId,
+            i.Type.ToString(),
+            i.Title,
+            i.Description,
+            i.Status.ToString(),
+            i.Severity,
+            i.AssignedTo,
+            i.RecommendedAt,
+            i.AcceptedAt,
+            i.CompletedAt,
+            i.PatientAction,
+            i.Result,
+            i.XpAwardedTotal,
+            i.CreatedAt,
+            i.UpdatedAt
+        );
 
     // --- T-77: Helpers para el configurador de contenido ---
 
-    public Task<(string Code, string Name)?> GetPlanNameAsync(Guid planId, CancellationToken ct = default)
-        => Task.FromResult<(string Code, string Name)?>(("plan-code", "Plan Name"));
+    public Task<(string Code, string Name)?> GetPlanNameAsync(
+        Guid planId,
+        CancellationToken ct = default
+    ) => Task.FromResult<(string Code, string Name)?>(("plan-code", "Plan Name"));
 
-    public Task<(string Code, string Name)?> GetRoutineNameAsync(Guid routineId, CancellationToken ct = default)
-        => Task.FromResult<(string Code, string Name)?>(("routine-code", "Routine Name"));
+    public Task<(string Code, string Name)?> GetRoutineNameAsync(
+        Guid routineId,
+        CancellationToken ct = default
+    ) => Task.FromResult<(string Code, string Name)?>(("routine-code", "Routine Name"));
 
     // --- Detalle de semana ---
 
@@ -862,50 +1377,89 @@ internal sealed class FakeProgramRepository : IProgramRepository
         Guid enrollmentId,
         int weekNumber,
         Guid clinicianUserId,
-        CancellationToken ct = default)
-        => Task.FromResult<EnrollmentWeekDetailDto?>(null);
+        CancellationToken ct = default
+    ) => Task.FromResult<EnrollmentWeekDetailDto?>(null);
 
     public Task<EnrollmentWeekDetailDto> ReplaceEnrollmentWeekTasksAsync(
-        Guid enrollmentId, int weekNumber, IReadOnlyList<WeeklyDayTemplate> tasks, Guid? actorId = null, CancellationToken ct = default)
-        => Task.FromResult(new EnrollmentWeekDetailDto(weekNumber, DateOnly.FromDateTime(DateTime.UtcNow), DateOnly.FromDateTime(DateTime.UtcNow), null, null, []));
+        Guid enrollmentId,
+        int weekNumber,
+        IReadOnlyList<WeeklyDayTemplate> tasks,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult(
+            new EnrollmentWeekDetailDto(
+                weekNumber,
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                DateOnly.FromDateTime(DateTime.UtcNow),
+                null,
+                null,
+                []
+            )
+        );
 
     // --- ERP gamificación (SPEC §23) ---
 
-    public Task<ProgramErpDashboardDto> GetErpDashboardAsync(CancellationToken ct = default)
-        => Task.FromResult(new ProgramErpDashboardDto(
-            new ErpDashboardKpis(0, 0, 0, 0, 0, null, null, null, 0, 0, 0),
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            [],
-            []));
+    public Task<ProgramErpDashboardDto> GetErpDashboardAsync(CancellationToken ct = default) =>
+        Task.FromResult(
+            new ProgramErpDashboardDto(
+                new ErpDashboardKpis(0, 0, 0, 0, 0, null, null, null, 0, 0, 0),
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                [],
+                []
+            )
+        );
 
-    public Task<ProgramErpTodayDto> GetErpTodayAsync(CancellationToken ct = default)
-        => Task.FromResult(new ProgramErpTodayDto([], [], [], []));
+    public Task<ProgramErpTodayDto> GetErpTodayAsync(CancellationToken ct = default) =>
+        Task.FromResult(new ProgramErpTodayDto([], [], [], []));
 
     public Task<ProgramErpAdherenciaDto> GetErpAdherenciaAsync(
-        int page, int pageSize,
-        string? search, string? sortBy, string? sortDir,
-        CancellationToken ct = default)
-        => Task.FromResult(new ProgramErpAdherenciaDto(
-            [],
-            [],
-            new PaginatedErpAdherenciaTabla([], 0, page, pageSize, 0)));
+        int page,
+        int pageSize,
+        string? search,
+        string? sortBy,
+        string? sortDir,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult(
+            new ProgramErpAdherenciaDto(
+                [],
+                [],
+                new PaginatedErpAdherenciaTabla([], 0, page, pageSize, 0)
+            )
+        );
 
-    public Task<ProgramErpCofresDto> GetErpCofresAsync(CancellationToken ct = default)
-        => Task.FromResult(new ProgramErpCofresDto(
-            [],
-            new ErpMilestoneCounts(0, 0, 0, 0, 0, 0, 0, 0),
-            [],
-            0));
+    public Task<ProgramErpCofresDto> GetErpCofresAsync(
+        int page = 1,
+        int pageSize = 10,
+        string? search = null,
+        string? sortBy = null,
+        string? sortDir = null,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult(
+            new ProgramErpCofresDto(
+                0,
+                0,
+                0,
+                [],
+                new ErpMilestoneCounts(0, 0, 0, 0, 0, 0, 0, 0),
+                new PaginatedErpCofresTabla([], 0, page, pageSize, 0),
+                0
+            )
+        );
 
-    public Task<PatientOverviewDto?> GetPatientOverviewAsync(Guid patientId, CancellationToken ct = default)
-        => Task.FromResult<PatientOverviewDto?>(null);
+    public Task<PatientOverviewDto?> GetPatientOverviewAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    ) => Task.FromResult<PatientOverviewDto?>(null);
 
     // --- Bitácora de actividad (ERP) ---
 
@@ -917,8 +1471,17 @@ internal sealed class FakeProgramRepository : IProgramRepository
         DateTimeOffset? from,
         DateTimeOffset? to,
         string? actor,
-        CancellationToken ct = default)
-        => Task.FromResult(new PaginatedActivityLogResult([], 0, Math.Max(1, page), Math.Clamp(pageSize, 1, 100), 0));
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult(
+            new PaginatedActivityLogResult(
+                [],
+                0,
+                Math.Max(1, page),
+                Math.Clamp(pageSize, 1, 100),
+                0
+            )
+        );
 
     // --- Exporte CSV (B14) ---
 
@@ -927,7 +1490,8 @@ internal sealed class FakeProgramRepository : IProgramRepository
         DateTime? from,
         DateTime? to,
         IReadOnlyList<Guid>? scopedPatientIds,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         await Task.CompletedTask;
         yield break;
@@ -935,29 +1499,53 @@ internal sealed class FakeProgramRepository : IProgramRepository
 
     // --- Reconciliación de rachas (B12) ---
 
-    public Task<StreakReconciliationSummary> ReconcileStreaksAsync(CancellationToken ct = default)
-        => Task.FromResult(new StreakReconciliationSummary(0, 0, []));
+    public Task<StreakReconciliationSummary> ReconcileStreaksAsync(
+        CancellationToken ct = default
+    ) => Task.FromResult(new StreakReconciliationSummary(0, 0, []));
 
     // --- Biometría ---
 
-    public Task<BiometriaCommunityDto> GetBiometriaCommunityAsync(CancellationToken ct = default)
-        => Task.FromResult(new BiometriaCommunityDto(
-            null, null, null, 0, [],
-            new GrasaDistribution([], []),
-            [], [], [], []));
+    public Task<BiometriaCommunityDto> GetBiometriaCommunityAsync(CancellationToken ct = default) =>
+        Task.FromResult(
+            new BiometriaCommunityDto(
+                null,
+                null,
+                null,
+                0,
+                [],
+                new GrasaDistribution([], []),
+                [],
+                [],
+                [],
+                []
+            )
+        );
 
-    public Task<(IReadOnlyList<BiometriaPatientListItemDto> Items, int Total)> ListBiometriaPatientsAsync(
-        string? search, string? gender, string? imcCategory, string? glucosaCategory,
-        string? grasaCategory, string? trend,
-        Guid? cityId, string? stateAbbr,
-        int page, int pageSize, CancellationToken ct = default)
-        => Task.FromResult<(IReadOnlyList<BiometriaPatientListItemDto>, int)>(([], 0));
+    public Task<(
+        IReadOnlyList<BiometriaPatientListItemDto> Items,
+        int Total
+    )> ListBiometriaPatientsAsync(
+        string? search,
+        string? gender,
+        string? imcCategory,
+        string? glucosaCategory,
+        string? grasaCategory,
+        string? trend,
+        Guid? cityId,
+        string? stateAbbr,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    ) => Task.FromResult<(IReadOnlyList<BiometriaPatientListItemDto>, int)>(([], 0));
 
-    public Task<BiometriaPatientDetailDto?> GetBiometriaPatientAsync(Guid patientId, CancellationToken ct = default)
-        => Task.FromResult<BiometriaPatientDetailDto?>(null);
+    public Task<BiometriaPatientDetailDto?> GetBiometriaPatientAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    ) => Task.FromResult<BiometriaPatientDetailDto?>(null);
 
     public async IAsyncEnumerable<BiometriaPatientListItemDto> StreamBiometriaPatientsForExportAsync(
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         await Task.CompletedTask;
         yield break;

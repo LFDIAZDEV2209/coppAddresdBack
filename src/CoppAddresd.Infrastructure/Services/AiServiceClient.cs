@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -5,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.Ai;
+using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Features.Chat;
 using CoppAddresd.Application.Features.Threads;
 using CoppAddresd.Application.Features.Wellness;
@@ -95,16 +98,16 @@ public class AiServiceClient : IAiServiceClient
 
         // JsonOpts (snake_case + case-insensitive + WhenWritingNull): el
         // payload se serializa acorde al contrato del ai-service y la
-        // respuesta (`answer`/`thread_id`/`execution_id`/`agent`) se
-        // deserializa correctamente. Los errores se propagan como
-        // AiServiceException para habilitar el re-sync del agente.
+        // respuesta (`answer`/`thread_id`/`execution_id`/`agent`/
+        // `suggestions`) se deserializa correctamente. Los errores se
+        // propagan como AiServiceException para habilitar el re-sync del agente.
         using var response = await _httpClient.SendAsync(httpRequest, ct);
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
 
         var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
-        return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent);
+        return new ChatResponse(result!.Reply, result.ThreadId, result.ExecutionId, result.Agent, result.Suggestions);
     }
 
     public async Task<AiPlanResult> GeneratePlanAsync(
@@ -258,6 +261,112 @@ public class AiServiceClient : IAiServiceClient
         return new ThreadStateResult(result.ThreadId, result.MessageCount, result.LastMessage);
     }
 
+    public async Task<LabExamAiResponse> ExtractLabMetricsAsync(
+        Guid patientId,
+        Guid batchId,
+        Stream fileStream,
+        string fileName,
+        string contentType,
+        string? threadId = null,
+        CancellationToken ct = default)
+    {
+        _logger.LogInformation(
+            "Extracting lab metrics via AI service: PatientId={PatientId}, BatchId={BatchId}, File={FileName}",
+            patientId, batchId, fileName);
+
+        using var content = new MultipartFormDataContent();
+
+        var streamContent = new StreamContent(fileStream);
+        var mediaType = string.IsNullOrWhiteSpace(contentType)
+            ? "application/octet-stream"
+            : contentType.Split(';')[0].Trim();
+        streamContent.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
+        content.Add(streamContent, "file", fileName);
+
+        content.Add(new StringContent(patientId.ToString()), "patient_id");
+        content.Add(new StringContent(batchId.ToString()), "batch_id");
+
+        if (!string.IsNullOrWhiteSpace(threadId))
+        {
+            content.Add(new StringContent(threadId), "thread_id");
+        }
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.LabExamEndpoint)
+        {
+            Content = content,
+        };
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            await ThrowForResponseAsync(response, ct);
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<LabExamAiResponse>(JsonOpts, ct);
+        if (result is null)
+        {
+            throw new AiServiceException(
+                (int)response.StatusCode,
+                "El AI Service no devolvió una respuesta válida para el examen de laboratorio.");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Narración empática best-effort (R7/R11/R12). El timeout propio
+    /// (<see cref="AiServiceSettings.LabExamNarrationTimeoutSeconds"/>) se aplica
+    /// con un CTS enlazado al token del caller; el timeout global del HttpClient
+    /// (120 s) queda como cota externa. Cualquier fallo degrada a cadena vacía:
+    /// el upload NUNCA se rompe por narración ni dispara compensación S3.
+    /// </summary>
+    public async Task<string> NarrateLabExamAsync(
+        Guid patientId,
+        Guid batchId,
+        IReadOnlyList<LabExamAiMetricDto> metrics,
+        IReadOnlyDictionary<string, MetricEvolution> previousMeasurements,
+        string? language,
+        CancellationToken ct = default)
+    {
+        var payload = new LabExamNarrateRequest(metrics, previousMeasurements, language);
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        linkedCts.CancelAfter(TimeSpan.FromSeconds(_settings.LabExamNarrationTimeoutSeconds));
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.NarrateEndpoint)
+            {
+                Content = JsonContent.Create(payload, options: JsonOpts),
+            };
+            AddInternalKeyHeader(httpRequest);
+
+            using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                await ThrowForResponseAsync(response, linkedCts.Token);
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<NarrateResponseJson>(
+                JsonOpts, cancellationToken: linkedCts.Token);
+
+            return result?.EmpatheticMessage?.Trim() ?? string.Empty;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            // Fallo de narración ≠ fallo de ai-service (spec R12): se registra y
+            // se devuelve vacío para que el handler use el summary. No se loguea
+            // contenido del mensaje, solo latencia y contexto del lote.
+            _logger.LogWarning(
+                ex,
+                "Lab exam narration unavailable: PatientId={PatientId} BatchId={BatchId} LatencyMs={LatencyMs}",
+                patientId, batchId, stopwatch.ElapsedMilliseconds);
+            return string.Empty;
+        }
+    }
+
     private SseEvent? ParseSseEvent(StreamChatChunk chunk)
     {
         var line = chunk.RawData;
@@ -306,13 +415,15 @@ public class AiServiceClient : IAiServiceClient
     }
 
     // El contrato del ai-service responde `answer`, `thread_id`,
-    // `execution_id` y `agent` (snake_case), no `reply`/`threadId`
-    // (camelCase Web defaults).
+    // `execution_id`, `agent` y `suggestions` (snake_case), no
+    // `reply`/`threadId` (camelCase Web defaults). Si el ai-service omite
+    // `suggestions`, queda null (los CTA son opcionales).
     private record ChatResponseJson(
         [property: JsonPropertyName("answer")] string Reply,
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("execution_id")] string? ExecutionId = null,
-        [property: JsonPropertyName("agent")] string? Agent = null);
+        [property: JsonPropertyName("agent")] string? Agent = null,
+        [property: JsonPropertyName("suggestions")] IReadOnlyList<ChatSuggestion>? Suggestions = null);
     private record DoneJson(string ThreadId);
     private record NodeJson(string Node);
     private record MessageJson(string Type, string? Content);
@@ -336,4 +447,10 @@ public class AiServiceClient : IAiServiceClient
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("message_count")] int MessageCount,
         [property: JsonPropertyName("last_message")] string? LastMessage);
+
+    // Contrato del endpoint de narración: `empathetic_message` (snake_case). Un
+    // ai-service anterior no expone el endpoint (404) o puede omitir el campo;
+    // ambos casos degradan a cadena vacía en NarrateLabExamAsync.
+    private sealed record NarrateResponseJson(
+        [property: JsonPropertyName("empathetic_message")] string? EmpatheticMessage = null);
 }

@@ -51,6 +51,25 @@ public class ChatCommandHandlerTests
             string userId,
             CancellationToken ct = default)
             => throw new NotImplementedException();
+
+        public Task<CoppAddresd.Application.DTOs.LabExam.LabExamAiResponse> ExtractLabMetricsAsync(
+            Guid patientId,
+            Guid batchId,
+            Stream fileStream,
+            string fileName,
+            string contentType,
+            string? threadId = null,
+            CancellationToken ct = default)
+            => throw new NotImplementedException();
+
+        public Task<string> NarrateLabExamAsync(
+            Guid patientId,
+            Guid batchId,
+            IReadOnlyList<CoppAddresd.Application.DTOs.LabExam.LabExamAiMetricDto> metrics,
+            IReadOnlyDictionary<string, CoppAddresd.Application.DTOs.LabExam.MetricEvolution> previousMeasurements,
+            string? language,
+            CancellationToken ct = default)
+            => throw new NotImplementedException();
     }
 
     private sealed class FakeRuntimeSync : IAgentRuntimeSyncService
@@ -219,6 +238,47 @@ public class ChatCommandHandlerTests
         Assert.Equal("t1", result.ThreadId);
         Assert.Equal("e1", result.ExecutionId);
         Assert.Equal("base", result.Agent);
+    }
+
+    [Fact]
+    public async Task Handle_passthrough_suggestions_del_AI()
+    {
+        var suggestions = new List<ChatSuggestion>
+        {
+            new("appointment", "Agenda tu cita aquí", "tu último examen sugiere un control", "normal"),
+        };
+        var ai = new FakeAiClient
+        {
+            OnChat = _ => Task.FromResult(new ChatResponse("reply", "t1", "e1", "base", suggestions)),
+        };
+        var handler = BuildHandler(ai);
+
+        var result = await handler.Handle(
+            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"), CancellationToken.None);
+
+        Assert.NotNull(result.Suggestions);
+        var suggestion = Assert.Single(result.Suggestions!);
+        Assert.Equal("appointment", suggestion.Type);
+        Assert.Equal("Agenda tu cita aquí", suggestion.CtaText);
+        Assert.Equal("tu último examen sugiere un control", suggestion.Reason);
+        Assert.Equal("normal", suggestion.Urgency);
+    }
+
+    [Fact]
+    public async Task Handle_sin_suggestions_devuelve_null_sin_romper()
+    {
+        var ai = new FakeAiClient
+        {
+            OnChat = _ => Task.FromResult(new ChatResponse("reply", "t1", "e1", "base")),
+        };
+        var handler = BuildHandler(ai);
+
+        var result = await handler.Handle(
+            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"), CancellationToken.None);
+
+        Assert.Null(result.Suggestions);
+        Assert.Equal("reply", result.Reply);
+        Assert.Equal("t1", result.ThreadId);
     }
 
     [Fact]

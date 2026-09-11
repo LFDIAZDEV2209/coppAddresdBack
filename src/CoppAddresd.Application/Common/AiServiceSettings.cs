@@ -26,4 +26,19 @@ public class AiServiceSettings
     /// Service use el thread estable <c>proactive-{userId}</c>.
     /// </summary>
     public string ProactiveMessageEndpoint { get; set; } = "/internal/agents/proactive-message";
+
+    /// <summary>Endpoint interno de extracción de métricas de exámenes de laboratorio (AI Service).</summary>
+    public string LabExamEndpoint { get; set; } = "/chat/lab-exam";
+
+    /// <summary>
+    /// Endpoint interno de narración empática de exámenes de laboratorio (AI Service).
+    /// Sibling del de extracción: recibe la tabla de evolución pre-computada en .NET.
+    /// </summary>
+    public string NarrateEndpoint { get; set; } = "/chat/lab-exam/narrate";
+
+    /// <summary>
+    /// Timeout (segundos) de la llamada de narración. Best-effort: al vencer, el
+    /// handler cae al summary técnico sin romper el upload.
+    /// </summary>
+    public int LabExamNarrationTimeoutSeconds { get; set; } = 20;
 }

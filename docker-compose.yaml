@@ -49,5 +49,44 @@ services:
       retries: 5
       start_period: 30s
 
+  # Caché distribuida (Valkey) — AUTH local del compose (docs/modules/cache/README.md).
+  #  - Los 3 servicios .NET se conectan a 127.0.0.1:6379 con Cache:Provider=Valkey (fail-open:
+  #    si Valkey cae, degradan a PostgreSQL y la request sigue correcta, /health Degraded).
+  #  - Contraseña configurable con VALKEY_PASSWORD (default CoppAddresdValkey2026, la misma
+  #    que usan los ConnectionStrings:Valkey de los appsettings.Development.json).
+  #  - TTL-based eviction + AOF (arranque tibio tras reinicio). Los datos del caché viven
+  #    en volumen aparte y se pueden recrear sin riesgo — NUNCA tocar el volumen pgdata.
+  valkey:
+    image: valkey/valkey:8.1-alpine
+    container_name: coppAddresd-valkey
+    environment:
+      - VALKEY_PASSWORD=${VALKEY_PASSWORD:-CoppAddresdValkey2026}
+    command:
+      [
+        "valkey-server",
+        "--requirepass",
+        "${VALKEY_PASSWORD:-CoppAddresdValkey2026}",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "volatile-lru",
+      ]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - valkeydata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$VALKEY_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
 volumes:
   pgdata:
+  # Nombre pinnado para reutilizar el volumen existente del caché (no recrear).
+  valkeydata:
+    name: coppaddresd-valkeydata
