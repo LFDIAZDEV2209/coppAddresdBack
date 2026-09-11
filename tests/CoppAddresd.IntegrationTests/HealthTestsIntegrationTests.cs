@@ -914,7 +914,7 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
 
         var country = await NewTestCountryAsync();
         var (stateA, cityA1) = await NewTestStateWithCityAsync(country, "QA", "Ciudad Uno");
-        var (_, cityA2) = await NewTestStateWithCityAsync(country, "QB", "Ciudad Dos");
+        var cityA2 = await NewTestCityAsync(stateA, "Ciudad Dos");
         var (stateB, cityB1) = await NewTestStateWithCityAsync(country, "QC", "Ciudad Tres");
 
         var patientA1 = await NewPatientInCityAsync("doc-geo-a1", stateA.Id, cityA1.Id);
@@ -1106,6 +1106,20 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
         _db.Cities.Add(city);
         await _db.SaveChangesAsync();
         return (state, city);
+    }
+
+    private async Task<City> NewTestCityAsync(State state, string cityName)
+    {
+        var city = new City
+        {
+            Id = Guid.NewGuid(),
+            StateId = state.Id,
+            Name = cityName,
+            CreatedAt = DateTime.UtcNow,
+        };
+        _db.Cities.Add(city);
+        await _db.SaveChangesAsync();
+        return city;
     }
 
     private async Task<PatientProfile> NewPatientInCityAsync(string doc, Guid stateId, Guid cityId)
