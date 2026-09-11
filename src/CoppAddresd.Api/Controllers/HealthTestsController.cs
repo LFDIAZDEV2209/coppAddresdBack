@@ -285,9 +285,16 @@ public class HealthTestsController(
 
     // ===================== EVALUACIONES / RESULTADOS =====================
 
+    /// <summary>
+    /// Filas de la tabla maestra. Acepta el filtro geográfico acumulado del
+    /// dashboard por estado (<c>state</c>, código) o ciudad (<c>cityId</c>, con
+    /// precedencia); el alcance lo resuelve el JWT.
+    /// </summary>
     [HttpGet("master")]
     public async Task<ActionResult<IReadOnlyList<MasterPatientRowDto>>> GetMasterRows(
-        CancellationToken ct
+        [FromQuery] string? state = null,
+        [FromQuery] Guid? cityId = null,
+        CancellationToken ct = default
     )
     {
         var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
@@ -296,7 +303,9 @@ public class HealthTestsController(
             return Forbid();
         }
 
-        return Ok(await mediator.Send(new GetMasterRowsQuery(ownProfessionalId), ct));
+        return Ok(
+            await mediator.Send(new GetMasterRowsQuery(ownProfessionalId, state, cityId), ct)
+        );
     }
 
     [HttpGet("patients/{patientId:guid}/evaluations")]
@@ -506,8 +515,17 @@ public class HealthTestsController(
 
     // ===================== STATS (dashboard ERP) =====================
 
+    /// <summary>
+    /// KPIs del dashboard. Sin filtros devuelve el alcance global; con
+    /// <c>state</c>/<c>cityId</c> acota la zona seleccionada (el frontend usa el
+    /// alcance global para los KPIs y el filtrado para las series).
+    /// </summary>
     [HttpGet("stats")]
-    public async Task<ActionResult<HealthTestStatsDto>> GetStats(CancellationToken ct)
+    public async Task<ActionResult<HealthTestStatsDto>> GetStats(
+        [FromQuery] string? state = null,
+        [FromQuery] Guid? cityId = null,
+        CancellationToken ct = default
+    )
     {
         var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
         if (!allowed)
@@ -515,7 +533,9 @@ public class HealthTestsController(
             return Forbid();
         }
 
-        return Ok(await mediator.Send(new GetHealthTestStatsQuery(ownProfessionalId), ct));
+        return Ok(
+            await mediator.Send(new GetHealthTestStatsQuery(ownProfessionalId, state, cityId), ct)
+        );
     }
 
     // ===================== HELPERS =====================
