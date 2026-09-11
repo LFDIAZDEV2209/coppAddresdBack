@@ -186,4 +186,35 @@ public class ValidatorsTests
 
         Assert.False(validator.Validate(command).IsValid);
     }
+
+    [Fact]
+    public void Backfill_RangoInvertido_Invalido()
+    {
+        var validator = new BackfillMetricsCommandValidator();
+        var now = DateTimeOffset.UtcNow;
+        var command = new BackfillMetricsCommand(now, now.AddDays(-5), null);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Backfill_RangoValido_EsValido()
+    {
+        var validator = new BackfillMetricsCommandValidator();
+        var now = DateTimeOffset.UtcNow;
+        var command = new BackfillMetricsCommand(now.AddDays(-30), now, TestData.Clinic);
+
+        Assert.True(validator.Validate(command).IsValid);
+    }
+
+    [Fact]
+    public void Backfill_SinRango_EsValido()
+    {
+        var validator = new BackfillMetricsCommandValidator();
+        var command = new BackfillMetricsCommand(null, null, null, DryRun: true);
+
+        Assert.True(validator.Validate(command).IsValid);
+    }
 }
