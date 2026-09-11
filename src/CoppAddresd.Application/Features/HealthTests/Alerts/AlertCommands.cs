@@ -150,7 +150,11 @@ public record HealthTestStatsDto(
     int ActiveAlerts
 );
 
-public record GetHealthTestStatsQuery(Guid? ProfessionalId = null) : IRequest<HealthTestStatsDto>;
+public record GetHealthTestStatsQuery(
+    Guid? ProfessionalId = null,
+    string? StateCode = null,
+    Guid? CityId = null
+) : IRequest<HealthTestStatsDto>;
 
 public sealed class GetHealthTestStatsQueryHandler(
     IHealthTestRepository repository,
@@ -162,7 +166,15 @@ public sealed class GetHealthTestStatsQueryHandler(
         CancellationToken ct
     )
     {
-        var scopeHash = CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
+        var hasGeoFilter =
+            request.CityId.HasValue || !string.IsNullOrWhiteSpace(request.StateCode);
+        var scopeHash = hasGeoFilter
+            ? CacheKeys.HashScope(
+                request.ProfessionalId?.ToString() ?? "global",
+                request.StateCode?.Trim().ToUpperInvariant(),
+                request.CityId?.ToString()
+            )
+            : CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
         var cacheKey = CacheKeys.Stats("health-stats", scopeHash);
         return await cache.GetOrCreateAsync(
             cacheKey,
@@ -172,6 +184,18 @@ public sealed class GetHealthTestStatsQueryHandler(
                 var patientIds = request.ProfessionalId is { } profId
                     ? await repository.GetPatientIdsForProfessionalAsync(profId, token)
                     : null;
+
+                if (hasGeoFilter)
+                {
+                    var geoPatientIds = await repository.GetPatientIdsByGeoAsync(
+                        request.StateCode,
+                        request.CityId,
+                        token
+                    );
+                    patientIds = patientIds is null
+                        ? geoPatientIds
+                        : patientIds.Intersect(geoPatientIds).ToList();
+                }
 
                 var total = patientIds is null
                     ? await repository.CountPatientsAsync(token)

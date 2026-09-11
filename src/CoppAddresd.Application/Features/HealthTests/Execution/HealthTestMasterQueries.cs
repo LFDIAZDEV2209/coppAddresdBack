@@ -67,8 +67,11 @@ public record MasterPatientRowDto(
 /// alertas activas. Con <c>ProfessionalId</c> filtra por el alcance del
 /// profesional (ViewOwn).
 /// </summary>
-public record GetMasterRowsQuery(Guid? ProfessionalId = null)
-    : IRequest<IReadOnlyList<MasterPatientRowDto>>;
+public record GetMasterRowsQuery(
+    Guid? ProfessionalId = null,
+    string? StateCode = null,
+    Guid? CityId = null
+) : IRequest<IReadOnlyList<MasterPatientRowDto>>;
 
 public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, ICacheService cache)
     : IRequestHandler<GetMasterRowsQuery, IReadOnlyList<MasterPatientRowDto>>
@@ -78,15 +81,38 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
         CancellationToken ct
     )
     {
-        var scopeHash = CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
+        var hasGeoFilter =
+            request.CityId.HasValue || !string.IsNullOrWhiteSpace(request.StateCode);
+        var scopeHash = hasGeoFilter
+            ? CacheKeys.HashScope(
+                request.ProfessionalId?.ToString() ?? "global",
+                request.StateCode?.Trim().ToUpperInvariant(),
+                request.CityId?.ToString()
+            )
+            : CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
         var cacheKey = CacheKeys.Stats("health-master", scopeHash);
         return await cache.GetOrCreateAsync(
             cacheKey,
             CacheKeys.StatsTtl(),
             async token =>
             {
+                IReadOnlyCollection<Guid>? geoPatientIds = null;
+                if (hasGeoFilter)
+                {
+                    geoPatientIds = await repository.GetPatientIdsByGeoAsync(
+                        request.StateCode,
+                        request.CityId,
+                        token
+                    );
+                    if (geoPatientIds.Count == 0)
+                    {
+                        return new List<MasterPatientRowDto>();
+                    }
+                }
+
                 var assignments = await repository.ListAssignmentsWithPatientDataAsync(
                     request.ProfessionalId,
+                    geoPatientIds,
                     token
                 );
                 var alertCounts = await repository.ListActiveAlertCountsByPatientAsync(token);
