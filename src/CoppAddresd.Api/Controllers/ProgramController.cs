@@ -1,4 +1,5 @@
 using System.Globalization;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.RecordWeight;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
@@ -1067,6 +1068,20 @@ public sealed class ProgramController(
     /// <see cref="IProgramActorContext"/> (anti-IDOR AC-11); sin inscripción
     /// activa → 404. Cache 5 min por paciente (fail-open).
     /// </summary>
+    [HttpPost("me/weight")]
+    public async Task<ActionResult<RecordedWeightDto>> RecordWeight(
+        [FromBody] RecordWeightRequest request, CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
+        if (patientId is null || enrollmentId is null)
+            return NotFound(new { code = "NO_ACTIVE_ENROLLMENT", message = "Se requiere perfil de paciente e inscripción activa." });
+        if (actorContext.UserId is not { } actorId) return Unauthorized();
+        var result = await mediator.Send(new RecordWeightCommand(patientId.Value, enrollmentId.Value,
+            actorId, request.WeightKg, request.Date), ct);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
     [HttpGet("me/metrics-history")]
     public async Task<ActionResult<MetricsHistoryResponseDto>> GetMetricsHistory(
         [FromQuery] string? codes,
