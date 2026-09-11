@@ -41,6 +41,22 @@ public class AdminController(IMediator mediator) : ControllerBase
         CancellationToken ct = default
     ) => Ok(await mediator.Send(new GetDashboardAnalyticsQuery(null, from, to), ct));
 
+    /// <summary>
+    /// Recalcula las métricas pre-agregadas de analytics
+    /// (<c>tele.appointment_daily_metrics</c> y
+    /// <c>tele.professional_daily_stats</c>) desde <c>tele.appointments</c>
+    /// para el rango indicado. Idempotente y re-ejecutable: sobrescribe con el
+    /// recálculo autoritativo. Con <c>dryRun</c> no escribe nada y reporta lo
+    /// que escribiría. Si hubo tráfico concurrente, re-ejecutar converge.
+    /// </summary>
+    [HttpPost("analytics/backfill")]
+    [ProducesResponseType(typeof(BackfillMetricsResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<BackfillMetricsResult>> BackfillAnalytics(
+        [FromBody] BackfillMetricsCommand command,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(command, ct));
+
     /// <summary>Listado global de citas con filtros (profesional, paciente, clínica, sede, estado, rango).</summary>
     [HttpGet("appointments")]
     [ProducesResponseType(typeof(PaginatedAdminAppointmentsResult), StatusCodes.Status200OK)]
