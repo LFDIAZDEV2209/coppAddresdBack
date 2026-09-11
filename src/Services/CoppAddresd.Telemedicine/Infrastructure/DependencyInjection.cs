@@ -74,6 +74,9 @@ public static class DependencyInjection
         services.AddSingleton<ITelemedicineMetricsQueue, TelemedicineMetricsQueue>();
         services.AddHostedService<TelemedicineMetricsProcessorHostedService>();
 
+        // Backfill/reparación de las métricas pre-agregadas (operación admin).
+        services.AddScoped<IMetricsBackfillService, MetricsBackfillService>();
+
         services.Configure<Application.Configuration.TelemedicineOptions>(
             configuration.GetSection(Application.Configuration.TelemedicineOptions.SectionName)
         );
