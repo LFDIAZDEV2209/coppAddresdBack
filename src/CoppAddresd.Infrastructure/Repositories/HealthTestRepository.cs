@@ -876,10 +876,12 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     /// <summary>
     /// Asignaciones con paciente, versión/instrumento, evaluaciones y resultados
     /// (tabla maestra del ERP, una sola consulta). Con <c>professionalId</c> filtra
-    /// por el alcance del profesional (patient_professionals).
+    /// por el alcance del profesional (patient_professionals); con
+    /// <c>patientIds</c> acota a un conjunto (filtro geográfico del dashboard).
     /// </summary>
     public async Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsWithPatientDataAsync(
         Guid? professionalId,
+        IReadOnlyCollection<Guid>? patientIds = null,
         CancellationToken ct = default
     )
     {
@@ -900,6 +902,11 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
                     pp.PatientId == a.PatientId && pp.ProfessionalId == professionalId.Value
                 )
             );
+        }
+
+        if (patientIds is not null)
+        {
+            query = query.Where(a => patientIds.Contains(a.PatientId));
         }
 
         return await query.ToListAsync(ct);
@@ -1098,6 +1105,38 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .Select(x => x.PatientId)
             .Distinct()
             .ToListAsync(ct);
+
+    /// <summary>
+    /// Pacientes activos con ciudad dentro de un estado (código, ej. "CA") o de
+    /// una ciudad concreta (precedencia). Se apoya en la relación
+    /// PatientProfile.City → City.State y proyecta solo el Id (sin tracking).
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> GetPatientIdsByGeoAsync(
+        string? stateCode,
+        Guid? cityId,
+        CancellationToken ct = default
+    )
+    {
+        var query = dbContext
+            .PatientProfiles.AsNoTracking()
+            .Where(p => p.DeletedAt == null && p.CityId != null);
+
+        if (cityId.HasValue)
+        {
+            query = query.Where(p => p.CityId == cityId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(stateCode))
+        {
+            var normalized = stateCode.Trim().ToUpperInvariant();
+            query = query.Where(p => p.City!.State!.Code == normalized);
+        }
+        else
+        {
+            return Array.Empty<Guid>();
+        }
+
+        return await query.Select(p => p.Id).Distinct().ToListAsync(ct);
+    }
 
     public async Task<bool> PatientBelongsToProfessionalAsync(
         Guid patientId,
