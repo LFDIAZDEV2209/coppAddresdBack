@@ -398,6 +398,33 @@ Series REALES de métricas clínicas para la **Home** del móvil (IMC, HbA1c, % 
 
 **Cache** (ver `docs/modules/cache/README.md`): el **contexto COMPLETO** del paciente se cachea por clave `metrics-history:{patientId}:v1` (prefijo del servicio: `erp:`), TTL 5 min, fail-open — la serie de TODAS las métricas activas del catálogo sobre la ventana MÁXIMA (365d), talla, targets y direcciones, **sin codes/days en la clave** (precedente scores-history). El recorte por-request (whitelist → 400, clamp de días, re-filtro de ventana, fallback de IMC) se aplica DESPUÉS del caché y **nunca se cachea**. Sin invalidación explícita: el TTL absorbe el lag de las completaciones de signos vitales (≤ 5 min) — mismo tradeoff que scores-history.
 
+### 2.14 Controles por hitos del programa (UC-001 v2)
+
+En los días 7/14/21/45/60/90 del programa (`program_enrollments.start_local_date`), el paciente recibe un **mensaje proactivo** (push FCM + inyección en el chat, costo LLM cero) que ahora además **abre un Control**: un ciclo de vida auditable en `app.program_controls` en el que el agente pregunta cómo se siente y —si el paciente responde— conduce una conversación guiada para que suba sus exámenes de laboratorio por el adjunto del chat (panel completo, la misma petición en todos los controles). El examen subido queda **asociado al control** (`exam_batch_id`, sin FK), base de futuras métricas de adherencia. El detalle funcional completo vive en `USE-CASES.md` (UC-001, monorepo).
+
+**Ciclo de vida** (estados de fase 2 sobre la columna `status`; `Sent` ya no es terminal):
+
+```
+Sent → Responded → Completed | ClosedWithoutExam
+Sent → FollowedUp → Missed
+```
+
+| Estado | Cuándo |
+| --- | --- |
+| `Responded` | El paciente escribió en el control abierto (cualquier mensaje; los hooks de chat `ProgramControlChatHooks` lo marcan) |
+| `FollowedUp` | Silencio 48 h → **único** follow-up (plantilla `FollowupTemplate` con `{day}`, misma ventana 9–21 local del paciente) |
+| `Completed` | Subió un examen de laboratorio con el control abierto (`UploadLabExamCommandHandler` asocia el batch, best-effort) |
+| `ClosedWithoutExam` | Negativa explícita (`closed_reason='declined'`) o sin subida tras `NoUploadCloseDays` (7 días desde `Responded`, `no_upload_timeout`) |
+| `Missed` | Sin respuesta tras el follow-up (`MissedAfterFollowupHours`, 48 h) |
+
+**Temporizadores** (configurables en `Program:Controls`): `FollowupHours` (48 h, un solo follow-up), `MissedAfterFollowupHours` (48 h → `Missed`), `NoUploadCloseDays` (7 días → cierre sin examen). El job `ProgramControlJob` evalúa los vencidos en cada pasada (fase 2 solo con `ControlsEnabled`).
+
+**Negativa explícita**: el agente **no insiste** — llama la tool `mark_control_declined` del ai-service, que emite la señal `control_signal="declined"` (campo sync o evento SSE `control_signal`); el backend la consume (`TryConsumeSignalAsync`) y cierra el control con `closed_reason='declined'`. La negativa ambigua/evasión **no cierra**: el control permanece abierto hasta el backstop de 7 días.
+
+**Ruta de la señal** (frontend/móvil nunca habla directo con ai-service): chat del paciente → backend (.NET) → request de chat con `control_context` (`send_id`, `milestone_day`, `status`, `exam_pending`) → ai-service inyecta el guiado en el prompt del turno → ante negativa explícita, tool `mark_control_declined` → `control_signal="declined"` → backend cierra el control. Sin `control_context` el agente se comporta como UC-001 puro.
+
+**Killswitch**: `Program:Controls → ControlsEnabled=false` (default) = comportamiento UC-001 puro (solo envío proactivo + estados de fase 1 `Pending/Sent/Failed/Skipped`; sin hooks de chat, sin follow-ups, sin cierres ni asociación de exámenes). Rollback en producción = apagar el flag, sin redeploy.
+
 ---
 
 ## 3. Cómo funciona el flujo en la práctica
