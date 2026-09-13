@@ -17,6 +17,7 @@ using Serilog;
 using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
+CoppAddresd.Shared.Security.ErpSessionValidationExtensions.AddErpSessionValidation(builder.Services, builder.Configuration);
 
 // Structured logging (Serilog). Sinks come from the "Serilog" configuration
 // section (appsettings.Development.json enables Console + rolling compact-JSON

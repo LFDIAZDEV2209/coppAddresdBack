@@ -17,6 +17,17 @@ namespace CoppAddresd.Api.Controllers;
 [Authorize]
 public class EmployeesController(IMediator mediator) : ControllerBase
 {
+    [HttpPut("{id:guid}/access")]
+    [RequirePermission(PermissionCodes.EmployeesUpdate)]
+    public async Task<IActionResult> ChangeAccess(Guid id, ChangeProfessionalAccessRequest request, CancellationToken ct)
+    {
+        if (!User.HasClaim("aud", "erp") || !Guid.TryParse(
+            User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var actor))
+            return Forbid();
+        var result = await mediator.Send(new ChangeProfessionalAccessCommand(id, actor, request.OperationId, request.Status), ct);
+        return StatusCode(result.Pending ? StatusCodes.Status202Accepted : StatusCodes.Status200OK, result);
+    }
+
     [HttpGet]
     [RequirePermission(PermissionCodes.EmployeesView)]
     public async Task<ActionResult<PaginatedEmployeesResult>> List(
@@ -166,6 +177,8 @@ public class EmployeesController(IMediator mediator) : ControllerBase
         return Ok(updated);
     }
 }
+
+public sealed record ChangeProfessionalAccessRequest(Guid OperationId, string Status);
 
 public record CreateEmployeeRequest(
     Guid OrganizationId,

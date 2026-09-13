@@ -35,10 +35,12 @@ public class ProfessionalsController(
     public async Task<ActionResult<EmployeeStatsDto>> Stats(
         [FromQuery] Guid? organizationId = null,
         [FromQuery] Guid? clinicId = null,
+        [FromQuery] bool fresh = false,
         CancellationToken ct = default
     )
     {
-        var stats = await mediator.Send(new GetEmployeesStatsQuery(organizationId, clinicId), ct);
+        if (!User.HasClaim("aud", "erp")) return Forbid();
+        var stats = await mediator.Send(new GetEmployeesStatsQuery(organizationId, clinicId, fresh), ct);
         return Ok(stats);
     }
 

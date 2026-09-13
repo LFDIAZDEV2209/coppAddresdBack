@@ -12,6 +12,8 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.ToTable("employees", "erp");
 
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.ErpAccessVersion)
+            .HasColumnName("erp_access_version").HasDefaultValue(0L);
         builder.Property(x => x.Id)
             .HasColumnName("id")
             .HasDefaultValueSql("gen_random_uuid()");

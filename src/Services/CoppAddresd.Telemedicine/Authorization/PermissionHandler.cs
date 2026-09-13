@@ -26,6 +26,15 @@ public class PermissionHandler(
         AuthorizationHandlerContext context,
         PermissionRequirement requirement)
     {
+        // La consola global es exclusiva del ERP, incluso si el paciente tiene
+        // permisos administrativos por sus otros roles. Preservar acciones propias.
+        if (requirement.PermissionCode is "Appointments.AdminView" or "Telemedicine.AdminView"
+            && !context.User.HasClaim("aud", "erp"))
+        {
+            context.Fail();
+            return;
+        }
+
         // 1. Permiso global (claims JWT): aplica en cualquier contexto.
         if (context.User.HasClaim(PermissionClaimType, requirement.PermissionCode))
         {
