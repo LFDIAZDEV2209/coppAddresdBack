@@ -544,11 +544,13 @@ public class OtpService : IOtpService
             return null;
         }
 
-        var hasAccess = await _dbContext.UserApplications
+        var access = await _dbContext.UserApplications
             .AsNoTracking()
-            .AnyAsync(ua => ua.UserId == userId && ua.ApplicationId == application.Id, ct);
+            .SingleOrDefaultAsync(ua => ua.UserId == userId && ua.ApplicationId == application.Id, ct);
 
-        if (!hasAccess)
+        if (access?.IsSuspended == true) return null;
+
+        if (access is null)
         {
             _dbContext.UserApplications.Add(new UserApplication
             {
@@ -577,15 +579,19 @@ public class OtpService : IOtpService
         await _dbContext.Database.ExecuteSqlRawAsync(sql, new object[] { userId, patientId }, ct);
     }
 
-    private async Task<TokenResult> IssueTokensAsync(
+    private async Task<TokenResult?> IssueTokensAsync(
         ApplicationUser user,
         Application application,
         CancellationToken ct)
     {
+        var access = await _dbContext.UserApplications.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.UserId == user.Id && x.ApplicationId == application.Id, ct);
+        if (access is null || access.IsSuspended)
+            return null;
         var roles = await _userManager.GetRolesAsync(user);
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(user.Id, ct);
-        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions);
-        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct);
+        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions, access.SessionVersion);
+        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct, access.SessionVersion);
 
         return new TokenResult(
             AccessToken: accessToken,

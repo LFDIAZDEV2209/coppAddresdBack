@@ -118,11 +118,11 @@ public class AuthService : IAuthService
             return null;
         }
 
-        var hasAccess = await _dbContext.UserApplications
+        var access = await _dbContext.UserApplications
             .AsNoTracking()
-            .AnyAsync(ua => ua.UserId == user.Id && ua.ApplicationId == application.Id, ct);
+            .SingleOrDefaultAsync(ua => ua.UserId == user.Id && ua.ApplicationId == application.Id, ct);
 
-        if (!hasAccess)
+        if (access is null || access.IsSuspended)
         {
             _logger.LogWarning("Login failed: user {UserId} has no access to application {Application}",
                 user.Id, application.Code);
@@ -133,8 +133,8 @@ public class AuthService : IAuthService
         // Permisos actuales (directos + via rol) al momento del login: se emiten
         // como claims en el access token para que la autorización no consulte BD.
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(user.Id, ct);
-        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions);
-        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct);
+        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions, access.SessionVersion);
+        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct, access.SessionVersion);
 
         _logger.LogInformation("User {UserId} logged in successfully to application {Application}",
             user.Id, application.Code);
@@ -179,6 +179,11 @@ public class AuthService : IAuthService
             return null;
         }
 
+        var access = await _dbContext.UserApplications.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.UserId == storedToken.UserId && x.ApplicationId == storedToken.ApplicationId, ct);
+        if (access is null || access.IsSuspended || access.SessionVersion != storedToken.ApplicationSessionVersion)
+            return null;
+
         // Reclamación ATÓMICA del token: un solo UPDATE condicional revoca el
         // token SI y SOLO SI aún no fue usado (REQ-REFRESH-01). Dos solicitudes
         // concurrentes con el mismo token compiten por este UPDATE: solo una
@@ -206,7 +211,7 @@ public class AuthService : IAuthService
         storedToken.RevokedAt = DateTime.UtcNow;
 
         var newRefreshToken = await _tokenService.GenerateRefreshTokenAsync(
-            storedToken.UserId, storedToken.ApplicationId, ct);
+            storedToken.UserId, storedToken.ApplicationId, ct, access.SessionVersion);
         storedToken.ReplacedByTokenId = (await _dbContext.RefreshTokens
             .FirstOrDefaultAsync(rt => rt.Token == newRefreshToken, ct))?.Id;
 
@@ -216,7 +221,7 @@ public class AuthService : IAuthService
         // Re-cálculo de permisos en cada refresh: el nuevo access token refleja
         // el estado ACTUAL (no copia claims del token anterior).
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(storedToken.UserId, ct);
-        var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles, storedToken.Application.Code, permissions);
+        var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles, storedToken.Application.Code, permissions, access.SessionVersion);
 
         _logger.LogInformation("Refreshed tokens for user {UserId} (application {Application})",
             storedToken.UserId, storedToken.Application.Code);

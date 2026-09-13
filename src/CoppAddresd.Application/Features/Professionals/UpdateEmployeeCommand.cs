@@ -45,6 +45,10 @@ public sealed class UpdateEmployeeCommandHandler(
         if (entity is null)
             return null;
 
+        if (entity.Professional is not null && entity.UserId is not null && request.Status is not null
+            && request.Status.Trim() != entity.Status)
+            throw new BusinessRuleViolationException("Cambia el estado desde el control de acceso ERP del directorio.");
+
         // Capturar el estado anterior del profesional y sus clínicas antes de
         // las modificaciones, para calcular las clínicas recién agregadas.
         var hadProfessional = entity.Professional != null;

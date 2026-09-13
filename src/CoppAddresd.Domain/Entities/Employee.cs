@@ -42,6 +42,9 @@ public sealed class Employee
     /// <summary>Estado del ciclo de vida (Invited, Active, Inactive).</summary>
     public string Status { get; set; } = "Invited";
 
+    /// <summary>Última versión de acceso ERP proyectada desde Auth.</summary>
+    public long ErpAccessVersion { get; set; }
+
     public Guid? CreatedBy { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

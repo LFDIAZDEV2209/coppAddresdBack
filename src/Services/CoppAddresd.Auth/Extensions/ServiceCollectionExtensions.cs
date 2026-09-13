@@ -122,7 +122,7 @@ public static class ServiceCollectionExtensions
                 var validator = context.HttpContext.RequestServices
                     .GetRequiredService<CoppAddresd.Auth.Security.ISecurityStampValidator>();
 
-                var isValid = await validator.ValidateAsync(principal);
+                var isValid = await validator.ValidateAsync(principal, context.HttpContext.RequestAborted);
                 if (!isValid)
                 {
                     context.Fail("Security stamp validation failed");
