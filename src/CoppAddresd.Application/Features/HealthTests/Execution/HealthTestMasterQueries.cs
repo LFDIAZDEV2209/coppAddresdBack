@@ -65,11 +65,12 @@ public record MasterPatientRowDto(
 /// Consulta las filas de la tabla maestra del módulo en una sola pasada
 /// (sin N+1): pacientes con asignaciones, resumen por test y conteo de
 /// alertas activas. Con <c>ProfessionalId</c> filtra por el alcance del
-/// profesional (ViewOwn).
+/// profesional (ViewOwn); con <c>StateCodes</c>/<c>CityId</c> acota la zona
+/// (unión de estados; ciudad con precedencia).
 /// </summary>
 public record GetMasterRowsQuery(
     Guid? ProfessionalId = null,
-    string? StateCode = null,
+    IReadOnlyList<string>? StateCodes = null,
     Guid? CityId = null
 ) : IRequest<IReadOnlyList<MasterPatientRowDto>>;
 
@@ -81,12 +82,19 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
         CancellationToken ct
     )
     {
-        var hasGeoFilter =
-            request.CityId.HasValue || !string.IsNullOrWhiteSpace(request.StateCode);
+        // Normaliza y ordena los estados para que el hash de caché sea estable
+        // sin importar el orden de selección en el mapa.
+        var stateCodes = (request.StateCodes ?? [])
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim().ToUpperInvariant())
+            .Distinct()
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+        var hasGeoFilter = request.CityId.HasValue || stateCodes.Count > 0;
         var scopeHash = hasGeoFilter
             ? CacheKeys.HashScope(
                 request.ProfessionalId?.ToString() ?? "global",
-                request.StateCode?.Trim().ToUpperInvariant(),
+                stateCodes.Count > 0 ? string.Join(",", stateCodes) : null,
                 request.CityId?.ToString()
             )
             : CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
@@ -100,7 +108,7 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
                 if (hasGeoFilter)
                 {
                     geoPatientIds = await repository.GetPatientIdsByGeoAsync(
-                        request.StateCode,
+                        stateCodes,
                         request.CityId,
                         token
                     );
