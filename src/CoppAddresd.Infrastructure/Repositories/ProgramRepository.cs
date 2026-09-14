@@ -373,6 +373,7 @@ public sealed class ProgramRepository(
                         .FirstOrDefault()
                     ?? 0,
                 StreakCurrent = (int?)e.StreakState!.CurrentStreak ?? 0,
+                StreakLastActive = e.StreakState.LastActiveDate,
                 StreakLongest = (int?)e.StreakState.LongestStreak ?? 0,
                 FreezesRemaining = (int?)e.StreakState.FreezesRemaining ?? 0,
                 e.CompletedAt,
@@ -398,6 +399,10 @@ public sealed class ProgramRepository(
         // (XpLevels.ForBalance): nunca se duplican umbrales.
         var level = XpLevels.ForBalance(row.XpBalance).Level;
 
+        // Racha EFECTIVA a la fecha de lectura (misma regla que
+        // ComputeStreakRuns): racha vencida → 0 aunque el escalar esté stale.
+        var todayLocal = PatientLocalToday(row.Timezone);
+
         return new ProgramEnrollmentDto(
             row.Id,
             row.PatientId,
@@ -409,7 +414,7 @@ public sealed class ProgramRepository(
             row.CurrentWeekNumber,
             row.TotalWeeks,
             row.XpBalance,
-            row.StreakCurrent,
+            EffectiveCurrentStreak(row.StreakCurrent, row.StreakLastActive, todayLocal),
             row.StreakLongest,
             row.FreezesRemaining,
             row.CompletedAt,
@@ -475,6 +480,7 @@ public sealed class ProgramRepository(
                         .FirstOrDefault()
                     ?? 0,
                 StreakCurrent = (int?)e.StreakState!.CurrentStreak ?? 0,
+                StreakLastActive = e.StreakState.LastActiveDate,
                 StreakLongest = (int?)e.StreakState.LongestStreak ?? 0,
                 FreezesRemaining = (int?)e.StreakState.FreezesRemaining ?? 0,
                 e.CompletedAt,
@@ -494,30 +500,36 @@ public sealed class ProgramRepository(
             .ToListAsync(ct);
 
         // Nivel derivado de la XP con la MISMA escalera del snapshot
-        // (XpLevels.ForBalance): nunca se duplican umbrales.
-        var items = rows.Select(r => new ProgramEnrollmentDto(
-                r.Id,
-                r.PatientId,
-                r.TemplateId,
-                r.Timezone,
-                r.Status,
-                r.StartedAt,
-                r.StartLocalDate,
-                r.CurrentWeekNumber,
-                r.TotalWeeks,
-                r.XpBalance,
-                r.StreakCurrent,
-                r.StreakLongest,
-                r.FreezesRemaining,
-                r.CompletedAt,
-                r.PausedAt,
-                r.WithdrawnAt,
-                r.CreatedAt,
-                r.PatientFullName,
-                r.PatientDocumentNumber,
-                r.TemplateName,
-                CurrentLevel: XpLevels.ForBalance(r.XpBalance).Level
-            ))
+        // (XpLevels.ForBalance): nunca se duplican umbrales. La racha se
+        // reporta EFECTIVA a la fecha de lectura (misma regla que
+        // ComputeStreakRuns): racha vencida → 0 aunque el escalar esté stale.
+        var items = rows.Select(r =>
+            {
+                var todayLocal = PatientLocalToday(r.Timezone);
+                return new ProgramEnrollmentDto(
+                    r.Id,
+                    r.PatientId,
+                    r.TemplateId,
+                    r.Timezone,
+                    r.Status,
+                    r.StartedAt,
+                    r.StartLocalDate,
+                    r.CurrentWeekNumber,
+                    r.TotalWeeks,
+                    r.XpBalance,
+                    EffectiveCurrentStreak(r.StreakCurrent, r.StreakLastActive, todayLocal),
+                    r.StreakLongest,
+                    r.FreezesRemaining,
+                    r.CompletedAt,
+                    r.PausedAt,
+                    r.WithdrawnAt,
+                    r.CreatedAt,
+                    r.PatientFullName,
+                    r.PatientDocumentNumber,
+                    r.TemplateName,
+                    CurrentLevel: XpLevels.ForBalance(r.XpBalance).Level
+                );
+            })
             .ToList();
 
         return (items, total);
@@ -1783,6 +1795,7 @@ public sealed class ProgramRepository(
                 TemplateStreakMinTasks = e.Template.StreakMinTasks,
                 TemplateEssentialTaskCodes = e.Template.EssentialTaskCodes,
                 StreakCurrent = (int?)e.StreakState!.CurrentStreak,
+                StreakLastActive = e.StreakState.LastActiveDate,
                 StreakLongest = (int?)e.StreakState.LongestStreak,
                 FreezesRemaining = (int?)e.StreakState.FreezesRemaining,
                 MultiplierActive = (decimal?)e.StreakState.MultiplierActive,
@@ -2278,7 +2291,16 @@ public sealed class ProgramRepository(
 
         var xpBalance = row.XpBalance ?? 0;
         var level = XpLevels.ForBalance(xpBalance);
-        var streakCurrent = row.StreakCurrent ?? 0;
+        // Racha EFECTIVA a la fecha de lectura (misma regla que
+        // ComputeStreakRuns): si el último día calificado no es hoy/ayer local,
+        // los días perdidos ya rompieron la racha → 0. El escalar almacenado
+        // solo se actualiza al completar o en el job nocturno; sin este decay
+        // el móvil muestra una racha vencida.
+        var streakCurrent = EffectiveCurrentStreak(
+            row.StreakCurrent ?? 0,
+            row.StreakLastActive,
+            todayLocalDate
+        );
         var nextMilestone = streakCurrent > 0 ? 7 - (streakCurrent % 7) : 7;
         if (nextMilestone == 0)
         {
@@ -8181,6 +8203,17 @@ public sealed class ProgramRepository(
         }
     }
 
+    /// <summary>
+    /// Racha efectiva a la fecha de lectura: el escalar almacenado solo es válido
+    /// si el último día calificado (LastActiveDate) es HOY o AYER local — la misma
+    /// regla que ComputeStreakRuns. Días perdidos posteriores rompen la racha (0).
+    /// </summary>
+    internal static int EffectiveCurrentStreak(
+        int storedCurrent,
+        DateOnly? lastActiveDate,
+        DateOnly todayLocal
+    ) => lastActiveDate is { } last && last >= todayLocal.AddDays(-1) ? storedCurrent : 0;
+
     private static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
@@ -8298,17 +8331,23 @@ public sealed class ProgramRepository(
                 .SumAsync(x => x.Amount, ct);
         }
 
-        // Pacientes racha > 7
-        var pacientesRachaGt7 = await dbContext
+        // Pacientes racha > 7 y en riesgo (racha = 0) con la racha EFECTIVA:
+        // el escalar solo vale si el último día calificado es hoy/ayer local
+        // (misma regla que ComputeStreakRuns). Una sola lectura de rachas para
+        // ambos KPIs; solo cuentan inscripciones con fila de StreakState
+        // (semántica idéntica a los counts anteriores).
+        var streakRows = await dbContext
             .StreakStates.AsNoTracking()
-            .Where(s => enrollmentIds.Contains(s.EnrollmentId) && s.CurrentStreak > 7)
-            .CountAsync(ct);
+            .Where(s => enrollmentIds.Contains(s.EnrollmentId))
+            .Select(s => new { s.CurrentStreak, s.LastActiveDate })
+            .ToListAsync(ct);
+        var pacientesRachaGt7 = streakRows.Count(s =>
+            EffectiveCurrentStreak(s.CurrentStreak, s.LastActiveDate, today) > 7
+        );
 
-        // En riesgo (streak = 0)
-        var enRiesgo = await dbContext
-            .StreakStates.AsNoTracking()
-            .Where(s => enrollmentIds.Contains(s.EnrollmentId) && s.CurrentStreak == 0)
-            .CountAsync(ct);
+        var enRiesgo = streakRows.Count(s =>
+            EffectiveCurrentStreak(s.CurrentStreak, s.LastActiveDate, today) == 0
+        );
 
         // Adherencia por misión hoy
         var todayCheckins = await dbContext
@@ -9396,17 +9435,28 @@ public sealed class ProgramRepository(
         );
     }
 
+    /// <summary>
+    /// Inscripción activa más reciente del paciente: misma resolución que usa
+    /// el overview ERP (status Active, orden CreatedAt desc). null si el
+    /// paciente no tiene inscripción activa.
+    /// </summary>
+    public Task<ProgramEnrollment?> GetActiveEnrollmentForPatientAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    ) =>
+        dbContext
+            .ProgramEnrollments.AsNoTracking()
+            .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
+            .OrderByDescending(e => e.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
     /// <summary>Perfil 360 de un paciente (SPEC §23, AC-54). Devuelve null si no tiene inscripción.</summary>
     public async Task<PatientOverviewDto?> GetPatientOverviewAsync(
         Guid patientId,
         CancellationToken ct = default
     )
     {
-        var enrollment = await dbContext
-            .ProgramEnrollments.AsNoTracking()
-            .Where(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active)
-            .OrderByDescending(e => e.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+        var enrollment = await GetActiveEnrollmentForPatientAsync(patientId, ct);
 
         if (enrollment is null)
         {

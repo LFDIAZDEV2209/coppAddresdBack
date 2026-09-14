@@ -21,9 +21,26 @@ public interface IClinicalMeasurementRepository
     /// los campos de catálogo (<c>MetricName</c>/<c>UnitSymbol</c>) y
     /// <c>BatchId</c> derivado de los anclas de
     /// <c>task_completions.vital_signs_batch_id</c>. Set-based, sin N+1.
+    /// <paramref name="batchId"/> opcional filtra las filas del lote indicado
+    /// (lote de examen de laboratorio) para el vínculo documento↔control
+    /// (UC-004).
     /// </summary>
     Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
         Guid patientId,
+        Guid? batchId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Variante set-based de los lotes de examen (UC-004): mediciones del
+    /// paciente restringidas a VARIOS lotes en UNA query
+    /// (<c>WHERE batch_id = ANY(@batchIds)</c>), con la misma proyección y
+    /// orden que la sobrecarga de un lote. Resuelve el vínculo
+    /// documento↔control de todos los controles de una inscripción sin N+1.
+    /// Lista vacía si <paramref name="batchIds"/> está vacío.
+    /// </summary>
+    Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
+        Guid patientId,
+        IReadOnlyCollection<Guid> batchIds,
         CancellationToken ct = default);
 
     /// <summary>
