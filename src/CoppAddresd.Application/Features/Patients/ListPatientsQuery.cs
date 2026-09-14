@@ -21,7 +21,8 @@ public record ListPatientsQuery(
     Guid? ClinicId = null,
     Guid? OwnProfessionalId = null,
     string? SortBy = null,
-    string? SortDir = null
+    string? SortDir = null,
+    string? StateCode = null
 ) : IRequest<PaginatedPatientsResult>;
 
 /// <summary>Campos de orden permitidos del listado (whitelist anti-inyección).</summary>
@@ -62,6 +63,9 @@ public sealed class ListPatientsQueryHandler(IPatientRepository repository)
         var sortDir = string.Equals(request.SortDir, "asc", StringComparison.OrdinalIgnoreCase)
             ? "asc"
             : "desc";
+        var stateCode = string.IsNullOrWhiteSpace(request.StateCode)
+            ? null
+            : request.StateCode.Trim().ToUpperInvariant();
 
         var (items, total) = await repository.ListAsync(
             page,
@@ -73,6 +77,7 @@ public sealed class ListPatientsQueryHandler(IPatientRepository repository)
             request.OwnProfessionalId,
             sortBy,
             sortDir,
+            stateCode,
             ct
         );
 

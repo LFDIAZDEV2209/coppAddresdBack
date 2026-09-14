@@ -63,6 +63,7 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         Guid? professionalId,
         string? sortBy,
         string? sortDir,
+        string? stateCode = null,
         CancellationToken ct = default
     )
     {
@@ -85,6 +86,11 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
 
         if (insurerId is not null)
             query = query.Where(x => x.InsurerId == insurerId);
+
+        // Filtro por estado de EE. UU. (selección del mapa geográfico): solo
+        // pacientes con ese estado registrado.
+        if (!string.IsNullOrWhiteSpace(stateCode))
+            query = query.Where(x => x.State != null && x.State.Code == stateCode);
 
         // Frontera de datos (Fase 4): con clínica activa solo se ven sus
         // pacientes. El directorio legacy sin clínica (clinic_id null) queda
@@ -141,6 +147,11 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
             .Include(x => x.Insurer)
             .Include(x => x.DocumentType)
             .Include(x => x.Clinic)
+            .Include(x => x.State)
+            // Diagnósticos de la página para "diagnóstico principal": EF emite
+            // una query separada tras la paginación (split), sin N+1 por fila.
+            .Include(x => x.Diagnoses)
+                .ThenInclude(d => d.Icd10Code)
             // Asignaciones de la página para la columna "Profesional": EF emite
             // una query separada tras la paginación (split automático con
             // Skip/Take), sin producto cartesiano.
@@ -217,6 +228,39 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
             );
     }
 
+    public async Task<PatientStatusSnapshot?> GetStatusSnapshotAsync(
+        Guid id,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .PatientProfiles.AsNoTracking()
+            .Where(x => x.Id == id && x.DeletedAt == null)
+            .Select(x => new PatientStatusSnapshot(x.Status, x.ClinicId))
+            .FirstOrDefaultAsync(ct);
+
+    public async Task<bool> UpdateStatusAsync(
+        Guid id,
+        string status,
+        Guid? updatedBy,
+        CancellationToken ct = default
+    )
+    {
+        // ExecuteUpdate: solo status + auditoría; el resto del agregado y sus
+        // colecciones hijas quedan intactos (el toggle nunca borra datos).
+        var affected = await dbContext
+            .PatientProfiles.Where(x => x.Id == id && x.DeletedAt == null)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.Status, status)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedBy, updatedBy),
+                ct
+            );
+
+        return affected > 0;
+    }
+
     public async Task<bool> ExistsAsync(Guid id, CancellationToken ct = default) =>
         await dbContext.PatientProfiles.AnyAsync(x => x.Id == id, ct);
 
@@ -239,17 +283,25 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         // Pre-agregación CQRS (Fase 1): lectura O(1) desde patient_daily_metrics para vista administrativa/clínica
         if (professionalId is null)
         {
-            var metrics = await dbContext.PatientDailyMetrics
-                .AsNoTracking()
+            var metrics = await dbContext
+                .PatientDailyMetrics.AsNoTracking()
                 .Where(m => m.ClinicId == targetClinicId)
                 .ToListAsync(ct);
 
             if (metrics.Count > 0)
             {
-                var total = (int)metrics.Where(m => m.MetricKey == "total_patients").Sum(m => m.TotalCount);
-                var active = (int)metrics.Where(m => m.MetricKey == "status_count" && m.DimensionKey == "Activo").Sum(m => m.TotalCount);
-                var newThisMonth = (int)metrics.Where(m => m.MetricKey == "new_patients" && m.MetricDate >= monthStartDate).Sum(m => m.TotalCount);
-                var unassigned = (int)metrics.Where(m => m.MetricKey == "unassigned_patients").Sum(m => m.TotalCount);
+                var total = (int)
+                    metrics.Where(m => m.MetricKey == "total_patients").Sum(m => m.TotalCount);
+                var active = (int)
+                    metrics
+                        .Where(m => m.MetricKey == "status_count" && m.DimensionKey == "Activo")
+                        .Sum(m => m.TotalCount);
+                var newThisMonth = (int)
+                    metrics
+                        .Where(m => m.MetricKey == "new_patients" && m.MetricDate >= monthStartDate)
+                        .Sum(m => m.TotalCount);
+                var unassigned = (int)
+                    metrics.Where(m => m.MetricKey == "unassigned_patients").Sum(m => m.TotalCount);
 
                 return new PatientStatsDto(total, active, newThisMonth, Math.Max(0, unassigned));
             }
@@ -447,13 +499,10 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         }
 
         // Una sola query: LOWER(document_number) IN (...) para bulk duplicate check.
-        var lowered = documentNumbers
-            .Select(d => d.Trim().ToLowerInvariant())
-            .Distinct()
-            .ToList();
+        var lowered = documentNumbers.Select(d => d.Trim().ToLowerInvariant()).Distinct().ToList();
 
-        return await dbContext.PatientProfiles
-            .AsNoTracking()
+        return await dbContext
+            .PatientProfiles.AsNoTracking()
             .Where(x => x.DeletedAt == null && x.DocumentNumber != null)
             .Where(x => lowered.Contains(x.DocumentNumber!.ToLower()))
             .Select(x => x.DocumentNumber!.ToLower())
