@@ -900,9 +900,9 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Filtro geográfico del dashboard: resuelve pacientes por estado (código
-    /// normalizado) o ciudad (con precedencia) y devuelve vacío sin filtros
-    /// (nunca expone el padrón completo por accidente).
+    /// Filtro geográfico del dashboard: resuelve pacientes por uno o varios
+    /// estados (códigos normalizados, unión) o ciudad (con precedencia) y
+    /// devuelve vacío sin filtros (nunca expone el padrón completo por accidente).
     /// </summary>
     [Fact]
     public async Task GetPatientIdsByGeo_FiltraPorEstadoYCiudad()
@@ -923,20 +923,30 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
 
         // Por estado (el código se normaliza a mayúsculas).
         var byState = await _repository.GetPatientIdsByGeoAsync(
-            stateA.Code.ToLowerInvariant(),
+            [stateA.Code.ToLowerInvariant()],
             null
         );
         Assert.Contains(patientA1.Id, byState);
         Assert.Contains(patientA2.Id, byState);
         Assert.DoesNotContain(patientB1.Id, byState);
 
+        // Varios estados → unión (multi-selección del mapa).
+        var byStates = await _repository.GetPatientIdsByGeoAsync(
+            [stateA.Code, stateB.Code],
+            null
+        );
+        Assert.Equal(3, byStates.Count);
+        Assert.Contains(patientA1.Id, byStates);
+        Assert.Contains(patientA2.Id, byStates);
+        Assert.Contains(patientB1.Id, byStates);
+
         // cityId tiene precedencia sobre el estado.
-        var byCity = await _repository.GetPatientIdsByGeoAsync(stateB.Code, cityA2.Id);
+        var byCity = await _repository.GetPatientIdsByGeoAsync([stateB.Code], cityA2.Id);
         Assert.Single(byCity);
         Assert.Equal(patientA2.Id, byCity[0]);
 
         // Sin filtros → vacío.
-        var blank = await _repository.GetPatientIdsByGeoAsync("   ", null);
+        var blank = await _repository.GetPatientIdsByGeoAsync(["   "], null);
         Assert.Empty(blank);
     }
 
@@ -1037,9 +1047,19 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
 
         var handler = new GetMasterRowsQueryHandler(_repository, new NoopCacheService());
 
-        var rows = await handler.Handle(new GetMasterRowsQuery(null, stateIn.Code, null), default);
+        var rows = await handler.Handle(
+            new GetMasterRowsQuery(null, [stateIn.Code], null),
+            default
+        );
         Assert.Single(rows);
         Assert.Equal(patientIn.Id, rows[0].Patient.Id);
+
+        // Multi-selección de estados → unión de zonas.
+        var union = await handler.Handle(
+            new GetMasterRowsQuery(null, [stateIn.Code, stateOut.Code], null),
+            default
+        );
+        Assert.Equal(2, union.Count);
 
         // Zona sin pacientes → vacío (early return cacheado).
         var empty = await handler.Handle(
@@ -1047,6 +1067,79 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
             default
         );
         Assert.Empty(empty);
+    }
+
+    /// <summary>
+    /// El mapa calcula el % de riesgo por ciudad SOLO sobre pacientes evaluados
+    /// (con score): una ciudad con pacientes mapeados sin evaluaciones queda en
+    /// null ("Sin datos"), no en 0% (el bug que pintaba todo verde).
+    /// </summary>
+    [Fact]
+    public async Task GetGeo_PorcentajeRiesgoSoloSobreEvaluados()
+    {
+        if (_skipped)
+        {
+            return;
+        }
+
+        var country = await NewTestCountryAsync();
+        var (stateA, cityA) = await NewTestStateWithCityAsync(country, "QF", "Ciudad Evaluada");
+        var (stateB, cityB) = await NewTestStateWithCityAsync(country, "QG", "Ciudad Sin Datos");
+
+        var evaluated = await NewPatientInCityAsync("doc-geo-eval", stateA.Id, cityA.Id);
+        await NewPatientInCityAsync("doc-geo-sin-eval", stateA.Id, cityA.Id);
+        await NewPatientInCityAsync("doc-geo-nodata", stateB.Id, cityB.Id);
+
+        var instrument = await NewInstrumentWithVersionAsync("it_geo_eval");
+        var version = instrument.Versions.Single();
+        var assignment = new HealthTestAssignment
+        {
+            Id = Guid.NewGuid(),
+            PatientId = evaluated.Id,
+            VersionId = version.Id,
+            Status = HealthTestAssignmentStatus.pending,
+            AssignedAt = DateTime.UtcNow,
+        };
+        await _repository.AddAssignmentAsync(assignment);
+
+        var evaluation = new HealthTestEvaluation
+        {
+            Id = Guid.NewGuid(),
+            AssignmentId = assignment.Id,
+            PatientId = evaluated.Id,
+            VersionId = version.Id,
+            Status = HealthTestEvaluationStatus.completed,
+            StartedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow,
+        };
+        await _repository.AddEvaluationAsync(evaluation);
+
+        await _repository.AddResultsRangeAsync([
+            new HealthTestResult
+            {
+                Id = Guid.NewGuid(),
+                EvaluationId = evaluation.Id,
+                ResultType = HealthTestResultType.score,
+                Code = "it_geo_eval",
+                Label = "Score total",
+                Value = 9m,
+                Qualifier = "alto",
+                Severity = HealthTestSeverity.high,
+                CreatedAt = DateTime.UtcNow,
+            },
+        ]);
+
+        var geo = await _repository.GetGeoAsync();
+
+        var evaluatedCity = Assert.Single(geo.Cities, c => c.CityId == cityA.Id);
+        Assert.Equal(2, evaluatedCity.Count);
+        Assert.Equal(1, evaluatedCity.EvaluatedCount);
+        Assert.Equal(100d, evaluatedCity.HighRiskPct);
+
+        var noDataCity = Assert.Single(geo.Cities, c => c.CityId == cityB.Id);
+        Assert.Equal(1, noDataCity.Count);
+        Assert.Equal(0, noDataCity.EvaluatedCount);
+        Assert.Null(noDataCity.HighRiskPct);
     }
 
     /// <summary>

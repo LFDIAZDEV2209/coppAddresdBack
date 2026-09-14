@@ -251,12 +251,13 @@ public interface IHealthTestRepository
         CancellationToken ct = default
     );
     /// <summary>
-    /// Pacientes activos con ciudad dentro de un estado (<paramref name="stateCode"/>,
-    /// código) o de una ciudad concreta (<paramref name="cityId"/>, con precedencia).
-    /// Sin filtro devuelve lista vacía. Base del filtro geográfico del dashboard.
+    /// Pacientes activos con ciudad dentro de uno o varios estados
+    /// (<paramref name="stateCodes"/>, códigos, unión) o de una ciudad concreta
+    /// (<paramref name="cityId"/>, con precedencia). Sin filtro devuelve lista
+    /// vacía. Base del filtro geográfico del dashboard.
     /// </summary>
     Task<IReadOnlyList<Guid>> GetPatientIdsByGeoAsync(
-        string? stateCode,
+        IReadOnlyCollection<string>? stateCodes,
         Guid? cityId,
         CancellationToken ct = default
     );

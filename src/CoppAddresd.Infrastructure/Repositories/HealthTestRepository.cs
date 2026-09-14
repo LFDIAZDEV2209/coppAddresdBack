@@ -678,6 +678,8 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     /// <summary>
     /// Geo agregado para el mapa de Tests de Salud: ciudades con % de alto riesgo
     /// (severidad high/critical en health_test_results tipo score) y alertas top.
+    /// El porcentaje se calcula sobre pacientes evaluados (con score), de modo
+    /// que un paciente mapeado sin evaluaciones no diluye el indicador.
     /// </summary>
     public async Task<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto> GetGeoAsync(
         CancellationToken ct = default
@@ -790,6 +792,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         foreach (var c in citiesRaw)
         {
             var detail = cityDetailMap.TryGetValue(c.CityId, out var cd) ? cd : null;
+            int evaluatedInCity = c.PatientIds.Count(pid => patientRisk.ContainsKey(pid));
             int highInCity = c.PatientIds.Count(pid =>
                 patientRisk.TryGetValue(pid, out var sev)
                 && (
@@ -797,8 +800,12 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
                     || sev == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
                 )
             );
+            // % de alto riesgo sobre pacientes evaluados (con score); sin
+            // evaluaciones no hay dato (null → "Sin datos" en el mapa).
             double? highPct =
-                c.Count > 0 ? Math.Round((double)highInCity / c.Count * 100, 1) : null;
+                evaluatedInCity > 0
+                    ? Math.Round((double)highInCity / evaluatedInCity * 100, 1)
+                    : null;
             var scoresInCity = c
                 .PatientIds.Where(pid => patientScore.ContainsKey(pid))
                 .Select(pid => patientScore[pid])
@@ -812,6 +819,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
                     detail?.Name ?? "Desconocido",
                     detail?.StateCode,
                     c.Count,
+                    evaluatedInCity,
                     highPct,
                     avgScore,
                     null,
@@ -1107,12 +1115,13 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .ToListAsync(ct);
 
     /// <summary>
-    /// Pacientes activos con ciudad dentro de un estado (código, ej. "CA") o de
-    /// una ciudad concreta (precedencia). Se apoya en la relación
-    /// PatientProfile.City → City.State y proyecta solo el Id (sin tracking).
+    /// Pacientes activos con ciudad dentro de uno o varios estados (códigos, ej.
+    /// "CA", unión) o de una ciudad concreta (precedencia). Se apoya en la
+    /// relación PatientProfile.City → City.State y proyecta solo el Id (sin
+    /// tracking).
     /// </summary>
     public async Task<IReadOnlyList<Guid>> GetPatientIdsByGeoAsync(
-        string? stateCode,
+        IReadOnlyCollection<string>? stateCodes,
         Guid? cityId,
         CancellationToken ct = default
     )
@@ -1125,14 +1134,19 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         {
             query = query.Where(p => p.CityId == cityId.Value);
         }
-        else if (!string.IsNullOrWhiteSpace(stateCode))
-        {
-            var normalized = stateCode.Trim().ToUpperInvariant();
-            query = query.Where(p => p.City!.State!.Code == normalized);
-        }
         else
         {
-            return Array.Empty<Guid>();
+            var normalized = (stateCodes ?? [])
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => c.Trim().ToUpperInvariant())
+                .Distinct()
+                .ToList();
+            if (normalized.Count == 0)
+            {
+                return Array.Empty<Guid>();
+            }
+
+            query = query.Where(p => normalized.Contains(p.City!.State!.Code));
         }
 
         return await query.Select(p => p.Id).Distinct().ToListAsync(ct);

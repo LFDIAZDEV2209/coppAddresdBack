@@ -287,12 +287,13 @@ public class HealthTestsController(
 
     /// <summary>
     /// Filas de la tabla maestra. Acepta el filtro geográfico acumulado del
-    /// dashboard por estado (<c>state</c>, código) o ciudad (<c>cityId</c>, con
+    /// dashboard por uno o varios estados (<c>state</c> repetible, ej.
+    /// <c>?state=NY&amp;state=FL</c>, unión) o ciudad (<c>cityId</c>, con
     /// precedencia); el alcance lo resuelve el JWT.
     /// </summary>
     [HttpGet("master")]
     public async Task<ActionResult<IReadOnlyList<MasterPatientRowDto>>> GetMasterRows(
-        [FromQuery] string? state = null,
+        [FromQuery] string[]? state = null,
         [FromQuery] Guid? cityId = null,
         CancellationToken ct = default
     )
@@ -517,12 +518,12 @@ public class HealthTestsController(
 
     /// <summary>
     /// KPIs del dashboard. Sin filtros devuelve el alcance global; con
-    /// <c>state</c>/<c>cityId</c> acota la zona seleccionada (el frontend usa el
-    /// alcance global para los KPIs y el filtrado para las series).
+    /// <c>state</c> (repetible, unión) / <c>cityId</c> acota la zona
+    /// seleccionada.
     /// </summary>
     [HttpGet("stats")]
     public async Task<ActionResult<HealthTestStatsDto>> GetStats(
-        [FromQuery] string? state = null,
+        [FromQuery] string[]? state = null,
         [FromQuery] Guid? cityId = null,
         CancellationToken ct = default
     )

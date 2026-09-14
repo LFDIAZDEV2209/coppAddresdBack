@@ -152,7 +152,7 @@ public record HealthTestStatsDto(
 
 public record GetHealthTestStatsQuery(
     Guid? ProfessionalId = null,
-    string? StateCode = null,
+    IReadOnlyList<string>? StateCodes = null,
     Guid? CityId = null
 ) : IRequest<HealthTestStatsDto>;
 
@@ -166,12 +166,19 @@ public sealed class GetHealthTestStatsQueryHandler(
         CancellationToken ct
     )
     {
-        var hasGeoFilter =
-            request.CityId.HasValue || !string.IsNullOrWhiteSpace(request.StateCode);
+        // Normaliza y ordena los estados para que el hash de caché sea estable
+        // sin importar el orden de selección en el mapa.
+        var stateCodes = (request.StateCodes ?? [])
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim().ToUpperInvariant())
+            .Distinct()
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+        var hasGeoFilter = request.CityId.HasValue || stateCodes.Count > 0;
         var scopeHash = hasGeoFilter
             ? CacheKeys.HashScope(
                 request.ProfessionalId?.ToString() ?? "global",
-                request.StateCode?.Trim().ToUpperInvariant(),
+                stateCodes.Count > 0 ? string.Join(",", stateCodes) : null,
                 request.CityId?.ToString()
             )
             : CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
@@ -188,7 +195,7 @@ public sealed class GetHealthTestStatsQueryHandler(
                 if (hasGeoFilter)
                 {
                     var geoPatientIds = await repository.GetPatientIdsByGeoAsync(
-                        request.StateCode,
+                        stateCodes,
                         request.CityId,
                         token
                     );
