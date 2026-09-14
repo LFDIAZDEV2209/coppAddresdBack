@@ -73,15 +73,16 @@ La app móvil reconstruye la conversación tras un re-login con
 
 ```
 1. La identidad del dueño sale del JWT; el query param `userId` es solo respaldo del flujo demo.
-2. Backend → AI Service GET /api/v1/threads/{thread_id}/state?user_id=… (canal interno X-Internal-Key).
-3. Respuesta: { threadId, messageCount, lastMessage, messages: [{ role: "user"|"bot", text }] }
-4. Si el AI Service falla o el thread no existe → 200 con estado vacío (nunca 500).
+2. Backend → AI Service GET /api/v1/threads/{thread_id}/state?user_id=…&limit=…&before=… (canal interno X-Internal-Key).
+3. Respuesta: { threadId, messageCount, lastMessage, messages: [{ role: "user"|"bot", text }], hasMore, nextCursor }
+4. Paginación hacia atrás: `before` saltea mensajes visibles desde el más nuevo y `nextCursor` es el `before` de la próxima página.
+5. Si el AI Service falla o el thread no existe → 200 con estado vacío (nunca 500).
 ```
 
-Contrato aditivo: `messages` viaja en orden cronológico y el AI Service lo
-limita a los últimos 100 mensajes visibles. Un ai-service anterior no envía el
-campo: el backend lo degrada a lista vacía sin romper `messageCount` ni
-`lastMessage`.
+Contrato aditivo: `messages` viaja en orden cronológico y el AI Service
+devuelve la página solicitada (paginación por `limit`/`before`, tope 100
+visibles). Un ai-service anterior no envía el campo: el backend lo degrada a
+lista vacía sin romper `messageCount` ni `lastMessage`.
 
 ## Resilience (Polly)
 
