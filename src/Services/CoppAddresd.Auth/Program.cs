@@ -1,4 +1,4 @@
-﻿using System.Threading.RateLimiting;
+using System.Threading.RateLimiting;
 using CoppAddresd.Auth.Authorization;
 using CoppAddresd.Auth.Configuration;
 using CoppAddresd.Auth.Data;
@@ -126,6 +126,9 @@ builder.Services.AddScoped<IScopedPermissionService, ScopedPermissionService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
 builder.Services.AddScoped<IDemoPatientSeedService, DemoPatientSeedService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
+builder.Services.AddScoped<CoppAddresd.Auth.Avatar.Application.IAvatarPreferenceStore,
+    CoppAddresd.Auth.Infrastructure.Avatar.AvatarPreferenceStore>();
+builder.Services.AddScoped<CoppAddresd.Auth.Avatar.Application.AvatarConfigurationUseCases>();
 builder.Services.AddScoped<ITokenInvalidationService, TokenInvalidationService>();
 
 // Cualificado: existe Microsoft.AspNetCore.Identity.SecurityStampValidator con el mismo nombre.

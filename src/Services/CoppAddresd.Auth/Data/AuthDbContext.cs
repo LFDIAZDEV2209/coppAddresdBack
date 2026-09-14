@@ -270,6 +270,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
             b.HasKey(u => u.UserId);
             b.Property(u => u.Lang).HasMaxLength(2);
             b.Property(u => u.AccentColor).HasMaxLength(16);
+            b.Property(u => u.AvatarConfiguration).HasColumnType("jsonb");
             b.HasOne(u => u.User)
                 .WithMany()
                 .HasForeignKey(u => u.UserId)
