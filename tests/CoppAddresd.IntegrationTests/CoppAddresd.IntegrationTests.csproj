@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\CoppAddresd.Api\CoppAddresd.Api.csproj" />
     <ProjectReference Include="..\..\src\CoppAddresd.Infrastructure\CoppAddresd.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Services\CoppAddresd.Auth\CoppAddresd.Auth.csproj" />
   </ItemGroup>
 
   <ItemGroup>

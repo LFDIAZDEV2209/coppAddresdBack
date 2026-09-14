@@ -246,6 +246,7 @@ public sealed class PatientDirectoryIntegrationTests : IAsyncLifetime
             null,
             null,
             null,
+            null,
             CancellationToken.None
         );
 

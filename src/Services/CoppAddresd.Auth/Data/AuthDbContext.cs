@@ -17,6 +17,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<UserApplication> UserApplications => Set<UserApplication>();
+    public DbSet<ErpAccessOperation> ErpAccessOperations => Set<ErpAccessOperation>();
     public DbSet<ScopedRoleAssignment> ScopedRoleAssignments => Set<ScopedRoleAssignment>();
     public DbSet<ScopedPermissionAssignment> ScopedPermissionAssignments =>
         Set<ScopedPermissionAssignment>();
@@ -27,6 +28,18 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<UserApplication>().Property(x => x.IsSuspended).HasDefaultValue(false);
+        builder.Entity<UserApplication>().Property(x => x.SessionVersion).HasDefaultValue(0L).IsConcurrencyToken();
+        builder.Entity<RefreshToken>().Property(x => x.ApplicationSessionVersion).HasDefaultValue(0L);
+        builder.Entity<ErpAccessOperation>(b =>
+        {
+            b.ToTable("ErpAccessOperations", "auth");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Status).HasMaxLength(16).IsRequired();
+            b.HasIndex(x => x.UserId).IsUnique().HasFilter("\"CompletedAt\" IS NULL");
+            b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
 
         builder.Entity<ApplicationUser>(b =>
         {

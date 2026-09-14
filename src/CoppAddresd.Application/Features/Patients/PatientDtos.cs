@@ -213,6 +213,10 @@ public record PatientListItemDto(
     Guid? ClinicId,
     string? ClinicName,
     string? InsurerName,
+    string? StateCode,
+    string? StateName,
+    string? PrimaryDiagnosisCode,
+    string? PrimaryDiagnosisDescription,
     string Status,
     DateTime CreatedAt,
     IReadOnlyList<string> ProfessionalNames
@@ -224,13 +228,21 @@ public record PatientListItemDto(
     /// <summary>
     /// Mapea la fila con los nombres de profesionales de asignaciones activas;
     /// <paramref name="professionalNames"/> es el índice id → nombre resuelto
-    /// en una sola consulta agrupada (sin N+1 por fila).
+    /// en una sola consulta agrupada (sin N+1 por fila). El diagnóstico
+    /// principal es el marcado <c>IsPrimary</c> y, en su defecto, el más
+    /// reciente.
     /// </summary>
     public static PatientListItemDto FromEntity(
         PatientProfile entity,
         IReadOnlyDictionary<Guid, string> professionalNames
-    ) =>
-        new(
+    )
+    {
+        var primaryDiagnosis = entity
+            .Diagnoses.OrderBy(d => d.IsPrimary ? 0 : 1)
+            .ThenByDescending(d => d.CreatedAt)
+            .FirstOrDefault();
+
+        return new(
             entity.Id,
             entity.MedicalRecordNumber,
             entity.FirstName,
@@ -245,6 +257,10 @@ public record PatientListItemDto(
             entity.ClinicId,
             entity.Clinic?.Name,
             entity.Insurer?.Name,
+            entity.State?.Code,
+            entity.State?.Name,
+            primaryDiagnosis?.Icd10Code?.Code,
+            primaryDiagnosis?.Icd10Code?.Description,
             entity.Status,
             entity.CreatedAt,
             entity
@@ -252,6 +268,7 @@ public record PatientListItemDto(
                 .Select(a => professionalNames.GetValueOrDefault(a.ProfessionalId, "Profesional"))
                 .ToList()
         );
+    }
 }
 
 /// <summary>Resultado paginado del listado de pacientes.</summary>
@@ -375,3 +392,6 @@ public record VitalSignInput(
 
 /// <summary>Payload de asignación de un profesional a un paciente.</summary>
 public record AssignPatientProfessionalRequest(Guid ProfessionalId, string? RelationshipType);
+
+/// <summary>Payload del toggle de estado del paciente (Activo/Inactivo).</summary>
+public record UpdatePatientStatusRequest(string Status);

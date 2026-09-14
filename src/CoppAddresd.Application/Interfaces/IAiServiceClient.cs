@@ -50,13 +50,18 @@ public interface IAiServiceClient
     /// <summary>
     /// Lee el estado del historial de un thread del AI Service (canal interno
     /// con X-Internal-Key): resumen (messageCount + lastMessage) y —contrato
-    /// aditivo— los mensajes visibles en orden (el AI Service los limita a los
-    /// últimos 100). Es lo que el paciente debe ver al abrir el chat tras un
+    /// aditivo— los mensajes visibles en orden (la página solicitada, tope 100
+    /// visibles). <paramref name="limit"/> y <paramref name="before"/>
+    /// paginan el historial desde el más reciente (<c>before</c> = offset
+    /// devuelto como <c>nextCursor</c>); sin valor, el AI Service aplica sus
+    /// defaults. Es lo que el paciente debe ver al abrir el chat tras un
     /// re-login o un push proactivo.
     /// </summary>
     Task<ThreadStateResult> GetThreadStateAsync(
         string threadId,
         string userId,
+        int? limit = null,
+        int? before = null,
         CancellationToken ct = default);
 
     /// <summary>

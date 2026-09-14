@@ -158,7 +158,12 @@ public sealed class ProgramControlsController(
     }
 }
 
-/// <summary>Fila del historial de controles (GET /list) con el paciente resuelto por join.</summary>
+/// <summary>
+/// Fila del historial de controles (GET /list) con el paciente resuelto por
+/// join. Expone el ciclo de vida completo de la fase 2 (respuesta, follow-up,
+/// completación, cierre sin examen y lote de examen asociado) además de los
+/// campos de la fase 1.
+/// </summary>
 public sealed record ProgramControlSendDto(
     Guid Id,
     Guid EnrollmentId,
@@ -169,7 +174,12 @@ public sealed record ProgramControlSendDto(
     string? ThreadId,
     DateTime? SentAt,
     DateTime CreatedAt,
-    DateTime? UpdatedAt)
+    DateTime? UpdatedAt,
+    Guid? ExamBatchId,
+    DateTime? RespondedAt,
+    DateTime? FollowupSentAt,
+    DateTime? CompletedAt,
+    string? ClosedReason)
 {
     /// <summary>
     /// Mapea la entidad (con la navegación <c>Enrollment</c> cargada por el
@@ -187,7 +197,12 @@ public sealed record ProgramControlSendDto(
             control.ThreadId,
             control.SentAt,
             control.CreatedAt,
-            control.UpdatedAt);
+            control.UpdatedAt,
+            control.ExamBatchId,
+            control.RespondedAt,
+            control.FollowupSentAt,
+            control.CompletedAt,
+            control.ClosedReason);
 }
 
 /// <summary>Plantilla configurada por día (GET /templates).</summary>

@@ -58,7 +58,7 @@ public sealed class CreatePatientCommandValidator : AbstractValidator<CreatePati
                 vitals.RuleFor(v => v.O2Saturation).InclusiveBetween(50, 100);
                 vitals.RuleFor(v => v.TemperatureC).InclusiveBetween(30m, 45m);
                 vitals.RuleFor(v => v.HeightCm).InclusiveBetween(30m, 250m);
-                vitals.RuleFor(v => v.WeightKg).InclusiveBetween(1m, 500m);
+                vitals.RuleFor(v => v.WeightKg).InclusiveBetween(ProgramProgress.Commands.RecordWeight.WeightInputLimits.Min, ProgramProgress.Commands.RecordWeight.WeightInputLimits.Max);
             });
         });
     }

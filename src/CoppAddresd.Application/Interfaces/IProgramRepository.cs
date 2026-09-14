@@ -734,6 +734,17 @@ public interface IProgramRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// Inscripción activa más reciente de un paciente: misma resolución que el
+    /// overview ERP (status <c>Active</c>, orden <c>CreatedAt</c> desc).
+    /// Devuelve null si el paciente no tiene inscripción activa. Base del read
+    /// model ERP de Controles (UC-004).
+    /// </summary>
+    Task<ProgramEnrollment?> GetActiveEnrollmentForPatientAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    );
+
     // --- Bitácora de actividad (ERP) ---
 
     /// <summary>

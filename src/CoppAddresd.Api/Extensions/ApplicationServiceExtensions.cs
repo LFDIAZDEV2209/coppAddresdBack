@@ -121,6 +121,15 @@ services.AddHttpClient<IFoodAiClient, FoodAiClient>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         // Introspección de permisos scoped hacia el Auth Service.
+        services.AddScoped<IProfessionalAccessProjectionRepository, CoppAddresd.Infrastructure.Repositories.ProfessionalAccessProjectionRepository>();
+        services.AddHostedService<ErpAccessProjectionWorker>();
+        services.AddHttpClient<IErpAccessClient, ErpAccessClient>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+            client.BaseAddress = new Uri(settings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+            client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
+        });
         services.Configure<AuthServiceSettings>(
             configuration.GetSection(AuthServiceSettings.SectionName)
         );

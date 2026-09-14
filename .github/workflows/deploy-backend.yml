@@ -45,7 +45,7 @@ jobs:
 
           # Cambios en infraestructura compartida (Infrastructure, Application, Domain,
           # slnx, Dockerfiles, workflows) afectan a todos los servicios backend.
-          SHARED=$(echo "$CHANGED" | grep -E "(src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows)" || true)
+          SHARED=$(echo "$CHANGED" | grep -E "(src/Shared/|src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows)" || true)
           if [ -n "$SHARED" ]; then
             SERVICES="auth api telemedicine community"
           fi

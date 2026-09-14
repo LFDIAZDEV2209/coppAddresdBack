@@ -82,6 +82,9 @@ public record EmployeeListItemDto(
     IReadOnlyList<string> ClinicNames
 )
 {
+    public Guid? UserId { get; init; }
+    public string? PendingStatus { get; init; }
+    public Guid? PendingOperationId { get; init; }
     public static EmployeeListItemDto FromEntity(Employee entity) =>
         new(
             entity.Id,
@@ -104,7 +107,7 @@ public record EmployeeListItemDto(
                 .Select(a => a.Clinic.Name)
                 .Order()
                 .ToList()
-        );
+        ) { UserId = entity.UserId };
 }
 
 /// <summary>Empleado completo (detalle) con clínicas y extensión profesional.</summary>
