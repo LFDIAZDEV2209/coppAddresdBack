@@ -41,7 +41,7 @@ SERVICES=(
 )
 
 port_open() { (echo > "/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
-color() { printf "\033[%sm%s\033[0m" "$1" "$2"; }
+color() { printf "\033[%sm%s\033[0m\n" "$1" "$2"; }
 draw_banner() {
   local title="$1" color_code="${2:-36}"
   local width=50
