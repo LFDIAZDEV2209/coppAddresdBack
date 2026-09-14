@@ -558,6 +558,9 @@ namespace CoppAddresd.Auth.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<string>("AvatarConfiguration")
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("Lang")
                         .HasMaxLength(2)
                         .HasColumnType("character varying(2)");
