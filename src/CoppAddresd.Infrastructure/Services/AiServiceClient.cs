@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
@@ -262,12 +263,23 @@ public class AiServiceClient : IAiServiceClient
     public async Task<ThreadStateResult> GetThreadStateAsync(
         string threadId,
         string userId,
+        int? limit = null,
+        int? before = null,
         CancellationToken ct = default)
     {
         // Proxy de lectura del historial de un thread (canal interno). El AI
         // Service aísla el thread por user_id (`{user_id}::{thread_id}`) y
         // exige X-Internal-Key — el frontend jamás lo conoce.
         var url = $"{_settings.ApiPrefix}/threads/{Uri.EscapeDataString(threadId)}/state?user_id={Uri.EscapeDataString(userId)}";
+
+        // Paginación desde el más reciente: `limit` y `before` solo viajan
+        // cuando tienen valor (el AI Service aplica sus defaults: limit=10).
+        // Formato invariante para no depender de la cultura del proceso.
+        if (limit is not null)
+            url += $"&limit={limit.Value.ToString(CultureInfo.InvariantCulture)}";
+        if (before is not null)
+            url += $"&before={before.Value.ToString(CultureInfo.InvariantCulture)}";
+
         using var httpRequest = new HttpRequestMessage(HttpMethod.Get, url);
         AddInternalKeyHeader(httpRequest);
 
@@ -279,14 +291,17 @@ public class AiServiceClient : IAiServiceClient
         if (result is null)
             return new ThreadStateResult(threadId, 0, null, []);
 
-        // `messages` es aditivo: un ai-service anterior no lo envía (null) y se
-        // degrada a lista vacía sin romper el resumen. El orden del thread y el
-        // cap de 100 visibles los garantiza el AI Service.
+        // `messages`, `has_more` y `next_cursor` son aditivos: un ai-service
+        // anterior no los envía y se degradan a lista vacía / false / null sin
+        // romper el resumen. El orden del thread, el cap de 100 visibles y el
+        // cálculo del cursor los garantiza el AI Service.
         return new ThreadStateResult(
             result.ThreadId,
             result.MessageCount,
             result.LastMessage,
-            result.Messages?.Select(m => new ThreadMessageResult(m.Role, m.Text)).ToList() ?? []);
+            result.Messages?.Select(m => new ThreadMessageResult(m.Role, m.Text)).ToList() ?? [],
+            result.HasMore,
+            result.NextCursor);
     }
 
     public async Task<LabExamAiResponse> ExtractLabMetricsAsync(
@@ -472,13 +487,17 @@ public class AiServiceClient : IAiServiceClient
 
     // Contrato del AI Service para el estado de un thread: `thread_id`,
     // `message_count`, `last_message` y —de forma aditiva— `messages`
-    // (role + text, últimos 100 visibles). Un ai-service anterior omite
-    // `messages` y se degrada a lista vacía.
+    // (role + text, últimos 100 visibles), `has_more` y `next_cursor`
+    // (paginación desde el más reciente). Un ai-service anterior omite los
+    // campos aditivos: `messages` degrada a lista vacía y `has_more`/
+    // `next_cursor` a false/null.
     private sealed record ThreadStateResponseJson(
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("message_count")] int MessageCount,
         [property: JsonPropertyName("last_message")] string? LastMessage,
-        [property: JsonPropertyName("messages")] IReadOnlyList<ThreadMessageJson>? Messages = null);
+        [property: JsonPropertyName("messages")] IReadOnlyList<ThreadMessageJson>? Messages = null,
+        [property: JsonPropertyName("has_more")] bool HasMore = false,
+        [property: JsonPropertyName("next_cursor")] int? NextCursor = null);
 
     // Mensaje visible del thread según el contrato del AI Service.
     private sealed record ThreadMessageJson(

@@ -1461,6 +1461,19 @@ internal sealed class FakeProgramRepository : IProgramRepository
         CancellationToken ct = default
     ) => Task.FromResult<PatientOverviewDto?>(null);
 
+    public Task<ProgramEnrollment?> GetActiveEnrollmentForPatientAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult(
+            Enrollments
+                .Values.Where(e =>
+                    e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active
+                )
+                .OrderByDescending(e => e.CreatedAt)
+                .FirstOrDefault()
+        );
+
     // --- Bitácora de actividad (ERP) ---
 
     public Task<PaginatedActivityLogResult> ListActivityLogAsync(

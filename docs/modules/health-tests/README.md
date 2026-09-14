@@ -121,6 +121,26 @@ La batería con `auto_assign_on_patient_create = true` (la inicial ANTARES) se a
 a cada paciente recién creado (estado `Pending`), sin duplicar si ya existe una asignación
 pendiente/en curso. El profesional puede asignar más baterías manualmente.
 
+### ADR-008 — Filtro geográfico acumulado del dashboard (lectura en vivo, sin pre-agregación)
+
+El dashboard ERP permite acotar las series, los KPIs y el mapa por **uno o varios estados**
+(`state`, repetible, ej. `?state=NY&state=FL`: unión de zonas combinada en un solo conjunto de
+pacientes) o por ciudad (`cityId`, con precedencia). El filtro se resuelve en lectura con
+`IHealthTestRepository.GetPatientIdsByGeoAsync` (`patient_profiles.CityId → cities.StateId → states.Code`),
+se intersecta con el alcance del JWT (`ViewOwn`) y alimenta las mismas consultas de conteo existentes
+(`...ForPatientsAsync`) con la lista de pacientes de la zona. `GET /geo` se mantiene **siempre global**
+(alimenta el mapa y sus métricas); el porcentaje de riesgo por ciudad se calcula **solo sobre pacientes
+evaluados** (`evaluatedCount`): una ciudad con pacientes mapeados pero sin evaluaciones devuelve
+`highRiskPct = null` ("Sin datos", gris) en lugar de un 0% verde engañoso.
+
+- **Evaluación CQRS (pre-agregación)**: **no aplica** — no se agrega ningún dato nuevo a contar ni se
+  modifican las agregaciones existentes; es filtrado query-time sobre las mismas consultas. El rollup
+  diario (`health_test_daily_metrics`) sigue sirviendo al alcance global (agrega por `clinic_id`, una
+  dimensión distinta a la geografía); las consultas por zona usan la OLTP en vivo.
+- La clave de caché de `GET /master` y `GET /stats` incluye el hash del filtro
+  (`CacheKeys.HashScope(profesional|global, estados normalizados, cityId)`), por lo que zonas distintas
+  no comparten caché ni exponen datos de otra zona.
+
 ## Flujo de datos
 
 ```
@@ -167,7 +187,9 @@ GET    /health-tests/indicators                                 View
 GET    /health-tests/alerts?patientId&status&severity&page      View/ViewOwn (scoped)
 POST   /health-tests/alerts/{id}/review|resolve|close           Review
 POST   /health-tests/comments                                   Review
-GET    /health-tests/stats                                      View/ViewOwn (dashboard ERP)
+GET    /health-tests/master?state&state&cityId                  View/ViewOwn (tabla maestra del dashboard; unión de estados, cityId con precedencia)
+GET    /health-tests/stats?state&state&cityId                   View/ViewOwn (KPIs/series del dashboard; unión de estados, cityId con precedencia)
+GET    /health-tests/geo                                        View/ViewOwn (mapa de calor; SIEMPRE global; evaluatedCount + highRiskPct sobre evaluados)
 ```
 
 ### Mobile — `/api/v1/health-tests/me` (JWT `aud=app`, paciente por `user_id`)
@@ -226,6 +248,13 @@ Editar el script, regenerar el SQL, nunca editar el SQL a mano.
 preguntas/opciones/rangos de la v1 de los 9 instrumentos y vuelve a sembrar el recurso regenerado
 (los instrumentos/versiones/batería/indicadores/reglas conservan su identidad). Es una operación
 **destructiva** sobre los datos de la batería (solo aplica en la transición del contenido).
+
+**Datos de demostración del dashboard (solo Development)**: `HealthTestsDemoSeeder`
+(`src/CoppAddresd.Api/Seeders/`) siembra al arrancar la API, solo en Development, pacientes
+evaluados y pendientes repartidos por estados de EE. UU. (40 estados con evaluaciones y 10 sin
+ninguna para el "Sin datos" del mapa; ~459 evaluaciones con severidades, ~70 alertas activas y
+fechas repartidas en los últimos 12 meses). Es idempotente (omite el seed si ya existen
+asignaciones) y no se registra fuera de Development; no reemplaza el seed del catálogo.
 
 ## Cómo extender
 

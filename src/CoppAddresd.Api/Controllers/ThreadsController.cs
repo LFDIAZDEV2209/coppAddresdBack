@@ -19,9 +19,13 @@ public class ThreadsController(
     /// <summary>
     /// Devuelve el historial de un thread (messageCount + lastMessage +
     /// messages en orden) que el paciente verá al abrir el chat tras un
-    /// re-login. <c>messages</c> es aditivo (el AI Service lo limita a los
-    /// últimos 100 visibles); un ai-service anterior no lo envía y viaja como
+    /// re-login. <c>messages</c> es aditivo: viaja la página solicitada
+    /// (tope 100 visibles); un ai-service anterior no lo envía y viaja como
     /// lista vacía.
+    /// Paginación desde el más reciente: <c>limit</c> (default 10 en el AI
+    /// Service, 1..100) y <c>before</c> (offset desde el final del historial,
+    /// devuelto como <c>nextCursor</c>); la respuesta incluye <c>hasMore</c> y
+    /// <c>nextCursor</c>. Sin valor, se delegan los defaults del AI Service.
     /// El dueño del thread se deriva del JWT cuando hay sesión real; el query
     /// param <c>userId</c> es SOLO el respaldo del flujo demo (login aún no
     /// conectado) — cuando el login real exista, el JWT siempre gana.
@@ -34,6 +38,8 @@ public class ThreadsController(
     public async Task<ActionResult<ThreadStateResult>> GetMessages(
         string threadId,
         [FromQuery] string? userId,
+        [FromQuery] int? limit,
+        [FromQuery] int? before,
         CancellationToken ct)
     {
         var ownerId = ResolveOwnerId(userId);
@@ -42,7 +48,7 @@ public class ThreadsController(
 
         try
         {
-            var state = await aiService.GetThreadStateAsync(threadId, ownerId, ct);
+            var state = await aiService.GetThreadStateAsync(threadId, ownerId, limit, before, ct);
             return Ok(state);
         }
         catch (Exception ex)
