@@ -18,7 +18,7 @@ public interface IPatientRepository
     /// <summary>Paciente por usuario de Auth (contexto del JWT). Excluye eliminados (soft delete).</summary>
     Task<PatientProfile?> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
 
-    /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4) y <paramref name="professionalId"/> restringe al alcance "propio" del profesional (solo pacientes asignados activos). <paramref name="sortBy"/> viene de la whitelist de campos y <paramref name="sortDir"/> es asc/desc; null → CreatedAt desc.</summary>
+    /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4), <paramref name="professionalId"/> restringe al alcance "propio" del profesional (solo pacientes asignados activos) y <paramref name="stateCode"/> filtra por estado de EE. UU. (selección del mapa). <paramref name="sortBy"/> viene de la whitelist de campos y <paramref name="sortDir"/> es asc/desc; null → CreatedAt desc.</summary>
     Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
         int page,
         int pageSize,
@@ -29,6 +29,7 @@ public interface IPatientRepository
         Guid? professionalId,
         string? sortBy,
         string? sortDir,
+        string? stateCode = null,
         CancellationToken ct = default
     );
 
@@ -38,6 +39,24 @@ public interface IPatientRepository
 
     /// <summary>Soft delete: marca <c>deleted_at</c> (trazabilidad PHI); las filas hijas se conservan.</summary>
     Task SoftDeleteAsync(PatientProfile patient, CancellationToken ct = default);
+
+    /// <summary>
+    /// Snapshot mínimo (estado + clínica) para el toggle Activo↔Inactivo sin
+    /// cargar el agregado completo; null si el paciente no existe (excluye
+    /// eliminados).
+    /// </summary>
+    Task<PatientStatusSnapshot?> GetStatusSnapshotAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Actualiza únicamente <c>status</c> (+ auditoría) sin tocar campos ni
+    /// colecciones hijas. Devuelve false si el paciente no existe.
+    /// </summary>
+    Task<bool> UpdateStatusAsync(
+        Guid id,
+        string status,
+        Guid? updatedBy,
+        CancellationToken ct = default
+    );
 
     Task<bool> ExistsAsync(Guid id, CancellationToken ct = default);
 
@@ -118,3 +137,6 @@ public sealed record PatientProfessionalAssignmentView(
     string Status,
     DateTime CreatedAt
 );
+
+/// <summary>Snapshot mínimo del paciente para el toggle de estado.</summary>
+public sealed record PatientStatusSnapshot(string Status, Guid? ClinicId);

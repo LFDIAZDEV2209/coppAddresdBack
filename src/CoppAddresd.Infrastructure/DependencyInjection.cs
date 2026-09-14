@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddScoped<IMediaItemRepository, MediaItemRepository>();
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IPatientRepository, PatientRepository>();
+        services.AddScoped<IPatientDashboardRepository, PatientDashboardRepository>();
         services.AddScoped<ICatalogRepository, CatalogRepository>();
         services.AddScoped<IAgentCatalogRepository, AgentCatalogRepository>();
         services.AddScoped<IOrganizationRepository, OrganizationRepository>();

@@ -27,6 +27,71 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         );
     }
 
+    /// <summary>
+    /// Agregados del dashboard general de pacientes (demografía, crecimiento,
+    /// top de profesionales y distribución por estado). <c>state</c> acota
+    /// demografía/crecimiento/top; el mapa viaja completo.
+    /// </summary>
+    [HttpGet("dashboard")]
+    public async Task<ActionResult<PatientDashboardDto>> Dashboard(
+        [FromQuery] string? state = null,
+        [FromQuery] int months = 12,
+        CancellationToken ct = default
+    )
+    {
+        var (allowed, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
+        if (!allowed)
+            return Forbid();
+
+        return Ok(
+            await mediator.Send(
+                new GetPatientsDashboardQuery(
+                    context.ActiveClinicId,
+                    ownProfessionalId,
+                    state,
+                    months
+                ),
+                ct
+            )
+        );
+    }
+
+    /// <summary>
+    /// Tablero clínico por paciente (riesgo, alertas, evaluaciones y
+    /// seguimiento), paginado y filtrable, con el mismo alcance del listado.
+    /// </summary>
+    [HttpGet("clinical-board")]
+    public async Task<ActionResult<PaginatedClinicalBoardResult>> ClinicalBoard(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? risk = null,
+        [FromQuery] bool? hasAlerts = null,
+        [FromQuery] string? followUp = null,
+        CancellationToken ct = default
+    )
+    {
+        var (allowed, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
+        if (!allowed)
+            return Forbid();
+
+        return Ok(
+            await mediator.Send(
+                new GetClinicalBoardQuery(
+                    page,
+                    pageSize,
+                    search,
+                    risk,
+                    hasAlerts,
+                    followUp,
+                    context.ActiveClinicId,
+                    ownProfessionalId
+                ),
+                ct
+            )
+        );
+    }
+
     [HttpGet]
     public async Task<ActionResult<PaginatedPatientsResult>> List(
         [FromQuery] int page = 1,
@@ -36,6 +101,7 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         [FromQuery] Guid? insurerId = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortDir = null,
+        [FromQuery] string? state = null,
         CancellationToken ct = default
     )
     {
@@ -57,7 +123,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
                 context.ActiveClinicId,
                 ownProfessionalId,
                 sortBy,
-                sortDir
+                sortDir,
+                state
             ),
             ct
         );
@@ -157,7 +224,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
             request.ClinicId ?? context.ActiveClinicId,
             request.Rows,
             context.UserId,
-            await context.GetProfessionalIdAsync(ct));
+            await context.GetProfessionalIdAsync(ct)
+        );
 
         var result = await mediator.Send(command, ct);
         return Ok(result);
@@ -221,6 +289,35 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
             return NotFound(new { message = "Paciente no encontrado" });
 
         return Ok(updated);
+    }
+
+    /// <summary>
+    /// Cambia únicamente el estado operativo del paciente (Activo↔Inactivo)
+    /// desde el listado. Endpoint dedicado: no toca diagnósticos, medicamentos,
+    /// alergias ni vitales.
+    /// </summary>
+    [HttpPatch("{id:guid}/status")]
+    public async Task<ActionResult<PatientStatusResultDto>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdatePatientStatusRequest request,
+        CancellationToken ct
+    )
+    {
+        if (!await context.HasPermissionAsync("Patients.Update", ct))
+            return Forbid();
+
+        var (_, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
+        if (!await CanAccessPatientAsync(id, ownProfessionalId, ct))
+            return NotFound(new { message = "Paciente no encontrado" });
+
+        var result = await mediator.Send(
+            new UpdatePatientStatusCommand(id, request.Status, context.UserId),
+            ct
+        );
+        if (result is null)
+            return NotFound(new { message = "Paciente no encontrado" });
+
+        return Ok(result);
     }
 
     [HttpDelete("{id:guid}")]
