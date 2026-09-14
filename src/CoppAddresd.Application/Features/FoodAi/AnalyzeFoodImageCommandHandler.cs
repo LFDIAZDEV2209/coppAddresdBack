@@ -66,17 +66,25 @@ public class AnalyzeFoodImageCommandHandler
         );
 
         request.ImageStream.Position = 0;
+
+        // Copia el stream del request en un buffer y crea dos copias independientes:
+        // una para storage y otra para FoodAI. Cada consumidor puede cerrar su stream
+        // sin afectar al otro (el S3 SDK y algunos storages cierran el InputStream).
+        using var buffer = new MemoryStream();
+        await request.ImageStream.CopyToAsync(buffer, ct);
+        using var forStorage = new MemoryStream(buffer.ToArray());
+        using var forFoodAI = new MemoryStream(buffer.ToArray());
+
         var imageKey = await _imageStorage.SaveImageAsync(
             analysisId,
             request.FileName,
-            request.ImageStream,
+            forStorage,
             ct
         );
 
-        request.ImageStream.Position = 0;
         var result = await _foodAiClient.SendImageAsync(
             analysisId,
-            request.ImageStream,
+            forFoodAI,
             request.FileName,
             request.ContentType,
             ct
@@ -84,11 +92,11 @@ public class AnalyzeFoodImageCommandHandler
 
         // Nutrición: única fuente en PostgreSQL (.NET). Por alimento →
         // provider (100 g) → calculadora (gramos estimados) → rango y totales.
-        // Porciones degeneradas (0 g o menos) se normalizan a null para que
-        // ningún cliente muestre "0 g" como porción válida.
         var foods = new List<DetectedFoodDto>(result.Foods.Count);
         foreach (var food in result.Foods)
         {
+            // Porciones degeneradas (0 g o menos) se normalizan a null para que
+            // ningún cliente muestre "0 g" como porción válida.
             var normalized = food.Portion?.EstimatedGrams is null or <= 0
                 ? food with
                 {

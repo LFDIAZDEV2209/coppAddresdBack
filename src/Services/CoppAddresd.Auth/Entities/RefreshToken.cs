@@ -12,6 +12,8 @@ public class RefreshToken
     /// (el seeder los retro-asigna al ERP al iniciar).
     /// </summary>
     public Guid? ApplicationId { get; set; }
+    /// <summary>Versión del acceso al emitir; protege incluso ante emisión concurrente con suspensión.</summary>
+    public long ApplicationSessionVersion { get; set; }
 
     public string Token { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }

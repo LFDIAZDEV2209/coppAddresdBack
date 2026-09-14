@@ -32,14 +32,16 @@ public class TokenService : ITokenService
         ApplicationUser user,
         IEnumerable<string> roles,
         string audience,
-        IEnumerable<string> permissions)
+        IEnumerable<string> permissions,
+        long applicationSessionVersion = 0)
     {
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Email, user.Email!),
             new(ClaimTypes.Name, $"{user.FirstName} {user.LastName}"),
-            new("security_stamp", user.SecurityStamp ?? string.Empty)
+            new("security_stamp", user.SecurityStamp ?? string.Empty),
+            new("application_session_version", applicationSessionVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
         };
 
         foreach (var role in roles)
@@ -84,7 +86,7 @@ public class TokenService : ITokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    public async Task<string> GenerateRefreshTokenAsync(Guid userId, Guid? applicationId, CancellationToken ct = default)
+    public async Task<string> GenerateRefreshTokenAsync(Guid userId, Guid? applicationId, CancellationToken ct = default, long applicationSessionVersion = 0)
     {
         var randomNumber = new byte[64];
         using var rng = RandomNumberGenerator.Create();
@@ -95,6 +97,7 @@ public class TokenService : ITokenService
         {
             UserId = userId,
             ApplicationId = applicationId,
+            ApplicationSessionVersion = applicationSessionVersion,
             Token = tokenString,
             ExpiresAt = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpirationDays),
             CreatedAt = DateTime.UtcNow
