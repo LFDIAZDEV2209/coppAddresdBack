@@ -94,6 +94,12 @@ if [[ $WATCH -eq 0 ]]; then
   echo ""
   draw_banner "BUILDING SOLUTION" 36
   color 36 "  Building all 5 projects in parallel (fail fast)..."
+  # Limpieza de nodos de build huérfanos de corridas abortadas: con nodeReuse
+  # los workers MSBuild/VBCSCompiler quedan vivos con handles abiertos sobre
+  # los ref assemblies compartidos (race MSB3883 en builds paralelos).
+  # Nota: los patrones usan [.] para que pkill -f no matchee el propio shell.
+  pkill -f 'MSBuild[.]dll /noautoresponse' 2>/dev/null || true
+  pkill -f 'VBCSCompiler -pipenam[e]' 2>/dev/null || true
   build_pids=()
   for entry in "${SERVICES[@]}"; do
     IFS='|' read -r name project url port clr <<< "$entry"
@@ -108,6 +114,25 @@ if [[ $WATCH -eq 0 ]]; then
     wait "$pid"
     if [[ $? -ne 0 ]]; then failed_builds+=("$name"); fi
   done
+
+  # Los builds en paralelo comparten el proyecto Domain y pueden fallar por
+  # locks transitorios (MSB3883): un único reintento en serie suele bastar.
+  if [[ ${#failed_builds[@]} -gt 0 ]]; then
+    color 33 "  Retrying failed builds sequentially..."
+    still_failed=()
+    for n in "${failed_builds[@]}"; do
+      for entry in "${SERVICES[@]}"; do
+        IFS='|' read -r sname sproject surl sport sclr <<< "$entry"
+        if [[ "$sname" == "$n" ]]; then
+          color "$sclr" "  Rebuilding $n..."
+          if ! (cd "$ROOT" && dotnet build "$sproject" > "$LOGS/$n.build.log" 2>&1); then
+            still_failed+=("$n")
+          fi
+        fi
+      done
+    done
+    failed_builds=("${still_failed[@]}")
+  fi
 
   if [[ ${#failed_builds[@]} -gt 0 ]]; then
     echo ""
