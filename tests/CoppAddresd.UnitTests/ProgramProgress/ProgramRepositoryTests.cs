@@ -1046,6 +1046,65 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(7, snapshot.Calendar.Count);
     }
 
+    /// <summary>
+    /// Decay en lectura (SPEC §17, B): si el último día calificado quedó a más
+    /// de un día de la fecha de lectura, la corrida está vencida → current 0
+    /// aunque el escalar siga almacenado (misma regla que ComputeStreakRuns).
+    /// longest/freezes NO se decaen.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task GetSnapshot_RachaVencida_DevuelveCurrent0ConservandoLongestYFreezes()
+    {
+        var enrollmentId = await EnrollAsync();
+        var today = _monday;
+        await SeedStreakStateAsync(
+            enrollmentId,
+            current: 2,
+            longest: 9,
+            freezes: 3,
+            lastActive: today.AddDays(-3)
+        );
+
+        await using var db = fixture.CreateDbContext();
+        var repo = new ProgramRepository(db, Configuration());
+        var snapshot = await repo.GetSnapshotAsync(enrollmentId, today);
+
+        Assert.NotNull(snapshot);
+        Assert.Equal(0, snapshot!.Streak.Current);
+        Assert.Equal(9, snapshot.Streak.Longest);
+        Assert.Equal(3, snapshot.Streak.FreezesRemaining);
+        // El próximo hito se recalcula desde la racha efectiva (0 → 7 días).
+        Assert.Equal(7, snapshot.NextMilestoneDays);
+    }
+
+    /// <summary>
+    /// Con el último día calificado AYER de la fecha de lectura la racha sigue
+    /// vigente: el escalar se conserva (ventana hoy/ayer, misma regla que
+    /// ComputeStreakRuns) y el próximo hito parte del valor real.
+    /// </summary>
+    [RequiresPostgresFact]
+    public async Task GetSnapshot_RachaVigenteAyer_ConservaElEscalar()
+    {
+        var enrollmentId = await EnrollAsync();
+        var today = _monday;
+        await SeedStreakStateAsync(
+            enrollmentId,
+            current: 2,
+            longest: 2,
+            freezes: 0,
+            lastActive: today.AddDays(-1)
+        );
+
+        await using var db = fixture.CreateDbContext();
+        var repo = new ProgramRepository(db, Configuration());
+        var snapshot = await repo.GetSnapshotAsync(enrollmentId, today);
+
+        Assert.NotNull(snapshot);
+        Assert.Equal(2, snapshot!.Streak.Current);
+        // Próximo hito desde 2 → 5 días restantes para el bloque de 7.
+        Assert.Equal(5, snapshot.NextMilestoneDays);
+    }
+
     [RequiresPostgresFact]
     public async Task GetCalendar_VentanaDevuelveDiasYResumen()
     {
@@ -2598,6 +2657,30 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.CurrentStreak, 0));
     }
 
+    /// <summary>
+    /// Fija el estado de racha de la inscripción (la fila la crea EnrollAsync):
+    /// escalar, longest, congelamientos y último día calificado. ExecuteUpdate
+    /// para no arrastrar tracking de navegaciones.
+    /// </summary>
+    private async Task SeedStreakStateAsync(
+        Guid enrollmentId,
+        int current,
+        int longest,
+        int freezes,
+        DateOnly? lastActive
+    )
+    {
+        await using var db = fixture.CreateDbContext();
+        await db
+            .StreakStates.Where(s => s.EnrollmentId == enrollmentId)
+            .ExecuteUpdateAsync(s =>
+                s.SetProperty(x => x.CurrentStreak, current)
+                    .SetProperty(x => x.LongestStreak, longest)
+                    .SetProperty(x => x.FreezesRemaining, freezes)
+                    .SetProperty(x => x.LastActiveDate, lastActive)
+            );
+    }
+
     private static IReadOnlyList<(short Weekday, string TaskCode, int Points)> ParseSnapshot(
         JsonElement snapshot
     )
@@ -2651,4 +2734,34 @@ public sealed class RequiresPostgresFactAttribute : FactAttribute
             Skip = "COP_TEST_DB_CONNECTION no definida: requiere PostgreSQL real, test omitido.";
         }
     }
+}
+
+/// <summary>
+/// Regla PURA de racha efectiva (decay en lectura): el escalar almacenado solo
+/// es válido si el último día calificado es HOY o AYER local — la misma regla
+/// que <c>ComputeStreakRuns</c>. Sin BD: tabla de verdad completa.
+/// </summary>
+public sealed class EffectiveCurrentStreakTests
+{
+    private static readonly DateOnly Today = new(2026, 9, 14);
+
+    [Fact]
+    public void EffectiveCurrentStreak_UltimoDiaHoy_ConservaElEscalar() =>
+        Assert.Equal(5, ProgramRepository.EffectiveCurrentStreak(5, Today, Today));
+
+    [Fact]
+    public void EffectiveCurrentStreak_UltimoDiaAyer_ConservaElEscalar() =>
+        Assert.Equal(5, ProgramRepository.EffectiveCurrentStreak(5, Today.AddDays(-1), Today));
+
+    [Fact]
+    public void EffectiveCurrentStreak_UltimoDiaAnteayer_RompeLaRacha() =>
+        Assert.Equal(0, ProgramRepository.EffectiveCurrentStreak(5, Today.AddDays(-2), Today));
+
+    [Fact]
+    public void EffectiveCurrentStreak_SinUltimoDia_RompeLaRacha() =>
+        Assert.Equal(0, ProgramRepository.EffectiveCurrentStreak(5, null, Today));
+
+    [Fact]
+    public void EffectiveCurrentStreak_EscalarCero_QuedaEnCero() =>
+        Assert.Equal(0, ProgramRepository.EffectiveCurrentStreak(0, Today, Today));
 }

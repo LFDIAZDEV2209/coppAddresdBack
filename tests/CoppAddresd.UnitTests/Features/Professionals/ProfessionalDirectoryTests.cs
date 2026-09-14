@@ -17,7 +17,40 @@ public class ListEmployeesQueryHandlerTests
     private readonly IEmployeeRepository _repository = Substitute.For<IEmployeeRepository>();
     private readonly IAuthUsersByRoleClient _usersByRole = Substitute.For<IAuthUsersByRoleClient>();
 
-    private ListEmployeesQueryHandler CreateHandler() => new(_repository, _usersByRole);
+    private readonly IErpAccessClient _access = Substitute.For<IErpAccessClient>();
+
+    public ListEmployeesQueryHandlerTests()
+    {
+        _access.PendingAsync(Arg.Any<Guid[]>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ErpAccessOperation>());
+    }
+
+    private ListEmployeesQueryHandler CreateHandler() => new(_repository, _usersByRole, _access);
+
+    [Fact]
+    public async Task Handle_ConCambioPendiente_ExponeDestinoSinFingirProyeccionCompleta()
+    {
+        var employee = new Employee
+        {
+            Id = Guid.NewGuid(), UserId = Guid.NewGuid(), Status = "Active",
+            FirstName = "Ana", LastName = "Pérez", Email = "ana@example.test",
+            Organization = new Organization { Name = "Clínica" }
+        };
+        var operation = new ErpAccessOperation(Guid.NewGuid(), employee.UserId.Value,
+            employee.Id, "Inactive", 1, null);
+        _repository.ListAsync(1, 20, null, null, null, null, null, null, Arg.Any<CancellationToken>())
+            .Returns((new List<Employee> { employee }, 1));
+        _access.PendingAsync(Arg.Is<Guid[]>(ids => ids.Length == 1 && ids[0] == employee.Id),
+            Arg.Any<CancellationToken>()).Returns(new[] { operation });
+
+        var result = await CreateHandler().Handle(new(1, 20, null, null, null, null, null, null),
+            CancellationToken.None);
+
+        var item = Assert.Single(result.Data);
+        Assert.Equal("Active", item.Status);
+        Assert.Equal("Inactive", item.PendingStatus);
+        Assert.Equal(operation.Id, item.PendingOperationId);
+    }
 
     [Fact]
     public async Task Handle_ConRoleId_ResuelveUserIdsYLosPasaAlRepositorio()

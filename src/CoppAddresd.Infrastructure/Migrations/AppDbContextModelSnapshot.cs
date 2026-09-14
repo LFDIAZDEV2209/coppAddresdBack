@@ -1036,6 +1036,12 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(320)")
                         .HasColumnName("email");
 
+                    b.Property<long>("ErpAccessVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("erp_access_version");
+
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)

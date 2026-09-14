@@ -202,6 +202,41 @@ namespace CoppAddresd.Auth.Migrations
                     b.ToTable("UserRoleAssignments", "auth");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.ErpAccessOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EmployeeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("SessionVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("\"CompletedAt\" IS NULL");
+
+                    b.ToTable("ErpAccessOperations", "auth");
+                });
+
             modelBuilder.Entity("CoppAddresd.Auth.Entities.Invitation", b =>
                 {
                     b.Property<Guid>("Id")
@@ -337,6 +372,11 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.Property<Guid?>("ApplicationId")
                         .HasColumnType("uuid");
+
+                    b.Property<long>("ApplicationSessionVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -475,6 +515,17 @@ namespace CoppAddresd.Auth.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsSuspended")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<long>("SessionVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L);
 
                     b.HasKey("UserId", "ApplicationId");
 
@@ -639,6 +690,15 @@ namespace CoppAddresd.Auth.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Auth.Entities.ErpAccessOperation", b =>
+                {
+                    b.HasOne("CoppAddresd.Auth.Entities.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.Invitation", b =>

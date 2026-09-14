@@ -55,6 +55,8 @@ public class ChatCommandHandlerTests
         public Task<ThreadStateResult> GetThreadStateAsync(
             string threadId,
             string userId,
+            int? limit = null,
+            int? before = null,
             CancellationToken ct = default)
             => throw new NotImplementedException();
 

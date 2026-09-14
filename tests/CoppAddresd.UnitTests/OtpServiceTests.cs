@@ -551,13 +551,13 @@ public sealed class OtpServiceTests
         public int RefreshTokenCalls { get; private set; }
 
         public string GenerateAccessToken(
-            ApplicationUser user, IEnumerable<string> roles, string audience, IEnumerable<string> permissions)
+            ApplicationUser user, IEnumerable<string> roles, string audience, IEnumerable<string> permissions, long applicationSessionVersion = 0)
         {
             AccessTokenCalls++;
             return "fake-access-token";
         }
 
-        public Task<string> GenerateRefreshTokenAsync(Guid userId, Guid? applicationId, CancellationToken ct = default)
+        public Task<string> GenerateRefreshTokenAsync(Guid userId, Guid? applicationId, CancellationToken ct = default, long applicationSessionVersion = 0)
         {
             RefreshTokenCalls++;
             return Task.FromResult("fake-refresh-token");

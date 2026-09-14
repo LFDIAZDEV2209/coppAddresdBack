@@ -26,7 +26,8 @@ public record PaginatedEmployeesResult(
 
 public sealed class ListEmployeesQueryHandler(
     IEmployeeRepository repository,
-    IAuthUsersByRoleClient usersByRole
+    IAuthUsersByRoleClient usersByRole,
+    IErpAccessClient access
 ) : IRequestHandler<ListEmployeesQuery, PaginatedEmployeesResult>
 {
     public async Task<PaginatedEmployeesResult> Handle(
@@ -55,8 +56,16 @@ public sealed class ListEmployeesQueryHandler(
             ct
         );
 
+        var pending = await access.PendingAsync(items.Select(x => x.Id).ToArray(), ct);
+        var pendingByEmployee = pending.ToDictionary(x => x.EmployeeId);
         return new PaginatedEmployeesResult(
-            items.Select(EmployeeListItemDto.FromEntity).ToList(),
+            items.Select(x =>
+            {
+                var item = EmployeeListItemDto.FromEntity(x);
+                return pendingByEmployee.TryGetValue(x.Id, out var operation)
+                    ? item with { PendingStatus = operation.Status, PendingOperationId = operation.Id }
+                    : item;
+            }).ToList(),
             total,
             request.Page,
             request.PageSize,
@@ -96,7 +105,7 @@ public record EmployeeStatsDto(
 );
 
 /// <summary>Stats del directorio de empleados/profesionales.</summary>
-public record GetEmployeesStatsQuery(Guid? OrganizationId, Guid? ClinicId)
+public record GetEmployeesStatsQuery(Guid? OrganizationId, Guid? ClinicId, bool Fresh = false)
     : IRequest<EmployeeStatsDto>;
 
 /// <summary>
@@ -115,6 +124,12 @@ public sealed class GetEmployeesStatsQueryHandler(
             request.OrganizationId?.ToString(),
             request.ClinicId?.ToString()
         );
+        if (request.Fresh)
+        {
+            var current = await repository.GetStatsAsync(request.OrganizationId, request.ClinicId, ct);
+            await cache.SetAsync(CacheKeys.Stats("employees", scopeHash), current, CacheKeys.StatsTtl(), ct);
+            return current;
+        }
         return await cache.GetOrCreateAsync(
             CacheKeys.Stats("employees", scopeHash),
             CacheKeys.StatsTtl(),

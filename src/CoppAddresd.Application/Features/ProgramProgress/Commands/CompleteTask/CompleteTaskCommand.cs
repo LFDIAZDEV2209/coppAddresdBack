@@ -97,7 +97,7 @@ public sealed class CompleteTaskCommandValidator : AbstractValidator<CompleteTas
                 .When(x => x.Vitals!.Glucose.HasValue)
                 .WithMessage("glucose debe estar entre 10 y 1000.");
             RuleFor(x => x.Vitals!.WeightKg)
-                .InclusiveBetween(1, 500)
+                .InclusiveBetween(RecordWeight.WeightInputLimits.Min, RecordWeight.WeightInputLimits.Max)
                 .When(x => x.Vitals!.WeightKg.HasValue)
                 .WithMessage("weightKg debe estar entre 1 y 500.");
             RuleFor(x => x.Vitals!.TemperatureC)

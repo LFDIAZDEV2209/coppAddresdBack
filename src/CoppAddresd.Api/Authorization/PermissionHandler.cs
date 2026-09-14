@@ -14,6 +14,20 @@ public class PermissionHandler(ILogger<PermissionHandler> logger) : Authorizatio
         AuthorizationHandlerContext context,
         PermissionRequirement requirement)
     {
+        // Estos permisos operan el directorio administrativo; una sesión de paciente
+        // conserva sus permisos compartidos, pero nunca sustituye una sesión ERP.
+        var code = requirement.PermissionCode;
+        var erpOnly = code.StartsWith("Employees.", StringComparison.Ordinal)
+            || code.StartsWith("Organizations.", StringComparison.Ordinal)
+            || code.StartsWith("Clinics.", StringComparison.Ordinal)
+            || code.StartsWith("Locations.", StringComparison.Ordinal)
+            || code is "Professionals.Create" or "Professionals.Update" or "Professionals.Delete";
+        if (erpOnly && !context.User.HasClaim("aud", "erp"))
+        {
+            context.Fail();
+            return Task.CompletedTask;
+        }
+
         if (context.User.HasClaim(PermissionClaimTypes.Permission, requirement.PermissionCode))
         {
             logger.LogDebug("Permission claim {Permission} found, requirement succeeded", requirement.PermissionCode);

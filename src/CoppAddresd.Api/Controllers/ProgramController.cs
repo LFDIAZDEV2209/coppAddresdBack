@@ -1,4 +1,5 @@
 using System.Globalization;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.RecordWeight;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
@@ -1067,6 +1068,20 @@ public sealed class ProgramController(
     /// <see cref="IProgramActorContext"/> (anti-IDOR AC-11); sin inscripción
     /// activa → 404. Cache 5 min por paciente (fail-open).
     /// </summary>
+    [HttpPost("me/weight")]
+    public async Task<ActionResult<RecordedWeightDto>> RecordWeight(
+        [FromBody] RecordWeightRequest request, CancellationToken ct)
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
+        if (patientId is null || enrollmentId is null)
+            return NotFound(new { code = "NO_ACTIVE_ENROLLMENT", message = "Se requiere perfil de paciente e inscripción activa." });
+        if (actorContext.UserId is not { } actorId) return Unauthorized();
+        var result = await mediator.Send(new RecordWeightCommand(patientId.Value, enrollmentId.Value,
+            actorId, request.WeightKg, request.Date), ct);
+        return StatusCode(StatusCodes.Status201Created, result);
+    }
+
     [HttpGet("me/metrics-history")]
     public async Task<ActionResult<MetricsHistoryResponseDto>> GetMetricsHistory(
         [FromQuery] string? codes,
@@ -1776,6 +1791,38 @@ public sealed class ProgramController(
     )
     {
         var result = await mediator.Send(new GetPatientOverviewQuery(patientId), ct);
+        if (result is null)
+        {
+            return NotFound(new { message = "Paciente sin inscripción activa" });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Controles del programa de un paciente (UC-004): línea de tiempo de los
+    /// hitos configurados (7/14/21/45/60/90) con su ciclo de vida
+    /// (envío/respuesta/follow-up/cierre), control abierto vigente, próximo
+    /// vencimiento, adherencia agregada y el documento del lote de examen
+    /// asociado a cada control. 404 si el paciente no tiene inscripción activa
+    /// (mismo criterio que el overview 360). Scoping T-81: 404 si el actor
+    /// (paciente o clínico) no tiene alcance sobre el paciente; los roles de
+    /// administración (Admin/OrganizationAdmin/ClinicAdmin) no se filtran.
+    /// </summary>
+    [HttpGet("erp/patients/{patientId:guid}/controls")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<PatientControlsDto>> GetPatientControls(
+        Guid patientId,
+        CancellationToken ct
+    )
+    {
+        var scopedPatientIds = await actorContext.ResolveScopedPatientIdsAsync(ct);
+        if (scopedPatientIds is not null && !scopedPatientIds.Contains(patientId))
+        {
+            return NotFound(new { message = "Paciente sin inscripción activa" });
+        }
+
+        var result = await mediator.Send(new GetPatientControlsQuery(patientId), ct);
         if (result is null)
         {
             return NotFound(new { message = "Paciente sin inscripción activa" });
