@@ -62,6 +62,27 @@ function Draw-ServiceRow {
   Write-Host "  $namePad $urlPad $statusPad" -ForegroundColor $NameColor
 }
 
+function Start-DevProcess {
+  param(
+    [string]$Name,
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$WorkingDirectory
+  )
+  $log = Join-Path $logs ($Name + '.log')
+  $err = Join-Path $logs ($Name + '.err')
+  # Se lanza vía cmd.exe con "<NUL" para desacoplar stdin de la consola interactiva
+  # (equivalente a nohup en dev-up.sh). Sin esto, Vite (antares) detecta stdin TTY,
+  # activa sus atajos de teclado y consume la entrada del shell.
+  $exe = if ($FilePath -match '\s') { '"{0}"' -f $FilePath } else { $FilePath }
+  $argLine = ($Arguments | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
+  $cmdLine = '"{0} {1} <NUL"' -f $exe, $argLine
+  $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/d /s /c ' + $cmdLine) -WorkingDirectory $WorkingDirectory `
+    -RedirectStandardOutput $log -RedirectStandardError $err -WindowStyle Hidden -PassThru
+  $proc.Id | Out-File (Join-Path $logs ($Name + '.pid'))
+  return $proc
+}
+
 # Wait timeout: 90s for normal startup (pre-built), 240s for watch (builds internally).
 $waitTimeout = if ($Watch) { 240 } else { 90 }
 
@@ -165,20 +186,14 @@ if (-not $AiRoot -or -not (Test-Path $AiRoot)) {
   $venvPython = Join-Path $AiRoot '.venv\Scripts\python.exe'
   if (-not $uvPath -and (Test-Path $venvPython)) {
     Write-Host " 'uv' not found; using venv python directly" -ForegroundColor $AiColor
-    $proc = Start-Process -FilePath $venvPython -ArgumentList @('run_dev.py') -WorkingDirectory $AiRoot `
-      -RedirectStandardOutput (Join-Path $logs ($AiName + '.log')) `
-      -RedirectStandardError (Join-Path $logs ($AiName + '.err')) -WindowStyle Hidden -PassThru
-    $proc.Id | Out-File (Join-Path $logs ($AiName + '.pid'))
+    $proc = Start-DevProcess -Name $AiName -FilePath $venvPython -Arguments @('run_dev.py') -WorkingDirectory $AiRoot
     $AiStarted = $true
     Write-Host " PID $($proc.Id)" -ForegroundColor $AiColor
   } elseif (-not $uvPath) {
     Write-Host " 'uv' not found on PATH and no .venv\Scripts\python.exe. Install uv (https://astral.sh/uv) or add it to PATH." -ForegroundColor Red
     $AiResult = [pscustomobject]@{ Name = 'ai'; Url = $AiUrl; Port = 8000; Status = 'Skipped'; Color = 'Yellow' }
   } else {
-    $proc = Start-Process -FilePath $uvPath -ArgumentList @('run', 'python', 'run_dev.py') -WorkingDirectory $AiRoot `
-      -RedirectStandardOutput (Join-Path $logs ($AiName + '.log')) `
-      -RedirectStandardError (Join-Path $logs ($AiName + '.err')) -WindowStyle Hidden -PassThru
-    $proc.Id | Out-File (Join-Path $logs ($AiName + '.pid'))
+    $proc = Start-DevProcess -Name $AiName -FilePath $uvPath -Arguments @('run', 'python', 'run_dev.py') -WorkingDirectory $AiRoot
     $AiStarted = $true
     Write-Host " PID $($proc.Id)" -ForegroundColor $AiColor
   }
@@ -202,10 +217,7 @@ foreach ($s in $services) {
     $runArgs = @('run', '--no-build', '--project', $s.Project)
   }
   Write-Host ("  Starting {0}..." -f $s.Name.PadRight(16)) -NoNewline -ForegroundColor $s.Color
-  $proc = Start-Process -FilePath 'dotnet' -ArgumentList $runArgs -WorkingDirectory $root `
-    -RedirectStandardOutput (Join-Path $logs ($s.Name + '.log')) `
-    -RedirectStandardError (Join-Path $logs ($s.Name + '.err')) -WindowStyle Hidden -PassThru
-  $proc.Id | Out-File (Join-Path $logs ($s.Name + '.pid'))
+  $proc = Start-DevProcess -Name $s.Name -FilePath 'dotnet' -Arguments $runArgs -WorkingDirectory $root
   $started += $s.Name
   Write-Host " PID $($proc.Id)" -ForegroundColor $s.Color
 }
@@ -279,10 +291,7 @@ foreach ($w in $webServices) {
     continue
   }
   Write-Host ("  Starting {0}..." -f $w.Name.PadRight(16)) -NoNewline -ForegroundColor $w.Color
-  $proc = Start-Process -FilePath $w.Command -ArgumentList $w.Args -WorkingDirectory $w.Root `
-    -RedirectStandardOutput (Join-Path $logs ($w.Name + '.log')) `
-    -RedirectStandardError (Join-Path $logs ($w.Name + '.err')) -WindowStyle Hidden -PassThru
-  $proc.Id | Out-File (Join-Path $logs ($w.Name + '.pid'))
+  $proc = Start-DevProcess -Name $w.Name -FilePath $w.Command -Arguments $w.Args -WorkingDirectory $w.Root
   $webStarted += $w.Name
   Write-Host " PID $($proc.Id)" -ForegroundColor $w.Color
 }

@@ -98,6 +98,14 @@ builder.Services.AddHostedService<ExerciseRoutineSeeder>();
 // ProgramProgressSeeder y ExerciseRoutineSeeder.
 builder.Services.AddHostedService<DevProgramSeeder>();
 
+// Seed de desarrollo del dashboard de Tests de Salud: pacientes evaluados
+// (con resultados de score y alertas) y pendientes por estado de EE. UU.
+// Solo en Development; en otros entornos no se registra.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHostedService<HealthTestsDemoSeeder>();
+}
+
 // Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
 builder.Services.AddSingleton<MetricsBackfillSeeder>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsBackfillSeeder>());

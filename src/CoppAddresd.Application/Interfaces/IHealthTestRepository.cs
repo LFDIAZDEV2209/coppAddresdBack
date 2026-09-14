@@ -250,6 +250,17 @@ public interface IHealthTestRepository
         Guid professionalId,
         CancellationToken ct = default
     );
+    /// <summary>
+    /// Pacientes activos con ciudad dentro de uno o varios estados
+    /// (<paramref name="stateCodes"/>, códigos, unión) o de una ciudad concreta
+    /// (<paramref name="cityId"/>, con precedencia). Sin filtro devuelve lista
+    /// vacía. Base del filtro geográfico del dashboard.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> GetPatientIdsByGeoAsync(
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    );
     Task<bool> PatientBelongsToProfessionalAsync(
         Guid patientId,
         Guid professionalId,
@@ -292,6 +303,7 @@ public interface IHealthTestRepository
     );
     Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsWithPatientDataAsync(
         Guid? professionalId,
+        IReadOnlyCollection<Guid>? patientIds = null,
         CancellationToken ct = default
     );
     Task<IReadOnlyDictionary<Guid, int>> ListActiveAlertCountsByPatientAsync(

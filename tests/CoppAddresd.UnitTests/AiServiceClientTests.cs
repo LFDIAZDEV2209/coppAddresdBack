@@ -21,6 +21,7 @@ public class AiServiceClientTests
         public sealed record Captured(
             string Method,
             string Path,
+            string Query,
             IReadOnlyDictionary<string, string> Headers,
             string Body);
 
@@ -33,6 +34,7 @@ public class AiServiceClientTests
             Requests.Add(new Captured(
                 request.Method.Method,
                 request.RequestUri!.AbsolutePath,
+                request.RequestUri.Query,
                 request.Headers.ToDictionary(h => h.Key, h => string.Join(",", h.Value)),
                 body));
             return responder(request);
@@ -338,5 +340,66 @@ public class AiServiceClientTests
         Assert.Equal("t1", result.ThreadId);
         Assert.Equal(2, result.MessageCount);
         Assert.Equal("viejo", result.LastMessage);
+        // Los campos aditivos de paginación degradan a sus defaults.
+        Assert.False(result.HasMore);
+        Assert.Null(result.NextCursor);
+    }
+
+    [Fact]
+    public async Task GetThreadStateAsync_reenvia_limit_y_before_como_query_params()
+    {
+        // La paginación del AI Service (limit + before desde el más reciente)
+        // debe viajar en la query del request saliente.
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"thread_id":"t1","message_count":10,"last_message":"x","messages":[]}"""),
+        });
+        var client = BuildClient(handler);
+
+        await client.GetThreadStateAsync("t1", "user-1", limit: 5, before: 20);
+
+        var request = handler.Requests.Single();
+        Assert.Contains("user_id=user-1", request.Query);
+        Assert.Contains("limit=5", request.Query);
+        Assert.Contains("before=20", request.Query);
+    }
+
+    [Fact]
+    public async Task GetThreadStateAsync_sin_paginacion_no_envia_limit_ni_before()
+    {
+        // Sin argumentos, el request no agrega limit/before: el AI Service
+        // aplica sus defaults (limit=10) y la compatibilidad se mantiene.
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"thread_id":"t1","message_count":1,"last_message":"x"}"""),
+        });
+        var client = BuildClient(handler);
+
+        await client.GetThreadStateAsync("t1", "user-1");
+
+        var query = handler.Requests.Single().Query;
+        Assert.DoesNotContain("limit=", query);
+        Assert.DoesNotContain("before=", query);
+    }
+
+    [Fact]
+    public async Task GetThreadStateAsync_mapea_has_more_y_next_cursor()
+    {
+        // El contrato aditivo de paginación (`has_more` + `next_cursor`) debe
+        // mapearse tal cual al resultado que consume el front.
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """{"thread_id":"t1","message_count":25,"last_message":"x","messages":[{"role":"user","text":"hola"}],"has_more":true,"next_cursor":15}"""),
+        });
+        var client = BuildClient(handler);
+
+        var result = await client.GetThreadStateAsync("t1", "user-1", limit: 10, before: 0);
+
+        Assert.True(result.HasMore);
+        Assert.Equal(15, result.NextCursor);
+        Assert.Single(result.Messages!);
     }
 }
