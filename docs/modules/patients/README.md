@@ -179,3 +179,53 @@ Delete}` con `HasPermissionAsync` (claims globales OR introspección scoped) —
 - Integración: `tests/CoppAddresd.IntegrationTests/PatientDirectoryIntegrationTests.cs`
   (PostgreSQL real vía `COP_TEST_DB_CONNECTION`, fixture en transacción revertida):
   stats scoped y `professionalNames` en el listado.
+
+## Dashboard general (change `erp-patients-dashboard`)
+
+```
+GET    /api/v1/patients/dashboard?state=CA&months=12
+       # KPIs live del alcance + demografía (sexo, edad, estado civil, aseguradora,
+       #   diagnósticos top, % contacto de emergencia) + crecimiento mensual +
+       #   top de profesionales (solo alcance global) + distribución por estado.
+       # Cache-aside `stats:patients-dashboard:{hash}:v1` (TTL 30-60 s, fail-open);
+       #   el hash incluye clínica + alcance propio + estado + meses.
+GET    /api/v1/patients/clinical-board?page&pageSize&search&risk&hasAlerts&followUp
+       # Tablero clínico por paciente (vivo, sin caché): riesgo de la última
+       #   evaluación (severity o score %), alertas activas (conteo + severidad
+       #   máxima), última evaluación (fecha + instrumento), próxima evaluación
+       #   (mín. DueDate pendiente) y seguimiento (al-dia / vencido / sin-asignacion).
+PATCH  /api/v1/patients/{id}/status        # toggle Activo↔Inactivo (Patients.Update)
+       # Endpoint dedicado: solo cambia status (+auditoría); NUNCA toca diagnósticos,
+       #   medicamentos, alergias ni vitales (el PUT del agregado reemplaza hijos).
+GET    /api/v1/patients?state=CA           # el listado acepta `state` (selección del mapa)
+```
+
+- **KPIs del dashboard**: agregado live sobre el query scoped (mismo que las
+  gráficas) para que total/activos/nuevos/seguimiento sean coherentes entre sí;
+  `/stats` conserva la pre-agregación `patient_daily_metrics` (puede derivar).
+- **Índices verificados con `EXPLAIN ANALYZE` (2026-09-13)**: no se requirió
+  ningún índice nuevo. Cobertura existente: `patient_profiles` (deleted_at,
+  clinic_id, status, state_id, insurer_id), `patient_professionals`
+  (professional_id, status), `patient_diagnoses` (patient_id),
+  `health_test_evaluations` (patient_id, completed_at / status),
+  `health_test_assignments` (patient_id, status / status, due_date),
+  `health_test_alerts` (patient_id, status+severity), `cities`/`states`.
+  Planes: demografía ~7 ms, geo ~0.5 ms, tablero 50 filas ~4.7 ms (BD local).
+- **Tablero clínico sin N+1**: subconsultas correlacionadas en la proyección +
+  dos consultas bulk para la página (nombres de instrumento y severidad máxima
+  por conteos por severidad — `MAX` sobre el enum es alfabético y sería incorrecto).
+- **Límites conocidos**: «mejora clínica» (Mejorando/Empeorando) NO se calcula —
+  depende de mediciones periódicas de la app + agente aún no implementadas; el
+  tablero muestra solo señales reales. Adherencia de Programa fuera de esta fase.
+
+### Tests del dashboard
+
+- Unit: `PatientDashboardTests` (scoping, normalización de estado/meses, cache
+  hit/miss y claves por alcance), `ClinicalBoardTests` (paginación y filtros),
+  `UpdatePatientStatusTests` (idempotencia, métrica CQRS, validador Activo/Inactivo).
+- Integración: `PatientDashboardIntegrationTests` (BD real, transacción revertida):
+  agregados + filtro por estado, tablero con riesgo/seguimiento/alertas y filtros
+  SQL, toggle que preserva colecciones hijas, listado con estado + diagnóstico.
+- Frontend: `yarn lint` + `npx tsc --noEmit` + `yarn build` verdes; QA funcional
+  con Playwright (tabs, filtro de estado cruzado, toggle con confirmación y
+  roundtrip, tablero con datos reales).
