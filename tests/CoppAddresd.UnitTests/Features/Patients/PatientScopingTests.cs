@@ -259,6 +259,7 @@ public class PatientScopingTests
                 null,
                 null,
                 "desc",
+                null,
                 Arg.Any<CancellationToken>()
             )
             .Returns((new[] { patient }, 1));
@@ -289,6 +290,7 @@ public class PatientScopingTests
                 Arg.Any<Guid?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns((new List<PatientProfile>(), 0));
@@ -309,6 +311,7 @@ public class PatientScopingTests
                 Arg.Is<Guid?>(v => v == null),
                 Arg.Is<string?>(v => v == null),
                 Arg.Is<string?>(v => v == "desc"),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -325,6 +328,7 @@ public class PatientScopingTests
                 Arg.Any<Guid?>(),
                 Arg.Any<Guid?>(),
                 Arg.Any<Guid?>(),
+                Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
@@ -350,6 +354,7 @@ public class PatientScopingTests
                 Arg.Any<Guid?>(),
                 Arg.Is<string?>(v => v == "firstName"),
                 Arg.Is<string?>(v => v == "asc"),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -366,6 +371,7 @@ public class PatientScopingTests
                 Arg.Any<Guid?>(),
                 Arg.Any<Guid?>(),
                 Arg.Any<Guid?>(),
+                Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
@@ -392,6 +398,47 @@ public class PatientScopingTests
                 Arg.Any<Guid?>(),
                 Arg.Is<string?>(v => v == null),
                 Arg.Is<string?>(v => v == "desc"),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task List_ConEstadoNormalizaMayusculasYPasaAlRepositorio()
+    {
+        _repository
+            .ListAsync(
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns((new List<PatientProfile>(), 0));
+
+        var handler = new ListPatientsQueryHandler(_repository);
+
+        await handler.Handle(new ListPatientsQuery(StateCode: "ca"), CancellationToken.None);
+
+        await _repository
+            .Received(1)
+            .ListAsync(
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Is<string?>(v => v == "CA"),
                 Arg.Any<CancellationToken>()
             );
     }
