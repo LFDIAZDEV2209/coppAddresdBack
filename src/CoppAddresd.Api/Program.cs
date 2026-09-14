@@ -72,6 +72,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddTransient<CoppAddresd.Api.Handlers.CorrelationIdDelegatingHandler>();
 
 // Seed del catálogo de agentes (idempotente) + sync al AI Service al arrancar.
+if (!builder.Configuration.GetValue<bool>("SkipDatabaseInitialization"))
+{
 builder.Services.AddHostedService<AgentCatalogSeeder>();
 
 // Seed del catálogo de mediciones clínicas (unidades, métricas y rangos).
@@ -107,8 +109,10 @@ if (builder.Environment.IsDevelopment())
 }
 
 // Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
-builder.Services.AddSingleton<MetricsBackfillSeeder>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsBackfillSeeder>());
+}
+// El servicio también se resuelve desde los endpoints de mantenimiento.
+builder.Services.AddSingleton<MetricsBackfillSeeder>();
 
 // Reconciliación nocturna de rachas (B12, T-28): job diario configurable vía
 // Program:Reconciliation (Enabled/HourUtc); disparo manual en

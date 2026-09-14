@@ -24,6 +24,14 @@ public class AvatarConfigurationTests
     };
 
     [Fact]
+    public void LegacyConfiguration_GetsDefaultSkin_AndInvalidSkinIsRejected()
+    {
+        var json="""{"version":1,"gender":"female","hair":"hair-02","clothing":{"shirt":"shirt-basic-01","pants":null,"shoes":null},"accessories":{"glasses":null,"watch":null,"bracelet":null}}""";
+        var old=JsonSerializer.Deserialize<AvatarConfiguration>(json,new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(old);Assert.Equal("skin-03",old.Skin);Assert.True(old.IsValid());
+        Assert.False((old with {Skin="skin-99"}).IsValid());
+    }
+    [Fact]
     public async Task Defaults_UseProfile_WithoutWritingClinicalOrPreferenceData()
     {
         var store = new Store(); var result = await new AvatarConfigurationUseCases(store).GetAsync(Guid.NewGuid(), CancellationToken.None);

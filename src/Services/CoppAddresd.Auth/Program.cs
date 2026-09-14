@@ -194,6 +194,8 @@ builder
 
 var app = builder.Build();
 
+// Actualización de binarios sobre una BD ya preparada, sin migraciones ni seeders.
+if (!builder.Configuration.GetValue<bool>("SkipDatabaseInitialization"))
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;

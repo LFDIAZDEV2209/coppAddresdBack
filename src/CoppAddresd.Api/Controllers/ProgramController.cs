@@ -1069,6 +1069,7 @@ public sealed class ProgramController(
     /// activa → 404. Cache 5 min por paciente (fail-open).
     /// </summary>
     [HttpPost("me/weight")]
+    [Authorize(Roles = "Admin")] // Rol global de acceso total existente (SuperAdmin).
     public async Task<ActionResult<RecordedWeightDto>> RecordWeight(
         [FromBody] RecordWeightRequest request, CancellationToken ct)
     {

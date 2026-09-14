@@ -75,6 +75,11 @@ public class AvatarPostgresTests
         client.DefaultRequestHeaders.Authorization=new AuthenticationHeaderValue("Bearer",Token(a));
         var defaults=await client.GetFromJsonAsync<AvatarConfiguration>(url);Assert.NotNull(defaults);Assert.Equal("male",defaults.Gender);
         var selected=AvatarConfiguration.Default("female") with { Accessories=new("glasses-01","watch-01","bracelet-01") };
+        // El parámetro se llama configuration, pero el body es el DTO directamente.
+        // Un wrapper no corrige un fallo de deserialización y no debe escribir preferencias.
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PutAsJsonAsync(url, new { configuration = selected })).StatusCode);
+        Assert.Equal(defaults, await client.GetFromJsonAsync<AvatarConfiguration>(url));
         Assert.Equal(HttpStatusCode.OK,(await client.PutAsJsonAsync(url+"?userId="+b,selected)).StatusCode);
         Assert.Equal(selected,await client.GetFromJsonAsync<AvatarConfiguration>(url));
         foreach (var hair in new[] { "female-hair-long-01", "female-hair-long-02", "female-hair-long-03" }) {
@@ -83,6 +88,20 @@ public class AvatarPostgresTests
             Assert.Equal(longHair,await client.GetFromJsonAsync<AvatarConfiguration>(url));
             Assert.Equal(HttpStatusCode.BadRequest,(await client.PutAsJsonAsync(url,longHair with { Gender="male" })).StatusCode);
         }
+        foreach (var gender in new[] { "male", "female" }) {
+            foreach (var tone in new[] { "skin-01", "skin-02", "skin-03", "skin-04", "skin-05" }) {
+                foreach (var style in new[] { "01", "02", "03" }) {
+                    var full = AvatarConfiguration.Default(gender) with { Skin=tone,
+                        Hair=gender=="female"?"female-hair-long-01":"hair-02",
+                        Clothing=new("shirt-basic-01",$"pants-{gender}-{style}",$"shoes-{gender}-01"),
+                        Accessories=new("glasses-01","watch-01","bracelet-01") };
+                    Assert.Equal(HttpStatusCode.OK,(await client.PutAsJsonAsync(url,full)).StatusCode);
+                    Assert.Equal(full,await client.GetFromJsonAsync<AvatarConfiguration>(url));
+                    Assert.Equal(HttpStatusCode.BadRequest,(await client.PutAsJsonAsync(url,full with { Gender=gender=="male"?"female":"male" })).StatusCode);
+                }
+            }
+        }
+        Assert.Equal(HttpStatusCode.BadRequest,(await client.PutAsJsonAsync(url,selected with { Skin="invalid" })).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,(await client.PutAsJsonAsync(url,selected with {Hair="hair-03"})).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest,(await client.PutAsJsonAsync(url,new {userId=b,weight=90})).StatusCode);
         client.DefaultRequestHeaders.Authorization=new AuthenticationHeaderValue("Bearer",Token(b));
