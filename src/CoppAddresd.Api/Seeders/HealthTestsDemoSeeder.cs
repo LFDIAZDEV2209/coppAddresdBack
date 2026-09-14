@@ -1,3 +1,4 @@
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
 using CoppAddresd.Infrastructure.Persistence;
@@ -9,15 +10,19 @@ namespace CoppAddresd.Api.Seeders;
 
 /// <summary>
 /// Seeder de desarrollo para el dashboard de Tests de Salud. Genera pacientes
-/// evaluados (asignaciones completadas + evaluaciones + resultados de score +
-/// alertas activas) y pacientes pendientes repartidos por estados de EE. UU.,
-/// con severidades y fechas distribuidas en los últimos 12 meses para que el
-/// mapa de calor, las gráficas de cobertura/riesgo y los KPIs tengan datos
-/// realistas. Algunos estados quedan intencionalmente sin evaluaciones para
-/// que el mapa los muestre en gris ("Sin datos").
+/// con perfil completo (los crea cuando el estado no tiene suficientes),
+/// evaluaciones completadas (asignación + evaluación + resultado de score +
+/// alertas activas), evaluaciones en progreso y pacientes pendientes
+/// repartidos por estados de EE. UU., con severidades y fechas distribuidas en
+/// los últimos 12 meses para que el mapa de calor, las gráficas de
+/// cobertura/riesgo y los KPIs tengan datos realistas. Algunos estados quedan
+/// intencionalmente sin evaluaciones para que el mapa los muestre en gris
+/// ("Sin datos").
 ///
-/// Idempotencia: si ya existe cualquier asignación de test, no vuelve a
-/// ejecutarse. Se registra solo en Development (ver Program.cs).
+/// Idempotencia incremental: cada estado se siembra una sola vez (se detectan
+/// los que ya tienen asignaciones y se omiten), por lo que puede ejecutarse en
+/// cada arranque sin duplicar datos. Se registra solo en Development (ver
+/// Program.cs).
 /// </summary>
 public sealed class HealthTestsDemoSeeder(
     IServiceScopeFactory scopeFactory,
@@ -81,6 +86,24 @@ public sealed class HealthTestsDemoSeeder(
         new("RI", 0, 0, 2),
     ];
 
+    private static readonly string[] DemoFirstNames =
+    [
+        "Emma", "Liam", "Olivia", "Noah", "Ava", "Ethan", "Sofía", "Lucas",
+        "Isabella", "Mateo", "Mia", "Daniel", "Charlotte", "Alejandro", "Amelia",
+        "Sebastián", "Harper", "Diego", "Evelyn", "Samuel", "Camila", "Benjamín",
+        "Valentina", "David", "Mariana", "Andrés", "Lucía", "Javier", "Paula",
+        "Gabriel",
+    ];
+
+    private static readonly string[] DemoLastNames =
+    [
+        "García", "Smith", "Rodríguez", "Johnson", "Martínez", "Williams",
+        "Hernández", "Brown", "López", "Jones", "González", "Davis",
+        "Pérez", "Miller", "Sánchez", "Wilson", "Ramírez", "Anderson",
+        "Torres", "Thomas", "Flores", "Taylor", "Rivera", "Moore",
+        "Gómez", "Jackson", "Díaz", "Martin", "Morales", "Lee",
+    ];
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -104,9 +127,22 @@ public sealed class HealthTestsDemoSeeder(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        if (await db.HealthTestAssignments.AnyAsync(ct))
+        // Sembrado incremental: los estados que ya tienen asignaciones se omiten
+        // (los que corrieron con una versión previa del seeder conservan sus datos).
+        var seededStateCodes = new HashSet<string>(
+            await (
+                from a in db.HealthTestAssignments.AsNoTracking()
+                join p in db.PatientProfiles.AsNoTracking() on a.PatientId equals p.Id
+                join c in db.Cities.AsNoTracking() on p.CityId equals c.Id
+                join s in db.States.AsNoTracking() on c.StateId equals s.Id
+                select s.Code
+            ).Distinct().ToListAsync(ct),
+            StringComparer.OrdinalIgnoreCase);
+
+        if (seededStateCodes.Count >= StateSeeds.Count)
         {
-            logger.LogInformation("Tests de Salud: ya existen asignaciones; se omite el seed demo.");
+            logger.LogInformation(
+                "Tests de Salud: todos los estados ya están sembrados; se omite el seed demo.");
             return;
         }
 
@@ -124,27 +160,116 @@ public sealed class HealthTestsDemoSeeder(
             return;
         }
 
+        // Metadatos geográficos de los estados del seed (id + país para los perfiles nuevos).
+        var stateCodes = StateSeeds.Select(s => s.StateCode).ToList();
+        var stateMeta = (await db.States
+                .AsNoTracking()
+                .Where(s => stateCodes.Contains(s.Code))
+                .Select(s => new { s.Code, s.Id, s.CountryId })
+                .ToListAsync(ct))
+            .ToDictionary(s => s.Code, StringComparer.OrdinalIgnoreCase);
+
+        // MRNs ya usados por el propio seeder: evita colisiones si un sembrado
+        // previo quedó a medias (pacientes creados sin asignaciones).
+        var usedMrns = (await db.PatientProfiles
+                .AsNoTracking()
+                .Where(p => p.MedicalRecordNumber != null && p.MedicalRecordNumber.StartsWith("MRN-DEMO-"))
+                .Select(p => p.MedicalRecordNumber!)
+                .ToListAsync(ct))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         var now = DateTime.UtcNow;
+        var newPatients = new List<PatientProfile>();
         var assignments = new List<HealthTestAssignment>();
         var evaluations = new List<HealthTestEvaluation>();
         var results = new List<HealthTestResult>();
         var alerts = new List<HealthTestAlert>();
 
+        var createdPatientCount = 0;
         var evaluatedCount = 0;
+        var inProgressCount = 0;
         var pendingCount = 0;
         var alertCount = 0;
 
         for (var stateIndex = 0; stateIndex < StateSeeds.Count; stateIndex++)
         {
             var state = StateSeeds[stateIndex];
+            if (seededStateCodes.Contains(state.StateCode))
+            {
+                continue;
+            }
+
+            if (!stateMeta.TryGetValue(state.StateCode, out var meta))
+            {
+                logger.LogWarning(
+                    "Tests de Salud: estado {State} sin catálogo geográfico; se omite.",
+                    state.StateCode);
+                continue;
+            }
+
+            // Ciudades del estado: reparte los pacientes entre varias para la
+            // gráfica de ciudades con más evaluaciones.
+            var cities = await db.Cities
+                .AsNoTracking()
+                .Where(c => c.StateId == meta.Id)
+                .OrderBy(c => c.Name)
+                .Select(c => new { c.Id, c.Name })
+                .ToListAsync(ct);
+
+            if (cities.Count == 0)
+            {
+                logger.LogWarning(
+                    "Tests de Salud: estado {State} sin ciudades; se omite.",
+                    state.StateCode);
+                continue;
+            }
+
+            var needed = state.Evaluated + state.Pending;
 
             var patientIds = await db.PatientProfiles
                 .AsNoTracking()
-                .Where(p => p.DeletedAt == null && p.CityId != null && p.City!.State!.Code == state.StateCode)
+                .Where(p => p.DeletedAt == null && p.CityId != null && p.City!.StateId == meta.Id)
                 .OrderBy(p => p.Id)
                 .Select(p => p.Id)
-                .Take(state.Evaluated + state.Pending)
+                .Take(needed)
                 .ToListAsync(ct);
+
+            // Perfiles de paciente completos (sin usuario de auth) para que el
+            // flujo real de la UI (tabla maestra, perfil 360, alertas) funcione.
+            for (var i = patientIds.Count; i < needed; i++)
+            {
+                var city = cities[(i + stateIndex) % cities.Count];
+                var mrn = $"MRN-DEMO-{state.StateCode}-{i:D4}";
+                if (!usedMrns.Add(mrn))
+                {
+                    continue;
+                }
+
+                var patient = new PatientProfile
+                {
+                    Id = Guid.NewGuid(),
+                    FirstName = DemoFirstNames[(i * 7 + stateIndex * 3) % DemoFirstNames.Length],
+                    LastName = DemoLastNames[(i * 5 + stateIndex * 11) % DemoLastNames.Length],
+                    MedicalRecordNumber = mrn,
+                    DocumentNumber = $"DEMO-{state.StateCode}-{i:D4}",
+                    DateOfBirth = now
+                        .AddYears(-(22 + (i * 7 + stateIndex * 3) % 55))
+                        .AddDays(-(i * 17 % 300)),
+                    Gender = i % 2 == 0 ? "Femenino" : "Masculino",
+                    Email = $"demo.{state.StateCode.ToLowerInvariant()}.{i:D4}@coppaddresd.com",
+                    PhoneCountryCode = "1",
+                    PhoneNumber = $"305{(1_000_000 + (i * 7_919 + stateIndex * 104_729) % 9_000_000):D7}",
+                    Address = $"{100 + (i * 37 + stateIndex * 13) % 900} {city.Name} Ave",
+                    CityId = city.Id,
+                    StateId = meta.Id,
+                    CountryId = meta.CountryId,
+                    Status = "Activo",
+                    CreatedAt = now.AddDays(-(30 + (i * 5 + stateIndex * 11) % 400)),
+                };
+                newPatients.Add(patient);
+                patientIds.Add(patient.Id);
+                createdPatientCount++;
+            }
 
             for (var i = 0; i < patientIds.Count; i++)
             {
@@ -191,11 +316,28 @@ public sealed class HealthTestsDemoSeeder(
                         secondTest: true);
                 }
 
+                // ~1 de cada 3 tiene además una segunda evaluación en curso
+                // (reciente) para la porción "En progreso" de la cobertura.
+                if (i % 3 == 1)
+                {
+                    AddInProgressTest(
+                        patientId,
+                        versionIds[(stateIndex + i + 7) % versionIds.Count],
+                        now.AddDays(-(1 + (i * 2 + stateIndex) % 10)));
+                }
+
                 evaluatedCount++;
             }
         }
 
-        // Inserciones por niveles para respetar las FKs sin depender del orden del batch.
+        // Perfiles primero (FK de las asignaciones) y luego cada nivel de
+        // detalle en passes separados, sin depender del orden del batch.
+        if (newPatients.Count > 0)
+        {
+            db.PatientProfiles.AddRange(newPatients);
+            await db.SaveChangesAsync(ct);
+        }
+
         db.HealthTestAssignments.AddRange(assignments);
         await db.SaveChangesAsync(ct);
 
@@ -209,8 +351,8 @@ public sealed class HealthTestsDemoSeeder(
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
-            "Seed demo de Tests de Salud completado: {Evaluated} pacientes evaluados, {Pending} pendientes, {Alerts} alertas activas.",
-            evaluatedCount, pendingCount, alertCount);
+            "Seed demo de Tests de Salud completado: {Created} pacientes creados, {Evaluated} evaluados, {InProgress} en progreso, {Pending} pendientes, {Alerts} alertas activas.",
+            createdPatientCount, evaluatedCount, inProgressCount, pendingCount, alertCount);
 
         void AddCompletedTest(
             Guid patientId,
@@ -279,11 +421,38 @@ public sealed class HealthTestsDemoSeeder(
                 Title = severity == HealthTestSeverity.critical
                     ? "Riesgo crítico en evaluación de salud"
                     : "Riesgo alto en evaluación de salud",
-                Body = "El resultado del test supera el umbral configurado; requiere revisión clínica.",
+                Body = $"El score total ({score:0.#}%) supera el umbral configurado; requiere revisión clínica.",
                 Status = HealthTestAlertStatus.active,
                 CreatedAt = completedAt.AddHours(1),
             });
             alertCount++;
+        }
+
+        void AddInProgressTest(Guid patientId, Guid versionId, DateTime startedAt)
+        {
+            var assignment = new HealthTestAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientId,
+                VersionId = versionId,
+                Status = HealthTestAssignmentStatus.in_progress,
+                Priority = 2,
+                AssignedAt = startedAt.AddDays(-1),
+                StartedAt = startedAt,
+                DueDate = startedAt.AddDays(5),
+            };
+            assignments.Add(assignment);
+
+            evaluations.Add(new HealthTestEvaluation
+            {
+                Id = Guid.NewGuid(),
+                AssignmentId = assignment.Id,
+                PatientId = patientId,
+                VersionId = versionId,
+                Status = HealthTestEvaluationStatus.started,
+                StartedAt = startedAt,
+            });
+            inProgressCount++;
         }
     }
 
