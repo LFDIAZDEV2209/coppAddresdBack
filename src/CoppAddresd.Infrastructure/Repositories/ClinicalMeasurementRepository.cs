@@ -130,28 +130,43 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
     /// <c>batchId</c> se remapea en memoria (función pura
     /// <see cref="ResolveBatchId"/>): EncounterId → ancla propia → match exacto
     /// (Source, ObservedAt) con tie-break Min(AnchorId) → null.
+    /// Con <paramref name="batchId"/> provisto (lote de examen, UC-004) se
+    /// filtra <c>WHERE batch_id = @batchId</c> y se omite Q1: las filas del
+    /// lote ya traen su BatchId y no necesitan el remap por anclas de check-in.
     /// </summary>
     public async Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
         Guid patientId,
+        Guid? batchId = null,
         CancellationToken ct = default)
     {
         // Q1: anclas del paciente. Un solo query: la subconsulta DISTINCT de
         // vital_signs_batch_id (⋈ program_enrollments.patient_id) se traduce a
         // un IN sobre el Id de la medición.
-        var anchors = await dbContext.ClinicalMeasurements.AsNoTracking()
-            .Where(m => dbContext.TaskCompletions.AsNoTracking()
-                .Where(tc => tc.VitalSignsBatchId != null && tc.Enrollment!.PatientId == patientId)
-                .Select(tc => tc.VitalSignsBatchId!.Value)
-                .Distinct()
-                .Contains(m.Id))
-            .Select(m => new MeasurementAnchor(m.Id, m.ObservedAt, m.Source))
-            .ToListAsync(ct);
+        var anchors = new List<MeasurementAnchor>();
+        if (batchId is null)
+        {
+            anchors = await dbContext.ClinicalMeasurements.AsNoTracking()
+                .Where(m => dbContext.TaskCompletions.AsNoTracking()
+                    .Where(tc => tc.VitalSignsBatchId != null && tc.Enrollment!.PatientId == patientId)
+                    .Select(tc => tc.VitalSignsBatchId!.Value)
+                    .Distinct()
+                    .Contains(m.Id))
+                .Select(m => new MeasurementAnchor(m.Id, m.ObservedAt, m.Source))
+                .ToListAsync(ct);
+        }
         var anchorIds = anchors.Select(a => a.Id).ToHashSet();
 
         // Q2: filas del paciente en una proyección (joins con métrica y unidad),
         // ordenadas por observación desc y registro desc. AsNoTracking.
-        var rows = await dbContext.ClinicalMeasurements.AsNoTracking()
-            .Where(m => m.PatientId == patientId)
+        var query = dbContext.ClinicalMeasurements.AsNoTracking()
+            .Where(m => m.PatientId == patientId);
+
+        if (batchId is { } labBatchId)
+        {
+            query = query.Where(m => m.BatchId == labBatchId);
+        }
+
+        var rows = await query
             .OrderByDescending(m => m.ObservedAt)
             .ThenByDescending(m => m.RecordedAt)
             .Select(m => new PatientMeasurementDto(
@@ -163,7 +178,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
                 m.Unit!.Symbol,
                 m.ObservedAt,
                 m.Source,
-                m.BatchId ?? m.EncounterId))
+                m.BatchId ?? m.EncounterId,
+                m.SourceKey))
             .ToListAsync(ct);
 
         // Remap en memoria: el BatchId proyectado (BatchId ?? EncounterId) se reemplaza
@@ -171,11 +187,50 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
         return rows
             .Select(r =>
             {
-                var batchId = ResolveBatchId(
+                var resolvedBatchId = ResolveBatchId(
                     r.Id, r.BatchId, r.Source, r.ObservedAt, anchorIds, anchors);
-                return batchId == r.BatchId ? r : r with { BatchId = batchId };
+                return resolvedBatchId == r.BatchId ? r : r with { BatchId = resolvedBatchId };
             })
             .ToList();
+    }
+
+    /// <summary>
+    /// Variante set-based de lotes (UC-004): filas del paciente restringidas a
+    /// VARIOS lotes en UNA query. <c>ids.Contains(m.BatchId.Value)</c> con la
+    /// guarda 3VL (<c>BatchId != null</c>) se traduce a
+    /// <c>WHERE batch_id IS NOT NULL AND batch_id = ANY(@ids)</c>: sin anclas
+    /// (las filas del lote ya traen su BatchId) ni remap en memoria. Misma
+    /// proyección y orden que la sobrecarga de un lote.
+    /// </summary>
+    public async Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
+        Guid patientId,
+        IReadOnlyCollection<Guid> batchIds,
+        CancellationToken ct = default)
+    {
+        var ids = batchIds.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        return await dbContext.ClinicalMeasurements.AsNoTracking()
+            .Where(m => m.PatientId == patientId
+                        && m.BatchId != null
+                        && ids.Contains(m.BatchId.Value))
+            .OrderByDescending(m => m.ObservedAt)
+            .ThenByDescending(m => m.RecordedAt)
+            .Select(m => new PatientMeasurementDto(
+                m.Id,
+                m.Metric!.Code,
+                m.Metric!.Name,
+                m.Value,
+                m.Unit!.Code,
+                m.Unit!.Symbol,
+                m.ObservedAt,
+                m.Source,
+                m.BatchId,
+                m.SourceKey))
+            .ToListAsync(ct);
     }
 
     /// <summary>

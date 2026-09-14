@@ -1784,6 +1784,38 @@ public sealed class ProgramController(
         return Ok(result);
     }
 
+    /// <summary>
+    /// Controles del programa de un paciente (UC-004): línea de tiempo de los
+    /// hitos configurados (7/14/21/45/60/90) con su ciclo de vida
+    /// (envío/respuesta/follow-up/cierre), control abierto vigente, próximo
+    /// vencimiento, adherencia agregada y el documento del lote de examen
+    /// asociado a cada control. 404 si el paciente no tiene inscripción activa
+    /// (mismo criterio que el overview 360). Scoping T-81: 404 si el actor
+    /// (paciente o clínico) no tiene alcance sobre el paciente; los roles de
+    /// administración (Admin/OrganizationAdmin/ClinicAdmin) no se filtran.
+    /// </summary>
+    [HttpGet("erp/patients/{patientId:guid}/controls")]
+    [RequirePermission("Program.View")]
+    public async Task<ActionResult<PatientControlsDto>> GetPatientControls(
+        Guid patientId,
+        CancellationToken ct
+    )
+    {
+        var scopedPatientIds = await actorContext.ResolveScopedPatientIdsAsync(ct);
+        if (scopedPatientIds is not null && !scopedPatientIds.Contains(patientId))
+        {
+            return NotFound(new { message = "Paciente sin inscripción activa" });
+        }
+
+        var result = await mediator.Send(new GetPatientControlsQuery(patientId), ct);
+        if (result is null)
+        {
+            return NotFound(new { message = "Paciente sin inscripción activa" });
+        }
+
+        return Ok(result);
+    }
+
     // ===================== ERP: mantenimiento (B12) =====================
 
     /// <summary>

@@ -20,5 +20,5 @@ public sealed class ListPatientMeasurementsQueryHandler(
     public async Task<IReadOnlyList<PatientMeasurementDto>> Handle(
         ListPatientMeasurementsQuery request,
         CancellationToken ct
-    ) => await repository.ListForErpAsync(request.PatientId, ct);
+    ) => await repository.ListForErpAsync(request.PatientId, ct: ct);
 }
