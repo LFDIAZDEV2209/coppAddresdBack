@@ -27,7 +27,8 @@ WAIT_TIMEOUT=$(( WATCH == 1 ? 240 : 90 ))
 port_open() { (echo > "/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1; }
 
 wait_port() {
-  local port="$1" timeout="$2" deadline=$(( $(date +%s) + timeout ))
+  local port="$1" timeout="$2"
+  local deadline=$(( $(date +%s) + timeout ))
   while (( $(date +%s) < deadline )); do
     port_open "$port" && return 0
     sleep 2
@@ -35,8 +36,9 @@ wait_port() {
   port_open "$port"
 }
 
-color() { printf "\033[%sm%s\033[0m" "$1" "$2"; }
-bold() { printf "\033[1m%s\033[0m" "$1"; }
+color() { printf "\033[%sm%s\033[0m\n" "$1" "$2"; }
+colorn() { printf "\033[%sm%s\033[0m" "$1" "$2"; }
+bold() { printf "\033[1m%s\033[0m\n" "$1"; }
 
 draw_banner() {
   local title="$1" color_code="${2:-36}"
@@ -51,9 +53,9 @@ draw_banner() {
 draw_service_row() {
   local name="$1" url="$2" status="$3" status_color="$4" name_color="$5"
   printf "  %s  %s  %s\n" \
-    "$(color "$name_color" "$(printf '%-16s' "$name")")" \
-    "$(color "$name_color" "$(printf '%-32s' "$url")")" \
-    "$(color "$status_color" "$(printf '%-10s' "$status")")"
+    "$(colorn "$name_color" "$(printf '%-16s' "$name")")" \
+    "$(colorn "$name_color" "$(printf '%-32s' "$url")")" \
+    "$(colorn "$status_color" "$(printf '%-10s' "$status")")"
 }
 
 echo ""
@@ -61,8 +63,8 @@ draw_banner "COPPADRESD BACKEND - DEV ENVIRONMENT" 32
 
 echo ""
 draw_banner "POSTGRES (DOCKER)" 36
-if [[ -f "$ROOT/docker-compose.yaml" ]]; then
-  echo -n "  Starting Postgres..."
+if [[ -f "$ROOT/docker-compose.yml" || -f "$ROOT/docker-compose.yaml" ]]; then
+  colorn 36 "  Starting Postgres..."
   (cd "$ROOT" && docker compose up -d postgres) || {
     color 31 " docker compose up failed. Is Docker running?"
     exit 1
@@ -71,10 +73,10 @@ if [[ -f "$ROOT/docker-compose.yaml" ]]; then
 
   deadline=$(( $(date +%s) + 60 ))
   healthy=0
-  echo -n "  Waiting for health check..."
+  colorn 36 "  Waiting for health check..."
   while (( $(date +%s) < deadline )); do
     [[ "$(docker inspect --format '{{.State.Health.Status}}' coppAddresd 2>/dev/null)" == "healthy" ]] && { healthy=1; break; }
-    color 36 "."
+    colorn 36 "."
     sleep 2
   done
   echo ""
@@ -138,7 +140,7 @@ elif port_open "$AI_PORT"; then
   color 33 "  $AI_NAME already running on :$AI_PORT (skipped)"
   AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|Running|36"
 else
-  color 36 "  Starting $AI_NAME..."
+  colorn 36 "  Starting $AI_NAME..."
   (cd "$AI_ROOT" && nohup uv run python run_dev.py > "$LOGS/$AI_NAME.log" 2> "$LOGS/$AI_NAME.err" & echo $! > "$LOGS/$AI_NAME.pid")
   AI_STARTED=1
   color 36 " PID $(cat "$LOGS/$AI_NAME.pid")"
@@ -148,6 +150,7 @@ echo ""
 draw_banner "STARTING SERVICES" 36
 
 started=()
+results=()
 for entry in "${SERVICES[@]}"; do
   IFS='|' read -r name project url port clr <<< "$entry"
   if port_open "$port"; then
@@ -161,7 +164,7 @@ for entry in "${SERVICES[@]}"; do
   else
     args=(run --no-build --project "$project")
   fi
-  color "$clr" "  Starting $name..." -n
+  colorn "$clr" "  Starting $name..."
   (cd "$ROOT" && nohup dotnet "${args[@]}" > "$LOGS/$name.log" 2> "$LOGS/$name.err" & echo $! > "$LOGS/$name.pid")
   started+=("$name")
   color "$clr" " PID $(cat "$LOGS/$name.pid")"
@@ -176,7 +179,7 @@ for entry in "${SERVICES[@]}"; do
   in_started=0
   for s in "${started[@]:-}"; do [[ "$s" == "$name" ]] && in_started=1; done
   [[ $in_started -eq 0 ]] && continue
-  color "$clr" "  Waiting for $name on port $port..." -n
+  colorn "$clr" "  Waiting for $name on port $port..."
   if wait_port "$port" "$WAIT_TIMEOUT"; then
     color 32 " READY"
     results+=("$name|$url|$port|Running|$clr")
@@ -197,7 +200,7 @@ done
 
 # AI service wait (non-fatal: backend has circuit breaker if it is down).
 if [[ $AI_STARTED -eq 1 && -n "$AI_RESULT" ]]; then
-  color 36 "  Waiting for $AI_NAME on port $AI_PORT..." -n
+  colorn 36 "  Waiting for $AI_NAME on port $AI_PORT..."
   if wait_port "$AI_PORT" "$WAIT_TIMEOUT"; then
     color 32 " READY"
     AI_RESULT="$AI_NAME|http://localhost:8000|$AI_PORT|Running|36"

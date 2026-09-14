@@ -16,7 +16,7 @@ PORTS=(
   "ai|8000"
 )
 
-color() { printf "\033[%sm%s\033[0m" "$1" "$2"; }
+color() { printf "\033[%sm%s\033[0m\n" "$1" "$2"; }
 
 draw_banner() {
   local title="$1" color_code="${2:-36}"
@@ -45,6 +45,13 @@ draw_banner "STOPPING SERVICES" 36
 for entry in "${PORTS[@]}"; do
   IFS='|' read -r name port <<< "$entry"
   pid="$(listener_pid "$port")"
+  # Fallback: pid file written by dev-up.sh (nohup detached process).
+  if [[ -z "$pid" && -f "$LOGS/$name.pid" ]]; then
+    fpid="$(cat "$LOGS/$name.pid" 2>/dev/null)"
+    if [[ -n "$fpid" ]] && kill -0 "$fpid" 2>/dev/null; then
+      pid="$fpid"
+    fi
+  fi
   if [[ -n "$pid" ]]; then
     kill -9 "$pid" 2>/dev/null || true
     # Also kill child processes if any.
