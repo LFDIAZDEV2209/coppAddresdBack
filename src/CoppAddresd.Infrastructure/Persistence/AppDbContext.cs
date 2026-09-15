@@ -121,6 +121,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HealthTestAlert> HealthTestAlerts => Set<HealthTestAlert>();
     public DbSet<HealthTestComment> HealthTestComments => Set<HealthTestComment>();
     public DbSet<HealthTestDailyMetric> HealthTestDailyMetrics => Set<HealthTestDailyMetric>();
+    public DbSet<HealthTestGeoRollup> HealthTestGeoRollups => Set<HealthTestGeoRollup>();
 
     // Program Progress — Módulo de progreso
     public DbSet<ProgramTemplate> ProgramTemplates => Set<ProgramTemplate>();

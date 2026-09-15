@@ -1,3 +1,5 @@
+using CoppAddresd.Application.Features.HealthTests;
+using CoppAddresd.Application.Features.HealthTests.Alerts;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
@@ -259,6 +261,62 @@ public interface IHealthTestRepository
     Task<IReadOnlyList<Guid>> GetPatientIdsByGeoAsync(
         IReadOnlyCollection<string>? stateCodes,
         Guid? cityId,
+        CancellationToken ct = default
+    );
+    /// <summary>
+    /// KPIs del dashboard acotados por zona geográfica (unión de estados o
+    /// ciudad con precedencia) y alcance del profesional, en UNA consulta
+    /// set-based (JOIN + subconsultas, sin materializar listas de pacientes).
+    /// </summary>
+    Task<HealthTestStatsDto> GetHealthTestStatsForZoneAsync(
+        Guid? professionalId,
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    );
+    /// <summary>
+    /// Asignaciones (con paciente/version/instrumento/evaluaciones/resultados)
+    /// acotadas por zona geográfica en SQL (JOIN), sin lista de GUIDs. Alcance
+    /// opcional por profesional (ViewOwn).
+    /// </summary>
+    Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsWithPatientDataForZoneAsync(
+        Guid? professionalId,
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    );
+    /// <summary>
+    /// Conteo de alertas activas/review por paciente acotado a la zona
+    /// geográfica (JOIN en SQL).
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, int>> ListActiveAlertCountsForZoneAsync(
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    );
+    /// <summary>
+    /// Nombre del profesional activo por paciente acotado a la zona geográfica.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, string>> ListProfessionalNamesForZoneAsync(
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    );
+    /// <summary>
+    /// Geo agregado del mapa leído del rollup snapshot
+    /// (<c>app.health_test_geo_rollups</c>): ciudades con % de alto riesgo y
+    /// alertas top-4 (consultas acotadas). Mismo contrato que la versión en
+    /// memoria que reemplaza.
+    /// </summary>
+    Task<HealthTestsGeoDto> GetGeoFromRollupAsync(CancellationToken ct = default);
+    /// <summary>El rollup geo tiene al menos una fila (fast path disponible).</summary>
+    Task<bool> GeoRollupExistsAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Cobertura de tests de los últimos 12 meses leída del rollup diario
+    /// (<c>assignments_count/completed</c> global): 1 consulta de ~365 filas.
+    /// Devuelve 12 puntos (label es-CO corto, % cobertura sobre pacientes).
+    /// </summary>
+    Task<IReadOnlyList<HealthTestCoverageTrendPointDto>> GetCoverageTrendAsync(
         CancellationToken ct = default
     );
     Task<bool> PatientBelongsToProfessionalAsync(

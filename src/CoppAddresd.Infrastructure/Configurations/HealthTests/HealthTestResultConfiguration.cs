@@ -52,6 +52,11 @@ public sealed class HealthTestResultConfiguration : IEntityTypeConfiguration<Hea
             .HasIndex(x => new { x.EvaluationId, x.Code })
             .HasDatabaseName("ix_health_test_results_evaluation_code");
 
+        // Nota: el índice (result_type, severity) del dashboard existe como
+        // ix_health_test_results_type_severity (ver docs/database/indexes.md);
+        // para filtros de igualdad en ambas columnas el orden no importa, así
+        // que no se duplica.
+
         // Relationships
         builder
             .HasOne(x => x.Evaluation)

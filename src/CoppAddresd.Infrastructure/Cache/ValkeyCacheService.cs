@@ -12,6 +12,12 @@ namespace CoppAddresd.Infrastructure.Cache;
 /// registra como Warning y la operación se comporta como miss — el handler
 /// resuelve el dato contra PostgreSQL y la request nunca se rompe por el
 /// caché. El multiplexer (Singleton, thread-safe, multiplexado) llega por DI.
+///
+/// Circuit breaker: cuando Valkey está caído, cada operación esperaría el
+/// timeout del multiplexer (~5-6 s) en TODA request con caché. Tras 2 fallos
+/// consecutivos el breaker se abre 30 s: las siguientes operaciones fallan
+/// instantáneo (miss) hasta un reintento half-open. El reloj avanza con cada
+/// intento, así que el breaker se re-cierra solo cuando Valkey vuelve.
 /// </summary>
 public sealed class ValkeyCacheService(
     IConnectionMultiplexer multiplexer,
@@ -23,14 +29,68 @@ public sealed class ValkeyCacheService(
         JsonSerializerDefaults.Web
     );
 
+    /// <summary>Umbrales del breaker (estáticos: comparten el estado entre scopes).</summary>
+    internal static int FailureThreshold = 2;
+    internal static TimeSpan OpenWindow = TimeSpan.FromSeconds(30);
+
+    /// <summary>Fallos consecutivos actuales.</summary>
+    private int _consecutiveFailures;
+
+    /// <summary>Timestamp (Environment.TickCount64) del último fallo; -1 = sin fallos.
+    /// long no puede ser volatile: acceso con Volatile.Read/Write.</summary>
+    private long _lastFailureTick = -1;
+
     private readonly IDatabase _database = multiplexer.GetDatabase();
 
     /// <summary>Todas las claves quedan namespaced por servicio: <c>erp:catalog:...:v1</c>.</summary>
     private string FullKey(string key) => $"{keyPrefix}:{key}";
 
+    /// <summary>
+    /// ¿El breaker está abierto? Abierto = saltarse Valkey sin esperar timeout.
+    /// Half-open: expirado el window, se permite 1 reintento (el siguiente fallo
+    /// re-abre; el éxito resetea).
+    /// </summary>
+    private bool IsCircuitOpen()
+    {
+        var last = Volatile.Read(ref _lastFailureTick);
+        if (last < 0)
+        {
+            return false;
+        }
+
+        var openFor = OpenWindow.TotalMilliseconds;
+        return Environment.TickCount64 - last < openFor
+            && Volatile.Read(ref _consecutiveFailures) >= FailureThreshold;
+    }
+
+    private void RegisterFailure(Exception ex, string operation, string key)
+    {
+        Volatile.Write(ref _lastFailureTick, Environment.TickCount64);
+        Interlocked.Increment(ref _consecutiveFailures);
+        logger.LogWarning(
+            ex,
+            "Fallo de caché en {Operation} {Key} (intento {Failures}): degradando a la fuente de datos",
+            operation,
+            FullKey(key),
+            Volatile.Read(ref _consecutiveFailures)
+        );
+    }
+
+    private void RegisterSuccess()
+    {
+        Volatile.Write(ref _lastFailureTick, -1);
+        Volatile.Write(ref _consecutiveFailures, 0);
+    }
+
     public async Task<T?> GetAsync<T>(string key, CancellationToken ct = default)
         where T : class
     {
+        if (IsCircuitOpen())
+        {
+            logger.LogDebug("Cache breaker ABIERTO: GET {Key} omitido", FullKey(key));
+            return null;
+        }
+
         try
         {
             var value = await _database.StringGetAsync(FullKey(key)).WaitAsync(ct);
@@ -50,11 +110,7 @@ public sealed class ValkeyCacheService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(
-                ex,
-                "Fallo de caché en GET {Key}: degradando a la fuente de datos",
-                FullKey(key)
-            );
+            RegisterFailure(ex, "GET", key);
             return null;
         }
     }
@@ -62,10 +118,17 @@ public sealed class ValkeyCacheService(
     public async Task SetAsync<T>(string key, T value, TimeSpan ttl, CancellationToken ct = default)
         where T : class
     {
+        if (IsCircuitOpen())
+        {
+            logger.LogDebug("Cache breaker ABIERTO: SET {Key} omitido", FullKey(key));
+            return;
+        }
+
         try
         {
             var payload = JsonSerializer.Serialize(value, SerializerOptions);
             await _database.StringSetAsync(FullKey(key), payload, ttl).WaitAsync(ct);
+            RegisterSuccess();
         }
         catch (OperationCanceledException)
         {
@@ -73,19 +136,22 @@ public sealed class ValkeyCacheService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(
-                ex,
-                "Fallo de caché en SET {Key}: el dato queda sin cachear",
-                FullKey(key)
-            );
+            RegisterFailure(ex, "SET", key);
         }
     }
 
     public async Task RemoveAsync(string key, CancellationToken ct = default)
     {
+        if (IsCircuitOpen())
+        {
+            logger.LogDebug("Cache breaker ABIERTO: REMOVE {Key} omitido", FullKey(key));
+            return;
+        }
+
         try
         {
             await _database.KeyDeleteAsync(FullKey(key)).WaitAsync(ct);
+            RegisterSuccess();
         }
         catch (OperationCanceledException)
         {
@@ -93,11 +159,7 @@ public sealed class ValkeyCacheService(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(
-                ex,
-                "Fallo de caché en REMOVE {Key}: la invalidación quedará a cargo del TTL",
-                FullKey(key)
-            );
+            RegisterFailure(ex, "REMOVE", key);
         }
     }
 

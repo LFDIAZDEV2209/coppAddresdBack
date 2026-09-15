@@ -188,21 +188,21 @@ public sealed class GetHealthTestStatsQueryHandler(
             CacheKeys.StatsTtl(),
             async token =>
             {
-                var patientIds = request.ProfessionalId is { } profId
-                    ? await repository.GetPatientIdsForProfessionalAsync(profId, token)
-                    : null;
-
+                // Filtro geo: una sola consulta set-based (JOIN por SQL, sin
+                // materializar listas de GUIDs ni IN lists gigantes).
                 if (hasGeoFilter)
                 {
-                    var geoPatientIds = await repository.GetPatientIdsByGeoAsync(
+                    return await repository.GetHealthTestStatsForZoneAsync(
+                        request.ProfessionalId,
                         stateCodes,
                         request.CityId,
                         token
                     );
-                    patientIds = patientIds is null
-                        ? geoPatientIds
-                        : patientIds.Intersect(geoPatientIds).ToList();
                 }
+
+                var patientIds = request.ProfessionalId is { } profId
+                    ? await repository.GetPatientIdsForProfessionalAsync(profId, token)
+                    : null;
 
                 var total = patientIds is null
                     ? await repository.CountPatientsAsync(token)
@@ -254,4 +254,32 @@ public sealed class GetHealthTestStatsQueryHandler(
             ct
         );
     }
+}
+
+// --- Coverage trend (dashboard ERP) ---
+
+/// <summary>Últimos 12 meses de cobertura de tests (global, rollup mensual).</summary>
+public record HealthTestCoverageTrendPointDto(
+    string Label,
+    double Coverage,
+    int Completed
+);
+
+public sealed record GetHealthTestCoverageTrendQuery : IRequest<IReadOnlyList<HealthTestCoverageTrendPointDto>>;
+
+public sealed class GetHealthTestCoverageTrendQueryHandler(
+    IHealthTestRepository repository,
+    ICacheService cache
+) : IRequestHandler<GetHealthTestCoverageTrendQuery, IReadOnlyList<HealthTestCoverageTrendPointDto>>
+{
+    public Task<IReadOnlyList<HealthTestCoverageTrendPointDto>> Handle(
+        GetHealthTestCoverageTrendQuery request,
+        CancellationToken ct
+    ) =>
+        cache.GetOrCreateAsync(
+            CacheKeys.Stats("health-coverage-trend", "global"),
+            CacheKeys.StatsTtl(),
+            token => repository.GetCoverageTrendAsync(token),
+            ct
+        );
 }

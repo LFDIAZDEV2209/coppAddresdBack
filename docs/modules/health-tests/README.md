@@ -121,25 +121,36 @@ La batería con `auto_assign_on_patient_create = true` (la inicial ANTARES) se a
 a cada paciente recién creado (estado `Pending`), sin duplicar si ya existe una asignación
 pendiente/en curso. El profesional puede asignar más baterías manualmente.
 
-### ADR-008 — Filtro geográfico acumulado del dashboard (lectura en vivo, sin pre-agregación)
+### ADR-008 — Filtro geográfico acumulado del dashboard (set-based + rollup snapshot, rev. 2026-09-15)
 
 El dashboard ERP permite acotar las series, los KPIs y el mapa por **uno o varios estados**
 (`state`, repetible, ej. `?state=NY&state=FL`: unión de zonas combinada en un solo conjunto de
-pacientes) o por ciudad (`cityId`, con precedencia). El filtro se resuelve en lectura con
-`IHealthTestRepository.GetPatientIdsByGeoAsync` (`patient_profiles.CityId → cities.StateId → states.Code`),
-se intersecta con el alcance del JWT (`ViewOwn`) y alimenta las mismas consultas de conteo existentes
-(`...ForPatientsAsync`) con la lista de pacientes de la zona. `GET /geo` se mantiene **siempre global**
-(alimenta el mapa y sus métricas); el porcentaje de riesgo por ciudad se calcula **solo sobre pacientes
-evaluados** (`evaluatedCount`): una ciudad con pacientes mapeados pero sin evaluaciones devuelve
-`highRiskPct = null` ("Sin datos", gris) en lugar de un 0% verde engañoso.
+pacientes) o por ciudad (`cityId`, con precedencia). El porcentaje de riesgo por ciudad se calcula
+**solo sobre pacientes evaluados** (`evaluatedCount`): una ciudad con pacientes mapeados pero sin
+evaluaciones devuelve `highRiskPct = null` ("Sin datos", gris) en lugar de un 0% verde engañoso.
 
-- **Evaluación CQRS (pre-agregación)**: **no aplica** — no se agrega ningún dato nuevo a contar ni se
-  modifican las agregaciones existentes; es filtrado query-time sobre las mismas consultas. El rollup
-  diario (`health_test_daily_metrics`) sigue sirviendo al alcance global (agrega por `clinic_id`, una
-  dimensión distinta a la geografía); las consultas por zona usan la OLTP en vivo.
-- La clave de caché de `GET /master` y `GET /stats` incluye el hash del filtro
+**Revisión 2026-09-15** (antes era "lectura en vivo, sin pre-agregación"):
+
+- `GET /stats?state=&cityId=`: **una consulta set-based** (`GetHealthTestStatsForZoneAsync` — CTE
+  `zone` sobre `patient_profiles → cities → states` con EXISTS para el alcance `ViewOwn` + 5 conteos)
+  en lugar de materializar la lista de GUIDs de la zona y lanzar 5 counts con IN list.
+- `GET /master?state=&cityId=`: el JOIN por zona ocurre **en SQL**
+  (`ListAssignmentsWithPatientDataForZoneAsync`); alertas activas por paciente y nombres de
+  profesionales quedan acotados a la zona (antes eran agregados globales en memoria).
+- `GET /geo`: lee el **rollup snapshot** `app.health_test_geo_rollups` (migración
+  `AddHealthTestGeoRollups`), mantenido por backfill idempotente al arranque + recomputo incremental
+  por ciudad en el processor de eventos; fallback a la agregación en memoria original si el rollup
+  está vacío. Contrato (DTO) sin cambios.
+- Nuevo `GET /coverage-trend`: últimos 12 meses leídos del rollup diario
+  (`assignments_count/completed` global); el frontend lo usa sin filtro geo y conserva el cálculo
+  cliente con filtro (master ya acotado).
+- Índices: `ix_patient_profiles_city_id`, `ix_patient_profiles_state_id`,
+  `ix_health_test_geo_rollups_state_code` (documentados en `docs/database/indexes.md`).
+- La clave de caché de `GET /master`, `GET /stats` y `GET /coverage-trend` incluye el hash del filtro
   (`CacheKeys.HashScope(profesional|global, estados normalizados, cityId)`), por lo que zonas distintas
   no comparten caché ni exponen datos de otra zona.
+
+Detalle completo del pipeline de analítica: `docs/modules/health-tests/analytics.md`.
 
 ## Flujo de datos
 
