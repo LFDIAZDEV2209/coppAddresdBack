@@ -105,6 +105,13 @@ builder.Services.AddHostedService<DevProgramSeeder>();
 // plan nutricional y rutina a weekly_day_templates SOLO donde hay NULL
 // (nunca pisa edición curada). Se registra DESPUÉS de DevProgramSeeder.
 builder.Services.AddHostedService<DevProgramContentSeeder>();
+// Seed de desarrollo del dashboard de Tests de Salud: pacientes evaluados
+// (con resultados de score y alertas) y pendientes por estado de EE. UU.
+// Solo en Development; en otros entornos no se registra.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHostedService<HealthTestsDemoSeeder>();
+}
 
 // Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
 builder.Services.AddSingleton<MetricsBackfillSeeder>();

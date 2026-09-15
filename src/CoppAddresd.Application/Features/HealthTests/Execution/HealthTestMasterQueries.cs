@@ -65,10 +65,14 @@ public record MasterPatientRowDto(
 /// Consulta las filas de la tabla maestra del módulo en una sola pasada
 /// (sin N+1): pacientes con asignaciones, resumen por test y conteo de
 /// alertas activas. Con <c>ProfessionalId</c> filtra por el alcance del
-/// profesional (ViewOwn).
+/// profesional (ViewOwn); con <c>StateCodes</c>/<c>CityId</c> acota la zona
+/// (unión de estados; ciudad con precedencia).
 /// </summary>
-public record GetMasterRowsQuery(Guid? ProfessionalId = null)
-    : IRequest<IReadOnlyList<MasterPatientRowDto>>;
+public record GetMasterRowsQuery(
+    Guid? ProfessionalId = null,
+    IReadOnlyList<string>? StateCodes = null,
+    Guid? CityId = null
+) : IRequest<IReadOnlyList<MasterPatientRowDto>>;
 
 public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, ICacheService cache)
     : IRequestHandler<GetMasterRowsQuery, IReadOnlyList<MasterPatientRowDto>>
@@ -78,15 +82,45 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
         CancellationToken ct
     )
     {
-        var scopeHash = CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
+        // Normaliza y ordena los estados para que el hash de caché sea estable
+        // sin importar el orden de selección en el mapa.
+        var stateCodes = (request.StateCodes ?? [])
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim().ToUpperInvariant())
+            .Distinct()
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+        var hasGeoFilter = request.CityId.HasValue || stateCodes.Count > 0;
+        var scopeHash = hasGeoFilter
+            ? CacheKeys.HashScope(
+                request.ProfessionalId?.ToString() ?? "global",
+                stateCodes.Count > 0 ? string.Join(",", stateCodes) : null,
+                request.CityId?.ToString()
+            )
+            : CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
         var cacheKey = CacheKeys.Stats("health-master", scopeHash);
         return await cache.GetOrCreateAsync(
             cacheKey,
             CacheKeys.StatsTtl(),
             async token =>
             {
+                IReadOnlyCollection<Guid>? geoPatientIds = null;
+                if (hasGeoFilter)
+                {
+                    geoPatientIds = await repository.GetPatientIdsByGeoAsync(
+                        stateCodes,
+                        request.CityId,
+                        token
+                    );
+                    if (geoPatientIds.Count == 0)
+                    {
+                        return new List<MasterPatientRowDto>();
+                    }
+                }
+
                 var assignments = await repository.ListAssignmentsWithPatientDataAsync(
                     request.ProfessionalId,
+                    geoPatientIds,
                     token
                 );
                 var alertCounts = await repository.ListActiveAlertCountsByPatientAsync(token);
