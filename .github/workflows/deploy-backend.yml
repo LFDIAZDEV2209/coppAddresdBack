@@ -28,7 +28,16 @@ jobs:
         shell: bash
         run: |
           SERVICES=""
-          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+          # Rango del push completo (no solo el último commit): en pushes con
+          # varios commits o merges, HEAD~1..HEAD invisibiliza cambios y el
+          # servicio afectado jamás se despliega (incidente 2026-09-15:
+          # /api/v1/health-tests/coverage-trend 404 en prod porque el endpoint
+          # nuevo de la API nunca se desplegó).
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="HEAD~1"
+          fi
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || git diff --name-only HEAD)
 
           if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Auth"; then
             SERVICES="$SERVICES auth"
