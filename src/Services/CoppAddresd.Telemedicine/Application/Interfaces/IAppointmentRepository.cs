@@ -86,12 +86,17 @@ public interface IAppointmentRepository
     /// <summary>
     /// Cuenta las citas cuyo inicio cae en el rango <c>[from, to)</c>,
     /// opcionalmente filtradas por profesional (KPIs del dashboard del profesional).
+    /// Con <c>usePreagg</c> (default) prefiere las tablas pre-agregadas cuando
+    /// tienen datos; en <c>false</c> consulta siempre las citas (exacto para
+    /// rangos estrechos que tocan el presente, como hoy o próximos 7 días,
+    /// donde el bucket diario no puede excluir el intradía ya pasado).
     /// </summary>
     Task<int> CountInRangeAsync(
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        bool usePreagg = true
     );
 
     /// <summary>Cuenta las citas en un estado concreto (KPIs del dashboard admin).</summary>

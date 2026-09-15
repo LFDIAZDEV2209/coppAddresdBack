@@ -151,38 +151,46 @@ public sealed class MetricsBackfillService(
     }
 
     /// <summary>
-    /// Agrega por (día, profesional, clínica) las tres claves
+    /// Agrega a la granularidad exacta de la PK
+    /// (día, profesional, clave, dimensión) las tres claves
     /// (<c>daily_total</c>, <c>status_count</c>, <c>hourly_count</c>) más el
     /// espejo global, y las sobrescribe (recálculo autoritativo).
+    /// La clínica NO forma parte de la PK: se conserva solo como dato
+    /// informativo (MAX). Agrupar por clínica generaría dos filas con la misma
+    /// PK cuando un profesional atiende en dos clínicas el mismo día y el
+    /// ON CONFLICT abortaría con 21000.
     /// </summary>
     private static string UpsertMetricsSql() =>
         BaseCte
         + $"""
             , agg AS (
-                SELECT metric_date, professional_id, clinic_id,
+                SELECT metric_date, professional_id,
+                    MAX(clinic_id::text)::uuid AS clinic_id,
                     '{TelemedicineMetricKeys.DailyTotal}' AS metric_key,
                     '{TelemedicineMetricKeys.GeneralDimension}' AS dimension_key,
                     COUNT(*) AS total
-                FROM base GROUP BY 1, 2, 3
+                FROM base GROUP BY 1, 2
             UNION ALL
-            SELECT metric_date, professional_id, clinic_id,
+            SELECT metric_date, professional_id,
+                MAX(clinic_id::text)::uuid AS clinic_id,
                 '{TelemedicineMetricKeys.StatusCount}' AS metric_key,
                 status AS dimension_key,
                 COUNT(*) AS total
-            FROM base GROUP BY 1, 2, 3, 5
+            FROM base GROUP BY 1, 2, 5
             UNION ALL
-            SELECT metric_date, professional_id, clinic_id,
+            SELECT metric_date, professional_id,
+                MAX(clinic_id::text)::uuid AS clinic_id,
                 '{TelemedicineMetricKeys.HourlyCount}' AS metric_key,
                 hour_dim AS dimension_key,
                 COUNT(*) AS total
-            FROM base GROUP BY 1, 2, 3, 5
+            FROM base GROUP BY 1, 2, 5
             ),
             scoped AS (
                 SELECT metric_date, professional_id, clinic_id, metric_key, dimension_key, total FROM agg
                 UNION ALL
-                SELECT metric_date, '{TelemedicineMetricKeys.GlobalProfessionalId}'::uuid, clinic_id,
-                    metric_key, dimension_key, SUM(total)
-                FROM agg GROUP BY 1, 3, 4, 5
+                SELECT metric_date, '{TelemedicineMetricKeys.GlobalProfessionalId}'::uuid,
+                    MAX(clinic_id::text)::uuid, metric_key, dimension_key, SUM(total)
+                FROM agg GROUP BY 1, 4, 5
             )
             INSERT INTO tele.appointment_daily_metrics
                 (metric_date, professional_id, clinic_id, metric_key, dimension_key, total_count, last_updated_at)
@@ -195,14 +203,17 @@ public sealed class MetricsBackfillService(
             """;
 
     /// <summary>
-    /// Agrega por (profesional, día, clínica) los contadores de stats con
-    /// pacientes únicos, y los sobrescribe (recálculo autoritativo).
+    /// Agrega a la granularidad exacta de la PK (profesional, día) los
+    /// contadores de stats con pacientes únicos, y los sobrescribe (recálculo
+    /// autoritativo). La clínica no forma parte de la PK: solo informativa
+    /// (MAX), igual que en <see cref="UpsertMetricsSql"/>.
     /// </summary>
     private static string UpsertStatsSql() =>
         BaseCte
         + $"""
             , agg AS (
-                SELECT professional_id, metric_date, clinic_id,
+                SELECT professional_id, metric_date,
+                    MAX(clinic_id::text)::uuid AS clinic_id,
                     COUNT(*) AS total,
                     COUNT(*) FILTER (WHERE status = '{nameof(
                 AppointmentStatus.Completed
@@ -214,7 +225,7 @@ public sealed class MetricsBackfillService(
                 AppointmentStatus.NoShow
             )}') AS no_show,
                     COUNT(DISTINCT patient_id) AS unique_patients
-                FROM base GROUP BY 1, 2, 3
+                FROM base GROUP BY 1, 2
             )
             INSERT INTO tele.professional_daily_stats
                 (professional_id, metric_date, clinic_id, total_appointments, completed_appointments,

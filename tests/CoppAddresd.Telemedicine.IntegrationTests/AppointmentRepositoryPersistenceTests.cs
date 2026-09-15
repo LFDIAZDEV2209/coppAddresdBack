@@ -1,7 +1,9 @@
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
+using CoppAddresd.Telemedicine.Infrastructure.Metrics;
 using CoppAddresd.Telemedicine.Infrastructure.Repositories;
 using CoppAddresd.Telemedicine.UnitTests;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CoppAddresd.Telemedicine.IntegrationTests;
 
@@ -22,13 +24,15 @@ public class AppointmentRepositoryPersistenceTests
     }
 
     /// <summary>Mediodía UTC dentro de <paramref name="days"/> días (sin offset local).</summary>
-    private static DateTimeOffset UtcNoon(int days)
-        => new(DateTimeOffset.UtcNow.Date.AddDays(days).AddHours(12), TimeSpan.Zero);
+    private static DateTimeOffset UtcNoon(int days) =>
+        new(DateTimeOffset.UtcNow.Date.AddDays(days).AddHours(12), TimeSpan.Zero);
 
     private static Appointment Appointment(
-        Guid? professionalId = null, DateTimeOffset? start = null,
-        AppointmentStatus status = AppointmentStatus.Confirmed)
-        => new()
+        Guid? professionalId = null,
+        DateTimeOffset? start = null,
+        AppointmentStatus status = AppointmentStatus.Confirmed
+    ) =>
+        new()
         {
             ProfessionalId = professionalId ?? Guid.NewGuid(),
             PatientId = TestData.PatientId,
@@ -59,7 +63,8 @@ public class AppointmentRepositoryPersistenceTests
         // timestamptz guarda microsegundos: comparar con tolerancia.
         Assert.Equal(
             appointment.ScheduledStart.ToUnixTimeMilliseconds(),
-            loaded.ScheduledStart.ToUnixTimeMilliseconds());
+            loaded.ScheduledStart.ToUnixTimeMilliseconds()
+        );
     }
 
     [Fact]
@@ -74,13 +79,15 @@ public class AppointmentRepositoryPersistenceTests
         forUpdate!.Status = AppointmentStatus.Cancelled;
         forUpdate.CancellationReason = "Emergencia";
         forUpdate.CancelledBy = CancelledBy.Patient;
-        forUpdate.Cancellations.Add(new AppointmentCancellation
-        {
-            AppointmentId = appointment.Id,
-            CancelledBy = CancelledBy.Patient,
-            CancelledByUserId = TestData.UserId,
-            Reason = "Emergencia",
-        });
+        forUpdate.Cancellations.Add(
+            new AppointmentCancellation
+            {
+                AppointmentId = appointment.Id,
+                CancelledBy = CancelledBy.Patient,
+                CancelledByUserId = TestData.UserId,
+                Reason = "Emergencia",
+            }
+        );
         await repo.UpdateAsync(forUpdate);
 
         var loaded = await repo.GetForUpdateAsync(appointment.Id);
@@ -102,13 +109,15 @@ public class AppointmentRepositoryPersistenceTests
         forUpdate!.ScheduledStart = newStart;
         forUpdate.ScheduledEnd = newStart.AddMinutes(30);
         forUpdate.RescheduleCount++;
-        forUpdate.Reschedules.Add(new AppointmentReschedule
-        {
-            AppointmentId = appointment.Id,
-            RequestedBy = RescheduleRequestedBy.Patient,
-            FromStart = appointment.ScheduledStart,
-            ToStart = newStart,
-        });
+        forUpdate.Reschedules.Add(
+            new AppointmentReschedule
+            {
+                AppointmentId = appointment.Id,
+                RequestedBy = RescheduleRequestedBy.Patient,
+                FromStart = appointment.ScheduledStart,
+                ToStart = newStart,
+            }
+        );
         await repo.UpdateAsync(forUpdate);
 
         var loaded = await repo.GetForUpdateAsync(appointment.Id);
@@ -155,7 +164,16 @@ public class AppointmentRepositoryPersistenceTests
         await repo.AddAsync(Appointment(status: AppointmentStatus.Confirmed)); // otro estado
 
         var (items, total) = await repo.ListAdminAsync(
-            null, null, clinicId, null, status, from, from.AddDays(1), page: 1, pageSize: 2);
+            null,
+            null,
+            clinicId,
+            null,
+            status,
+            from,
+            from.AddDays(1),
+            page: 1,
+            pageSize: 2
+        );
 
         Assert.Equal(5, total);
         Assert.Equal(2, items.Count);
@@ -171,9 +189,89 @@ public class AppointmentRepositoryPersistenceTests
         // Filtro por profesional: total determinista aunque la BD compartida
         // acumule citas de otros tests.
         var (items, total) = await repo.ListAdminAsync(
-            professionalId, null, null, null, null, null, null, page: 99, pageSize: 20);
+            professionalId,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            page: 99,
+            pageSize: 20
+        );
 
         Assert.Equal(1, total);
         Assert.Empty(items);
+    }
+
+    [Fact]
+    public async Task CountInRange_PreaggRespetaToExclusivo()
+    {
+        // El To del rango es exclusivo: con pre-agregado poblado, [hoy, mañana)
+        // no debe sumar las citas de mañana (antes las incluía por comparar
+        // días con <=).
+        var professionalId = Guid.NewGuid();
+        var today = new DateTimeOffset(DateTimeOffset.UtcNow.Date, TimeSpan.Zero);
+        await using (var db = _ctx.Create())
+        {
+            var repo = new AppointmentRepository(db);
+            await repo.AddAsync(
+                Appointment(professionalId, today.AddHours(10), AppointmentStatus.Completed)
+            );
+            await repo.AddAsync(
+                Appointment(
+                    professionalId,
+                    today.AddDays(1).AddHours(10),
+                    AppointmentStatus.Confirmed
+                )
+            );
+        }
+
+        var backfill = new MetricsBackfillService(
+            _ctx.Create(),
+            NullLogger<MetricsBackfillService>.Instance
+        );
+        await backfill.BackfillAsync(
+            DateOnly.FromDateTime(today.UtcDateTime.AddDays(-1)),
+            DateOnly.FromDateTime(today.UtcDateTime.AddDays(1)),
+            clinicId: null,
+            dryRun: false,
+            CancellationToken.None
+        );
+
+        await using var check = _ctx.Create();
+        var checkRepo = new AppointmentRepository(check);
+
+        Assert.Equal(1, await checkRepo.CountInRangeAsync(professionalId, today, today.AddDays(1)));
+        Assert.Equal(2, await checkRepo.CountInRangeAsync(professionalId, today, today.AddDays(2)));
+    }
+
+    [Fact]
+    public async Task CountInRange_SinPreagg_CuentaDirecto()
+    {
+        // Rangos estrechos que tocan el presente (KPI próximos 7 días) usan
+        // usePreagg: false para exactitud intradía.
+        var professionalId = Guid.NewGuid();
+        var from = new DateTimeOffset(DateTimeOffset.UtcNow.Date.AddDays(2), TimeSpan.Zero);
+        await using (var db = _ctx.Create())
+        {
+            var repo = new AppointmentRepository(db);
+            await repo.AddAsync(Appointment(professionalId, from.AddHours(10)));
+            await repo.AddAsync(Appointment(professionalId, from.AddDays(1).AddHours(10)));
+        }
+
+        await using var check = _ctx.Create();
+        var checkRepo = new AppointmentRepository(check);
+
+        Assert.Equal(
+            2,
+            await checkRepo.CountInRangeAsync(
+                professionalId,
+                from,
+                from.AddDays(7),
+                CancellationToken.None,
+                usePreagg: false
+            )
+        );
     }
 }

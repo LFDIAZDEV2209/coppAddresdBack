@@ -21,7 +21,8 @@ public sealed record ProfessionalActivityDto(
     int Total,
     int Completed,
     int Cancelled,
-    int UniquePatients);
+    int UniquePatients
+);
 
 /// <summary>KPIs del dashboard de Telemedicina (varían por rol: global vs profesional).</summary>
 public sealed record DashboardKpisDto(
@@ -33,7 +34,8 @@ public sealed record DashboardKpisDto(
     int NoShow,
     int Pending,
     int UniquePatients,
-    int ActiveProfessionals);
+    int ActiveProfessionals
+);
 
 /// <summary>
 /// Payload completo del dashboard de Telemedicina: KPIs, serie temporal, distribución
@@ -45,7 +47,8 @@ public sealed record DashboardAnalyticsDto(
     IReadOnlyList<StatusCountDto> StatusDistribution,
     IReadOnlyList<HourlyCountDto> HourlyDistribution,
     IReadOnlyList<ProfessionalActivityDto> ProfessionalActivity,
-    IReadOnlyList<AppointmentDto> UpcomingAppointments);
+    IReadOnlyList<AppointmentDto> UpcomingAppointments
+);
 
 /// <summary>
 /// Consulta los datos del dashboard de Telemedicina. <paramref name="ProfessionalId"/>
@@ -55,18 +58,20 @@ public sealed record DashboardAnalyticsDto(
 public sealed record GetDashboardAnalyticsQuery(
     Guid? ProfessionalId,
     DateTimeOffset? From,
-    DateTimeOffset? To) : IRequest<DashboardAnalyticsDto>;
+    DateTimeOffset? To
+) : IRequest<DashboardAnalyticsDto>;
 
 public sealed class GetDashboardAnalyticsQueryHandler(
     IAppointmentRepository appointments,
-    IAppointmentReferenceDataService referenceData)
-    : IRequestHandler<GetDashboardAnalyticsQuery, DashboardAnalyticsDto>
+    IAppointmentReferenceDataService referenceData
+) : IRequestHandler<GetDashboardAnalyticsQuery, DashboardAnalyticsDto>
 {
     private const int UpcomingLimit = 8;
 
     public async Task<DashboardAnalyticsDto> Handle(
         GetDashboardAnalyticsQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var now = DateTimeOffset.UtcNow;
         var to = (request.To ?? now).ToUniversalTime();
@@ -79,15 +84,53 @@ public sealed class GetDashboardAnalyticsQueryHandler(
         // EF Core no permite operaciones concurrentes sobre el mismo DbContext
         // (scoped por request): las consultas se encadenan secuencialmente. Cada
         // una es un conteo/agrupación dirigida con índice, de latencia < 100ms.
-        var series = await appointments.CountGroupedByDayAsync(request.ProfessionalId, from, to, ct);
-        var statuses = await appointments.CountGroupedByStatusAsync(request.ProfessionalId, from, to, ct);
-        var hours = await appointments.CountGroupedByHourAsync(request.ProfessionalId, from, to, ct);
-        var patients = await appointments.CountDistinctPatientsAsync(request.ProfessionalId, from, to, ct);
-        var upcoming = await appointments.ListUpcomingAsync(request.ProfessionalId, now, UpcomingLimit, ct);
+        var series = await appointments.CountGroupedByDayAsync(
+            request.ProfessionalId,
+            from,
+            to,
+            ct
+        );
+        var statuses = await appointments.CountGroupedByStatusAsync(
+            request.ProfessionalId,
+            from,
+            to,
+            ct
+        );
+        var hours = await appointments.CountGroupedByHourAsync(
+            request.ProfessionalId,
+            from,
+            to,
+            ct
+        );
+        var patients = await appointments.CountDistinctPatientsAsync(
+            request.ProfessionalId,
+            from,
+            to,
+            ct
+        );
+        var upcoming = await appointments.ListUpcomingAsync(
+            request.ProfessionalId,
+            now,
+            UpcomingLimit,
+            ct
+        );
 
         var total = await appointments.CountInRangeAsync(request.ProfessionalId, from, to, ct);
-        var today = await appointments.CountInRangeAsync(request.ProfessionalId, startOfToday, startOfTomorrow, ct);
-        var upcomingRange = await appointments.CountInRangeAsync(request.ProfessionalId, now, endOfNextWeek, ct);
+        var today = await appointments.CountInRangeAsync(
+            request.ProfessionalId,
+            startOfToday,
+            startOfTomorrow,
+            ct
+        );
+        // Rango estrecho que toca el presente: consulta directa (el bucket
+        // diario no puede excluir el intradía y el To cae a medianoche).
+        var upcomingRange = await appointments.CountInRangeAsync(
+            request.ProfessionalId,
+            now,
+            endOfNextWeek,
+            ct,
+            usePreagg: false
+        );
 
         // La actividad por profesional solo tiene sentido en la vista global.
         var professionalActivity = request.ProfessionalId is null
@@ -107,18 +150,29 @@ public sealed class GetDashboardAnalyticsQueryHandler(
 
         var upcomingDtos = await AppointmentMapper.BuildDtosAsync(upcoming, referenceData, ct);
 
-        var activityDtos = await BuildProfessionalActivityDtosAsync(professionalActivity, referenceData, ct);
+        var activityDtos = await BuildProfessionalActivityDtosAsync(
+            professionalActivity,
+            referenceData,
+            ct
+        );
 
         var kpis = new DashboardKpisDto(
             total,
             today,
             upcomingRange,
-            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.Completed)?.Count ?? 0,
-            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.Cancelled)?.Count ?? 0,
-            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.NoShow)?.Count ?? 0,
-            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.Confirmed)?.Count ?? 0,
+            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.Completed)?.Count
+                ?? 0,
+            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.Cancelled)?.Count
+                ?? 0,
+            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.NoShow)?.Count
+                ?? 0,
+            statusDistribution.FirstOrDefault(s => s.Status == AppointmentStatus.Confirmed)?.Count
+                ?? 0,
             patients,
-            request.ProfessionalId is null ? await CountActiveProfessionalsAsync(appointments, from, to, ct) : 0);
+            request.ProfessionalId is null
+                ? await CountActiveProfessionalsAsync(appointments, from, to, ct)
+                : 0
+        );
 
         return new DashboardAnalyticsDto(
             kpis,
@@ -126,14 +180,16 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             statusDistribution,
             hourlyDistribution,
             activityDtos,
-            upcomingDtos);
+            upcomingDtos
+        );
     }
 
     /// <summary>Rellena los días sin citas del rango con 0 (gráfica continua).</summary>
     private static IReadOnlyList<DailyAppointmentCountDto> BuildContinuousDailySeries(
         DateTimeOffset from,
         DateTimeOffset to,
-        IReadOnlyList<DailyAppointmentCount> counts)
+        IReadOnlyList<DailyAppointmentCount> counts
+    )
     {
         var byDay = counts.ToDictionary(c => DateOnly.FromDateTime(c.Day.UtcDateTime));
         var days = (int)(to.Date - from.Date).TotalDays;
@@ -153,24 +209,29 @@ public sealed class GetDashboardAnalyticsQueryHandler(
         IAppointmentRepository appointments,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct)
-        => await appointments.CountDistinctProfessionalsAsync(from, to, ct);
+        CancellationToken ct
+    ) => await appointments.CountDistinctProfessionalsAsync(from, to, ct);
 
     /// <summary>Completa las 24 horas del día con 0 (evita huecos en el eje X).</summary>
     private static IReadOnlyList<HourlyCountDto> BuildCompleteHourlyDistribution(
-        IReadOnlyList<HourlyAppointmentCount> counts)
+        IReadOnlyList<HourlyAppointmentCount> counts
+    )
     {
         var byHour = counts.ToDictionary(c => c.Hour);
-        return Enumerable.Range(0, 24)
+        return Enumerable
+            .Range(0, 24)
             .Select(hour => new HourlyCountDto(hour, byHour.GetValueOrDefault(hour)?.Count ?? 0))
             .ToList();
     }
 
     /// <summary>Resuelve los nombres de los profesionales con una sola pasada deduplicada (sin N+1).</summary>
-    private static async Task<IReadOnlyList<ProfessionalActivityDto>> BuildProfessionalActivityDtosAsync(
+    private static async Task<
+        IReadOnlyList<ProfessionalActivityDto>
+    > BuildProfessionalActivityDtosAsync(
         IReadOnlyList<ProfessionalAppointmentActivity> items,
         IAppointmentReferenceDataService referenceData,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var names = new Dictionary<Guid, string>();
 
@@ -189,7 +250,8 @@ public sealed class GetDashboardAnalyticsQueryHandler(
                 i.Total,
                 i.Completed,
                 i.Cancelled,
-                i.UniquePatients))
+                i.UniquePatients
+            ))
             .ToList();
     }
 }

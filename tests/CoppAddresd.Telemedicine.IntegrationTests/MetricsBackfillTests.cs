@@ -184,6 +184,125 @@ public class MetricsBackfillTests
     }
 
     [Fact]
+    public async Task Backfill_MismoProfesionalDosClinicas_NoFalla()
+    {
+        // Regresión: la PK de las tablas pre-agregadas no incluye la clínica;
+        // agrupar por clínica generaba dos filas con la misma PK y el
+        // ON CONFLICT abortaba con 21000.
+        var clinicA = Guid.NewGuid();
+        var clinicB = Guid.NewGuid();
+        var prof = Guid.NewGuid();
+        var d = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(-6));
+
+        await using (var db = _ctx.Create())
+        {
+            var repo = new AppointmentRepository(db);
+            await repo.AddAsync(
+                Appointment(prof, Guid.NewGuid(), clinicA, UtcAt(d, 9), AppointmentStatus.Completed)
+            );
+            await repo.AddAsync(
+                Appointment(
+                    prof,
+                    Guid.NewGuid(),
+                    clinicA,
+                    UtcAt(d, 11),
+                    AppointmentStatus.Completed
+                )
+            );
+            await repo.AddAsync(
+                Appointment(
+                    prof,
+                    Guid.NewGuid(),
+                    clinicB,
+                    UtcAt(d, 14),
+                    AppointmentStatus.Completed
+                )
+            );
+        }
+
+        var result = await Service()
+            .BackfillAsync(d, d, clinicId: null, dryRun: false, CancellationToken.None);
+
+        Assert.Equal(3, result.AppointmentsConsidered);
+        // daily_total: profesional + global; status: Completed prof + global;
+        // horas: 3 del profesional + 3 globales.
+        Assert.Equal(2 + 2 + 6, result.MetricsRows);
+        Assert.Equal(1, result.StatsRows);
+
+        await using var check = _ctx.Create();
+        var daily = await check
+            .AppointmentDailyMetrics.AsNoTracking()
+            .Where(m =>
+                m.MetricDate == d
+                && m.MetricKey == "daily_total"
+                && m.DimensionKey == "general"
+                && (m.ProfessionalId == prof || m.ProfessionalId == Guid.Empty)
+            )
+            .ToListAsync();
+        Assert.Equal(3, daily.Single(m => m.ProfessionalId == prof).TotalCount);
+        Assert.Equal(3, daily.Single(m => m.ProfessionalId == Guid.Empty).TotalCount);
+
+        var stat = await check
+            .ProfessionalDailyStats.AsNoTracking()
+            .SingleAsync(s => s.ProfessionalId == prof && s.MetricDate == d);
+        Assert.Equal(3, stat.TotalAppointments);
+        Assert.Equal(3, stat.CompletedAppointments);
+        Assert.Equal(3, stat.UniquePatients);
+    }
+
+    [Fact]
+    public async Task Backfill_CubreCitasFuturas()
+    {
+        // Las citas programadas a futuro también llevan filas pre-agregadas;
+        // sin ellas, los rangos que tocan futuro (p. ej. próximos 7 días)
+        // quedarían subcontados porque los lectores prefieren el pre-agregado.
+        var clinic = Guid.NewGuid();
+        var prof = Guid.NewGuid();
+        var future = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(5));
+
+        await using (var db = _ctx.Create())
+        {
+            var repo = new AppointmentRepository(db);
+            await repo.AddAsync(
+                Appointment(
+                    prof,
+                    Guid.NewGuid(),
+                    clinic,
+                    UtcAt(future, 10),
+                    AppointmentStatus.Confirmed
+                )
+            );
+            await repo.AddAsync(
+                Appointment(
+                    prof,
+                    Guid.NewGuid(),
+                    clinic,
+                    UtcAt(future, 12),
+                    AppointmentStatus.Confirmed
+                )
+            );
+        }
+
+        var result = await Service()
+            .BackfillAsync(future, future, clinic, dryRun: false, CancellationToken.None);
+
+        Assert.Equal(2, result.AppointmentsConsidered);
+
+        await using var check = _ctx.Create();
+        var checkRepo = new AppointmentRepository(check);
+        var from = future.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        Assert.Equal(
+            2,
+            await checkRepo.CountInRangeAsync(
+                null,
+                new DateTimeOffset(from),
+                new DateTimeOffset(from).AddDays(1),
+                CancellationToken.None
+            )
+        );
+    }
+
+    [Fact]
     public async Task Backfill_DryRun_NoEscribeNada()
     {
         var clinic = Guid.NewGuid();
