@@ -302,10 +302,10 @@ Comparación social **opt-in** entre pacientes del programa, con privacidad por 
 
 **Contrato** (paciente autenticado, `patientId` siempre del JWT — anti-IDOR):
 
-| Endpoint | Método | Descripción |
-| -------- | ------ | ----------- |
-| `/api/v1/program/me/league` | GET | Cohortes (estado o nacional) + ranking propio en 4 categorías |
-| `/api/v1/program/me/league-preferences` | PUT | `{ nickname: string\|null, optIn: boolean }` → estado guardado (nickname `null` = limpia el almacenado) |
+| Endpoint                                | Método | Descripción                                                                                             |
+| --------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `/api/v1/program/me/league`             | GET    | Cohortes (estado o nacional) + ranking propio en 4 categorías                                           |
+| `/api/v1/program/me/league-preferences` | PUT    | `{ nickname: string\|null, optIn: boolean }` → estado guardado (nickname `null` = limpia el almacenado) |
 
 ```jsonc
 {
@@ -322,12 +322,12 @@ Comparación social **opt-in** entre pacientes del programa, con privacidad por 
 
 **Categorías y fuentes de datos** (valores PERSISTIDOS únicamente — el endpoint nunca dispara recálculo de puntajes por participante):
 
-| Categoría | Fuente |
-| --------- | ------ |
-| `racha` | `streak_states.current_streak` de la inscripción activa |
-| `evo` | `transformation_scores.score` más reciente (por `calculated_at`) |
-| `adh` | `health_scores.score_adherence` del período más reciente |
-| `clin` | `health_scores.score_clinical` del período más reciente |
+| Categoría | Fuente                                                           |
+| --------- | ---------------------------------------------------------------- |
+| `racha`   | `streak_states.current_streak` de la inscripción activa          |
+| `evo`     | `transformation_scores.score` más reciente (por `calculated_at`) |
+| `adh`     | `health_scores.score_adherence` del período más reciente         |
+| `clin`    | `health_scores.score_clinical` del período más reciente          |
 
 Un paciente sin valor en una categoría queda **excluido de esa categoría** (nunca 0). `entries` = top 10 por valor DESC (desempate `display` ASC); si el paciente está opt-in y fuera del top 10, se anexa su fila real con su posición exacta. `myRank`/`myValue` son null sin opt-in o sin valor.
 
@@ -346,16 +346,22 @@ Serie semanal para la pestaña **Evolución** del móvil: los Índices de Salud 
 
 **Contrato** (paciente autenticado, `patientId` siempre del JWT — anti-IDOR; solo `[Authorize]`, convención `me/*` — los JWT de paciente no llevan claims de permiso):
 
-| Endpoint | Método | Descripción |
-| -------- | ------ | ----------- |
-| `/api/v1/program/me/scores-history?weeks=12` | GET | Serie ascendente de puntajes; `weeks` opcional (default 12, clamp 1..83) |
+| Endpoint                                     | Método | Descripción                                                              |
+| -------------------------------------------- | ------ | ------------------------------------------------------------------------ |
+| `/api/v1/program/me/scores-history?weeks=12` | GET    | Serie ascendente de puntajes; `weeks` opcional (default 12, clamp 1..83) |
 
 ```jsonc
 {
   "points": [
-    { "weekNumber": 1, "periodStart": "2026-08-31", "periodEnd": "2026-09-06",
-      "healthScore": 21, "healthPrevious": null, "transformationScore": 0 }
-  ]
+    {
+      "weekNumber": 1,
+      "periodStart": "2026-08-31",
+      "periodEnd": "2026-09-06",
+      "healthScore": 21,
+      "healthPrevious": null,
+      "transformationScore": 0,
+    },
+  ],
 }
 ```
 
@@ -373,17 +379,25 @@ Series REALES de métricas clínicas para la **Home** del móvil (IMC, HbA1c, % 
 
 **Contrato** (paciente autenticado, `patientId` siempre del JWT — anti-IDOR; solo `[Authorize]`, convención `me/*`):
 
-| Endpoint | Método | Descripción |
-| -------- | ------ | ----------- |
-| `/api/v1/program/me/metrics-history?codes=bmi,hba1c,body_fat&days=180` | GET | Series por fecha local; `codes` CSV (default `bmi,hba1c,body_fat`), `days` (default 180, clamp 7..365) |
+| Endpoint                                                               | Método | Descripción                                                                                            |
+| ---------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ |
+| `/api/v1/program/me/metrics-history?codes=bmi,hba1c,body_fat&days=180` | GET    | Series por fecha local; `codes` CSV (default `bmi,hba1c,body_fat`), `days` (default 180, clamp 7..365) |
 
 ```jsonc
 {
   "heightCm": 168.0,
   "metrics": [
-    { "code": "bmi", "unit": "kg_m2", "target": { "lo": 18.5, "hi": 24.9 }, "favorableDirection": "down",
-      "points": [ { "date": "2026-06-01", "value": 27.6 }, { "date": "2026-09-07", "value": 26.4 } ] }
-  ]
+    {
+      "code": "bmi",
+      "unit": "kg_m2",
+      "target": { "lo": 18.5, "hi": 24.9 },
+      "favorableDirection": "down",
+      "points": [
+        { "date": "2026-06-01", "value": 27.6 },
+        { "date": "2026-09-07", "value": 26.4 },
+      ],
+    },
+  ],
 }
 ```
 
@@ -410,13 +424,13 @@ Sent → Responded → Completed | ClosedWithoutExam
 Sent → FollowedUp → Missed
 ```
 
-| Estado | Cuándo |
-| --- | --- |
-| `Responded` | El paciente escribió en el control abierto (cualquier mensaje; los hooks de chat `ProgramControlChatHooks` lo marcan) |
-| `FollowedUp` | Silencio 48 h → **único** follow-up (plantilla `FollowupTemplate` con `{day}`, misma ventana 9–21 local del paciente) |
-| `Completed` | Subió un examen de laboratorio con el control abierto (`UploadLabExamCommandHandler` asocia el batch, best-effort) |
+| Estado              | Cuándo                                                                                                                                |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `Responded`         | El paciente escribió en el control abierto (cualquier mensaje; los hooks de chat `ProgramControlChatHooks` lo marcan)                 |
+| `FollowedUp`        | Silencio 48 h → **único** follow-up (plantilla `FollowupTemplate` con `{day}`, misma ventana 9–21 local del paciente)                 |
+| `Completed`         | Subió un examen de laboratorio con el control abierto (`UploadLabExamCommandHandler` asocia el batch, best-effort)                    |
 | `ClosedWithoutExam` | Negativa explícita (`closed_reason='declined'`) o sin subida tras `NoUploadCloseDays` (7 días desde `Responded`, `no_upload_timeout`) |
-| `Missed` | Sin respuesta tras el follow-up (`MissedAfterFollowupHours`, 48 h) |
+| `Missed`            | Sin respuesta tras el follow-up (`MissedAfterFollowupHours`, 48 h)                                                                    |
 
 **Temporizadores** (configurables en `Program:Controls`): `FollowupHours` (48 h, un solo follow-up), `MissedAfterFollowupHours` (48 h → `Missed`), `NoUploadCloseDays` (7 días → cierre sin examen). El job `ProgramControlJob` evalúa los vencidos en cada pasada (fase 2 solo con `ControlsEnabled`).
 
@@ -449,6 +463,15 @@ El clínico configura, desde el ERP, **qué plan de nutrición y qué rutina de 
 4. **Sin asignación** — Cuando no hay plan/rutina asignado para la semana, la tarea se registra con `content = null` y la UI muestra el badge **"Sin asignar"**. La experiencia del paciente (XP, racha, gamificación) **no depende del contenido** — la acción se registra igual.
 
 Este flujo se complementa con la configuración de plantillas (§7.6) y las recomendaciones de adaptación (§7.7). El ERP nunca llama directamente al AI Service — todo el tráfico pasa por el backend (.NET) que actúa como proxy autenticado (regla de seguridad del monorepo).
+
+### 3.10 Contenido por defecto de la plantilla (siempre asignado, siempre editable)
+
+Cada tarea nace con contenido asignado a nivel plantilla (`app.weekly_day_templates.media_id` / `nutrition_plan_id` / `routine_id`), y todo se puede editar después sin re-inscribir:
+
+1. **Default automático** — `DevProgramContentSeeder` (corre en cada arranque del Api, después de `DevProgramSeeder`) vincula podcast rotativo por día, plan nutricional y rutina por día donde hay `NULL`. Solo rellena `NULL`: nunca pisa edición curada. Si toca filas, sube `ProgramTemplate.Version` (trazabilidad vía `TemplateVersionAtStart`). Las semanas ya activadas conservan su snapshot horneado; el default aplica a nuevas activaciones.
+2. **Editar plantilla** — `PUT /api/v1/program/templates/{id}/weekday-tasks` (`Program.Edit`): cambia el default para futuras semanas de todos los inscritos.
+3. **Editar inscripción** — `PUT .../enrollments/{id}/content/week/{n}` y `PUT .../content/range` (`Program.Edit`): override por paciente sin tocar la plantilla.
+4. **Equipo local** — el seed corre solo con levantar el Api: todos los compañeros obtienen el mismo contenido de prueba sin SQL manual.
 
 ---
 

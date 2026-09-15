@@ -36,7 +36,8 @@ public class AiServiceClient : IAiServiceClient
     public AiServiceClient(
         HttpClient httpClient,
         IOptions<AiServiceSettings> settings,
-        ILogger<AiServiceClient> logger)
+        ILogger<AiServiceClient> logger
+    )
     {
         _httpClient = httpClient;
         _settings = settings.Value;
@@ -45,18 +46,19 @@ public class AiServiceClient : IAiServiceClient
         _httpClient.Timeout = TimeSpan.FromSeconds(_settings.TimeoutSeconds);
     }
 
-    private static object BuildChatPayload(ChatRequest request) => new
-    {
-        message = request.Message,
-        // `agent` no admite null (schema del AI Service, default "base").
-        agent = string.IsNullOrWhiteSpace(request.Agent) ? "base" : request.Agent,
-        thread_id = request.ThreadId,
-        agent_type_id = request.AgentTypeId,
-        user_id = request.UserId,
-        // Contexto de control abierto (fase 2): JsonOpts omite el campo cuando
-        // es null (contrato = hoy); un ai-service anterior ignora el campo.
-        control_context = request.ControlContext,
-    };
+    private static object BuildChatPayload(ChatRequest request) =>
+        new
+        {
+            message = request.Message,
+            // `agent` no admite null (schema del AI Service, default "base").
+            agent = string.IsNullOrWhiteSpace(request.Agent) ? "base" : request.Agent,
+            thread_id = request.ThreadId,
+            agent_type_id = request.AgentTypeId,
+            user_id = request.UserId,
+            // Contexto de control abierto (fase 2): JsonOpts omite el campo cuando
+            // es null (contrato = hoy); un ai-service anterior ignora el campo.
+            control_context = request.ControlContext,
+        };
 
     /// <summary>
     /// Payload de generación de plan: type + contexto clínico consolidado +
@@ -66,12 +68,14 @@ public class AiServiceClient : IAiServiceClient
     private static object BuildGeneratePlanPayload(
         string type,
         ClinicalContextDto context,
-        IReadOnlyList<RestrictionDto> restrictions) => new
-    {
-        type,
-        clinical_context = context,
-        restrictions,
-    };
+        IReadOnlyList<RestrictionDto> restrictions
+    ) =>
+        new
+        {
+            type,
+            clinical_context = context,
+            restrictions,
+        };
 
     /// <summary>
     /// Header de autenticación del canal interno backend → AI Service. El
@@ -83,7 +87,8 @@ public class AiServiceClient : IAiServiceClient
         if (string.IsNullOrWhiteSpace(_settings.InternalApiKey))
         {
             _logger.LogWarning(
-                "AiService:InternalApiKey no configurada — el AI Service rechazará la llamada (401/503).");
+                "AiService:InternalApiKey no configurada — el AI Service rechazará la llamada (401/503)."
+            );
             return;
         }
         request.Headers.TryAddWithoutValidation("X-Internal-Key", _settings.InternalApiKey);
@@ -109,22 +114,35 @@ public class AiServiceClient : IAiServiceClient
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
 
-        var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(JsonOpts, cancellationToken: ct);
+        var result = await response.Content.ReadFromJsonAsync<ChatResponseJson>(
+            JsonOpts,
+            cancellationToken: ct
+        );
         _logger.LogDebug("AI service responded: ThreadId={ThreadId}", result?.ThreadId);
         return new ChatResponse(
-            result!.Reply, result.ThreadId, result.ExecutionId, result.Agent, result.Suggestions, result.ControlSignal);
+            result!.Reply,
+            result.ThreadId,
+            result.ExecutionId,
+            result.Agent,
+            result.Suggestions,
+            result.ControlSignal
+        );
     }
 
     public async Task<AiPlanResult> GeneratePlanAsync(
         string type,
         ClinicalContextDto context,
         IReadOnlyList<RestrictionDto> restrictions,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         _logger.LogInformation("Generating {Type} plan via AI service", type);
         var payload = BuildGeneratePlanPayload(type, context, restrictions);
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.PlanGenerateEndpoint)
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            _settings.PlanGenerateEndpoint
+        )
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
@@ -134,13 +152,19 @@ public class AiServiceClient : IAiServiceClient
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
 
-        var result = await response.Content.ReadFromJsonAsync<GeneratePlanResponseJson>(JsonOpts, ct);
-        if (result is null
-            || result.Plan.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        var result = await response.Content.ReadFromJsonAsync<GeneratePlanResponseJson>(
+            JsonOpts,
+            ct
+        );
+        if (
+            result is null
+            || result.Plan.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null
+        )
         {
             throw new AiServiceException(
                 (int)response.StatusCode,
-                "El AI Service no devolvió un plan en la respuesta.");
+                "El AI Service no devolvió un plan en la respuesta."
+            );
         }
 
         _logger.LogInformation("AI service returned {Type} plan", result.Type);
@@ -149,7 +173,8 @@ public class AiServiceClient : IAiServiceClient
 
     public async IAsyncEnumerable<SseEvent> StreamChatAsync(
         ChatRequest request,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         await foreach (var chunk in StreamRawInternalAsync(request, null, ct))
         {
@@ -162,7 +187,8 @@ public class AiServiceClient : IAiServiceClient
     public async IAsyncEnumerable<StreamChatChunk> StreamRawAsync(
         ChatRequest request,
         Action<string>? onControlSignal = null,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         await foreach (var chunk in StreamRawInternalAsync(request, onControlSignal, ct))
         {
@@ -173,11 +199,12 @@ public class AiServiceClient : IAiServiceClient
     private async IAsyncEnumerable<StreamChatChunk> StreamRawInternalAsync(
         ChatRequest request,
         Action<string>? onControlSignal,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        [EnumeratorCancellation] CancellationToken ct = default
+    )
     {
         _logger.LogDebug("Starting stream to AI service");
         var payload = BuildChatPayload(request);
-        
+
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.StreamEndpoint)
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
@@ -185,7 +212,10 @@ public class AiServiceClient : IAiServiceClient
         AddInternalKeyHeader(httpRequest);
 
         using var response = await _httpClient.SendAsync(
-            httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+            httpRequest,
+            HttpCompletionOption.ResponseHeadersRead,
+            ct
+        );
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
 
@@ -196,14 +226,17 @@ public class AiServiceClient : IAiServiceClient
         {
             ct.ThrowIfCancellationRequested();
             var line = await reader.ReadLineAsync(ct);
-            if (line is null) break;
+            if (line is null)
+                break;
 
             // Señal interna de la fase 2 (controles): `event: control_signal`
             // + la siguiente línea `data:` se CONSUMEN aquí y viajan por el
             // callback — el paciente jamás las recibe. El resto del stream se
             // reenvía byte a byte.
-            if (onControlSignal is not null
-                && line.StartsWith("event: control_signal", StringComparison.Ordinal))
+            if (
+                onControlSignal is not null
+                && line.StartsWith("event: control_signal", StringComparison.Ordinal)
+            )
             {
                 var dataLine = await reader.ReadLineAsync(ct);
                 if (dataLine is not null && dataLine.StartsWith("data: ", StringComparison.Ordinal))
@@ -215,7 +248,7 @@ public class AiServiceClient : IAiServiceClient
 
             yield return new StreamChatChunk(line);
         }
-        
+
         _logger.LogDebug("Stream completed");
     }
 
@@ -223,21 +256,27 @@ public class AiServiceClient : IAiServiceClient
         Guid userId,
         string message,
         string agentTypeId = "base",
-        CancellationToken ct = default)
+        string role = "bot",
+        CancellationToken ct = default
+    )
     {
         _logger.LogDebug("Injecting proactive message for userId={UserId}", userId);
 
         // `thread_id` NO se envía: el AI Service resuelve el thread estable
         // `proactive-{userId}`. El payload respeta el contrato del endpoint
-        // (user_id, agent_type_id, message) en snake_case.
+        // (user_id, agent_type_id, message, role) en snake_case.
         var payload = new
         {
             user_id = userId.ToString(),
             agent_type_id = string.IsNullOrWhiteSpace(agentTypeId) ? "base" : agentTypeId,
             message,
+            role,
         };
 
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.ProactiveMessageEndpoint)
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            _settings.ProactiveMessageEndpoint
+        )
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
@@ -247,14 +286,21 @@ public class AiServiceClient : IAiServiceClient
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
 
-        var result = await response.Content.ReadFromJsonAsync<ProactiveMessageResponseJson>(JsonOpts, ct);
-        _logger.LogDebug("AI service injected proactive message: ThreadId={ThreadId}", result?.ThreadId);
+        var result = await response.Content.ReadFromJsonAsync<ProactiveMessageResponseJson>(
+            JsonOpts,
+            ct
+        );
+        _logger.LogDebug(
+            "AI service injected proactive message: ThreadId={ThreadId}",
+            result?.ThreadId
+        );
         return new ProactiveMessageResult(result!.ThreadId, result.MessageId);
     }
 
     private static async Task ThrowForResponseAsync(
         HttpResponseMessage response,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var detail = await response.Content.ReadAsStringAsync(ct);
         throw new AiServiceException((int)response.StatusCode, detail);
@@ -265,12 +311,14 @@ public class AiServiceClient : IAiServiceClient
         string userId,
         int? limit = null,
         int? before = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         // Proxy de lectura del historial de un thread (canal interno). El AI
         // Service aísla el thread por user_id (`{user_id}::{thread_id}`) y
         // exige X-Internal-Key — el frontend jamás lo conoce.
-        var url = $"{_settings.ApiPrefix}/threads/{Uri.EscapeDataString(threadId)}/state?user_id={Uri.EscapeDataString(userId)}";
+        var url =
+            $"{_settings.ApiPrefix}/threads/{Uri.EscapeDataString(threadId)}/state?user_id={Uri.EscapeDataString(userId)}";
 
         // Paginación desde el más reciente: `limit` y `before` solo viajan
         // cuando tienen valor (el AI Service aplica sus defaults: limit=10).
@@ -287,7 +335,10 @@ public class AiServiceClient : IAiServiceClient
         if (!response.IsSuccessStatusCode)
             await ThrowForResponseAsync(response, ct);
 
-        var result = await response.Content.ReadFromJsonAsync<ThreadStateResponseJson>(JsonOpts, ct);
+        var result = await response.Content.ReadFromJsonAsync<ThreadStateResponseJson>(
+            JsonOpts,
+            ct
+        );
         if (result is null)
             return new ThreadStateResult(threadId, 0, null, []);
 
@@ -301,7 +352,8 @@ public class AiServiceClient : IAiServiceClient
             result.LastMessage,
             result.Messages?.Select(m => new ThreadMessageResult(m.Role, m.Text)).ToList() ?? [],
             result.HasMore,
-            result.NextCursor);
+            result.NextCursor
+        );
     }
 
     public async Task<LabExamAiResponse> ExtractLabMetricsAsync(
@@ -311,11 +363,15 @@ public class AiServiceClient : IAiServiceClient
         string fileName,
         string contentType,
         string? threadId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         _logger.LogInformation(
             "Extracting lab metrics via AI service: PatientId={PatientId}, BatchId={BatchId}, File={FileName}",
-            patientId, batchId, fileName);
+            patientId,
+            batchId,
+            fileName
+        );
 
         using var content = new MultipartFormDataContent();
 
@@ -351,7 +407,8 @@ public class AiServiceClient : IAiServiceClient
         {
             throw new AiServiceException(
                 (int)response.StatusCode,
-                "El AI Service no devolvió una respuesta válida para el examen de laboratorio.");
+                "El AI Service no devolvió una respuesta válida para el examen de laboratorio."
+            );
         }
 
         return result;
@@ -370,7 +427,8 @@ public class AiServiceClient : IAiServiceClient
         IReadOnlyList<LabExamAiMetricDto> metrics,
         IReadOnlyDictionary<string, MetricEvolution> previousMeasurements,
         string? language,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var payload = new LabExamNarrateRequest(metrics, previousMeasurements, language);
 
@@ -380,7 +438,10 @@ public class AiServiceClient : IAiServiceClient
 
         try
         {
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.NarrateEndpoint)
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Post,
+                _settings.NarrateEndpoint
+            )
             {
                 Content = JsonContent.Create(payload, options: JsonOpts),
             };
@@ -393,7 +454,9 @@ public class AiServiceClient : IAiServiceClient
             }
 
             var result = await response.Content.ReadFromJsonAsync<NarrateResponseJson>(
-                JsonOpts, cancellationToken: linkedCts.Token);
+                JsonOpts,
+                cancellationToken: linkedCts.Token
+            );
 
             return result?.EmpatheticMessage?.Trim() ?? string.Empty;
         }
@@ -405,7 +468,10 @@ public class AiServiceClient : IAiServiceClient
             _logger.LogWarning(
                 ex,
                 "Lab exam narration unavailable: PatientId={PatientId} BatchId={BatchId} LatencyMs={LatencyMs}",
-                patientId, batchId, stopwatch.ElapsedMilliseconds);
+                patientId,
+                batchId,
+                stopwatch.ElapsedMilliseconds
+            );
             return string.Empty;
         }
     }
@@ -413,17 +479,17 @@ public class AiServiceClient : IAiServiceClient
     private SseEvent? ParseSseEvent(StreamChatChunk chunk)
     {
         var line = chunk.RawData;
-        
+
         if (line.StartsWith("event: start", StringComparison.Ordinal))
             return new SseEvent(SseEventType.Start);
-        
+
         if (line.StartsWith("data: ", StringComparison.Ordinal))
         {
             var data = line["data: ".Length..];
-            
+
             if (data == "{}")
                 return new SseEvent(SseEventType.Start);
-            
+
             try
             {
                 if (data.Contains("\"thread_id\""))
@@ -448,7 +514,7 @@ public class AiServiceClient : IAiServiceClient
                 _logger.LogWarning(ex, "Error parsing SSE data: {Data}", data);
             }
         }
-        
+
         return null;
     }
 
@@ -466,10 +532,15 @@ public class AiServiceClient : IAiServiceClient
         [property: JsonPropertyName("thread_id")] string ThreadId,
         [property: JsonPropertyName("execution_id")] string? ExecutionId = null,
         [property: JsonPropertyName("agent")] string? Agent = null,
-        [property: JsonPropertyName("suggestions")] IReadOnlyList<ChatSuggestion>? Suggestions = null,
-        [property: JsonPropertyName("control_signal")] string? ControlSignal = null);
+        [property: JsonPropertyName("suggestions")]
+            IReadOnlyList<ChatSuggestion>? Suggestions = null,
+        [property: JsonPropertyName("control_signal")] string? ControlSignal = null
+    );
+
     private record DoneJson(string ThreadId);
+
     private record NodeJson(string Node);
+
     private record MessageJson(string Type, string? Content);
 
     // Contrato del ai-service para generación de planes: `type` + `plan`
@@ -477,13 +548,15 @@ public class AiServiceClient : IAiServiceClient
     // shape de los DTOs de creación del módulo Wellness.
     private sealed record GeneratePlanResponseJson(
         [property: JsonPropertyName("type")] string Type,
-        [property: JsonPropertyName("plan")] JsonElement Plan);
+        [property: JsonPropertyName("plan")] JsonElement Plan
+    );
 
     // Contrato del endpoint de inyección proactiva: `thread_id` + `message_id`
     // (snake_case).
     private sealed record ProactiveMessageResponseJson(
         [property: JsonPropertyName("thread_id")] string ThreadId,
-        [property: JsonPropertyName("message_id")] string MessageId);
+        [property: JsonPropertyName("message_id")] string MessageId
+    );
 
     // Contrato del AI Service para el estado de un thread: `thread_id`,
     // `message_count`, `last_message` y —de forma aditiva— `messages`
@@ -497,16 +570,19 @@ public class AiServiceClient : IAiServiceClient
         [property: JsonPropertyName("last_message")] string? LastMessage,
         [property: JsonPropertyName("messages")] IReadOnlyList<ThreadMessageJson>? Messages = null,
         [property: JsonPropertyName("has_more")] bool HasMore = false,
-        [property: JsonPropertyName("next_cursor")] int? NextCursor = null);
+        [property: JsonPropertyName("next_cursor")] int? NextCursor = null
+    );
 
     // Mensaje visible del thread según el contrato del AI Service.
     private sealed record ThreadMessageJson(
         [property: JsonPropertyName("role")] string Role,
-        [property: JsonPropertyName("text")] string Text);
+        [property: JsonPropertyName("text")] string Text
+    );
 
     // Contrato del endpoint de narración: `empathetic_message` (snake_case). Un
     // ai-service anterior no expone el endpoint (404) o puede omitir el campo;
     // ambos casos degradan a cadena vacía en NarrateLabExamAsync.
     private sealed record NarrateResponseJson(
-        [property: JsonPropertyName("empathetic_message")] string? EmpatheticMessage = null);
+        [property: JsonPropertyName("empathetic_message")] string? EmpatheticMessage = null
+    );
 }

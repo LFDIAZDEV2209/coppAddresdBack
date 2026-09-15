@@ -18,9 +18,12 @@ namespace CoppAddresd.Application.Features.LabExam;
 /// → resolución contra catálogo → persistencia en lote.
 /// Ante cualquier fallo posterior al almacenamiento en S3, se ejecuta compensación (DeleteObjectAsync).
 /// </summary>
-public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand, LabExamUploadResult>
+public class UploadLabExamCommandHandler
+    : IRequestHandler<UploadLabExamCommand, LabExamUploadResult>
 {
-    private static readonly Dictionary<string, string> MetricAliases = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> MetricAliases = new(
+        StringComparer.OrdinalIgnoreCase
+    )
     {
         ["glucose_fasting"] = "glucose_fasting",
         ["glucosa en ayunas"] = "glucose_fasting",
@@ -137,7 +140,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         IPatientRepository patientRepository,
         IProgramControlRepository programControlRepository,
         IOptions<ProgramControlSettings> settings,
-        ILogger<UploadLabExamCommandHandler> logger)
+        ILogger<UploadLabExamCommandHandler> logger
+    )
     {
         _compressionService = compressionService;
         _storageService = storageService;
@@ -149,18 +153,27 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         _logger = logger;
     }
 
-    public async Task<LabExamUploadResult> Handle(UploadLabExamCommand request, CancellationToken ct)
+    public async Task<LabExamUploadResult> Handle(
+        UploadLabExamCommand request,
+        CancellationToken ct
+    )
     {
         ValidateInput(request);
 
         // Resolve patient profile (request.PatientId could be PatientProfile.Id or auth.users.id from JWT)
-        var patientProfile = await _patientRepository.GetByIdAsync(request.PatientId, ct)
-                             ?? await _patientRepository.GetByUserIdAsync(request.PatientId, ct);
+        var patientProfile =
+            await _patientRepository.GetByIdAsync(request.PatientId, ct)
+            ?? await _patientRepository.GetByUserIdAsync(request.PatientId, ct);
 
         if (patientProfile is null)
         {
-            _logger.LogWarning("Patient profile not found for identifier '{Identifier}'", request.PatientId);
-            throw new NotFoundException($"Patient profile not found for identifier '{request.PatientId}'.");
+            _logger.LogWarning(
+                "Patient profile not found for identifier '{Identifier}'",
+                request.PatientId
+            );
+            throw new NotFoundException(
+                $"Patient profile not found for identifier '{request.PatientId}'."
+            );
         }
 
         var patientId = patientProfile.Id;
@@ -170,7 +183,10 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
 
         // 2. Compress file
         var (compressedStream, finalContentType) = await _compressionService.CompressAsync(
-            request.FileStream, request.ContentType, ct);
+            request.FileStream,
+            request.ContentType,
+            ct
+        );
 
         // 3. Construct S3 storage key: lab-exams/{patientId}/{batchId}{extension}
         var extension = ResolveExtension(request.FileName, finalContentType);
@@ -207,7 +223,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
                 fileNameForAi,
                 finalContentType,
                 request.ThreadId,
-                ct);
+                ct
+            );
 
             // b. If !response.Readable or zero metrics: return result with AI summary (no measurements saved)
             if (!aiResponse.Readable || aiResponse.Metrics.Count == 0)
@@ -217,7 +234,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
                     aiResponse.Summary,
                     0,
                     Array.Empty<string>(),
-                    storageKey);
+                    storageKey
+                );
             }
 
             // c. Resolve metric codes/aliases against active MeasurementMetric catalog
@@ -231,35 +249,46 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
                 {
                     _logger.LogWarning(
                         "Lab exam metric '{MetricName}' could not be matched to catalog. Skipping.",
-                        aiMetric.MetricName);
+                        aiMetric.MetricName
+                    );
                     continue;
                 }
 
-                var unit = ResolveUnit(aiMetric.UnitSymbol, matchedMetric, activeUnits) ?? matchedMetric.DefaultUnit;
+                var unit =
+                    ResolveUnit(aiMetric.UnitSymbol, matchedMetric, activeUnits)
+                    ?? matchedMetric.DefaultUnit;
                 var observedAt = aiMetric.ObservedAt.HasValue
                     ? aiMetric.ObservedAt.Value.ToUniversalTime()
                     : DateTime.UtcNow;
 
-                measurements.Add(new ClinicalMeasurement
-                {
-                    Id = Guid.NewGuid(),
-                    PatientId = patientId,
-                    MetricId = matchedMetric.Id,
-                    UnitId = unit?.Id ?? matchedMetric.DefaultUnitId,
-                    Value = aiMetric.Value,
-                    ObservedAt = observedAt,
-                    RecordedAt = DateTime.UtcNow,
-                    Source = "lab",
-                    BatchId = batchId,
-                    SourceKey = storageKey,
-                    CreatedBy = request.PatientId,
-                    CreatedAt = DateTime.UtcNow
-                });
+                measurements.Add(
+                    new ClinicalMeasurement
+                    {
+                        Id = Guid.NewGuid(),
+                        PatientId = patientId,
+                        MetricId = matchedMetric.Id,
+                        UnitId = unit?.Id ?? matchedMetric.DefaultUnitId,
+                        Value = aiMetric.Value,
+                        ObservedAt = observedAt,
+                        RecordedAt = DateTime.UtcNow,
+                        Source = "lab",
+                        BatchId = batchId,
+                        SourceKey = storageKey,
+                        CreatedBy = request.PatientId,
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
 
                 detectedMetricNames.Add(matchedMetric.Name);
                 detectedMetricCodes.Add(matchedMetric.Code);
-                currentSnapshots.Add(new LabExamMetricSnapshot(
-                    matchedMetric.Code, aiMetric.Value, unit?.Symbol, observedAt));
+                currentSnapshots.Add(
+                    new LabExamMetricSnapshot(
+                        matchedMetric.Code,
+                        aiMetric.Value,
+                        unit?.Symbol,
+                        observedAt
+                    )
+                );
             }
 
             if (measurements.Count > 0)
@@ -270,9 +299,12 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         catch (Exception ex)
         {
             // 6. Compensation: Delete S3 object to guarantee atomicity
-            _logger.LogWarning(ex,
+            _logger.LogWarning(
+                ex,
                 "Failed to process lab exam for patient {PatientId}. Storage key {StorageKey} was deleted as compensation.",
-                patientId, storageKey);
+                patientId,
+                storageKey
+            );
 
             try
             {
@@ -280,9 +312,12 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
             }
             catch (Exception delEx)
             {
-                _logger.LogError(delEx,
+                _logger.LogError(
+                    delEx,
                     "Failed to delete S3 object {StorageKey} during compensation for patient {PatientId}.",
-                    storageKey, request.PatientId);
+                    storageKey,
+                    request.PatientId
+                );
             }
 
             throw;
@@ -294,11 +329,35 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         if (measurements.Count > 0)
         {
             var empathetic = await BuildNarrationAsync(
-                patientId, batchId, aiResponse, currentSnapshots, detectedMetricCodes, request.Language, ct);
+                patientId,
+                batchId,
+                aiResponse,
+                currentSnapshots,
+                detectedMetricCodes,
+                request.Language,
+                ct
+            );
             if (!string.IsNullOrWhiteSpace(empathetic))
             {
                 summary = empathetic;
             }
+        }
+
+        // 7b. Contexto del lote en el thread del paciente (fix follow-up sin
+        // documento): inyecta un SystemMessage con el resumen del análisis al
+        // thread estable — invisible en el historial de la app pero presente
+        // en el contexto del LLM de los siguientes turnos. Best-effort: un
+        // fallo jamás rompe el upload (el HTTP 200 ya está ganado).
+        if (patientProfile.UserId is { } contextUserId && measurements.Count > 0)
+        {
+            await TryInjectLabContextAsync(
+                contextUserId,
+                batchId,
+                currentSnapshots,
+                summary,
+                request.Language,
+                ct
+            );
         }
 
         // 8. Link de control abierto (fase 2, controles conversacionales):
@@ -316,7 +375,59 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
             summary,
             measurements.Count,
             detectedMetricNames,
-            storageKey);
+            storageKey
+        );
+    }
+
+    /// <summary>
+    /// Inyecta el resumen del lote como SystemMessage al thread estable del
+    /// paciente (best-effort): los siguientes turnos del chat ven el documento
+    /// analizado sin mostrar un mensaje duplicado en el historial de la app.
+    /// </summary>
+    private async Task TryInjectLabContextAsync(
+        Guid authUserId,
+        Guid batchId,
+        IReadOnlyList<LabExamMetricSnapshot> snapshots,
+        string? summary,
+        string? language,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            var lines = snapshots
+                .Take(30)
+                .Select(s =>
+                    $"• {s.MetricCode}: {s.Value} {s.UnitSymbol} ({s.ObservedAt:yyyy-MM-dd})"
+                );
+            var digest = string.Join("\n", lines);
+            if (!string.IsNullOrWhiteSpace(summary) && summary.Length > 1200)
+            {
+                summary = summary[..1200] + "…";
+            }
+
+            var context =
+                $"[Contexto interno — análisis de laboratorio del paciente, lote {batchId}]\n"
+                + $"{digest}\n"
+                + $"Resumen: {summary}\n"
+                + "Responde sobre estos resultados cuando el paciente pregunte por su análisis.";
+
+            await _aiServiceClient.ProactiveMessageAsync(authUserId, context, "base", "system", ct);
+            _logger.LogInformation(
+                "Lab exam context injected to thread: batchId={BatchId} metrics={Count}",
+                batchId,
+                snapshots.Count
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Lab exam context injection failed (best-effort). userId={UserId} batchId={BatchId}",
+                authUserId,
+                batchId
+            );
+        }
     }
 
     /// <summary>
@@ -328,27 +439,46 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
     /// — el upload ya devolvió su resultado.
     /// </summary>
     private async Task TryLinkOpenControlAsync(
-        Guid authUserId, string? threadId, Guid batchId, CancellationToken ct)
+        Guid authUserId,
+        string? threadId,
+        Guid batchId,
+        CancellationToken ct
+    )
     {
         try
         {
-            var control = await _programControlRepository.FindOpenControlForUserAsync(authUserId, threadId, ct);
+            var control = await _programControlRepository.FindOpenControlForUserAsync(
+                authUserId,
+                threadId,
+                ct
+            );
             if (control is null)
             {
                 return;
             }
 
             var claimed = await _programControlRepository.MarkCompletedAsync(
-                control.Id, batchId, DateTime.UtcNow, ct);
+                control.Id,
+                batchId,
+                DateTime.UtcNow,
+                ct
+            );
             _logger.LogInformation(
                 "Program.ControlCompletedByUpload: controlId={ControlId} day={MilestoneDay} batchId={BatchId} claimed={Claimed}",
-                control.Id, control.MilestoneDay, batchId, claimed);
+                control.Id,
+                control.MilestoneDay,
+                batchId,
+                claimed
+            );
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex,
+            _logger.LogWarning(
+                ex,
                 "Program.Controls: fallo al vincular upload con control abierto (best-effort). userId={UserId} batchId={BatchId}",
-                authUserId, batchId);
+                authUserId,
+                batchId
+            );
         }
     }
 
@@ -365,24 +495,37 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         IReadOnlyList<LabExamMetricSnapshot> currentSnapshots,
         IReadOnlyList<string> detectedMetricCodes,
         string? language,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         try
         {
             var previous = await _measurementRepository.GetLastPerMetricAsync(
-                patientId, detectedMetricCodes, batchId, ct);
+                patientId,
+                detectedMetricCodes,
+                batchId,
+                ct
+            );
 
             var evolutions = LabExamEvolutionBuilder.Build(currentSnapshots, previous);
 
             return await _aiServiceClient.NarrateLabExamAsync(
-                patientId, batchId, aiResponse.Metrics, evolutions, language, ct);
+                patientId,
+                batchId,
+                aiResponse.Metrics,
+                evolutions,
+                language,
+                ct
+            );
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             _logger.LogWarning(
                 ex,
                 "Lab exam narration context failed for patient {PatientId} batch {BatchId}. Falling back to summary.",
-                patientId, batchId);
+                patientId,
+                batchId
+            );
             return null;
         }
     }
@@ -402,8 +545,12 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         var ext = Path.GetExtension(request.FileName);
         var normalizedContentType = request.ContentType?.Split(';')[0].Trim();
 
-        if (string.IsNullOrWhiteSpace(ext) || !UploadLabExamCommandValidator.AllowedExtensions.Contains(ext) ||
-            string.IsNullOrWhiteSpace(normalizedContentType) || !UploadLabExamCommandValidator.AllowedContentTypes.Contains(normalizedContentType))
+        if (
+            string.IsNullOrWhiteSpace(ext)
+            || !UploadLabExamCommandValidator.AllowedExtensions.Contains(ext)
+            || string.IsNullOrWhiteSpace(normalizedContentType)
+            || !UploadLabExamCommandValidator.AllowedContentTypes.Contains(normalizedContentType)
+        )
         {
             throw new UnsupportedLabExamFileTypeException();
         }
@@ -416,7 +563,7 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
             "image/jpeg" => ".jpg",
             "image/png" => ".png",
             "application/pdf" => ".pdf",
-            _ => Path.GetExtension(fileName).ToLowerInvariant()
+            _ => Path.GetExtension(fileName).ToLowerInvariant(),
         };
 
         if (string.IsNullOrWhiteSpace(ext))
@@ -434,7 +581,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
 
     private static MeasurementMetric? ResolveMetric(
         string rawName,
-        IReadOnlyList<MeasurementMetric> activeMetrics)
+        IReadOnlyList<MeasurementMetric> activeMetrics
+    )
     {
         if (string.IsNullOrWhiteSpace(rawName))
             return null;
@@ -445,7 +593,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         if (MetricAliases.TryGetValue(trimmed, out var canonicalCode))
         {
             var found = activeMetrics.FirstOrDefault(m =>
-                string.Equals(m.Code, canonicalCode, StringComparison.OrdinalIgnoreCase));
+                string.Equals(m.Code, canonicalCode, StringComparison.OrdinalIgnoreCase)
+            );
             if (found is not null)
             {
                 return found;
@@ -454,7 +603,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
 
         // 2. Exact match on Code
         var byCode = activeMetrics.FirstOrDefault(m =>
-            string.Equals(m.Code, trimmed, StringComparison.OrdinalIgnoreCase));
+            string.Equals(m.Code, trimmed, StringComparison.OrdinalIgnoreCase)
+        );
         if (byCode is not null)
         {
             return byCode;
@@ -462,7 +612,8 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
 
         // 3. Exact match on Name
         var byName = activeMetrics.FirstOrDefault(m =>
-            string.Equals(m.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            string.Equals(m.Name, trimmed, StringComparison.OrdinalIgnoreCase)
+        );
         if (byName is not null)
         {
             return byName;
@@ -471,17 +622,22 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
         // 4. Normalized match ignoring diacritics and casing
         var normalizedRaw = NormalizeString(trimmed);
         return activeMetrics.FirstOrDefault(m =>
-            NormalizeString(m.Code) == normalizedRaw || NormalizeString(m.Name) == normalizedRaw);
+            NormalizeString(m.Code) == normalizedRaw || NormalizeString(m.Name) == normalizedRaw
+        );
     }
 
     private static string NormalizeString(string input)
     {
-        if (string.IsNullOrWhiteSpace(input)) return string.Empty;
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
         var normalized = input.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder();
         foreach (var c in normalized)
         {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark && !char.IsPunctuation(c))
+            if (
+                CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark
+                && !char.IsPunctuation(c)
+            )
             {
                 sb.Append(char.ToLowerInvariant(c));
             }
@@ -492,35 +648,41 @@ public class UploadLabExamCommandHandler : IRequestHandler<UploadLabExamCommand,
     private static UnitOfMeasure? ResolveUnit(
         string? unitSymbol,
         MeasurementMetric metric,
-        IReadOnlyList<UnitOfMeasure> activeUnits)
+        IReadOnlyList<UnitOfMeasure> activeUnits
+    )
     {
         if (string.IsNullOrWhiteSpace(unitSymbol))
         {
-            return activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId) ?? metric.DefaultUnit;
+            return activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId)
+                ?? metric.DefaultUnit;
         }
 
         var trimmed = unitSymbol.Trim();
         var normalizedSymbol = NormalizeUnitSymbol(trimmed);
 
         var matched = activeUnits.FirstOrDefault(u =>
-            string.Equals(u.Symbol, normalizedSymbol, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(u.Symbol, trimmed, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(u.Code, trimmed, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(u.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            string.Equals(u.Symbol, normalizedSymbol, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(u.Symbol, trimmed, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(u.Code, trimmed, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(u.Name, trimmed, StringComparison.OrdinalIgnoreCase)
+        );
 
-        return matched ?? activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId) ?? metric.DefaultUnit;
+        return matched
+            ?? activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId)
+            ?? metric.DefaultUnit;
     }
 
-    private static string NormalizeUnitSymbol(string trimmedUnitSymbol) => trimmedUnitSymbol.ToLowerInvariant() switch
-    {
-        "%" or "pct" or "porcentaje" => "%",
-        "c" or "°c" or "celsius" or "grados celsius" => "°C",
-        "bpm" or "lpm" or "latidos/min" or "latidos por minuto" => "bpm",
-        "mg/dl" or "mg_dl" => "mg/dL",
-        "mmhg" => "mmHg",
-        "kg/m2" or "kg/m²" or "kg_m2" => "kg/m²",
-        "kg" or "kilos" or "kilogramos" => "kg",
-        "cm" or "centimetros" or "centímetros" => "cm",
-        _ => trimmedUnitSymbol
-    };
+    private static string NormalizeUnitSymbol(string trimmedUnitSymbol) =>
+        trimmedUnitSymbol.ToLowerInvariant() switch
+        {
+            "%" or "pct" or "porcentaje" => "%",
+            "c" or "°c" or "celsius" or "grados celsius" => "°C",
+            "bpm" or "lpm" or "latidos/min" or "latidos por minuto" => "bpm",
+            "mg/dl" or "mg_dl" => "mg/dL",
+            "mmhg" => "mmHg",
+            "kg/m2" or "kg/m²" or "kg_m2" => "kg/m²",
+            "kg" or "kilos" or "kilogramos" => "kg",
+            "cm" or "centimetros" or "centímetros" => "cm",
+            _ => trimmedUnitSymbol,
+        };
 }

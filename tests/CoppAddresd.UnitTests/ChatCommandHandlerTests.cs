@@ -27,38 +27,42 @@ public class ChatCommandHandlerTests
     {
         public Func<ChatRequest, Task<ChatResponse>>? OnChat { get; set; }
 
-        public Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default)
-            => OnChat!(request);
+        public Task<ChatResponse> ChatAsync(ChatRequest request, CancellationToken ct = default) =>
+            OnChat!(request);
 
         public IAsyncEnumerable<SseEvent> StreamChatAsync(
-            ChatRequest request, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            ChatRequest request,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public IAsyncEnumerable<StreamChatChunk> StreamRawAsync(
-            ChatRequest request, Action<string>? onControlSignal = null, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            ChatRequest request,
+            Action<string>? onControlSignal = null,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<AiPlanResult> GeneratePlanAsync(
             string type,
             ClinicalContextDto context,
             IReadOnlyList<RestrictionDto> restrictions,
-            CancellationToken ct = default)
-            => throw new NotImplementedException();
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<ProactiveMessageResult> ProactiveMessageAsync(
             Guid userId,
             string message,
             string agentTypeId = "base",
-            CancellationToken ct = default)
-            => throw new NotImplementedException();
+            string role = "bot",
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<ThreadStateResult> GetThreadStateAsync(
             string threadId,
             string userId,
             int? limit = null,
             int? before = null,
-            CancellationToken ct = default)
-            => throw new NotImplementedException();
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<CoppAddresd.Application.DTOs.LabExam.LabExamAiResponse> ExtractLabMetricsAsync(
             Guid patientId,
@@ -67,17 +71,20 @@ public class ChatCommandHandlerTests
             string fileName,
             string contentType,
             string? threadId = null,
-            CancellationToken ct = default)
-            => throw new NotImplementedException();
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<string> NarrateLabExamAsync(
             Guid patientId,
             Guid batchId,
             IReadOnlyList<CoppAddresd.Application.DTOs.LabExam.LabExamAiMetricDto> metrics,
-            IReadOnlyDictionary<string, CoppAddresd.Application.DTOs.LabExam.MetricEvolution> previousMeasurements,
+            IReadOnlyDictionary<
+                string,
+                CoppAddresd.Application.DTOs.LabExam.MetricEvolution
+            > previousMeasurements,
             string? language,
-            CancellationToken ct = default)
-            => throw new NotImplementedException();
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
     }
 
     private sealed class FakeRuntimeSync : IAgentRuntimeSyncService
@@ -85,141 +92,168 @@ public class ChatCommandHandlerTests
         public List<AgentRuntimeConfigPayload> Synced { get; } = [];
 
         public Task SyncAgentConfigAsync(
-            AgentRuntimeConfigPayload payload, CancellationToken ct = default)
+            AgentRuntimeConfigPayload payload,
+            CancellationToken ct = default
+        )
         {
             Synced.Add(payload);
             return Task.CompletedTask;
         }
 
         public Task<AgentDocumentIngestResult> IngestDocumentAsync(
-            AgentDocumentIngestPayload payload, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            AgentDocumentIngestPayload payload,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task DeleteDocumentChunksAsync(
-            Guid documentId, CancellationToken ct = default)
-            => Task.CompletedTask;
+        public Task DeleteDocumentChunksAsync(Guid documentId, CancellationToken ct = default) =>
+            Task.CompletedTask;
     }
 
     /// <summary>Repositorio fake: sin datos, GetAgentTypeAsync → null.</summary>
     private sealed class EmptyCatalogRepository : IAgentCatalogRepository
     {
-        public Task<AgentType?> GetAgentTypeAsync(Guid id, CancellationToken ct = default)
-            => Task.FromResult<AgentType?>(null);
+        public Task<AgentType?> GetAgentTypeAsync(Guid id, CancellationToken ct = default) =>
+            Task.FromResult<AgentType?>(null);
 
         public Task<IReadOnlyList<AgentType>> ListAgentTypesAsync(
-            int page, int pageSize, string? search, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            int page,
+            int pageSize,
+            string? search,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task<int> CountAgentTypesAsync(string? search, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<int> CountAgentTypesAsync(string? search, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task<AgentType> AddAgentTypeAsync(AgentType agentType, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<AgentType> AddAgentTypeAsync(
+            AgentType agentType,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task UpdateAgentTypeAsync(AgentType agentType, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task UpdateAgentTypeAsync(AgentType agentType, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task SetActiveVersionAsync(
-            Guid agentTypeId, Guid versionId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid agentTypeId,
+            Guid versionId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task DeleteAgentTypeAsync(AgentType agentType, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task DeleteAgentTypeAsync(AgentType agentType, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task<bool> AgentTypeExistsAsync(Guid id, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<bool> AgentTypeExistsAsync(Guid id, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task<bool> AgentTypeHasInstancesAsync(Guid id, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<bool> AgentTypeHasInstancesAsync(Guid id, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<bool> AgentTypeNameExistsAsync(
-            string name, Guid? excludeId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            string name,
+            Guid? excludeId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task<AgentTypeVersion?> GetVersionAsync(Guid id, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<AgentTypeVersion?> GetVersionAsync(Guid id, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<IReadOnlyList<AgentTypeVersion>> ListVersionsAsync(
-            Guid agentTypeId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid agentTypeId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task<int> NextVersionNumberAsync(Guid agentTypeId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<int> NextVersionNumberAsync(Guid agentTypeId, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<AgentTypeVersion> AddVersionAsync(
-            AgentTypeVersion version, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            AgentTypeVersion version,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<AgentTypeVersion> AddFirstVersionAndActivateAsync(
-            AgentType agentType, AgentTypeVersion version, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            AgentType agentType,
+            AgentTypeVersion version,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task UpdateVersionAsync(AgentTypeVersion version, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task UpdateVersionAsync(AgentTypeVersion version, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<AgentTypeVersion?> GetActiveVersionAsync(
-            Guid agentTypeId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid agentTypeId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<KnowledgeBase?> GetKnowledgeBaseAsync(
-            Guid id, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid id,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<KnowledgeBase>> ListKnowledgeBasesAsync(
-            Guid? agentTypeId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid? agentTypeId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<KnowledgeBase> AddKnowledgeBaseAsync(
-            KnowledgeBase kb, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            KnowledgeBase kb,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task UpdateKnowledgeBaseAsync(KnowledgeBase kb, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task UpdateKnowledgeBaseAsync(KnowledgeBase kb, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task DeleteKnowledgeBaseAsync(KnowledgeBase kb, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task DeleteKnowledgeBaseAsync(KnowledgeBase kb, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task<AgentDocument?> GetDocumentAsync(Guid id, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<AgentDocument?> GetDocumentAsync(Guid id, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<IReadOnlyList<AgentDocument>> ListDocumentsAsync(
-            Guid knowledgeBaseId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid knowledgeBaseId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<AgentDocument> AddDocumentAsync(
-            AgentDocument document, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            AgentDocument document,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task DeleteDocumentAsync(AgentDocument document, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task DeleteDocumentAsync(AgentDocument document, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task<AgentInstance?> GetInstanceAsync(Guid id, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<AgentInstance?> GetInstanceAsync(Guid id, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<IReadOnlyList<AgentInstance>> ListInstancesAsync(
-            Guid userId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid userId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<AgentInstance>> ListInstancesByAgentTypeAsync(
-            Guid agentTypeId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid agentTypeId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<AgentInstance> AddInstanceAsync(
-            AgentInstance instance, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            AgentInstance instance,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task UpdateInstanceAsync(AgentInstance instance, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task UpdateInstanceAsync(AgentInstance instance, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task DeleteInstanceAsync(AgentInstance instance, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task DeleteInstanceAsync(AgentInstance instance, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<bool> InstanceExistsForUserAndTypeAsync(
-            Guid userId, Guid agentTypeId, Guid? excludeId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid userId,
+            Guid agentTypeId,
+            Guid? excludeId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
     }
 
     /// <summary>
@@ -242,90 +276,129 @@ public class ChatCommandHandlerTests
         public List<Guid> MarkClosedDeclinedCalls { get; } = [];
 
         public Task<ProgramControl?> FindOpenControlForUserAsync(
-            Guid authUserId, string? threadId = null, CancellationToken ct = default)
+            Guid authUserId,
+            string? threadId = null,
+            CancellationToken ct = default
+        )
         {
             FindOpenCalls++;
             return OnFindOpen?.Invoke() ?? Task.FromResult(OpenControl);
         }
 
-        public Task<bool> MarkRespondedAsync(Guid id, DateTime respondedAt, CancellationToken ct = default)
+        public Task<bool> MarkRespondedAsync(
+            Guid id,
+            DateTime respondedAt,
+            CancellationToken ct = default
+        )
         {
             MarkRespondedCalls.Add(id);
             return Task.FromResult(MarkRespondedResult);
         }
 
-        public Task<bool> MarkClosedDeclinedAsync(Guid id, DateTime closedAt, CancellationToken ct = default)
+        public Task<bool> MarkClosedDeclinedAsync(
+            Guid id,
+            DateTime closedAt,
+            CancellationToken ct = default
+        )
         {
             MarkClosedDeclinedCalls.Add(id);
             return Task.FromResult(true);
         }
 
         public Task<IReadOnlyList<ProgramControlEnrollmentCandidate>> ListActiveCandidatesAsync(
-            DateOnly startLocalDateCutoff, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            DateOnly startLocalDateCutoff,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<ProgramControl?> GetAsync(
-            Guid enrollmentId, int milestoneDay, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid enrollmentId,
+            int milestoneDay,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task AddAsync(ProgramControl control, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task AddAsync(ProgramControl control, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
-        public Task UpdateAsync(ProgramControl control, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task UpdateAsync(ProgramControl control, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<ProgramControlEnrollmentCandidate?> GetCandidateAsync(
-            Guid enrollmentId, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid enrollmentId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ProgramControl>> ListAsync(
             Guid? enrollmentId = null,
             Guid? patientId = null,
             ProgramControlStatus? status = null,
             int? limit = null,
-            CancellationToken ct = default)
-            => throw new NotImplementedException();
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task<int> DeleteAsync(Guid? enrollmentId = null, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<int> DeleteAsync(Guid? enrollmentId = null, CancellationToken ct = default) =>
+            throw new NotImplementedException();
 
         public Task<bool> MarkCompletedAsync(
-            Guid id, Guid examBatchId, DateTime completedAt, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            Guid id,
+            Guid examBatchId,
+            DateTime completedAt,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task<bool> MarkFollowedUpAsync(Guid id, DateTime followupSentAt, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<bool> MarkFollowedUpAsync(
+            Guid id,
+            DateTime followupSentAt,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task<bool> MarkMissedAsync(Guid id, DateTime missedAt, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<bool> MarkMissedAsync(
+            Guid id,
+            DateTime missedAt,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
-        public Task<bool> MarkNoUploadTimeoutAsync(Guid id, DateTime closedAt, CancellationToken ct = default)
-            => throw new NotImplementedException();
+        public Task<bool> MarkNoUploadTimeoutAsync(
+            Guid id,
+            DateTime closedAt,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ProgramControlDueItem>> ListDueForFollowupAsync(
-            DateTime utcNow, int followupHours, int limit = 100, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            DateTime utcNow,
+            int followupHours,
+            int limit = 100,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ProgramControlDueItem>> ListDueForMissAsync(
-            DateTime utcNow, int missAfterFollowupHours, int limit = 100, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            DateTime utcNow,
+            int missAfterFollowupHours,
+            int limit = 100,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
 
         public Task<IReadOnlyList<ProgramControlDueItem>> ListTimedOutNoUploadAsync(
-            DateTime utcNow, int noUploadCloseHours, int limit = 100, CancellationToken ct = default)
-            => throw new NotImplementedException();
+            DateTime utcNow,
+            int noUploadCloseHours,
+            int limit = 100,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
     }
 
     private static ChatCommandHandler BuildHandler(
         IAiServiceClient aiClient,
         IAgentRuntimeSyncService? sync = null,
         IProgramControlRepository? programControls = null,
-        bool controlsEnabled = true) => new(
+        bool controlsEnabled = true
+    ) =>
+        new(
             aiClient,
             new EmptyCatalogRepository(),
             sync ?? new FakeRuntimeSync(),
             programControls ?? new FakeProgramControlRepository(),
             Options.Create(new ProgramControlSettings { ControlsEnabled = controlsEnabled }),
-            NullLogger<ChatCommandHandler>.Instance);
+            NullLogger<ChatCommandHandler>.Instance
+        );
 
     [Fact]
     public async Task Handle_exito_devuelve_ChatResult()
@@ -337,7 +410,9 @@ public class ChatCommandHandlerTests
         var handler = BuildHandler(ai);
 
         var result = await handler.Handle(
-            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"), CancellationToken.None);
+            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"),
+            CancellationToken.None
+        );
 
         Assert.Equal("reply", result.Reply);
         Assert.Equal("t1", result.ThreadId);
@@ -350,16 +425,24 @@ public class ChatCommandHandlerTests
     {
         var suggestions = new List<ChatSuggestion>
         {
-            new("appointment", "Agenda tu cita aquí", "tu último examen sugiere un control", "normal"),
+            new(
+                "appointment",
+                "Agenda tu cita aquí",
+                "tu último examen sugiere un control",
+                "normal"
+            ),
         };
         var ai = new FakeAiClient
         {
-            OnChat = _ => Task.FromResult(new ChatResponse("reply", "t1", "e1", "base", suggestions)),
+            OnChat = _ =>
+                Task.FromResult(new ChatResponse("reply", "t1", "e1", "base", suggestions)),
         };
         var handler = BuildHandler(ai);
 
         var result = await handler.Handle(
-            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"), CancellationToken.None);
+            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"),
+            CancellationToken.None
+        );
 
         Assert.NotNull(result.Suggestions);
         var suggestion = Assert.Single(result.Suggestions!);
@@ -379,7 +462,9 @@ public class ChatCommandHandlerTests
         var handler = BuildHandler(ai);
 
         var result = await handler.Handle(
-            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"), CancellationToken.None);
+            new ChatCommand("hola", AgentTypeId: "guid-1", UserId: "user-1"),
+            CancellationToken.None
+        );
 
         Assert.Null(result.Suggestions);
         Assert.Equal("reply", result.Reply);
@@ -396,7 +481,8 @@ public class ChatCommandHandlerTests
         var handler = BuildHandler(ai);
 
         await Assert.ThrowsAsync<AiServiceException>(() =>
-            handler.Handle(new ChatCommand("hola"), CancellationToken.None));
+            handler.Handle(new ChatCommand("hola"), CancellationToken.None)
+        );
     }
 
     [Fact]
@@ -414,7 +500,9 @@ public class ChatCommandHandlerTests
         await Assert.ThrowsAsync<AiServiceException>(() =>
             handler.Handle(
                 new ChatCommand("hola", AgentTypeId: Guid.NewGuid().ToString()),
-                CancellationToken.None));
+                CancellationToken.None
+            )
+        );
     }
 
     // -------------------------------------------------- Hooks de controles (fase 2)
@@ -444,7 +532,9 @@ public class ChatCommandHandlerTests
         var handler = BuildHandler(ai, programControls: repo);
 
         var result = await handler.Handle(
-            new ChatCommand("hola", ThreadId: "t-control", UserId: userId), CancellationToken.None);
+            new ChatCommand("hola", ThreadId: "t-control", UserId: userId),
+            CancellationToken.None
+        );
 
         Assert.Equal("reply", result.Reply);
         var marked = Assert.Single(repo.MarkRespondedCalls);
@@ -476,7 +566,9 @@ public class ChatCommandHandlerTests
         var handler = BuildHandler(ai, programControls: repo);
 
         await handler.Handle(
-            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId),
+            CancellationToken.None
+        );
 
         Assert.Null(captured!.ControlContext);
         Assert.Empty(repo.MarkRespondedCalls);
@@ -488,7 +580,12 @@ public class ChatCommandHandlerTests
         var userId = Guid.NewGuid().ToString();
         var repo = new FakeProgramControlRepository
         {
-            OpenControl = new ProgramControl { Id = Guid.NewGuid(), MilestoneDay = 7, Status = ProgramControlStatus.Sent },
+            OpenControl = new ProgramControl
+            {
+                Id = Guid.NewGuid(),
+                MilestoneDay = 7,
+                Status = ProgramControlStatus.Sent,
+            },
         };
         var ai = new FakeAiClient
         {
@@ -497,7 +594,9 @@ public class ChatCommandHandlerTests
         var handler = BuildHandler(ai, programControls: repo, controlsEnabled: false);
 
         await handler.Handle(
-            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId),
+            CancellationToken.None
+        );
 
         Assert.Equal(0, repo.FindOpenCalls);
         Assert.Empty(repo.MarkRespondedCalls);
@@ -516,13 +615,17 @@ public class ChatCommandHandlerTests
         var repo = new FakeProgramControlRepository { OpenControl = control };
         var ai = new FakeAiClient
         {
-            OnChat = _ => Task.FromResult(new ChatResponse(
-                "reply", "t1", "e1", "base", ControlSignal: "declined")),
+            OnChat = _ =>
+                Task.FromResult(
+                    new ChatResponse("reply", "t1", "e1", "base", ControlSignal: "declined")
+                ),
         };
         var handler = BuildHandler(ai, programControls: repo);
 
         var result = await handler.Handle(
-            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId),
+            CancellationToken.None
+        );
 
         // La señal se consume (cierre por rechazo) pero jamás llega al ChatResult.
         var closed = Assert.Single(repo.MarkClosedDeclinedCalls);
@@ -537,17 +640,26 @@ public class ChatCommandHandlerTests
         var userId = Guid.NewGuid().ToString();
         var repo = new FakeProgramControlRepository
         {
-            OpenControl = new ProgramControl { Id = Guid.NewGuid(), MilestoneDay = 7, Status = ProgramControlStatus.Sent },
+            OpenControl = new ProgramControl
+            {
+                Id = Guid.NewGuid(),
+                MilestoneDay = 7,
+                Status = ProgramControlStatus.Sent,
+            },
         };
         var ai = new FakeAiClient
         {
-            OnChat = _ => Task.FromResult(new ChatResponse(
-                "reply", "t1", "e1", "base", ControlSignal: "otra_cosa")),
+            OnChat = _ =>
+                Task.FromResult(
+                    new ChatResponse("reply", "t1", "e1", "base", ControlSignal: "otra_cosa")
+                ),
         };
         var handler = BuildHandler(ai, programControls: repo);
 
         await handler.Handle(
-            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId),
+            CancellationToken.None
+        );
 
         Assert.Empty(repo.MarkClosedDeclinedCalls);
     }
@@ -568,7 +680,9 @@ public class ChatCommandHandlerTests
         var handler = BuildHandler(ai, programControls: repo);
 
         var result = await handler.Handle(
-            new ChatCommand("hola", ThreadId: "t-x", UserId: userId), CancellationToken.None);
+            new ChatCommand("hola", ThreadId: "t-x", UserId: userId),
+            CancellationToken.None
+        );
 
         Assert.Equal("reply", result.Reply);
         Assert.Equal("t1", result.ThreadId);

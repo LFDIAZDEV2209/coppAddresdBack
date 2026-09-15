@@ -23,7 +23,8 @@ public interface IAiServiceClient
     IAsyncEnumerable<StreamChatChunk> StreamRawAsync(
         ChatRequest request,
         Action<string>? onControlSignal = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Solicita la generación de un plan (<c>nutrition</c> | <c>exercise</c>)
@@ -34,18 +35,23 @@ public interface IAiServiceClient
         string type,
         ClinicalContextDto context,
         IReadOnlyList<RestrictionDto> restrictions,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Inyecta un mensaje proactivo del bot en el thread estable del usuario
     /// (sin LLM, costo cero). Best-effort: si el AI Service no está disponible
     /// el caller decide si falla la operación global (el push es lo principal).
+    /// <paramref name="role"/>: <c>bot</c> (visible en el historial) o
+    /// <c>system</c> (solo contexto del LLM, invisible para la app).
     /// </summary>
     Task<ProactiveMessageResult> ProactiveMessageAsync(
         Guid userId,
         string message,
         string agentTypeId = "base",
-        CancellationToken ct = default);
+        string role = "bot",
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Lee el estado del historial de un thread del AI Service (canal interno
@@ -62,7 +68,8 @@ public interface IAiServiceClient
         string userId,
         int? limit = null,
         int? before = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Envía un archivo de examen de laboratorio al AI Service vía multipart/form-data
@@ -76,7 +83,8 @@ public interface IAiServiceClient
         string fileName,
         string contentType,
         string? threadId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Genera la narración empática del examen (segundo request, canal interno
@@ -92,5 +100,6 @@ public interface IAiServiceClient
         IReadOnlyList<LabExamAiMetricDto> metrics,
         IReadOnlyDictionary<string, MetricEvolution> previousMeasurements,
         string? language,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 }

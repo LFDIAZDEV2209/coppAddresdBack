@@ -28,17 +28,20 @@ CoppAddresd.Shared.Security.ErpSessionValidationExtensions.AddErpSessionValidati
 // app code, Microsoft.AspNetCore lowered to Warning (same verbosity as
 // appsettings.Example.json Logging:LogLevel), and a template that includes
 // {Properties:j} so CorrelationId/RequestPath stay visible on console.
-builder.Host.UseSerilog((ctx, cfg) =>
-{
-    cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
-
-    if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+builder.Host.UseSerilog(
+    (ctx, cfg) =>
     {
-        cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-            .WriteTo.Console(outputTemplate:
-                "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+        cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
+
+        if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+        {
+            cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+                .WriteTo.Console(
+                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+                );
+        }
     }
-});
+);
 
 builder
     .Services.AddControllers()
@@ -97,6 +100,11 @@ builder.Services.AddHostedService<ExerciseRoutineSeeder>();
 // progreso histórico y XP en tiers realistas. Se registra DESPUÉS de
 // ProgramProgressSeeder y ExerciseRoutineSeeder.
 builder.Services.AddHostedService<DevProgramSeeder>();
+
+// Contenido por defecto de la plantilla (SPEC §4.4, P1): vincula podcast,
+// plan nutricional y rutina a weekly_day_templates SOLO donde hay NULL
+// (nunca pisa edición curada). Se registra DESPUÉS de DevProgramSeeder.
+builder.Services.AddHostedService<DevProgramContentSeeder>();
 
 // Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
 builder.Services.AddSingleton<MetricsBackfillSeeder>();
@@ -183,10 +191,7 @@ if (args.Contains("--migrate"))
 
 var app = builder.Build();
 
-app.UseForwardedHeaders(new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.All
-});
+app.UseForwardedHeaders(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.All });
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
