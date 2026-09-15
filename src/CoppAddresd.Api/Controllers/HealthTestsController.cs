@@ -517,6 +517,18 @@ public class HealthTestsController(
     // ===================== STATS (dashboard ERP) =====================
 
     /// <summary>
+    /// Cobertura de los últimos 12 meses, leída del rollup diario
+    /// (<c>assignments_count/completed</c> global). Solo alcance global (sin
+    /// filtro geo); el dashboard con filtro acota en el cliente.
+    /// </summary>
+    [HttpGet("coverage-trend")]
+    public async Task<
+        ActionResult<IReadOnlyList<HealthTestCoverageTrendPointDto>>
+    > GetCoverageTrend(CancellationToken ct) => Ok(
+        await mediator.Send(new GetHealthTestCoverageTrendQuery(), ct)
+    );
+
+    /// <summary>
     /// KPIs del dashboard. Sin filtros devuelve el alcance global; con
     /// <c>state</c> (repetible, unión) / <c>cityId</c> acota la zona
     /// seleccionada.

@@ -201,6 +201,14 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
         builder.HasIndex(x => x.DeletedAt)
             .HasDatabaseName("ix_patient_profiles_deleted_at");
 
+        // FKs geográficas sin índice: los filtros geo del dashboard (stats por
+        // estado/ciudad y mapa) filtran por city_id; PostgreSQL no indexa FKs.
+        builder.HasIndex(x => x.CityId)
+            .HasDatabaseName("ix_patient_profiles_city_id");
+
+        builder.HasIndex(x => x.StateId)
+            .HasDatabaseName("ix_patient_profiles_state_id");
+
         builder.HasOne(x => x.Clinic)
             .WithMany()
             .HasForeignKey(x => x.ClinicId)
