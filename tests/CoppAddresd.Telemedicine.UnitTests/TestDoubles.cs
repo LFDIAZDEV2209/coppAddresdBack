@@ -347,7 +347,8 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        bool usePreagg = true
     ) =>
         Task.FromResult(
             Items.Count(a =>
