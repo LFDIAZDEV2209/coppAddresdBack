@@ -50,6 +50,7 @@ public static class PermissionCodes
     public const string HealthTestsManage = "HealthTests.Manage";
     public const string HealthTestsAssign = "HealthTests.Assign";
     public const string HealthTestsReview = "HealthTests.Review";
+    public const string HealthTestsNotify = "HealthTests.Notify";
 
     // Documentos Legales
     public const string LegalDocumentsView = "LegalDocuments.View";
@@ -103,6 +104,7 @@ public static class PermissionCodes
         HealthTestsManage,
         HealthTestsAssign,
         HealthTestsReview,
+        HealthTestsNotify,
         LegalDocumentsView,
         LegalDocumentsManage,
         StoreView,
