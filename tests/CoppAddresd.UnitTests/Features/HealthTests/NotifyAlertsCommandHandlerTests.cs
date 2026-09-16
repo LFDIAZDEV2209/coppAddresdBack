@@ -22,7 +22,7 @@ public sealed class NotifyAlertsCommandHandlerTests
                 new NotifyAlertsRequest(
                     [alert.Id],
                     [NotificationChannel.sms],
-                    BodyOverride: "Hola {paciente}",
+                    BodyOverride: "Hola [paciente]",
                     Preview: true
                 )
             ),
@@ -135,14 +135,14 @@ public sealed class NotifyAlertsCommandHandlerTests
     {
         var patient = BuildPatient();
         var alert = BuildAlert(patient.Id);
-        var template = BuildTemplate(NotificationChannel.sms, "PLANTILLA {valor}");
+        var template = BuildTemplate(NotificationChannel.sms, "PLANTILLA [valor]");
         var (handler, _, _, sms, _) = BuildHandler([alert], patient, [template]);
         sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new SmsSendResult(true, "msg-2", null));
 
         var result = await handler.Handle(
             new NotifyAlertsCommand(
-                new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], BodyOverride: "OVERRIDE {paciente}")
+                new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], BodyOverride: "OVERRIDE [paciente]")
             ),
             CancellationToken.None
         );
@@ -156,7 +156,7 @@ public sealed class NotifyAlertsCommandHandlerTests
         var patient = BuildPatient();
         var alert = BuildAlert(patient.Id);
         var generic = BuildTemplate(NotificationChannel.sms, "GENERICA");
-        var match = BuildTemplate(NotificationChannel.sms, "MATCH {valor}", indicator: "ORP");
+        var match = BuildTemplate(NotificationChannel.sms, "MATCH [valor]", indicator: "ORP");
         var (handler, _, _, _, _) = BuildHandler([alert], patient, [generic, match]);
 
         var result = await handler.Handle(

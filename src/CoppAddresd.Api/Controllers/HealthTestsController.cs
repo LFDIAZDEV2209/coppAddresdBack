@@ -571,6 +571,29 @@ public class HealthTestsController(
             : Ok(result);
     }
 
+    /// <summary>Renderiza una plantilla con los datos reales de una alerta (sin enviar nada).</summary>
+    [HttpGet("notification-templates/{id:guid}/preview")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<NotificationTemplatePreviewDto>> PreviewNotificationTemplate(
+        Guid id,
+        CancellationToken ct,
+        [FromQuery] Guid? alertId = null,
+        [FromQuery] string? channel = null,
+        [FromQuery] string? bodyOverride = null
+    )
+    {
+        if (!TryParseChannel(channel, out var parsedChannel, out var error))
+        {
+            return BadRequest(new { message = error });
+        }
+
+        var result = await mediator.Send(
+            new PreviewNotificationTemplateQuery(id, alertId, parsedChannel, bodyOverride),
+            ct
+        );
+        return result is null ? NotFound(new { message = "Plantilla no encontrada" }) : Ok(result);
+    }
+
     /// <summary>Actualiza una plantilla de notificación (genera versión si cambia el contenido).</summary>
     [HttpPut("notification-templates/{id:guid}")]
     [RequirePermission(PermissionCodes.HealthTestsNotify)]

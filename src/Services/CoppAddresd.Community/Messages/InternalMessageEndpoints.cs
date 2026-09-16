@@ -20,7 +20,8 @@ public static class InternalMessageEndpoints
         Guid? RecipientProfileId,
         Guid? PatientUserId,
         string Body,
-        Guid? ActorUserId
+        Guid? ActorUserId,
+        string? DisplayName = null
     );
 
     public static IEndpointRouteBuilder MapInternalMessageEndpoints(this IEndpointRouteBuilder app)
@@ -80,9 +81,19 @@ public static class InternalMessageEndpoints
                 ? await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct)
                 : null;
 
+        // Auto-provisión del perfil: un paciente con cuenta en Auth puede no
+        // haber abierto nunca la app, y en ese caso no tiene perfil todavía.
+        // Se crea activo (mismo criterio que la auto-provisión de `Me`), de modo
+        // que la notificación clínica no se pierda por un detalle de onboarding.
         if (recipient is null)
         {
-            return Results.NotFound(new { error = "El destinatario no existe en la comunidad." });
+            if (request.PatientUserId is not { } newUserId)
+            {
+                return Results.NotFound(
+                    new { error = "El destinatario no existe en la comunidad." });
+            }
+
+            recipient = await EnsureRecipientProfileAsync(db, newUserId, request.DisplayName, ct);
         }
 
         if (recipient.Status != ProfileStatus.Active)
@@ -140,5 +151,38 @@ public static class InternalMessageEndpoints
         return await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem, ct)
             ?? throw new InvalidOperationException(
                 "No existe el perfil de sistema de la comunidad (Profile.IsSystem).");
+    }
+
+    /// <summary>
+    /// Crea el perfil de un usuario que aún no lo tiene (paciente con cuenta pero
+    /// sin primer acceso a la app). Idempotente frente a carreras: si otro request
+    /// lo creó en paralelo, se relee el existente.
+    /// </summary>
+    private static async Task<Profile> EnsureRecipientProfileAsync(
+        CommunityDbContext db,
+        Guid userId,
+        string? displayName,
+        CancellationToken ct)
+    {
+        var existing = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct);
+        if (existing is not null)
+        {
+            return existing;
+        }
+
+        var created = new Profile
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            DisplayName = string.IsNullOrWhiteSpace(displayName)
+                ? "Miembro ANTARES"
+                : displayName!.Trim(),
+            Status = ProfileStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        db.Profiles.Add(created);
+        await db.SaveChangesAsync(ct);
+        return created;
     }
 }

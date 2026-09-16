@@ -198,3 +198,24 @@ public sealed record NotifyAlertsRequest(
     string? BodyOverride = null,
     bool Preview = false
 );
+
+// --- Vista previa real de una plantilla ---
+
+/// <summary>
+/// Resultado de renderizar una plantilla con datos reales. <c>MissingPlaceholders</c>
+/// lista las claves usadas por la plantilla para las que el contexto no tiene dato,
+/// de modo que la UI pueda avisar antes de enviar.
+/// </summary>
+public sealed record NotificationTemplatePreviewDto(
+    Guid TemplateId,
+    string TemplateName,
+    NotificationChannel Channel,
+    Guid? AlertId,
+    Guid? PatientId,
+    string BodyTemplate,
+    string RenderedBody,
+    string? Recipient,
+    bool IsReachable,
+    string? SkipReason,
+    IReadOnlyList<string> MissingPlaceholders
+);
