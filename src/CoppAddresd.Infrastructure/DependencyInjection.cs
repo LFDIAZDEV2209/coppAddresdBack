@@ -1,3 +1,5 @@
+using CoppAddresd.Application.Common;
+using CoppAddresd.Application.Features.HealthTests.Notifications;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Interfaces;
@@ -64,6 +66,8 @@ public static class DependencyInjection
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
+        services.AddScoped<IHealthTestNotificationRepository, HealthTestNotificationRepository>();
+        services.AddSingleton<IHealthTestTemplateRenderer, HealthTestTemplateRenderer>();
 
         // Controles del programa (Program Controls): repositorio enfocado de
         // program_controls (precedente: DeviceTokenRepository/LeagueRepository
@@ -199,6 +203,7 @@ public static class DependencyInjection
 
         AddObjectStorage(services, configuration);
         AddEmailServices(services, configuration);
+        AddSmsSender(services, configuration);
 
         AddDistributedCache(services, configuration);
 
@@ -224,6 +229,19 @@ public static class DependencyInjection
             // Default: Log (seguro para desarrollo sin credenciales)
             services.AddScoped<IEmailService, LogEmailService>();
         }
+    }
+
+    /// <summary>
+    /// Registra la implementación de <see cref="ISmsSender"/> según <c>Sms:Provider</c>
+    /// (SPEC A13). Hoy solo existe la implementación <c>Noop</c> (registra el envío
+    /// simulado, sin proveedor externo); un proveedor real (Twilio Messages, SNS...)
+    /// se enchufa detrás de la misma interfaz cuando se configuren credenciales.
+    /// </summary>
+    private static void AddSmsSender(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<SmsSettings>(configuration.GetSection(SmsSettings.SectionName));
+
+        services.AddScoped<ISmsSender, NoOpSmsSender>();
     }
 
     /// <summary>
