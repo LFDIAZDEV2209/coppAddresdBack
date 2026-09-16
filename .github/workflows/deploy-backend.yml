@@ -173,17 +173,25 @@ jobs:
       # Build con caché GHA por servicio (scope): el Dockerfile separa la capa
       # de restore, así que pushes de solo-código reutilizan restore+SDK y el
       # build baja de ~8-12 min a ~1-3 min. mode=max en rama dev es aceptable.
-      - name: Build y push imagen (${{ github.sha }})
+      # push:false + docker push clasico: buildx resolviendo el tag exige
+      # ecr:BatchGetImage y el rol GHA no lo tiene; el push clasico si funciona.
+      - name: Build imagen (${{ github.sha }})
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ steps.svc.outputs.dockerfile }}
-          push: true
+          push: false
+          load: true
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Push ECR (docker push clasico)
+        run: |
+          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
+          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest"
 
       - name: Registrar nueva Task Definition (imagen SHA)
         id: taskdef

@@ -11,6 +11,8 @@ COPY src/Services/CoppAddresd.Auth/CoppAddresd.Auth.csproj src/Services/CoppAddr
 
 RUN dotnet restore "src/Services/CoppAddresd.Auth/CoppAddresd.Auth.csproj"
 
+COPY . .
+
 RUN dotnet publish \
     "src/Services/CoppAddresd.Auth/CoppAddresd.Auth.csproj" \
     -c Release \
