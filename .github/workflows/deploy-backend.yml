@@ -86,7 +86,7 @@ jobs:
             if echo "$SERVICES" | grep -q -E "(^| )community( |$)"; then
               TESTS="$TESTS tests/CoppAddresd.Community.UnitTests"
             fi
-            TESTS_JSON=$(echo "$TESTS" | xargs | tr ' ' '\n' | jq -R . | jq -s -c .)
+            TESTS_JSON=$(echo "$TESTS" | xargs | tr ' ' '\n' | sort -u | jq -R . | jq -s -c .)
             echo "test_projects=$TESTS_JSON" >> "$GITHUB_OUTPUT"
             # Migraciones solo donde aplica (auth/community auto-migran).
             MIGRATE=$(echo "$SERVICES" | xargs | tr ' ' '\n' | grep -E "^(api|telemedicine)$" | jq -R . | jq -s -c . || true)
@@ -166,7 +166,8 @@ jobs:
               echo "dockerfile=src/Services/CoppAddresd.Community/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-community" >> "$GITHUB_OUTPUT"
               echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
-              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              # Community firma URLs locales igual que la API: sin la clave HMAC el contenedor revienta al arrancar.
+              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -231,6 +232,7 @@ jobs:
           SERVICE="cooppadresd-${{ matrix.service }}"
           TD_ARN="${{ steps.taskdef.outputs.arn }}"
           DEADLINE=$((SECONDS + 1200))
+          MISS_COUNT=0
 
           while true; do
             DEP=$(aws ecs describe-services \
@@ -256,6 +258,25 @@ jobs:
               exit 1
             fi
 
+            if [ "$STATE" = "MISSING" ]; then
+              # Los primeros polls pueden no ver el deployment aún; solo es rollback tras racha.
+              MISS_COUNT=$((MISS_COUNT + 1))
+              if [ "$MISS_COUNT" -lt 8 ]; then
+                sleep 15
+                continue
+              fi
+              # El deployment nuevo desapareció: circuit breaker hizo rollback a otra revisión.
+              # Fallar rápido con el estado real en vez de pollear 20 min en vacío.
+              OTHER=$(aws ecs describe-services \
+                --cluster "${{ env.ECS_CLUSTER }}" \
+                --services "$SERVICE" \
+                --region "${{ env.AWS_REGION }}" \
+                --query "services[0].deployments[?taskDefinition!=`$TD_ARN`].[taskDefinition,rolloutState] | [0]" \
+                --output text)
+              echo "::error::Deployment retirado (rollback?) de $SERVICE. Otra revisión activa: $OTHER. Revisar stoppedReason de las tasks nuevas."
+              exit 1
+            fi
+
             if [ "$SECONDS" -ge "$DEADLINE" ]; then
               echo "::error::Timeout 20 min: rollout=$STATE running=$RUNNING desired=$DESIRED"
               exit 1
@@ -272,6 +293,12 @@ jobs:
             --cluster "${{ env.ECS_CLUSTER }}" \
             --service-name "cooppadresd-${{ matrix.service }}" \
             --region "${{ env.AWS_REGION }}" --query "taskArns" --output text)
+          TASKS_STOPPED=$(aws ecs list-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service-name "cooppadresd-${{ matrix.service }}" \
+            --desired-status STOPPED \
+            --region "${{ env.AWS_REGION }}" --query "taskArns[0:2]" --output text)
+          TASKS="$TASKS $TASKS_STOPPED"
           for T in $TASKS; do
             aws ecs describe-tasks \
               --cluster "${{ env.ECS_CLUSTER }}" \
