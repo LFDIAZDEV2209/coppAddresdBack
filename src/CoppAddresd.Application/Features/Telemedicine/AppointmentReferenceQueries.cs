@@ -18,7 +18,8 @@ public sealed record AppointmentProfessionalRefDto(
     string? ProfessionalTypeName,
     IReadOnlyList<Guid> SpecialtyIds,
     IReadOnlyList<Guid> LocationIds,
-    IReadOnlyList<Guid> ClinicIds);
+    IReadOnlyList<Guid> ClinicIds
+);
 
 /// <summary>Paciente del schema <c>app</c> (sin PHI clínica, solo identidad + contexto).</summary>
 public sealed record AppointmentPatientRefDto(
@@ -26,19 +27,13 @@ public sealed record AppointmentPatientRefDto(
     string FullName,
     string? Email,
     Guid? ClinicId,
-    Guid? LocationId);
+    Guid? LocationId,
+    string? StateCode
+);
 
-public sealed record AppointmentSpecialtyRefDto(
-    Guid Id,
-    string Code,
-    string Name,
-    string Category);
+public sealed record AppointmentSpecialtyRefDto(Guid Id, string Code, string Name, string Category);
 
-public sealed record AppointmentLocationRefDto(
-    Guid Id,
-    string Name,
-    Guid ClinicId,
-    bool IsActive);
+public sealed record AppointmentLocationRefDto(Guid Id, string Name, Guid ClinicId, bool IsActive);
 
 // Queries (retornan null si el id no existe → el microservicio traduce a su
 // propia NotFoundException con el mensaje de dominio correcto).
@@ -66,12 +61,13 @@ public sealed record GetAppointmentProfessionalByUserIdQuery(Guid UserId)
 public sealed record GetAppointmentPatientByUserIdQuery(Guid UserId)
     : IRequest<AppointmentPatientRefDto?>;
 
-public sealed class GetAppointmentProfessionalRefQueryHandler(
-    IEmployeeRepository employees) : IRequestHandler<GetAppointmentProfessionalRefQuery, AppointmentProfessionalRefDto?>
+public sealed class GetAppointmentProfessionalRefQueryHandler(IEmployeeRepository employees)
+    : IRequestHandler<GetAppointmentProfessionalRefQuery, AppointmentProfessionalRefDto?>
 {
     public async Task<AppointmentProfessionalRefDto?> Handle(
         GetAppointmentProfessionalRefQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var employee = await employees.GetByProfessionalIdAsync(request.ProfessionalId, ct);
         if (employee?.Professional is null)
@@ -85,22 +81,28 @@ public sealed class GetAppointmentProfessionalRefQueryHandler(
             employee.UserId,
             $"{employee.FirstName} {employee.MiddleName} {employee.LastName}".Trim(),
             employee.Professional.ProfessionalType?.Name,
-            employee.Professional.Specialties.Select(s => s.SpecialtyId).Distinct().Order().ToList(),
-            employee.ClinicAssignments
-                .SelectMany(a => a.Clinic.Locations)
+            employee
+                .Professional.Specialties.Select(s => s.SpecialtyId)
+                .Distinct()
+                .Order()
+                .ToList(),
+            employee
+                .ClinicAssignments.SelectMany(a => a.Clinic.Locations)
                 .Select(l => l.Id)
                 .Distinct()
                 .ToList(),
-            employee.ClinicAssignments.Select(a => a.ClinicId).Distinct().ToList());
+            employee.ClinicAssignments.Select(a => a.ClinicId).Distinct().ToList()
+        );
     }
 }
 
-public sealed class GetAppointmentPatientRefQueryHandler(
-    IPatientRepository patients) : IRequestHandler<GetAppointmentPatientRefQuery, AppointmentPatientRefDto?>
+public sealed class GetAppointmentPatientRefQueryHandler(IPatientRepository patients)
+    : IRequestHandler<GetAppointmentPatientRefQuery, AppointmentPatientRefDto?>
 {
     public async Task<AppointmentPatientRefDto?> Handle(
         GetAppointmentPatientRefQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patient = await patients.GetByIdAsync(request.PatientId, ct);
         if (patient is null)
@@ -113,16 +115,19 @@ public sealed class GetAppointmentPatientRefQueryHandler(
             $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Trim(),
             patient.Email,
             patient.ClinicId,
-            patient.LocationId);
+            patient.LocationId,
+            patient.State?.Code
+        );
     }
 }
 
-public sealed class GetAppointmentSpecialtyRefQueryHandler(
-    IOrganizationRepository organizations) : IRequestHandler<GetAppointmentSpecialtyRefQuery, AppointmentSpecialtyRefDto?>
+public sealed class GetAppointmentSpecialtyRefQueryHandler(IOrganizationRepository organizations)
+    : IRequestHandler<GetAppointmentSpecialtyRefQuery, AppointmentSpecialtyRefDto?>
 {
     public async Task<AppointmentSpecialtyRefDto?> Handle(
         GetAppointmentSpecialtyRefQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var specialty = await organizations.GetSpecialtyByIdAsync(request.SpecialtyId, ct);
         if (specialty is null)
@@ -134,16 +139,18 @@ public sealed class GetAppointmentSpecialtyRefQueryHandler(
             specialty.Id,
             specialty.Code,
             specialty.Name,
-            specialty.Category);
+            specialty.Category
+        );
     }
 }
 
-public sealed class GetAppointmentLocationRefQueryHandler(
-    IOrganizationRepository organizations) : IRequestHandler<GetAppointmentLocationRefQuery, AppointmentLocationRefDto?>
+public sealed class GetAppointmentLocationRefQueryHandler(IOrganizationRepository organizations)
+    : IRequestHandler<GetAppointmentLocationRefQuery, AppointmentLocationRefDto?>
 {
     public async Task<AppointmentLocationRefDto?> Handle(
         GetAppointmentLocationRefQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var location = await organizations.GetLocationByIdAsync(request.LocationId, ct);
         if (location is null)
@@ -155,16 +162,18 @@ public sealed class GetAppointmentLocationRefQueryHandler(
             location.Id,
             location.Name,
             location.ClinicId,
-            location.IsActive);
+            location.IsActive
+        );
     }
 }
 
-public sealed class GetAppointmentProfessionalByUserIdQueryHandler(
-    IEmployeeRepository employees) : IRequestHandler<GetAppointmentProfessionalByUserIdQuery, AppointmentProfessionalRefDto?>
+public sealed class GetAppointmentProfessionalByUserIdQueryHandler(IEmployeeRepository employees)
+    : IRequestHandler<GetAppointmentProfessionalByUserIdQuery, AppointmentProfessionalRefDto?>
 {
     public async Task<AppointmentProfessionalRefDto?> Handle(
         GetAppointmentProfessionalByUserIdQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var employee = await employees.GetByUserIdAsync(request.UserId, ct);
         if (employee?.Professional is null)
@@ -178,22 +187,28 @@ public sealed class GetAppointmentProfessionalByUserIdQueryHandler(
             employee.UserId,
             $"{employee.FirstName} {employee.MiddleName} {employee.LastName}".Trim(),
             employee.Professional.ProfessionalType?.Name,
-            employee.Professional.Specialties.Select(s => s.SpecialtyId).Distinct().Order().ToList(),
-            employee.ClinicAssignments
-                .SelectMany(a => a.Clinic.Locations)
+            employee
+                .Professional.Specialties.Select(s => s.SpecialtyId)
+                .Distinct()
+                .Order()
+                .ToList(),
+            employee
+                .ClinicAssignments.SelectMany(a => a.Clinic.Locations)
                 .Select(l => l.Id)
                 .Distinct()
                 .ToList(),
-            employee.ClinicAssignments.Select(a => a.ClinicId).Distinct().ToList());
+            employee.ClinicAssignments.Select(a => a.ClinicId).Distinct().ToList()
+        );
     }
 }
 
-public sealed class GetAppointmentPatientByUserIdQueryHandler(
-    IPatientRepository patients) : IRequestHandler<GetAppointmentPatientByUserIdQuery, AppointmentPatientRefDto?>
+public sealed class GetAppointmentPatientByUserIdQueryHandler(IPatientRepository patients)
+    : IRequestHandler<GetAppointmentPatientByUserIdQuery, AppointmentPatientRefDto?>
 {
     public async Task<AppointmentPatientRefDto?> Handle(
         GetAppointmentPatientByUserIdQuery request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patient = await patients.GetByUserIdAsync(request.UserId, ct);
         if (patient is null)
@@ -206,6 +221,8 @@ public sealed class GetAppointmentPatientByUserIdQueryHandler(
             $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Trim(),
             patient.Email,
             patient.ClinicId,
-            patient.LocationId);
+            patient.LocationId,
+            patient.State?.Code
+        );
     }
 }
