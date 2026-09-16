@@ -233,20 +233,18 @@ public sealed class GetDashboardAnalyticsQueryHandler(
         CancellationToken ct
     )
     {
-        var names = new Dictionary<Guid, string>();
-
-        foreach (var id in items.Select(i => i.ProfessionalId).Distinct())
-        {
-            if (await referenceData.GetProfessionalAsync(id, ct) is { } p)
-            {
-                names[id] = p.FullName;
-            }
-        }
+        var ids = items.Select(i => i.ProfessionalId).Distinct().ToList();
+        // Fan-out paralelo: en frío cada referencia es un HTTP al backend;
+        // secuencial costaba N×latencia (3.8s medidos con 14 profesionales).
+        var names = await AppointmentMapper.FetchAllAsync(
+            ids,
+            id => referenceData.GetProfessionalAsync(id, ct)
+        );
 
         return items
             .Select(i => new ProfessionalActivityDto(
                 i.ProfessionalId,
-                names.GetValueOrDefault(i.ProfessionalId),
+                names.GetValueOrDefault(i.ProfessionalId)?.FullName,
                 i.Total,
                 i.Completed,
                 i.Cancelled,

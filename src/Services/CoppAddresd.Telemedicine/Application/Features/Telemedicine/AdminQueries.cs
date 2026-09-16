@@ -89,24 +89,16 @@ internal static class SessionDtos
             .Distinct()
             .ToList();
 
-        var patients = new Dictionary<Guid, PatientRefDto>();
-        var professionals = new Dictionary<Guid, ProfessionalRefDto>();
-
-        foreach (var id in patientIds)
-        {
-            if (await referenceData.GetPatientAsync(id, ct) is { } p)
-            {
-                patients[id] = p;
-            }
-        }
-
-        foreach (var id in professionalIds)
-        {
-            if (await referenceData.GetProfessionalAsync(id, ct) is { } pr)
-            {
-                professionals[id] = pr;
-            }
-        }
+        // Fan-out paralelo (ver AppointmentMapper): en frío cada referencia es
+        // un HTTP al backend; secuencial costaba N×latencia por listado.
+        var patients = await AppointmentMapper.FetchAllAsync(
+            patientIds,
+            id => referenceData.GetPatientAsync(id, ct)
+        );
+        var professionals = await AppointmentMapper.FetchAllAsync(
+            professionalIds,
+            id => referenceData.GetProfessionalAsync(id, ct)
+        );
 
         return items
             .Select(s => new TelemedicineSessionDto(
@@ -333,24 +325,14 @@ internal static class RequestDtos
         var patientIds = items.Select(r => r.PatientId).Distinct().ToList();
         var specialtyIds = items.Select(r => r.SpecialtyId).Distinct().ToList();
 
-        var patients = new Dictionary<Guid, PatientRefDto>();
-        var specialties = new Dictionary<Guid, SpecialtyRefDto>();
-
-        foreach (var id in patientIds)
-        {
-            if (await referenceData.GetPatientAsync(id, ct) is { } p)
-            {
-                patients[id] = p;
-            }
-        }
-
-        foreach (var id in specialtyIds)
-        {
-            if (await referenceData.GetSpecialtyAsync(id, ct) is { } s)
-            {
-                specialties[id] = s;
-            }
-        }
+        var patients = await AppointmentMapper.FetchAllAsync(
+            patientIds,
+            id => referenceData.GetPatientAsync(id, ct)
+        );
+        var specialties = await AppointmentMapper.FetchAllAsync(
+            specialtyIds,
+            id => referenceData.GetSpecialtyAsync(id, ct)
+        );
 
         return items
             .Select(r => new TelemedicineRequestDto(
