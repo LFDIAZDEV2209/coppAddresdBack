@@ -24,6 +24,9 @@ public sealed record ProfessionalActivityDto(
     int UniquePatients
 );
 
+/// <summary>Citas del rango agrupadas por estado USA del paciente (heatmap).</summary>
+public sealed record StateCountDto(string Code, int Count);
+
 /// <summary>KPIs del dashboard de Telemedicina (varían por rol: global vs profesional).</summary>
 public sealed record DashboardKpisDto(
     int TotalAppointments,
@@ -47,7 +50,8 @@ public sealed record DashboardAnalyticsDto(
     IReadOnlyList<StatusCountDto> StatusDistribution,
     IReadOnlyList<HourlyCountDto> HourlyDistribution,
     IReadOnlyList<ProfessionalActivityDto> ProfessionalActivity,
-    IReadOnlyList<AppointmentDto> UpcomingAppointments
+    IReadOnlyList<AppointmentDto> UpcomingAppointments,
+    IReadOnlyList<StateCountDto> States
 );
 
 /// <summary>
@@ -137,6 +141,27 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             ? await appointments.CountGroupedByProfessionalAsync(from, to, ct)
             : [];
 
+        // Dimensión por estado USA del paciente (heatmap): una entrada por cita
+        // del rango; los estados se resuelven una vez por paciente (dedup +
+        // caché de referencias). Sin estado registrado → fuera del mapa.
+        var rangePatientIds = await appointments.ListPatientIdsAsync(
+            request.ProfessionalId,
+            from,
+            to,
+            ct
+        );
+        var patientsById = await AppointmentMapper.FetchAllAsync(
+            rangePatientIds.Distinct().ToList(),
+            id => referenceData.GetPatientAsync(id, ct)
+        );
+        var states = rangePatientIds
+            .Select(id => patientsById.GetValueOrDefault(id)?.StateCode?.Trim().ToUpperInvariant())
+            .Where(code => !string.IsNullOrEmpty(code))
+            .GroupBy(code => code!)
+            .Select(g => new StateCountDto(g.Key, g.Count()))
+            .OrderByDescending(s => s.Count)
+            .ToList();
+
         // Serie diaria completa: rellena los días sin citas con 0 para que la
         // gráfica sea continua en todo el rango.
         var dailySeries = BuildContinuousDailySeries(from, to, series);
@@ -180,7 +205,8 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             statusDistribution,
             hourlyDistribution,
             activityDtos,
-            upcomingDtos
+            upcomingDtos,
+            states
         );
     }
 

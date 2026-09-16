@@ -166,6 +166,18 @@ public interface IAppointmentRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// PatientIds con cita en el rango, una entrada por cita (con duplicados):
+    /// base para dimensiones que viven en la referencia del paciente (estado).
+    /// <paramref name="professionalId"/> opcional: perfil del profesional.
+    /// </summary>
+    Task<IReadOnlyList<Guid>> ListPatientIdsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    );
+
     /// <summary>Profesionales con al menos una cita en el rango (activos).</summary>
     Task<int> CountDistinctProfessionalsAsync(
         DateTimeOffset from,
