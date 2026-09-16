@@ -493,6 +493,17 @@ public class HealthTestsController(
         return result is null ? NotFound(new { message = "Alerta no encontrada" }) : Ok(result);
     }
 
+    [HttpPost("alerts/{id:guid}/reopen")]
+    [RequirePermission(PermissionCodes.HealthTestsReview)]
+    public async Task<ActionResult<HealthTestAlertDto>> ReopenAlert(Guid id, CancellationToken ct)
+    {
+        var result = await mediator.Send(
+            new TransitionAlertCommand(id, HealthTestAlertStatus.active, context.UserId),
+            ct
+        );
+        return result is null ? NotFound(new { message = "Alerta no encontrada" }) : Ok(result);
+    }
+
     [HttpPost("comments")]
     [RequirePermission(PermissionCodes.HealthTestsReview)]
     public async Task<ActionResult<Guid>> AddComment(
