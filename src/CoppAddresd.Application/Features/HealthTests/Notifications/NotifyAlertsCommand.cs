@@ -189,6 +189,7 @@ public sealed class NotifyAlertsCommandHandler(
                 patient?.UserId,
                 body,
                 actorId,
+                PatientName(patient),
                 ct
             );
             if (community.Success)
@@ -343,34 +344,7 @@ public sealed class NotifyAlertsCommandHandler(
     private static (bool IsReachable, string Value, string? SkipReason) ResolveRecipient(
         NotificationChannel channel,
         PatientProfile? patient
-    )
-    {
-        if (patient is null)
-        {
-            return (false, string.Empty, "La alerta no tiene paciente asociado.");
-        }
-
-        if (channel == NotificationChannel.sms)
-        {
-            if (string.IsNullOrWhiteSpace(patient.PhoneNumber))
-            {
-                return (false, string.Empty, "El paciente no tiene teléfono registrado.");
-            }
-
-            var dial = string.IsNullOrWhiteSpace(patient.PhoneCountryCode)
-                ? string.Empty
-                : $"+{patient.PhoneCountryCode!.TrimStart('+')}";
-            return (true, $"{dial}{patient.PhoneNumber}", null);
-        }
-
-        // community
-        if (patient.UserId is null || patient.UserId == Guid.Empty)
-        {
-            return (false, string.Empty, "El paciente no tiene cuenta en la app.");
-        }
-
-        return (true, patient.UserId.Value.ToString(), null);
-    }
+    ) => NotificationPreviewSupport.ResolveRecipient(channel, patient);
 }
 
 /// <summary>
@@ -461,6 +435,9 @@ public sealed class SendTestNotificationCommandHandler(
                     patient?.UserId,
                     body,
                     command.ActorId,
+                    patient is null
+                        ? null
+                        : $"{patient.FirstName} {patient.LastName}".Trim(),
                     ct
                 );
                 status = result.Success

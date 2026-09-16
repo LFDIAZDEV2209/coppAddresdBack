@@ -247,16 +247,33 @@ POST   /health-tests/notification-templates/{id}/clone                          
 GET    /health-tests/notification-templates/{id}/versions                             Notify
 POST   /health-tests/notification-templates/{id}/versions/{version}/restore           Notify
 POST   /health-tests/notification-templates/{id}/test                                 Notify   (envío de prueba)
+GET    /health-tests/notification-templates/{id}/preview?alertId&channel&bodyOverride  Notify   (render con datos reales de una alerta)
 POST   /health-tests/alerts/notify                                                    Notify   (masivo; preview=true no envía ni registra)
 GET    /health-tests/notifications?alertId&patientId&channel&status&from&to&page&pageSize   Notify
 GET    /health-tests/notifications/charts?days                                        Notify
 ```
 
-Placeholders del cuerpo: `{paciente}` `{documento}` `{test}` `{indicador}` `{valor}` `{umbral}`
-`{severidad}` `{accion}` `{profesional}` `{fecha}`. Los placeholders desconocidos se conservan
-literales y los valores nulos se sustituyen por vacío; la severidad se rotula baja/media/alta/crítica
-y la fecha `dd/MM/yyyy`. La plantilla se elige explícitamente o se autoselecciona (match por
-indicador > severidad > alcance nulo, y la más reciente).
+Placeholders del cuerpo: `[paciente]` `[documento]` `[test]` `[indicador]` `[valor]` `[umbral]`
+`[severidad]` `[accion]` `[profesional]` `[fecha]` (corchetes; las llaves `{clave}` del formato
+anterior se migraron con `20260916205732_ConvertNotificationPlaceholdersToBrackets`). Los
+placeholders desconocidos se conservan literales y los valores nulos se sustituyen por vacío; la
+severidad se rotula baja/media/alta/crítica y la fecha `dd/MM/yyyy`. La plantilla se elige
+explícitamente o se autoselecciona (match por indicador > severidad > alcance nulo, y la más reciente).
+
+`GET /notification-templates/{id}/preview` devuelve el render con **datos reales**: usa la alerta
+indicada (o, sin `alertId`, la más reciente que tenga resultado asociado) y su paciente, e informa
+`isReachable` + `skipReason` del canal y `missingPlaceholders` (datos que la alerta no puede rellenar,
+p. ej. `[accion]`). El frontend lo usa tanto en el Template Studio (selector de paciente de ejemplo)
+como en el asistente de envío.
+
+**Cuentas de paciente y entrega por comunidad (dev)**: `PatientAccountDemoSeeder` (servicio Auth,
+config `PatientAccountDemo` con `Enabled`/`Password`/`MaxAccounts`, no-op en prod) crea las cuentas
+`auth.users` deterministas (MD5 del documento, app `app`) de los pacientes sin cuenta y las de los
+perfiles de comunidad huérfanos. Como un paciente puede tener cuenta sin haber abierto nunca la app,
+el endpoint interno `POST /api/internal/messages/direct` **auto-provisiona** el perfil de comunidad
+(`Profile{UserId, DisplayName, Status=Active}`) cuando no existe, igual que la auto-provisión de
+`CommunityQuery.Me`; así la notificación clínica no se pierde por onboarding pendiente.
+
 
 Frontend: `/health-tests/alertas` (selección múltiple + asistente de envío en 3 pasos con resultados
 por paciente, filtros por indicador/severidad/estado/fechas, gráficos e historial de entregas) y

@@ -21,12 +21,12 @@ public sealed record HealthTestNotificationRenderContext(
 );
 
 /// <summary>
-/// Sustituye placeholders <c>{clave}</c> en las plantillas de notificación por
+/// Sustituye placeholders <c>[clave]</c> en las plantillas de notificación por
 /// los datos del contexto (SPEC A13).
 /// </summary>
 public interface IHealthTestTemplateRenderer
 {
-    /// <summary>Placeholders soportados (sin llaves).</summary>
+    /// <summary>Placeholders soportados (sin corchetes).</summary>
     IReadOnlyList<string> SupportedPlaceholders { get; }
 
     /// <summary>Claves usadas en una plantilla (minúsculas, ordenadas).</summary>
@@ -56,7 +56,7 @@ public sealed partial class HealthTestTemplateRenderer : IHealthTestTemplateRend
         "fecha",
     ];
 
-    [GeneratedRegex(@"\{([a-zA-Z0-9_]+)\}")]
+    [GeneratedRegex(@"\[([a-zA-Z0-9_]+)\]")]
     private static partial Regex PlaceholderRegex();
 
     public IReadOnlyList<string> SupportedPlaceholders => Placeholders;
