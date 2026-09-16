@@ -116,3 +116,28 @@ public enum HealthTestScoringStrategy
     inventory = 4,
     weighted = 5,
 }
+
+/// <summary>
+/// Canal de entrega de una notificación de alerta (SPEC A13): <c>community</c>
+/// (mensaje directo en la comunidad/app del paciente) y <c>sms</c> (mensaje de
+/// texto al teléfono del paciente). Se almacena como <c>varchar</c> con CHECK.
+/// </summary>
+public enum NotificationChannel
+{
+    community = 1,
+    sms = 2,
+}
+
+/// <summary>
+/// Estado de entrega de una notificación (SPEC A13): <c>queued</c> (encolada),
+/// <c>sent</c> (entregada al proveedor), <c>failed</c> (error del proveedor) y
+/// <c>skipped</c> (no se pudo enviar: sin contacto, canal deshabilitado, etc.).
+/// Se almacena como <c>varchar</c> con CHECK.
+/// </summary>
+public enum NotificationStatus
+{
+    queued = 1,
+    sent = 2,
+    failed = 3,
+    skipped = 4,
+}

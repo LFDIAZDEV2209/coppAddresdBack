@@ -310,7 +310,11 @@ jobs:
 
   migrate:
     needs: [detect, deploy]
+    # always(): un fallo en el deploy de OTRO servicio (p. ej. community) no debe
+    # saltarse las migraciones pendientes de api/telemedicine. El cuerpo del job
+    # resuelve el task def por nombre y es idempotente (EF omite lo ya aplicado).
     if: >
+      always() &&
       needs.detect.outputs.migrate != '' &&
       needs.detect.outputs.migrate != '[]'
     runs-on: ubuntu-latest
