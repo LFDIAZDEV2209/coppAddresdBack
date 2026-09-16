@@ -11,13 +11,17 @@ permissions:
 
 concurrency:
   group: deploy-backend-dev
-  cancel-in-progress: false
+  # En dev el último push manda: cancela despliegues superados en cola en vez
+  # de desplegar cada commit intermedio uno tras otro.
+  cancel-in-progress: true
 
 jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
       services: ${{ steps.detect.outputs.services }}
+      test_projects: ${{ steps.detect.outputs.test_projects }}
+      migrate: ${{ steps.detect.outputs.migrate }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,25 +66,50 @@ jobs:
           if [ -z "$SERVICES" ]; then
             echo "Sin cambios backend relevantes — no se despliega nada"
             echo "services=[]" >> "$GITHUB_OUTPUT"
+            echo "test_projects=[]" >> "$GITHUB_OUTPUT"
+            echo "migrate=[]" >> "$GITHUB_OUTPUT"
           else
             JSON=$(echo "$SERVICES" | xargs | tr ' ' '\n' | jq -R . | jq -s -c .)
             echo "services=$JSON" >> "$GITHUB_OUTPUT"
+            # Tests acotados al servicio afectado (el suite completo en cada
+            # push duplicaba minutos). Compartido/api tocan el núcleo.
+            TESTS=""
+            if echo "$SERVICES" | grep -q -E "(^| )(api|auth)( |$)"; then
+              TESTS="$TESTS tests/CoppAddresd.UnitTests"
+            fi
+            if [ -n "$SHARED" ]; then
+              TESTS="tests/CoppAddresd.UnitTests tests/CoppAddresd.Telemedicine.UnitTests tests/CoppAddresd.Community.UnitTests"
+            fi
+            if echo "$SERVICES" | grep -q -E "(^| )telemedicine( |$)"; then
+              TESTS="$TESTS tests/CoppAddresd.Telemedicine.UnitTests"
+            fi
+            if echo "$SERVICES" | grep -q -E "(^| )community( |$)"; then
+              TESTS="$TESTS tests/CoppAddresd.Community.UnitTests"
+            fi
+            TESTS_JSON=$(echo "$TESTS" | xargs | tr ' ' '\n' | jq -R . | jq -s -c .)
+            echo "test_projects=$TESTS_JSON" >> "$GITHUB_OUTPUT"
+            # Migraciones solo donde aplica (auth/community auto-migran).
+            MIGRATE=$(echo "$SERVICES" | xargs | tr ' ' '\n' | grep -E "^(api|telemedicine)$" | jq -R . | jq -s -c . || true)
+            echo "migrate=$MIGRATE" >> "$GITHUB_OUTPUT"
           fi
 
   test:
     needs: detect
     if: needs.detect.outputs.services != '' && needs.detect.outputs.services != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJson(needs.detect.outputs.test_projects) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
-      - name: Test unitarios (CI-safe, sin RDS)
+      - name: Test unitarios (${{ matrix.project }}, CI-safe, sin RDS)
         run: |
-          dotnet test tests/CoppAddresd.UnitTests -c Release --nologo
-          dotnet test tests/CoppAddresd.Telemedicine.UnitTests -c Release --nologo
+          dotnet test ${{ matrix.project }} -c Release --nologo
 
   deploy:
     needs: [detect, test]
@@ -106,6 +135,9 @@ jobs:
       - name: Login ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Determinar Dockerfile y ECR por servicio
         id: svc
@@ -138,18 +170,20 @@ jobs:
               ;;
           esac
 
-      - name: Build imagen (${{ github.sha }})
-        run: |
-          docker build \
-            -f "${{ steps.svc.outputs.dockerfile }}" \
-            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}" \
-            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest" \
-            .
-
-      - name: Push ECR
-        run: |
-          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
-          docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest"
+      # Build con caché GHA por servicio (scope): el Dockerfile separa la capa
+      # de restore, así que pushes de solo-código reutilizan restore+SDK y el
+      # build baja de ~8-12 min a ~1-3 min. mode=max en rama dev es aceptable.
+      - name: Build y push imagen (${{ github.sha }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ steps.svc.outputs.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Registrar nueva Task Definition (imagen SHA)
         id: taskdef
@@ -242,9 +276,8 @@ jobs:
   migrate:
     needs: [detect, deploy]
     if: >
-      needs.detect.outputs.services != '' &&
-      needs.detect.outputs.services != '[]' &&
-      (contains(needs.detect.outputs.services, 'api') || contains(needs.detect.outputs.services, 'telemedicine'))
+      needs.detect.outputs.migrate != '' &&
+      needs.detect.outputs.migrate != '[]'
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-2
@@ -252,7 +285,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: ${{ fromJson(needs.detect.outputs.services) }}
+        service: ${{ fromJson(needs.detect.outputs.migrate) }}
     steps:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -279,14 +312,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "${{ matrix.service }}" in
-            api|telemedicine) ;;
-            *)
-              echo "auth/community auto-migran al arrancar — sin one-off task"
-              exit 0
-              ;;
-          esac
-
+          # La matriz ya viene filtrada a api|telemedicine (auth/community
+          # auto-migran al arrancar, ver comentario del job).
           TD_NAME="cooppadresd-${{ matrix.service }}"
           TD_ARN=$(aws ecs describe-task-definition \
             --task-definition "$TD_NAME" --region "$AWS_REGION" \
