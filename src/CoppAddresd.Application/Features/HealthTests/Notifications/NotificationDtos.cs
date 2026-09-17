@@ -8,13 +8,16 @@ namespace CoppAddresd.Application.Features.HealthTests.Notifications;
 public sealed record HealthTestNotificationTemplateDto(
     Guid Id,
     string Code,
-    string Name,
+    string NameEs,
+    string? NameEn,
     NotificationChannel Channel,
     HealthTestSeverity? Severity,
     string? TestCategory,
     string? IndicatorCode,
-    string? Subject,
-    string BodyTemplate,
+    string? SubjectEs,
+    string? SubjectEn,
+    string BodyTemplateEs,
+    string? BodyTemplateEn,
     bool IsActive,
     int UsageCount,
     int VersionCount,
@@ -30,13 +33,16 @@ public sealed record HealthTestNotificationTemplateDto(
         new(
             e.Id,
             e.Code,
-            e.Name,
+            e.NameEs,
+            e.NameEn,
             e.Channel,
             e.Severity,
             e.TestCategory,
             e.IndicatorCode,
-            e.Subject,
-            e.BodyTemplate,
+            e.SubjectEs,
+            e.SubjectEn,
+            e.BodyTemplateEs,
+            e.BodyTemplateEn,
             e.IsActive,
             usageCount,
             versionCount,
@@ -49,13 +55,16 @@ public sealed record HealthTestNotificationTemplateVersionDto(
     Guid Id,
     Guid TemplateId,
     int Version,
-    string Name,
+    string NameEs,
+    string? NameEn,
     NotificationChannel Channel,
     HealthTestSeverity? Severity,
     string? TestCategory,
     string? IndicatorCode,
-    string? Subject,
-    string BodyTemplate,
+    string? SubjectEs,
+    string? SubjectEn,
+    string BodyTemplateEs,
+    string? BodyTemplateEn,
     string? Note,
     DateTime CreatedAt
 )
@@ -67,13 +76,16 @@ public sealed record HealthTestNotificationTemplateVersionDto(
             v.Id,
             v.TemplateId,
             v.Version,
-            v.Name,
+            v.NameEs,
+            v.NameEn,
             v.Channel,
             v.Severity,
             v.TestCategory,
             v.IndicatorCode,
-            v.Subject,
-            v.BodyTemplate,
+            v.SubjectEs,
+            v.SubjectEn,
+            v.BodyTemplateEs,
+            v.BodyTemplateEn,
             v.Note,
             v.CreatedAt
         );
@@ -87,6 +99,7 @@ public sealed record HealthTestNotificationDto(
     Guid? PatientId,
     string? PatientName,
     NotificationChannel Channel,
+    NotificationLanguage Language,
     Guid? TemplateId,
     string? TemplateName,
     string Recipient,
@@ -106,8 +119,11 @@ public sealed record HealthTestNotificationDto(
             n.PatientId,
             n.Patient is null ? null : $"{n.Patient.FirstName} {n.Patient.LastName}".Trim(),
             n.Channel,
+            n.Language,
             n.TemplateId,
-            n.Template?.Name,
+            n.Language == NotificationLanguage.en
+                ? (n.Template?.NameEn ?? n.Template?.NameEs)
+                : n.Template?.NameEs,
             n.Recipient,
             n.RenderedBody,
             n.Status,
@@ -126,6 +142,7 @@ public sealed record NotifyAlertItemResultDto(
     Guid? PatientId,
     string? PatientName,
     NotificationChannel Channel,
+    NotificationLanguage Language,
     NotificationStatus Status,
     string? Reason,
     string RenderedBody,
@@ -159,33 +176,44 @@ public sealed record HealthTestNotificationChartsDto(
 
 public sealed record CreateNotificationTemplateRequest(
     string Code,
-    string Name,
+    string NameEs,
     NotificationChannel Channel,
-    string BodyTemplate,
+    string BodyTemplateEs,
+    string? NameEn = null,
+    string? BodyTemplateEn = null,
     HealthTestSeverity? Severity = null,
     string? TestCategory = null,
     string? IndicatorCode = null,
-    string? Subject = null,
+    string? SubjectEs = null,
+    string? SubjectEn = null,
     bool IsActive = true,
     string? Note = null
 );
 
 public sealed record UpdateNotificationTemplateRequest(
-    string Name,
+    string NameEs,
     NotificationChannel Channel,
-    string BodyTemplate,
+    string BodyTemplateEs,
+    string? NameEn = null,
+    string? BodyTemplateEn = null,
     HealthTestSeverity? Severity = null,
     string? TestCategory = null,
     string? IndicatorCode = null,
-    string? Subject = null,
+    string? SubjectEs = null,
+    string? SubjectEn = null,
     bool IsActive = true,
     string? Note = null
 );
 
-public sealed record CloneNotificationTemplateRequest(string Code, string? Name = null);
+public sealed record CloneNotificationTemplateRequest(
+    string Code,
+    string? NameEs = null,
+    string? NameEn = null
+);
 
 public sealed record SendTestNotificationRequest(
     NotificationChannel Channel,
+    NotificationLanguage Language = NotificationLanguage.es,
     string? PhoneNumber = null,
     Guid? PatientId = null,
     string? BodyOverride = null
@@ -196,5 +224,29 @@ public sealed record NotifyAlertsRequest(
     IReadOnlyList<NotificationChannel> Channels,
     Guid? TemplateId = null,
     string? BodyOverride = null,
+    NotificationLanguage Language = NotificationLanguage.es,
     bool Preview = false
+);
+
+// --- Vista previa real de una plantilla ---
+
+/// <summary>
+/// Resultado de renderizar una plantilla con datos reales. <c>MissingPlaceholders</c>
+/// lista las claves usadas por la plantilla para las que el contexto no tiene dato,
+/// de modo que la UI pueda avisar antes de enviar.
+/// </summary>
+public sealed record NotificationTemplatePreviewDto(
+    Guid TemplateId,
+    string TemplateName,
+    NotificationChannel Channel,
+    NotificationLanguage Language,
+    Guid? AlertId,
+    Guid? PatientId,
+    string BodyTemplate,
+    string RenderedBody,
+    string? Recipient,
+    bool IsReachable,
+    string? SkipReason,
+    bool UsedFallbackLanguage,
+    IReadOnlyList<string> MissingPlaceholders
 );

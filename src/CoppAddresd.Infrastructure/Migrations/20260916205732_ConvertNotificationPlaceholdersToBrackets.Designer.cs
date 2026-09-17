@@ -5,6 +5,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260916205732_ConvertNotificationPlaceholdersToBrackets")]
+    partial class ConvertNotificationPlaceholdersToBrackets
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2638,14 +2641,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("error");
 
-                    b.Property<string>("Language")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(5)
-                        .HasColumnType("character varying(5)")
-                        .HasDefaultValue("es")
-                        .HasColumnName("language");
-
                     b.Property<Guid?>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
@@ -2716,14 +2711,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
-                    b.Property<string>("BodyTemplateEn")
-                        .HasColumnType("text")
-                        .HasColumnName("body_template_en");
-
-                    b.Property<string>("BodyTemplateEs")
+                    b.Property<string>("BodyTemplate")
                         .IsRequired()
                         .HasColumnType("text")
-                        .HasColumnName("body_template_es");
+                        .HasColumnName("body_template");
 
                     b.Property<string>("Channel")
                         .IsRequired()
@@ -2756,31 +2747,21 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDefaultValue(true)
                         .HasColumnName("is_active");
 
-                    b.Property<string>("NameEn")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("name_en");
-
-                    b.Property<string>("NameEs")
+                    b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
-                        .HasColumnName("name_es");
+                        .HasColumnName("name");
 
                     b.Property<string>("Severity")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("severity");
 
-                    b.Property<string>("SubjectEn")
+                    b.Property<string>("Subject")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
-                        .HasColumnName("subject_en");
-
-                    b.Property<string>("SubjectEs")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("subject_es");
+                        .HasColumnName("subject");
 
                     b.Property<string>("TestCategory")
                         .HasMaxLength(64)
@@ -2814,14 +2795,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("id")
                         .HasDefaultValueSql("gen_random_uuid()");
 
-                    b.Property<string>("BodyTemplateEn")
-                        .HasColumnType("text")
-                        .HasColumnName("body_template_en");
-
-                    b.Property<string>("BodyTemplateEs")
+                    b.Property<string>("BodyTemplate")
                         .IsRequired()
                         .HasColumnType("text")
-                        .HasColumnName("body_template_es");
+                        .HasColumnName("body_template");
 
                     b.Property<string>("Channel")
                         .IsRequired()
@@ -2844,16 +2821,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("indicator_code");
 
-                    b.Property<string>("NameEn")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("name_en");
-
-                    b.Property<string>("NameEs")
+                    b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
-                        .HasColumnName("name_es");
+                        .HasColumnName("name");
 
                     b.Property<string>("Note")
                         .HasMaxLength(300)
@@ -2865,15 +2837,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("severity");
 
-                    b.Property<string>("SubjectEn")
+                    b.Property<string>("Subject")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
-                        .HasColumnName("subject_en");
-
-                    b.Property<string>("SubjectEs")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("subject_es");
+                        .HasColumnName("subject");
 
                     b.Property<Guid>("TemplateId")
                         .HasColumnType("uuid")

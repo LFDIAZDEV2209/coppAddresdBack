@@ -10,9 +10,15 @@ public sealed class HealthTestTemplateRendererTests
     [Fact]
     public void ExtractPlaceholders_devuelve_claves_ordenadas_y_unicas()
     {
-        var keys = _renderer.ExtractPlaceholders("Hola {Paciente}, tu {valor} y de nuevo {paciente}.");
+        var keys = _renderer.ExtractPlaceholders("Hola [Paciente], tu [valor] y de nuevo [paciente].");
 
         Assert.Equal(["paciente", "valor"], keys);
+    }
+
+    [Fact]
+    public void ExtractPlaceholders_ignora_llaves_antiguas()
+    {
+        Assert.Empty(_renderer.ExtractPlaceholders("Hola {paciente}."));
     }
 
     [Fact]
@@ -33,7 +39,7 @@ public sealed class HealthTestTemplateRendererTests
             Date: new DateTime(2026, 9, 16, 0, 0, 0, DateTimeKind.Utc)
         );
 
-        var body = _renderer.Render("{paciente}: {indicador} {valor} ({severidad}) el {fecha}", context);
+        var body = _renderer.Render("[paciente]: [indicador] [valor] ([severidad]) el [fecha]", context);
 
         Assert.Equal("Ana Pérez: ORP 4.2 (alta) el 16/09/2026", body);
     }
@@ -43,9 +49,9 @@ public sealed class HealthTestTemplateRendererTests
     {
         var context = new HealthTestNotificationRenderContext(PatientName: "Ana Pérez");
 
-        var body = _renderer.Render("{paciente} | {valor} | {desconocido}", context);
+        var body = _renderer.Render("[paciente] | [valor] | [desconocido]", context);
 
-        Assert.Equal("Ana Pérez |  | {desconocido}", body);
+        Assert.Equal("Ana Pérez |  | [desconocido]", body);
     }
 
     [Theory]
@@ -56,5 +62,17 @@ public sealed class HealthTestTemplateRendererTests
     public void SeverityLabel_traduce_la_severidad(HealthTestSeverity severity, string expected)
     {
         Assert.Equal(expected, HealthTestTemplateRenderer.SeverityLabel(severity));
+    }
+
+    [Fact]
+    public void Render_en_ingles_usa_la_etiqueta_de_severidad_en_ingles()
+    {
+        var context = new HealthTestNotificationRenderContext(
+            PatientName: "Ana",
+            Severity: HealthTestSeverity.critical,
+            Language: NotificationLanguage.en
+        );
+
+        Assert.Equal("Ana: critical", _renderer.Render("[paciente]: [severidad]", context));
     }
 }

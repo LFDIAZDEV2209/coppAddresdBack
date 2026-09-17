@@ -108,6 +108,11 @@ if (builder.Environment.IsDevelopment())
     builder.Services.AddHostedService<HealthTestsDemoSeeder>();
 }
 
+// Catálogo base de plantillas de notificación de alertas (SPEC A13): bilingüe y
+// solo inserta las que faltan (por Code), por lo que se registra en todos los
+// entornos — producción incluida — sin sobrescribir plantillas editadas.
+builder.Services.AddHostedService<HealthTestNotificationTemplateSeeder>();
+
 // Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsBackfillSeeder>());
 }

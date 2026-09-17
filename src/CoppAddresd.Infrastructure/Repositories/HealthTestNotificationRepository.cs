@@ -28,7 +28,7 @@ public sealed class HealthTestNotificationRepository(AppDbContext dbContext)
         var query = BuildTemplateQuery(channel, search, isActive);
 
         return await query
-            .OrderBy(t => t.Name)
+            .OrderBy(t => t.NameEs)
             .Skip((Math.Max(1, page) - 1) * Math.Clamp(pageSize, 1, 100))
             .Take(Math.Clamp(pageSize, 1, 100))
             .Include(t => t.Versions)
@@ -65,8 +65,10 @@ public sealed class HealthTestNotificationRepository(AppDbContext dbContext)
             var term = $"%{search.Trim()}%";
             query = query.Where(t =>
                 EF.Functions.ILike(t.Code, term)
-                || EF.Functions.ILike(t.Name, term)
-                || EF.Functions.ILike(t.BodyTemplate, term)
+                || EF.Functions.ILike(t.NameEs, term)
+                || (t.NameEn != null && EF.Functions.ILike(t.NameEn, term))
+                || EF.Functions.ILike(t.BodyTemplateEs, term)
+                || (t.BodyTemplateEn != null && EF.Functions.ILike(t.BodyTemplateEn, term))
             );
         }
 
@@ -197,6 +199,7 @@ public sealed class HealthTestNotificationRepository(AppDbContext dbContext)
         NotificationStatus? status,
         DateTime? from,
         DateTime? to,
+        string? search,
         int page,
         int pageSize,
         CancellationToken ct = default
@@ -236,6 +239,22 @@ public sealed class HealthTestNotificationRepository(AppDbContext dbContext)
         if (to is not null)
         {
             query = query.Where(n => n.CreatedAt <= to);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            query = query.Where(n =>
+                (
+                    n.Patient != null
+                    && (
+                        EF.Functions.ILike(n.Patient.FirstName, term)
+                        || EF.Functions.ILike(n.Patient.LastName, term)
+                        || EF.Functions.ILike(n.Patient.FirstName + " " + n.Patient.LastName, term)
+                    )
+                )
+                || EF.Functions.ILike(n.Recipient, term)
+            );
         }
 
         var total = await query.CountAsync(ct);
