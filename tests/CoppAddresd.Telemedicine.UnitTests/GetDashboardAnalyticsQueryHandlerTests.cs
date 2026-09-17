@@ -2,6 +2,7 @@ using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
+using CoppAddresd.Telemedicine.UnitTests.TestSupport;
 
 namespace CoppAddresd.Telemedicine.UnitTests;
 
@@ -9,12 +10,13 @@ public class GetDashboardAnalyticsQueryHandlerTests
 {
     private readonly FakeAppointmentRepository _appointments = new();
     private readonly FakeReferenceDataService _referenceData = new();
+    private readonly FakeCacheService _cache = new();
 
     private GetDashboardAnalyticsQueryHandler BuildHandler()
     {
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional();
         _referenceData.Patients[TestData.PatientId] = TestData.Patient();
-        return new GetDashboardAnalyticsQueryHandler(_appointments, _referenceData);
+        return new GetDashboardAnalyticsQueryHandler(_appointments, _referenceData, _cache);
     }
 
     private static Appointment Appointment(
@@ -252,5 +254,36 @@ public class GetDashboardAnalyticsQueryHandlerTests
 
         Assert.Empty(result.States);
         Assert.Equal(1, result.Kpis.TotalAppointments);
+    }
+
+    [Fact]
+    public async Task Handle_RepetidoUsaCacheParaAgregadosPeroProximasCitasSiempreEnVivo()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _appointments.Items.AddRange([
+            Appointment(AppointmentStatus.Completed, now.AddDays(-2)),
+            Appointment(AppointmentStatus.Confirmed, now.AddDays(1)),
+        ]);
+
+        var handler = BuildHandler();
+        var query = new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now);
+
+        var first = await handler.Handle(query, CancellationToken.None);
+        Assert.Equal(1, first.Kpis.Completed);
+        Assert.Single(first.UpcomingAppointments);
+
+        // Datos nuevos después de la primera consulta: los agregados deben
+        // llegar del caché (staleness ≤ TTL) y las próximas citas en vivo.
+        _appointments.Items.AddRange([
+            Appointment(AppointmentStatus.Completed, now.AddDays(-1)),
+            Appointment(AppointmentStatus.Confirmed, now.AddDays(2)),
+        ]);
+
+        var second = await handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(1, second.Kpis.Completed);
+        Assert.Equal(2, second.UpcomingAppointments.Count);
+        Assert.Equal(1, _cache.Hits);
+        Assert.Equal(1, _cache.Misses);
     }
 }
