@@ -18,6 +18,7 @@ public record PreviewNotificationTemplateQuery(
     Guid? AlertId = null,
     NotificationChannel? Channel = null,
     string? BodyOverride = null,
+    NotificationLanguage Language = NotificationLanguage.es,
     Guid? ProfessionalId = null
 ) : IRequest<NotificationTemplatePreviewDto?>;
 
@@ -41,17 +42,26 @@ public sealed class PreviewNotificationTemplateQueryHandler(
         var channel = request.Channel ?? template.Channel;
         var alert = await ResolveAlertAsync(request, ct);
 
-        var body = request.BodyOverride is { Length: > 0 }
-            ? request.BodyOverride
-            : template.BodyTemplate;
+        // Si falta la traducción al inglés se usa el español y se avisa a la UI.
+        var usedFallbackLanguage =
+            request.Language == NotificationLanguage.en
+            && string.IsNullOrWhiteSpace(template.BodyTemplateEn);
+        var templateName =
+            request.Language == NotificationLanguage.en
+                ? (template.NameEn ?? template.NameEs)
+                : template.NameEs;
+        var templateBody = NotifyAlertsCommandHandler.TemplateBody(template, request.Language);
+
+        var body = request.BodyOverride is { Length: > 0 } ? request.BodyOverride : templateBody;
 
         if (alert is null)
         {
             // Sin alerta disponible: se muestra el cuerpo sin datos dinámicos.
             return new NotificationTemplatePreviewDto(
                 template.Id,
-                template.Name,
+                templateName,
                 channel,
+                request.Language,
                 null,
                 null,
                 body,
@@ -59,6 +69,7 @@ public sealed class PreviewNotificationTemplateQueryHandler(
                 null,
                 false,
                 "No hay alertas disponibles para generar la vista previa.",
+                usedFallbackLanguage,
                 renderer.ExtractPlaceholders(body)
             );
         }
@@ -66,7 +77,7 @@ public sealed class PreviewNotificationTemplateQueryHandler(
         var patient = (await notificationRepository.GetPatientsByIdsAsync([alert.PatientId], ct))
             .GetValueOrDefault(alert.PatientId);
 
-        var context = BuildContext(alert, patient);
+        var context = BuildContext(alert, patient, request.Language);
         var recipient = NotificationPreviewSupport.ResolveRecipient(channel, patient);
         var placeholders = renderer.ExtractPlaceholders(body);
         var missing = placeholders
@@ -75,8 +86,9 @@ public sealed class PreviewNotificationTemplateQueryHandler(
 
         return new NotificationTemplatePreviewDto(
             template.Id,
-            template.Name,
+            templateName,
             channel,
+            request.Language,
             alert.Id,
             alert.PatientId,
             body,
@@ -84,6 +96,7 @@ public sealed class PreviewNotificationTemplateQueryHandler(
             recipient.Value,
             recipient.IsReachable,
             recipient.SkipReason,
+            usedFallbackLanguage,
             missing
         );
     }
@@ -114,7 +127,8 @@ public sealed class PreviewNotificationTemplateQueryHandler(
 
     internal static HealthTestNotificationRenderContext BuildContext(
         Domain.Entities.HealthTests.HealthTestAlert alert,
-        PatientProfile? patient
+        PatientProfile? patient,
+        NotificationLanguage language = NotificationLanguage.es
     ) =>
         new(
             patient is null ? "Paciente" : $"{patient.FirstName} {patient.LastName}".Trim(),
@@ -126,7 +140,8 @@ public sealed class PreviewNotificationTemplateQueryHandler(
             alert.Severity,
             null,
             null,
-            alert.CreatedAt
+            alert.CreatedAt,
+            language
         );
 
     /// <summary>¿El contexto tiene dato para esa clave? (para avisar de vacíos).</summary>

@@ -57,9 +57,9 @@ Modelar la batería de evaluación inicial del programa (9 tests ANTARES) y perm
 | `health_test_alert_rules`         | Reglas de alerta (`condition` jsonb)                                                                                                        |
 | `health_test_alerts`              | Alertas generadas (estado active/reviewing/resolved/closed)                                                                                 |
 | `health_test_comments`            | Comentarios de revisión del profesional                                                                                                     |
-| `health_test_notification_templates` | Plantillas editables de notificación a pacientes (canal community/sms, alcance por severidad/categoría/indicador, cuerpo con placeholders) |
-| `health_test_notification_template_versions` | Snapshot por versión de plantilla (historial + restauración)                                                                      |
-| `health_test_notifications`       | Log de entregas a pacientes (alerta, canal, destinatario, cuerpo renderizado, plantilla, proveedor, estado queued/sent/failed/skipped, error) |
+| `health_test_notification_templates` | Plantillas editables de notificación a pacientes (canal community/sms, alcance por severidad/categoría/indicador, cuerpo bilingüe ES/EN con placeholders) |
+| `health_test_notification_template_versions` | Snapshot por versión de plantilla (historial + restauración, bilingüe)                                                    |
+| `health_test_notifications`       | Log de entregas a pacientes (alerta, canal, idioma, destinatario, cuerpo renderizado, plantilla, proveedor, estado queued/sent/failed/skipped, error) |
 
 Estados: instrumento/versión `draft/active/retired` · asignación `pending/in_progress/completed/expired/cancelled` ·
 evaluación `started/completed/abandoned` · alerta `active/reviewing/resolved/closed`. Se almacenan como
@@ -165,6 +165,18 @@ Las alertas se comunican al paciente con **canales desacoplados** de la generaci
   (severidad, categoría, indicador) e **historial de versiones** (`..._template_versions`): cada
   cambio de contenido crea una versión y la restauración se aplica como versión **nueva**
   (append-only, auditable). El borrado es lógico (`is_active = false`).
+- **Contenido bilingüe** (rev. 2026-09-17): cada plantilla guarda `name_es`/`body_template_es`
+  (obligatorios) y `name_en`/`body_template_en` (opcionales). El **emisor elige el idioma al enviar**
+  (`NotificationLanguage es|en`; el backend no conoce el idioma del paciente) y el log registra el
+  idioma usado (`health_test_notifications.language`). Si falta la traducción al inglés se envía el
+  español y la UI avisa (`usedFallbackLanguage` en la vista previa). La etiqueta de `[severidad]`
+  también es sensible al idioma (baja/media/alta/crítica vs. low/moderate/high/critical).
+- **Catálogo base sembrado** (`HealthTestNotificationTemplateSeeder`, `IHostedService` insert-only
+  por `code`, corre en todos los entornos): 7 plantillas × 2 canales (`HT_CRITICO_*`, `HT_ALTO_*`,
+  `HT_MEDIO_*`, `HT_ORP_*`, `HT_ADHERENCIA_*`, `HT_APNEA_*`, `HT_GENERAL_*`) con copy bilingüe:
+  saludo → resultado → significado → recomendaciones numeradas → CTA a agendar cita en la app
+  (sección Citas) → firma «Equipo CoppAddresd». Las variantes SMS son versiones concisas de una
+  línea. No sobrescribe plantillas editadas por el usuario (solo inserta las que faltan).
 - **Todo envío se registra** en `health_test_notifications` (canal, destinatario, cuerpo renderizado,
   plantilla, proveedor, estado `queued/sent/failed/skipped`, error). El log alimenta el historial y
   los gráficos; las pruebas del Template Studio se registran con `alert_id = null`.
@@ -255,16 +267,19 @@ GET    /health-tests/notifications/charts?days                                  
 
 Placeholders del cuerpo: `[paciente]` `[documento]` `[test]` `[indicador]` `[valor]` `[umbral]`
 `[severidad]` `[accion]` `[profesional]` `[fecha]` (corchetes; las llaves `{clave}` del formato
-anterior se migraron con `20260916205732_ConvertNotificationPlaceholdersToBrackets`). Los
+anterior se migraron con `20260916205732_ConvertNotificationPlaceholdersToBrackets`, y las reglas de
+alerta con `20260917145335_AddBilingualNotificationTemplates`). Los
 placeholders desconocidos se conservan literales y los valores nulos se sustituyen por vacío; la
-severidad se rotula baja/media/alta/crítica y la fecha `dd/MM/yyyy`. La plantilla se elige
+severidad se rotula baja/media/alta/crítica (o low/moderate/high/critical en inglés) y la fecha
+`dd/MM/yyyy`. La plantilla se elige
 explícitamente o se autoselecciona (match por indicador > severidad > alcance nulo, y la más reciente).
 
 `GET /notification-templates/{id}/preview` devuelve el render con **datos reales**: usa la alerta
-indicada (o, sin `alertId`, la más reciente que tenga resultado asociado) y su paciente, e informa
-`isReachable` + `skipReason` del canal y `missingPlaceholders` (datos que la alerta no puede rellenar,
-p. ej. `[accion]`). El frontend lo usa tanto en el Template Studio (selector de paciente de ejemplo)
-como en el asistente de envío.
+indicada (o, sin `alertId`, la más reciente que tenga resultado asociado) y su paciente, acepta
+`language=es|en` (fallback a español con `usedFallbackLanguage = true` cuando falta la traducción) e
+informa `isReachable` + `skipReason` del canal y `missingPlaceholders` (datos que la alerta no puede
+rellenar, p. ej. `[accion]`). El frontend lo usa tanto en el Template Studio (selector de paciente de
+ejemplo) como en el asistente de envío.
 
 **Cuentas de paciente y entrega por comunidad (dev)**: `PatientAccountDemoSeeder` (servicio Auth,
 config `PatientAccountDemo` con `Enabled`/`Password`/`MaxAccounts`, no-op en prod) crea las cuentas
@@ -276,9 +291,11 @@ el endpoint interno `POST /api/internal/messages/direct` **auto-provisiona** el 
 
 
 Frontend: `/health-tests/alertas` (selección múltiple + asistente de envío en 3 pasos con resultados
-por paciente, filtros por indicador/severidad/estado/fechas, gráficos e historial de entregas) y
-`/health-tests/alertas/plantillas` (Template Studio: galería, editor con chips de placeholders,
-previsualización SMS/Comunidad, versiones + restauración, clonado y envío de prueba).
+por paciente y selector de idioma ES/EN que afecta a la vista previa y al envío, filtros por
+indicador/severidad/estado/fechas, gráficos e historial de entregas) y
+`/health-tests/alertas/plantillas` (Template Studio: galería, editor con pestañas ES/EN y chips de
+placeholders, aviso de «Falta traducción», previsualización SMS/Comunidad por idioma, versiones +
+restauración, clonado y envío de prueba).
 
 ### Mobile — `/api/v1/health-tests/me` (JWT `aud=app`, paciente por `user_id`)
 

@@ -17,7 +17,8 @@ public sealed record HealthTestNotificationRenderContext(
     HealthTestSeverity? Severity = null,
     string? RecommendedAction = null,
     string? ProfessionalName = null,
-    DateTime? Date = null
+    DateTime? Date = null,
+    NotificationLanguage Language = NotificationLanguage.es
 );
 
 /// <summary>
@@ -101,20 +102,32 @@ public sealed partial class HealthTestTemplateRenderer : IHealthTestTemplateRend
             ["indicador"] = c.IndicatorName?.Trim() ?? string.Empty,
             ["valor"] = c.Value?.Trim() ?? string.Empty,
             ["umbral"] = c.Threshold?.Trim() ?? string.Empty,
-            ["severidad"] = SeverityLabel(c.Severity),
+            ["severidad"] = SeverityLabel(c.Severity, c.Language),
             ["accion"] = c.RecommendedAction?.Trim() ?? string.Empty,
             ["profesional"] = c.ProfessionalName?.Trim() ?? string.Empty,
             ["fecha"] = (c.Date ?? DateTime.UtcNow).ToString("dd/MM/yyyy"),
         };
 
-    /// <summary>Etiqueta es-CO de severidad (misma que usa la UI del ERP).</summary>
-    public static string SeverityLabel(HealthTestSeverity? severity) =>
-        severity switch
-        {
-            HealthTestSeverity.low => "baja",
-            HealthTestSeverity.moderate => "media",
-            HealthTestSeverity.high => "alta",
-            HealthTestSeverity.critical => "crítica",
-            _ => string.Empty,
-        };
+    /// <summary>Etiqueta de severidad en el idioma del envío (es-CO por defecto).</summary>
+    public static string SeverityLabel(
+        HealthTestSeverity? severity,
+        NotificationLanguage language = NotificationLanguage.es
+    ) =>
+        language == NotificationLanguage.en
+            ? severity switch
+            {
+                HealthTestSeverity.low => "low",
+                HealthTestSeverity.moderate => "moderate",
+                HealthTestSeverity.high => "high",
+                HealthTestSeverity.critical => "critical",
+                _ => string.Empty,
+            }
+            : severity switch
+            {
+                HealthTestSeverity.low => "baja",
+                HealthTestSeverity.moderate => "media",
+                HealthTestSeverity.high => "alta",
+                HealthTestSeverity.critical => "crítica",
+                _ => string.Empty,
+            };
 }

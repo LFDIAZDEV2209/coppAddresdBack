@@ -579,7 +579,8 @@ public class HealthTestsController(
         CancellationToken ct,
         [FromQuery] Guid? alertId = null,
         [FromQuery] string? channel = null,
-        [FromQuery] string? bodyOverride = null
+        [FromQuery] string? bodyOverride = null,
+        [FromQuery] string? language = null
     )
     {
         if (!TryParseChannel(channel, out var parsedChannel, out var error))
@@ -587,8 +588,19 @@ public class HealthTestsController(
             return BadRequest(new { message = error });
         }
 
+        if (!TryParseLanguage(language, out var parsedLanguage, out var languageError))
+        {
+            return BadRequest(new { message = languageError });
+        }
+
         var result = await mediator.Send(
-            new PreviewNotificationTemplateQuery(id, alertId, parsedChannel, bodyOverride),
+            new PreviewNotificationTemplateQuery(
+                id,
+                alertId,
+                parsedChannel,
+                bodyOverride,
+                parsedLanguage
+            ),
             ct
         );
         return result is null ? NotFound(new { message = "Plantilla no encontrada" }) : Ok(result);
@@ -904,6 +916,31 @@ public class HealthTestsController(
         }
 
         channel = parsed;
+        return true;
+    }
+
+    /// <summary>Idioma de la notificación (vacío = español).</summary>
+    private static bool TryParseLanguage(
+        string? value,
+        out NotificationLanguage language,
+        out string? error
+    )
+    {
+        language = NotificationLanguage.es;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (!Enum.TryParse<NotificationLanguage>(value, true, out var parsed))
+        {
+            error = "Idioma inválido";
+            return false;
+        }
+
+        language = parsed;
         return true;
     }
 }
