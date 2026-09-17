@@ -199,6 +199,7 @@ public sealed class HealthTestNotificationRepository(AppDbContext dbContext)
         NotificationStatus? status,
         DateTime? from,
         DateTime? to,
+        string? search,
         int page,
         int pageSize,
         CancellationToken ct = default
@@ -238,6 +239,22 @@ public sealed class HealthTestNotificationRepository(AppDbContext dbContext)
         if (to is not null)
         {
             query = query.Where(n => n.CreatedAt <= to);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            query = query.Where(n =>
+                (
+                    n.Patient != null
+                    && (
+                        EF.Functions.ILike(n.Patient.FirstName, term)
+                        || EF.Functions.ILike(n.Patient.LastName, term)
+                        || EF.Functions.ILike(n.Patient.FirstName + " " + n.Patient.LastName, term)
+                    )
+                )
+                || EF.Functions.ILike(n.Recipient, term)
+            );
         }
 
         var total = await query.CountAsync(ct);
