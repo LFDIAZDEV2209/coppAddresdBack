@@ -85,7 +85,7 @@ public sealed class ProgramProgressSeeder(
         // pequeño y estable, independiente de la plantilla del programa).
         await SeedNutritionHabitTemplatesAsync(ct);
 
-        await SeedProgramTemplateAsync("program-coppaddresd-83-days", "Programa COPP-ADRESD (83 días / 12 semanas)", "Plantilla del programa de 83 días (12 semanas) para pacientes ANTARES.", 12, ct);
+        await SeedProgramTemplateAsync("program-coppaddresd-83-days", "Programa COPP-ADRESD (83 días / 12 semanas)", "Plantilla del programa de 83 días (12 semanas) para pacientes Copp Adresd.", 12, ct);
         if (_defaultTemplateCode != "program-coppaddresd-83-days")
         {
             await SeedProgramTemplateAsync(_defaultTemplateCode, "Programa 83 semanas", "Plantilla integral por defecto del programa de 83 semanas (auto-sembrada).", 83, ct);

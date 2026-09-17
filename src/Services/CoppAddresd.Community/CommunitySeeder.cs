@@ -77,7 +77,7 @@ public static class CommunitySeeder
         var systemProfile = await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem, ct);
         if (systemProfile is null)
         {
-            var senderName = configuration?["Community:AnnouncementSenderName"] ?? "Equipo ANTARES";
+            var senderName = configuration?["Community:AnnouncementSenderName"] ?? "Equipo Copp Adresd";
             db.Profiles.Add(new Profile
             {
                 Id = Guid.NewGuid(),
@@ -224,7 +224,7 @@ public static class CommunitySeeder
         {
             "Hoy completé mi primer trote de 30 minutos sin parar. Hace 6 meses no podía subir 2 pisos sin agitarme.",
             "Caminata comunitaria este sábado a las 7 am en el parque central. ¡Nos vemos! 🚶‍♀️",
-            "¡Bienvenidos a la Comunidad ANTARES! Este espacio es de todos: comparte tus avances, dudas y recetas.",
+            "¡Bienvenidos a la Comunidad Copp Adresd! Este espacio es de todos: comparte tus avances, dudas y recetas.",
             "Hoy cumplí 100 días de racha. Empecé con una caminata de 10 minutos y ahora hago 45. ¡Sigan adelante!",
             "Mi meta del mes: reducir 2 cm de cintura. ¡Logrado en 22 días con caminata y alimentación consciente!",
             "Completé el reto de 30 días de caminata. De 0 a 100 km recorridos este mes. ¡No me lo creo!",
@@ -744,9 +744,9 @@ public static class CommunitySeeder
                     (4, 20, "Yo empecé hace un mes y me he sentido increíble."),
                     (5, 8, "No se pierdan el en vivo de mañana 👀"),
                 }),
-                ("Chat ANTARES general", 0, 40, new (int, int, string)[]
+                ("Chat Copp Adresd general", 0, 40, new (int, int, string)[]
                 {
-                    (6, 52, "Buenos días a toda la comunidad ANTARES ☀️"),
+                    (6, 52, "Buenos días a toda la comunidad Copp Adresd ☀️"),
                     (7, 44, "¿Ya vieron el nuevo reto de la app?"),
                     (8, 33, "Yo voy por el día 12 de mi racha 🔥"),
                     (9, 21, "Vamos que se puede, un día a la vez."),

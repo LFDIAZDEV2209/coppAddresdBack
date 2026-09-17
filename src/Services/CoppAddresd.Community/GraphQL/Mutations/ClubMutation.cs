@@ -1147,7 +1147,7 @@ public sealed class ClubMutation
         // Auto-provisión (mismo patrón que la query Me): cualquier usuario
         // autenticado obtiene su perfil de comunidad al primer uso.
         var displayName = http.HttpContext?.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
-            ?? "Miembro ANTARES";
+            ?? "Miembro Copp Adresd";
         var created = new Profile
         {
             Id = Guid.NewGuid(),

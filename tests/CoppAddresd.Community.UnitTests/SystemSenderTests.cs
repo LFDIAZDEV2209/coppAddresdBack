@@ -24,7 +24,7 @@ public sealed class SystemSenderTests : IDisposable
         return new CommunityDbContext(options);
     }
 
-    private static Profile MakeSystemProfile(string displayName = "Equipo ANTARES")
+    private static Profile MakeSystemProfile(string displayName = "Equipo Copp Adresd")
         => new()
         {
             Id = Guid.NewGuid(),
@@ -70,7 +70,7 @@ public sealed class SystemSenderTests : IDisposable
         Assert.Single(systemProfiles);
         Assert.Null(systemProfiles[0].UserId);
         Assert.True(systemProfiles[0].IsSystem);
-        Assert.Equal("Equipo ANTARES", systemProfiles[0].DisplayName);
+        Assert.Equal("Equipo Copp Adresd", systemProfiles[0].DisplayName);
     }
 
     [Fact]
@@ -384,7 +384,7 @@ public sealed class SystemSenderTests : IDisposable
         var found = await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem);
         Assert.NotNull(found);
         Assert.True(found.IsSystem);
-        Assert.Equal("Equipo ANTARES", found.DisplayName);
+        Assert.Equal("Equipo Copp Adresd", found.DisplayName);
     }
 
     // ─── FeedEventKind.Mensaje ──────────────────────────────────────────
