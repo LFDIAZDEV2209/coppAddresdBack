@@ -57,6 +57,9 @@ Modelar la batería de evaluación inicial del programa (9 tests ANTARES) y perm
 | `health_test_alert_rules`         | Reglas de alerta (`condition` jsonb)                                                                                                        |
 | `health_test_alerts`              | Alertas generadas (estado active/reviewing/resolved/closed)                                                                                 |
 | `health_test_comments`            | Comentarios de revisión del profesional                                                                                                     |
+| `health_test_notification_templates` | Plantillas editables de notificación a pacientes (canal community/sms, alcance por severidad/categoría/indicador, cuerpo con placeholders) |
+| `health_test_notification_template_versions` | Snapshot por versión de plantilla (historial + restauración)                                                                      |
+| `health_test_notifications`       | Log de entregas a pacientes (alerta, canal, destinatario, cuerpo renderizado, plantilla, proveedor, estado queued/sent/failed/skipped, error) |
 
 Estados: instrumento/versión `draft/active/retired` · asignación `pending/in_progress/completed/expired/cancelled` ·
 evaluación `started/completed/abandoned` · alerta `active/reviewing/resolved/closed`. Se almacenan como
@@ -121,25 +124,64 @@ La batería con `auto_assign_on_patient_create = true` (la inicial ANTARES) se a
 a cada paciente recién creado (estado `Pending`), sin duplicar si ya existe una asignación
 pendiente/en curso. El profesional puede asignar más baterías manualmente.
 
-### ADR-008 — Filtro geográfico acumulado del dashboard (lectura en vivo, sin pre-agregación)
+### ADR-008 — Filtro geográfico acumulado del dashboard (set-based + rollup snapshot, rev. 2026-09-15)
 
 El dashboard ERP permite acotar las series, los KPIs y el mapa por **uno o varios estados**
 (`state`, repetible, ej. `?state=NY&state=FL`: unión de zonas combinada en un solo conjunto de
-pacientes) o por ciudad (`cityId`, con precedencia). El filtro se resuelve en lectura con
-`IHealthTestRepository.GetPatientIdsByGeoAsync` (`patient_profiles.CityId → cities.StateId → states.Code`),
-se intersecta con el alcance del JWT (`ViewOwn`) y alimenta las mismas consultas de conteo existentes
-(`...ForPatientsAsync`) con la lista de pacientes de la zona. `GET /geo` se mantiene **siempre global**
-(alimenta el mapa y sus métricas); el porcentaje de riesgo por ciudad se calcula **solo sobre pacientes
-evaluados** (`evaluatedCount`): una ciudad con pacientes mapeados pero sin evaluaciones devuelve
-`highRiskPct = null` ("Sin datos", gris) en lugar de un 0% verde engañoso.
+pacientes) o por ciudad (`cityId`, con precedencia). El porcentaje de riesgo por ciudad se calcula
+**solo sobre pacientes evaluados** (`evaluatedCount`): una ciudad con pacientes mapeados pero sin
+evaluaciones devuelve `highRiskPct = null` ("Sin datos", gris) en lugar de un 0% verde engañoso.
 
-- **Evaluación CQRS (pre-agregación)**: **no aplica** — no se agrega ningún dato nuevo a contar ni se
-  modifican las agregaciones existentes; es filtrado query-time sobre las mismas consultas. El rollup
-  diario (`health_test_daily_metrics`) sigue sirviendo al alcance global (agrega por `clinic_id`, una
-  dimensión distinta a la geografía); las consultas por zona usan la OLTP en vivo.
-- La clave de caché de `GET /master` y `GET /stats` incluye el hash del filtro
+**Revisión 2026-09-15** (antes era "lectura en vivo, sin pre-agregación"):
+
+- `GET /stats?state=&cityId=`: **una consulta set-based** (`GetHealthTestStatsForZoneAsync` — CTE
+  `zone` sobre `patient_profiles → cities → states` con EXISTS para el alcance `ViewOwn` + 5 conteos)
+  en lugar de materializar la lista de GUIDs de la zona y lanzar 5 counts con IN list.
+- `GET /master?state=&cityId=`: el JOIN por zona ocurre **en SQL**
+  (`ListAssignmentsWithPatientDataForZoneAsync`); alertas activas por paciente y nombres de
+  profesionales quedan acotados a la zona (antes eran agregados globales en memoria).
+- `GET /geo`: lee el **rollup snapshot** `app.health_test_geo_rollups` (migración
+  `AddHealthTestGeoRollups`), mantenido por backfill idempotente al arranque + recomputo incremental
+  por ciudad en el processor de eventos; fallback a la agregación en memoria original si el rollup
+  está vacío. Contrato (DTO) sin cambios.
+- Nuevo `GET /coverage-trend`: últimos 12 meses leídos del rollup diario
+  (`assignments_count/completed` global); el frontend lo usa sin filtro geo y conserva el cálculo
+  cliente con filtro (master ya acotado).
+- Índices: `ix_patient_profiles_city_id`, `ix_patient_profiles_state_id`,
+  `ix_health_test_geo_rollups_state_code` (documentados en `docs/database/indexes.md`).
+- La clave de caché de `GET /master`, `GET /stats` y `GET /coverage-trend` incluye el hash del filtro
   (`CacheKeys.HashScope(profesional|global, estados normalizados, cityId)`), por lo que zonas distintas
   no comparten caché ni exponen datos de otra zona.
+
+Detalle completo del pipeline de analítica: `docs/modules/health-tests/analytics.md`.
+
+### ADR-009 — Notificaciones a pacientes: plantillas versionadas + log de entregas (SPEC A13, rev. 2026-09-16)
+
+Las alertas se comunican al paciente con **canales desacoplados** de la generación de la alerta:
+`community` (mensaje directo en la app del paciente, vía Community) y `sms` (abstracción
+`ISmsSender`, hoy `NoOpSmsSender` en Development). Decisiones:
+
+- **Plantillas editables en BD** (`health_test_notification_templates`) con alcance opcional
+  (severidad, categoría, indicador) e **historial de versiones** (`..._template_versions`): cada
+  cambio de contenido crea una versión y la restauración se aplica como versión **nueva**
+  (append-only, auditable). El borrado es lógico (`is_active = false`).
+- **Todo envío se registra** en `health_test_notifications` (canal, destinatario, cuerpo renderizado,
+  plantilla, proveedor, estado `queued/sent/failed/skipped`, error). El log alimenta el historial y
+  los gráficos; las pruebas del Template Studio se registran con `alert_id = null`.
+- **Contacto ausente ⇒ `skipped` con motivo** (sin teléfono / sin cuenta en la app); nunca bloquea el
+  resto del envío masivo. `preview = true` no envía ni registra.
+- **Community**: la entrega la hace el **backend** (`CommunityMessageSender` → endpoint interno
+  `POST /api/internal/messages/direct` del servicio Community, protegido por `X-Internal-Key`), que
+  escribe un `Message` del **perfil de sistema** al perfil del paciente mapeado por `Profile.UserId`
+  y emite el `FeedEvent` correspondiente. Contingencia ERP: `features/community/erp-provider.tsx`.
+- **SMS**: `ISmsSender` como abstracción; `NoOpSmsSender` en dev (marca `sent`, no llama a ningún
+  proveedor). Un proveedor real (Twilio Messages) se conecta detrás sin cambiar el contrato.
+- **Permiso propio** `HealthTests.Notify` (el envío va más allá de `HealthTests.Review`).
+- **Analítica**: los gráficos de alertas/notificaciones se calculan al vuelo con consultas indexadas
+  sobre `health_test_alerts` y `health_test_notifications` (volumen bajo, ventana de días). Se evaluó
+  el modelo CQRS de pre-agregación (Channel Pattern) y **no aplica** por ahora: no se agrega un dato
+  nuevo de conteo al dashboard que justifique un rollup; el rollup geo (`health_test_geo_rollups`)
+  sigue siendo el único del módulo.
 
 ## Flujo de datos
 
@@ -191,6 +233,35 @@ GET    /health-tests/master?state&state&cityId                  View/ViewOwn (ta
 GET    /health-tests/stats?state&state&cityId                   View/ViewOwn (KPIs/series del dashboard; unión de estados, cityId con precedencia)
 GET    /health-tests/geo                                        View/ViewOwn (mapa de calor; SIEMPRE global; evaluatedCount + highRiskPct sobre evaluados)
 ```
+
+### ERP — notificaciones de alertas (permiso `HealthTests.Notify`, SPEC A13)
+
+```
+GET    /health-tests/notification-templates?channel&search&isActive&page&pageSize   Notify
+POST   /health-tests/notification-templates                                          Notify
+GET    /health-tests/notification-templates/{id}                                     Notify
+PUT    /health-tests/notification-templates/{id}                                     Notify   (crea versión si cambia el contenido)
+DELETE /health-tests/notification-templates/{id}                                     Notify   (baja lógica: is_active=false)
+POST   /health-tests/notification-templates/{id}/activate|deactivate                  Notify
+POST   /health-tests/notification-templates/{id}/clone                                Notify
+GET    /health-tests/notification-templates/{id}/versions                             Notify
+POST   /health-tests/notification-templates/{id}/versions/{version}/restore           Notify
+POST   /health-tests/notification-templates/{id}/test                                 Notify   (envío de prueba)
+POST   /health-tests/alerts/notify                                                    Notify   (masivo; preview=true no envía ni registra)
+GET    /health-tests/notifications?alertId&patientId&channel&status&from&to&page&pageSize   Notify
+GET    /health-tests/notifications/charts?days                                        Notify
+```
+
+Placeholders del cuerpo: `{paciente}` `{documento}` `{test}` `{indicador}` `{valor}` `{umbral}`
+`{severidad}` `{accion}` `{profesional}` `{fecha}`. Los placeholders desconocidos se conservan
+literales y los valores nulos se sustituyen por vacío; la severidad se rotula baja/media/alta/crítica
+y la fecha `dd/MM/yyyy`. La plantilla se elige explícitamente o se autoselecciona (match por
+indicador > severidad > alcance nulo, y la más reciente).
+
+Frontend: `/health-tests/alertas` (selección múltiple + asistente de envío en 3 pasos con resultados
+por paciente, filtros por indicador/severidad/estado/fechas, gráficos e historial de entregas) y
+`/health-tests/alertas/plantillas` (Template Studio: galería, editor con chips de placeholders,
+previsualización SMS/Comunidad, versiones + restauración, clonado y envío de prueba).
 
 ### Mobile — `/api/v1/health-tests/me` (JWT `aud=app`, paciente por `user_id`)
 
@@ -264,6 +335,12 @@ asignaciones) y no se registra fuera de Development; no reemplaza el seed del ca
 - **Cambiar rangos/severidad**: UPDATE `health_test_score_ranges` (afecta solo evaluaciones nuevas).
 - **Nuevo indicador**: INSERT `health_test_indicator_defs` con `computation` válido.
 - **Nueva regla de alerta**: INSERT `health_test_alert_rules` con `condition` válido.
+- **Nueva plantilla de notificación**: crearla en el Template Studio (o INSERT en
+  `health_test_notification_templates` + su versión 1); los placeholders disponibles están en
+  `HealthTestTemplateRenderer.Placeholders`.
+- **Nuevo canal de notificación**: implementar `ISmsSender`/`ICommunityMessageSender` (o un nuevo
+  contrato) + registrar en DI; agregar el miembro al enum `NotificationChannel` y a los mapas del
+  frontend. El log y el asistente no cambian.
 - **Preguntas condicionales (futuro)**: campos `depends_on_question_id`/`depends_on_option_id` ya
   previstos en las opciones (sin migración).
 - **Repetir un test cada N días**: `frequency_days` en `health_test_battery_items` (re-asignación

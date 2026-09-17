@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using CoppAddresd.Infrastructure.Metrics;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -170,6 +171,17 @@ public sealed class MetricsBackfillSeeder(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Aviso reconciliando app.health_test_daily_metrics.");
+        }
+
+        // 2b. Rollup snapshot geográfico de Tests de Salud (app.health_test_geo_rollups).
+        try
+        {
+            totalOperations += await HealthTestGeoRollupSql.RecomputeAllAsync(db, ct);
+            logger.LogInformation("Reconciliación del rollup geo de tests de salud completada.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Aviso reconciliando app.health_test_geo_rollups.");
         }
 
         // 3. Métricas de Inventario & Farmacia (erp.inventory_daily_metrics)

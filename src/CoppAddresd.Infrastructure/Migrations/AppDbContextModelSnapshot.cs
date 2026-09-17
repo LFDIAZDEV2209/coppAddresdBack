@@ -2428,6 +2428,61 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("health_test_evaluations", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestGeoRollup", b =>
+                {
+                    b.Property<Guid>("CityId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("city_id");
+
+                    b.Property<long>("ActiveAlertsCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("active_alerts_count");
+
+                    b.Property<long>("AvgScoreCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("avg_score_count");
+
+                    b.Property<decimal>("AvgScoreSum")
+                        .HasColumnType("numeric(14,4)")
+                        .HasColumnName("avg_score_sum");
+
+                    b.Property<string>("CityName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("city_name");
+
+                    b.Property<long>("EvaluatedCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("evaluated_count");
+
+                    b.Property<long>("HighRiskCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("high_risk_count");
+
+                    b.Property<long>("PatientsCount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("patients_count");
+
+                    b.Property<string>("StateCode")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("state_code");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("CityId");
+
+                    b.HasIndex("StateCode")
+                        .HasDatabaseName("ix_health_test_geo_rollups_state_code");
+
+                    b.ToTable("health_test_geo_rollups", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestIndicatorDef", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2547,6 +2602,263 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_health_test_instruments_is_active");
 
                     b.ToTable("health_test_instruments", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid?>("AlertId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("alert_id");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("community")
+                        .HasColumnName("channel");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text")
+                        .HasColumnName("error");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("provider_message_id");
+
+                    b.Property<string>("Recipient")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("recipient");
+
+                    b.Property<string>("RenderedBody")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("rendered_body");
+
+                    b.Property<DateTime?>("SentAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("queued")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("TemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("template_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AlertId")
+                        .HasDatabaseName("ix_health_test_notifications_alert_id");
+
+                    b.HasIndex("Channel")
+                        .HasDatabaseName("ix_health_test_notifications_channel");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_health_test_notifications_patient_id");
+
+                    b.HasIndex("TemplateId")
+                        .HasDatabaseName("ix_health_test_notifications_template_id");
+
+                    b.HasIndex("Status", "CreatedAt")
+                        .HasDatabaseName("ix_health_test_notifications_status_created_at");
+
+                    b.ToTable("health_test_notifications", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotificationTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("BodyTemplate")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body_template");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("community")
+                        .HasColumnName("channel");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("IndicatorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("indicator_code");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Severity")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("severity");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("subject");
+
+                    b.Property<string>("TestCategory")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("test_category");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Channel")
+                        .HasDatabaseName("ix_health_test_notification_templates_channel");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_notification_templates_code");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("ix_health_test_notification_templates_is_active");
+
+                    b.ToTable("health_test_notification_templates", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotificationTemplateVersion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("BodyTemplate")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body_template");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("channel");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("IndicatorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("indicator_code");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("Severity")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("severity");
+
+                    b.Property<string>("Subject")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("subject");
+
+                    b.Property<Guid>("TemplateId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("template_id");
+
+                    b.Property<string>("TestCategory")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("test_category");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TemplateId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ix_health_test_notification_template_versions_template_version");
+
+                    b.ToTable("health_test_notification_template_versions", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestQuestion", b =>
@@ -4669,7 +4981,8 @@ namespace CoppAddresd.Infrastructure.Migrations
 
                     b.HasIndex("BloodTypeId");
 
-                    b.HasIndex("CityId");
+                    b.HasIndex("CityId")
+                        .HasDatabaseName("ix_patient_profiles_city_id");
 
                     b.HasIndex("ClinicId")
                         .HasDatabaseName("ix_patient_profiles_clinic_id");
@@ -4696,7 +5009,8 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_patient_profiles_medical_record_number");
 
-                    b.HasIndex("StateId");
+                    b.HasIndex("StateId")
+                        .HasDatabaseName("ix_patient_profiles_state_id");
 
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_patient_profiles_status");
@@ -8421,6 +8735,41 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Version");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotification", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestAlert", "Alert")
+                        .WithMany()
+                        .HasForeignKey("AlertId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", "Patient")
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotificationTemplate", "Template")
+                        .WithMany()
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Alert");
+
+                    b.Navigation("Patient");
+
+                    b.Navigation("Template");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotificationTemplateVersion", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotificationTemplate", "Template")
+                        .WithMany("Versions")
+                        .HasForeignKey("TemplateId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Template");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestQuestion", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestVersion", "Version")
@@ -9489,6 +9838,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestInstrument", b =>
+                {
+                    b.Navigation("Versions");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.HealthTests.HealthTestNotificationTemplate", b =>
                 {
                     b.Navigation("Versions");
                 });

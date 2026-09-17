@@ -1,9 +1,13 @@
+using CoppAddresd.Application.Features.HealthTests;
+using CoppAddresd.Application.Features.HealthTests.Alerts;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace CoppAddresd.Infrastructure.Repositories;
 
@@ -676,13 +680,149 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .ToListAsync(ct);
 
     /// <summary>
-    /// Geo agregado para el mapa de Tests de Salud: ciudades con % de alto riesgo
-    /// (severidad high/critical en health_test_results tipo score) y alertas top.
-    /// El porcentaje se calcula sobre pacientes evaluados (con score), de modo
-    /// que un paciente mapeado sin evaluaciones no diluye el indicador.
+    /// Geo agregado del mapa: fast path desde el rollup snapshot
+    /// (<c>app.health_test_geo_rollups</c>); si el rollup está vacío (backfill
+    /// pendiente) cae a la agregación en memoria original (mismo resultado).
     /// </summary>
     public async Task<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto> GetGeoAsync(
         CancellationToken ct = default
+    )
+    {
+        if (await GeoRollupExistsAsync(ct))
+        {
+            return await GetGeoFromRollupAsync(ct);
+        }
+
+        return await ComputeGeoInMemoryAsync(ct);
+    }
+
+    /// <summary>
+    /// Lectura del rollup snapshot: O(#ciudades) + 2 consultas acotadas para
+    /// las alertas top-4. Contrato idéntico a la agregación en memoria.
+    /// </summary>
+    public async Task<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto> GetGeoFromRollupAsync(
+        CancellationToken ct = default
+    )
+    {
+        var rows = await dbContext
+            .HealthTestGeoRollups.AsNoTracking()
+            .OrderByDescending(r => r.PatientsCount)
+            .ToListAsync(ct);
+
+        var geoCities = rows
+            .Select(r => new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoCityDto(
+                r.CityId,
+                r.CityName,
+                r.StateCode,
+                (int)r.PatientsCount,
+                (int)r.EvaluatedCount,
+                r.EvaluatedCount > 0
+                    ? Math.Round((double)r.HighRiskCount / r.EvaluatedCount * 100, 1)
+                    : null,
+                r.AvgScoreCount > 0
+                    ? Math.Round((double)(r.AvgScoreSum / r.AvgScoreCount), 1)
+                    : null,
+                null,
+                null
+            ))
+            .ToList();
+
+        int totalPatients = (int)rows.Sum(r => r.PatientsCount);
+        int highRiskGlobal = (int)rows.Sum(r => r.HighRiskCount);
+
+        long totalEvaluated = rows.Sum(r => r.AvgScoreCount);
+        decimal totalScoreSum = rows.Sum(r => r.AvgScoreSum);
+        double? avgScoreGlobal =
+            totalEvaluated > 0 ? Math.Round((double)(totalScoreSum / totalEvaluated), 1) : null;
+
+        var alerts =
+            new List<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoAlertDto>();
+
+        // Top-4 pacientes de alto riesgo: consultas acotadas (índice
+        // ix_health_test_results_severity_type), no el escaneo completo.
+        var highRiskPatientIds = await (
+            from r in dbContext.HealthTestResults.AsNoTracking()
+            join e in dbContext.HealthTestEvaluations.AsNoTracking() on r.EvaluationId equals e.Id
+            where
+                r.ResultType == CoppAddresd.Domain.Enums.HealthTests.HealthTestResultType.score
+                && (
+                    r.Severity == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.high
+                    || r.Severity == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
+                )
+            select e.PatientId
+        )
+            .Distinct()
+            .OrderBy(x => x)
+            .Take(4)
+            .ToListAsync(ct);
+
+        if (highRiskPatientIds.Count > 0)
+        {
+            var scoreRows = await (
+                from r in dbContext.HealthTestResults.AsNoTracking()
+                join e in dbContext.HealthTestEvaluations.AsNoTracking() on r.EvaluationId equals e.Id
+                where
+                    r.ResultType == CoppAddresd.Domain.Enums.HealthTests.HealthTestResultType.score
+                    && highRiskPatientIds.Contains(e.PatientId)
+                select new { e.PatientId, r.Severity, r.Value }
+            ).ToListAsync(ct);
+
+            var names = await dbContext
+                .PatientProfiles.AsNoTracking()
+                .Where(p => highRiskPatientIds.Contains(p.Id))
+                .Select(p => new { p.Id, Name = (p.FirstName + " " + p.LastName).Trim() })
+                .ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+
+            var severityOrder = new Dictionary<
+                CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity,
+                int
+            >
+            {
+                [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.low] = 0,
+                [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.moderate] = 1,
+                [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.high] = 2,
+                [CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical] = 3,
+            };
+
+            foreach (var pid in highRiskPatientIds)
+            {
+                var grp = scoreRows.Where(x => x.PatientId == pid).ToList();
+                var worst = grp
+                    .OrderByDescending(x =>
+                        x.Severity.HasValue && severityOrder.TryGetValue(x.Severity.Value, out var ov)
+                            ? ov
+                            : -1
+                    )
+                    .First();
+                var sev = worst.Severity ?? CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.low;
+                alerts.Add(
+                    new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoAlertDto(
+                        pid,
+                        names.GetValueOrDefault(pid, "Paciente"),
+                        sev == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
+                            ? "Riesgo crítico"
+                            : "Riesgo alto",
+                        grp.Count > 0 ? (double)Math.Round(grp.Average(x => x.Value), 4) : null,
+                        sev.ToString()
+                    )
+                );
+            }
+        }
+
+        return new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto(
+            geoCities,
+            alerts,
+            totalPatients,
+            avgScoreGlobal,
+            highRiskGlobal
+        );
+    }
+
+    /// <summary>
+    /// Agregación geo en memoria (fallback original cuando el rollup está vacío).
+    /// </summary>
+    private async Task<CoppAddresd.Application.Features.HealthTests.HealthTestsGeoDto> ComputeGeoInMemoryAsync(
+        CancellationToken ct
     )
     {
         // Pacientes con ciudad (solo activos no borrados)
@@ -1150,6 +1290,283 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         }
 
         return await query.Select(p => p.Id).Distinct().ToListAsync(ct);
+    }
+
+    // --- Filtro geográfico set-based (sin materializar GUIDs) ---
+
+    /// <summary>¿Trae zona geográfica real (ciudad o algún estado)?</summary>
+    private static bool ZoneHasFilter(IReadOnlyCollection<string>? stateCodes, Guid? cityId) =>
+        cityId.HasValue
+        || (stateCodes ?? []).Any(c => !string.IsNullOrWhiteSpace(c));
+
+    /// <summary>
+    /// Predicado reutilizable de zona: pacientes activos con ciudad dentro de
+    /// los estados dados (unión) o de la ciudad dada (con precedencia).
+    /// Proyecta sobre el JOIN cities/states para traducir a SQL sin IN lists.
+    /// </summary>
+    private IQueryable<PatientProfile> ZonePatientsQuery(
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId
+    )
+    {
+        var query = dbContext
+            .PatientProfiles.AsNoTracking()
+            .Where(p => p.DeletedAt == null && p.CityId != null);
+
+        if (cityId.HasValue)
+        {
+            query = query.Where(p => p.CityId == cityId.Value);
+        }
+        else
+        {
+            var normalized = (stateCodes ?? [])
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => c.Trim().ToUpperInvariant())
+                .Distinct()
+                .ToList();
+            if (normalized.Count == 0)
+            {
+                return query.Where(p => false);
+            }
+
+            query = query.Where(p => normalized.Contains(p.City!.State!.Code));
+        }
+
+        return query;
+    }
+
+    /// <summary>Fila del KPI set-based por zona (mapeo directo de columnas SQL).</summary>
+    public sealed record HealthTestStatsZoneRow(
+        long Total,
+        long Pending,
+        long Completed,
+        long HighRisk,
+        long ActiveAlerts
+    );
+
+    /// <inheritdoc />
+    public async Task<HealthTestStatsDto> GetHealthTestStatsForZoneAsync(
+        Guid? professionalId,
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    )
+    {
+        if (!cityId.HasValue)
+        {
+            var normalized = (stateCodes ?? [])
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => c.Trim().ToUpperInvariant())
+                .Where(c => c.Length > 0)
+                .Distinct()
+                .ToList();
+            if (normalized.Count == 0)
+            {
+                return new HealthTestStatsDto(0, 0, 0, 0, 0);
+            }
+        }
+
+        // Un solo round-trip: zona como CTE + 5 conteos con EXISTS (índices
+        // ix_patient_profiles_city_id / ix_health_test_results_severity_type).
+        const string sql = """
+            WITH zone AS (
+                SELECT p.id
+                FROM app.patient_profiles p
+                JOIN app.cities c ON c.id = p.city_id
+                JOIN app.states s ON s.id = c.state_id
+                WHERE p.deleted_at IS NULL
+                  AND ((@cityId::uuid IS NOT NULL AND c.id = @cityId::uuid)
+                       OR (@cityId::uuid IS NULL AND s.code = ANY(@states)))
+                  AND (@profId::uuid IS NULL OR EXISTS (
+                        SELECT 1 FROM app.patient_professionals pp
+                        WHERE pp.patient_id = p.id
+                          AND pp.professional_id = @profId::uuid
+                          AND pp.status = 'Active'))
+            )
+            SELECT
+                (SELECT COUNT(*) FROM zone) AS "Total",
+                (SELECT COUNT(*) FROM app.health_test_assignments a
+                 JOIN zone z ON z.id = a.patient_id
+                 WHERE a.status = 'pending') AS "Pending",
+                (SELECT COUNT(*) FROM app.health_test_assignments a
+                 JOIN zone z ON z.id = a.patient_id
+                 WHERE a.status = 'completed') AS "Completed",
+                (SELECT COUNT(*) FROM app.health_test_results r
+                 JOIN app.health_test_evaluations e ON e.id = r.evaluation_id
+                 JOIN zone z ON z.id = e.patient_id
+                 WHERE r.severity = 'high' AND r.result_type = 'score') AS "HighRisk",
+                (SELECT COUNT(*) FROM app.health_test_alerts al
+                 JOIN zone z ON z.id = al.patient_id
+                 WHERE al.status = 'active') AS "ActiveAlerts"
+            """;
+
+        var cityParam = new NpgsqlParameter("@cityId", NpgsqlDbType.Uuid)
+        {
+            Value = (object?)cityId ?? DBNull.Value,
+        };
+        var profParam = new NpgsqlParameter("@profId", NpgsqlDbType.Uuid)
+        {
+            Value = (object?)professionalId ?? DBNull.Value,
+        };
+        var statesParam = new NpgsqlParameter("@states", NpgsqlDbType.Array | NpgsqlDbType.Text)
+        {
+            Value = (stateCodes ?? []).ToArray(),
+        };
+
+        var rows = await dbContext.Database
+            .SqlQueryRaw<HealthTestStatsZoneRow>(sql, cityParam, statesParam, profParam)
+            .ToListAsync(ct);
+
+        var row = rows.FirstOrDefault() ?? new HealthTestStatsZoneRow(0, 0, 0, 0, 0);
+        return new HealthTestStatsDto(
+            (int)row.Total,
+            (int)row.Pending,
+            (int)row.Completed,
+            (int)row.HighRisk,
+            (int)row.ActiveAlerts
+        );
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsWithPatientDataForZoneAsync(
+        Guid? professionalId,
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    )
+    {
+        if (!ZoneHasFilter(stateCodes, cityId))
+        {
+            return await ListAssignmentsWithPatientDataAsync(professionalId, null, ct);
+        }
+
+        var zonePatientIds = ZonePatientsQuery(stateCodes, cityId).Select(p => p.Id);
+
+        var query = dbContext
+            .HealthTestAssignments.AsNoTracking()
+            .AsSplitQuery()
+            .Include(a => a.Patient)
+            .Include(a => a.Version!)
+                .ThenInclude(v => v.Instrument)
+            .Include(a => a.Evaluations)
+                .ThenInclude(e => e.Results)
+            .AsQueryable()
+            .Where(a => zonePatientIds.Contains(a.PatientId));
+
+        if (professionalId.HasValue)
+        {
+            query = query.Where(a =>
+                dbContext.PatientProfessionalAssignments.Any(pp =>
+                    pp.PatientId == a.PatientId
+                    && pp.ProfessionalId == professionalId.Value
+                    && pp.Status == "Active"
+                )
+            );
+        }
+
+        return await query.ToListAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Guid, int>> ListActiveAlertCountsForZoneAsync(
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    )
+    {
+        if (!ZoneHasFilter(stateCodes, cityId))
+        {
+            return await ListActiveAlertCountsByPatientAsync(ct);
+        }
+
+        return await dbContext
+            .HealthTestAlerts.AsNoTracking()
+            .Where(a =>
+                (a.Status == HealthTestAlertStatus.active
+                 || a.Status == HealthTestAlertStatus.reviewing)
+                && ZonePatientsQuery(stateCodes, cityId).Select(p => p.Id).Contains(a.PatientId)
+            )
+            .GroupBy(a => a.PatientId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<Guid, string>> ListProfessionalNamesForZoneAsync(
+        IReadOnlyCollection<string>? stateCodes,
+        Guid? cityId,
+        CancellationToken ct = default
+    )
+    {
+        if (!ZoneHasFilter(stateCodes, cityId))
+        {
+            return await ListProfessionalNamesByPatientAsync(ct);
+        }
+
+        return await (
+            from pp in dbContext.PatientProfessionalAssignments.AsNoTracking()
+            join pr in dbContext.Professionals on pp.ProfessionalId equals pr.Id
+            join e in dbContext.Employees on pr.EmployeeId equals e.Id
+            where
+                e.Status == "Active"
+                && ZonePatientsQuery(stateCodes, cityId).Select(p => p.Id).Contains(pp.PatientId)
+            select new { pp.PatientId, Name = (e.FirstName + " " + e.LastName).Trim() }
+        )
+            .Distinct()
+            .ToDictionaryAsync(x => x.PatientId, x => x.Name, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> GeoRollupExistsAsync(CancellationToken ct = default) =>
+        await dbContext.HealthTestGeoRollups.AsNoTracking().AnyAsync(ct);
+
+    /// <summary>
+    /// Etiquetas cortas es-CO de meses (misma salida que toLocaleDateString
+    /// "es-CO" month short en el cliente).
+    /// </summary>
+    private static readonly string[] MesesEsCo =
+        ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto>> GetCoverageTrendAsync(
+        CancellationToken ct = default
+    )
+    {
+        var now = DateTime.UtcNow;
+        var thisMonth = new DateOnly(now.Year, now.Month, 1);
+        var firstMonth = thisMonth.AddMonths(-11);
+
+        var rows = await dbContext
+            .HealthTestDailyMetrics.AsNoTracking()
+            .Where(m =>
+                m.ClinicId == Guid.Empty
+                && m.MetricKey == "assignments_count"
+                && m.DimensionKey == "completed"
+                && m.MetricDate >= firstMonth
+            )
+            .ToListAsync(ct);
+
+        var totalPatients = await CountPatientsAsync(ct);
+        var denominator = Math.Max(totalPatients, 1);
+
+        var byMonth = rows
+            .GroupBy(r => new DateOnly(r.MetricDate.Year, r.MetricDate.Month, 1))
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.TotalCount));
+
+        var months = new List<CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto>(12);
+        for (var i = 0; i < 12; i++)
+        {
+            var month = thisMonth.AddMonths(-11 + i);
+            var completed = byMonth.GetValueOrDefault(month);
+            var coverage = Math.Round(completed / (double)denominator * 100, 0, MidpointRounding.AwayFromZero);
+            months.Add(new CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto(
+                MesesEsCo[month.Month - 1],
+                coverage,
+                (int)completed
+            ));
+        }
+
+        return months;
     }
 
     public async Task<bool> PatientBelongsToProfessionalAsync(

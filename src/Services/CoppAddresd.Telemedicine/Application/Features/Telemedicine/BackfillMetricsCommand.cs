@@ -18,7 +18,13 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// Con <c>DryRun</c> no escribe nada y reporta lo que escribiría.
 /// </summary>
 /// <param name="From">Día de agenda inicial (UTC). Nulo = historia completa.</param>
-/// <param name="To">Día de agenda final (UTC). Nulo = hoy.</param>
+/// <param name="To">
+/// Día de agenda final (UTC). Nulo = hoy. Admite futuro: las citas programadas
+/// a futuro también llevan filas pre-agregadas (igual que las que escribe el
+/// processor incremental al crearlas) y los lectores prefieren el pre-agregado
+/// cuando existe; la carga inicial debe cubrirlas o los rangos que toquen
+/// futuro quedarían subcontados.
+/// </param>
 /// <param name="ClinicId">Acota a una clínica. Nulo = todas.</param>
 /// <param name="DryRun">Simula sin escribir.</param>
 public sealed record BackfillMetricsCommand(
@@ -51,10 +57,9 @@ public sealed class BackfillMetricsCommandValidator : AbstractValidator<Backfill
             .Must(x => x.From is null || x.To is null || x.From <= x.To)
             .WithMessage("El inicio del rango no puede ser posterior al fin.");
 
-        RuleFor(x => x.To)
-            .Must(to => to is null || to <= DateTimeOffset.UtcNow.AddDays(1))
-            .WithMessage("El fin del rango no puede estar en el futuro.");
-
+        // Sin cota de futuro: el To admite días de agenda futuros para que la
+        // carga inicial cubra las citas ya programadas. La cota de 10 años
+        // sigue protegiendo contra errores de tipeo.
         RuleFor(x => x)
             .Must(x =>
                 x.From is null

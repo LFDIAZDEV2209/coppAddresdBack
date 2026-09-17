@@ -104,27 +104,26 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
             CacheKeys.StatsTtl(),
             async token =>
             {
-                IReadOnlyCollection<Guid>? geoPatientIds = null;
-                if (hasGeoFilter)
-                {
-                    geoPatientIds = await repository.GetPatientIdsByGeoAsync(
-                        stateCodes,
-                        request.CityId,
-                        token
-                    );
-                    if (geoPatientIds.Count == 0)
-                    {
-                        return new List<MasterPatientRowDto>();
-                    }
-                }
-
-                var assignments = await repository.ListAssignmentsWithPatientDataAsync(
+                // Zona geográfica resuelta en SQL (JOIN), sin materializar GUIDs.
+                var assignments = await repository.ListAssignmentsWithPatientDataForZoneAsync(
                     request.ProfessionalId,
-                    geoPatientIds,
+                    stateCodes,
+                    request.CityId,
                     token
                 );
-                var alertCounts = await repository.ListActiveAlertCountsByPatientAsync(token);
-                var professionalNames = await repository.ListProfessionalNamesByPatientAsync(token);
+                if (assignments.Count == 0 && hasGeoFilter)
+                {
+                    return new List<MasterPatientRowDto>();
+                }
+
+                var alertCounts = await repository.ListActiveAlertCountsForZoneAsync(
+                    stateCodes,
+                    request.CityId,
+                    token
+                );
+                var professionalNames = hasGeoFilter
+                    ? await repository.ListProfessionalNamesForZoneAsync(stateCodes, request.CityId, token)
+                    : await repository.ListProfessionalNamesByPatientAsync(token);
                 var clinicNames = await repository.ListClinicNamesByIdsAsync(
                     assignments
                         .Select(a => a.Patient)

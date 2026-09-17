@@ -11,13 +11,17 @@ permissions:
 
 concurrency:
   group: deploy-backend-dev
-  cancel-in-progress: false
+  # En dev el último push manda: cancela despliegues superados en cola en vez
+  # de desplegar cada commit intermedio uno tras otro.
+  cancel-in-progress: true
 
 jobs:
   detect:
     runs-on: ubuntu-latest
     outputs:
       services: ${{ steps.detect.outputs.services }}
+      test_projects: ${{ steps.detect.outputs.test_projects }}
+      migrate: ${{ steps.detect.outputs.migrate }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +32,16 @@ jobs:
         shell: bash
         run: |
           SERVICES=""
-          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+          # Rango del push completo (no solo el último commit): en pushes con
+          # varios commits o merges, HEAD~1..HEAD invisibiliza cambios y el
+          # servicio afectado jamás se despliega (incidente 2026-09-15:
+          # /api/v1/health-tests/coverage-trend 404 en prod porque el endpoint
+          # nuevo de la API nunca se desplegó).
+          BASE="${{ github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="HEAD~1"
+          fi
+          CHANGED=$(git diff --name-only "$BASE" HEAD 2>/dev/null || git diff --name-only HEAD)
 
           if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Auth"; then
             SERVICES="$SERVICES auth"
@@ -53,25 +66,50 @@ jobs:
           if [ -z "$SERVICES" ]; then
             echo "Sin cambios backend relevantes — no se despliega nada"
             echo "services=[]" >> "$GITHUB_OUTPUT"
+            echo "test_projects=[]" >> "$GITHUB_OUTPUT"
+            echo "migrate=[]" >> "$GITHUB_OUTPUT"
           else
             JSON=$(echo "$SERVICES" | xargs | tr ' ' '\n' | jq -R . | jq -s -c .)
             echo "services=$JSON" >> "$GITHUB_OUTPUT"
+            # Tests acotados al servicio afectado (el suite completo en cada
+            # push duplicaba minutos). Compartido/api tocan el núcleo.
+            TESTS=""
+            if echo "$SERVICES" | grep -q -E "(^| )(api|auth)( |$)"; then
+              TESTS="$TESTS tests/CoppAddresd.UnitTests"
+            fi
+            if [ -n "$SHARED" ]; then
+              TESTS="tests/CoppAddresd.UnitTests tests/CoppAddresd.Telemedicine.UnitTests tests/CoppAddresd.Community.UnitTests"
+            fi
+            if echo "$SERVICES" | grep -q -E "(^| )telemedicine( |$)"; then
+              TESTS="$TESTS tests/CoppAddresd.Telemedicine.UnitTests"
+            fi
+            if echo "$SERVICES" | grep -q -E "(^| )community( |$)"; then
+              TESTS="$TESTS tests/CoppAddresd.Community.UnitTests"
+            fi
+            TESTS_JSON=$(echo "$TESTS" | xargs | tr ' ' '\n' | sort -u | jq -R . | jq -s -c .)
+            echo "test_projects=$TESTS_JSON" >> "$GITHUB_OUTPUT"
+            # Migraciones solo donde aplica (auth/community auto-migran).
+            MIGRATE=$(echo "$SERVICES" | xargs | tr ' ' '\n' | grep -E "^(api|telemedicine)$" | jq -R . | jq -s -c . || true)
+            echo "migrate=$MIGRATE" >> "$GITHUB_OUTPUT"
           fi
 
   test:
     needs: detect
     if: needs.detect.outputs.services != '' && needs.detect.outputs.services != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJson(needs.detect.outputs.test_projects) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
 
-      - name: Test unitarios (CI-safe, sin RDS)
+      - name: Test unitarios (${{ matrix.project }}, CI-safe, sin RDS)
         run: |
-          dotnet test tests/CoppAddresd.UnitTests -c Release --nologo
-          dotnet test tests/CoppAddresd.Telemedicine.UnitTests -c Release --nologo
+          dotnet test ${{ matrix.project }} -c Release --nologo
 
   deploy:
     needs: [detect, test]
@@ -97,6 +135,9 @@ jobs:
       - name: Login ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Determinar Dockerfile y ECR por servicio
         id: svc
@@ -125,19 +166,30 @@ jobs:
               echo "dockerfile=src/Services/CoppAddresd.Community/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-community" >> "$GITHUB_OUTPUT"
               echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
-              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              # Community firma URLs locales igual que la API: sin la clave HMAC el contenedor revienta al arrancar.
+              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
+      # Build con caché GHA por servicio (scope): el Dockerfile separa la capa
+      # de restore, así que pushes de solo-código reutilizan restore+SDK y el
+      # build baja de ~8-12 min a ~1-3 min. mode=max en rama dev es aceptable.
+      # push:false + docker push clasico: buildx resolviendo el tag exige
+      # ecr:BatchGetImage y el rol GHA no lo tiene; el push clasico si funciona.
       - name: Build imagen (${{ github.sha }})
-        run: |
-          docker build \
-            -f "${{ steps.svc.outputs.dockerfile }}" \
-            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}" \
-            -t "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest" \
-            .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ steps.svc.outputs.dockerfile }}
+          push: false
+          load: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-      - name: Push ECR
+      - name: Push ECR (docker push clasico)
         run: |
           docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
           docker push "${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:latest"
@@ -180,6 +232,7 @@ jobs:
           SERVICE="cooppadresd-${{ matrix.service }}"
           TD_ARN="${{ steps.taskdef.outputs.arn }}"
           DEADLINE=$((SECONDS + 1200))
+          MISS_COUNT=0
 
           while true; do
             DEP=$(aws ecs describe-services \
@@ -205,6 +258,25 @@ jobs:
               exit 1
             fi
 
+            if [ "$STATE" = "MISSING" ]; then
+              # Los primeros polls pueden no ver el deployment aún; solo es rollback tras racha.
+              MISS_COUNT=$((MISS_COUNT + 1))
+              if [ "$MISS_COUNT" -lt 8 ]; then
+                sleep 15
+                continue
+              fi
+              # El deployment nuevo desapareció: circuit breaker hizo rollback a otra revisión.
+              # Fallar rápido con el estado real en vez de pollear 20 min en vacío.
+              OTHER=$(aws ecs describe-services \
+                --cluster "${{ env.ECS_CLUSTER }}" \
+                --services "$SERVICE" \
+                --region "${{ env.AWS_REGION }}" \
+                --query "services[0].deployments[?taskDefinition!=`$TD_ARN`].[taskDefinition,rolloutState] | [0]" \
+                --output text)
+              echo "::error::Deployment retirado (rollback?) de $SERVICE. Otra revisión activa: $OTHER. Revisar stoppedReason de las tasks nuevas."
+              exit 1
+            fi
+
             if [ "$SECONDS" -ge "$DEADLINE" ]; then
               echo "::error::Timeout 20 min: rollout=$STATE running=$RUNNING desired=$DESIRED"
               exit 1
@@ -221,6 +293,12 @@ jobs:
             --cluster "${{ env.ECS_CLUSTER }}" \
             --service-name "cooppadresd-${{ matrix.service }}" \
             --region "${{ env.AWS_REGION }}" --query "taskArns" --output text)
+          TASKS_STOPPED=$(aws ecs list-tasks \
+            --cluster "${{ env.ECS_CLUSTER }}" \
+            --service-name "cooppadresd-${{ matrix.service }}" \
+            --desired-status STOPPED \
+            --region "${{ env.AWS_REGION }}" --query "taskArns[0:2]" --output text)
+          TASKS="$TASKS $TASKS_STOPPED"
           for T in $TASKS; do
             aws ecs describe-tasks \
               --cluster "${{ env.ECS_CLUSTER }}" \
@@ -232,10 +310,13 @@ jobs:
 
   migrate:
     needs: [detect, deploy]
+    # always(): un fallo en el deploy de OTRO servicio (p. ej. community) no debe
+    # saltarse las migraciones pendientes de api/telemedicine. El cuerpo del job
+    # resuelve el task def por nombre y es idempotente (EF omite lo ya aplicado).
     if: >
-      needs.detect.outputs.services != '' &&
-      needs.detect.outputs.services != '[]' &&
-      (contains(needs.detect.outputs.services, 'api') || contains(needs.detect.outputs.services, 'telemedicine'))
+      always() &&
+      needs.detect.outputs.migrate != '' &&
+      needs.detect.outputs.migrate != '[]'
     runs-on: ubuntu-latest
     env:
       AWS_REGION: us-east-2
@@ -243,7 +324,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: ${{ fromJson(needs.detect.outputs.services) }}
+        service: ${{ fromJson(needs.detect.outputs.migrate) }}
     steps:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -270,14 +351,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "${{ matrix.service }}" in
-            api|telemedicine) ;;
-            *)
-              echo "auth/community auto-migran al arrancar — sin one-off task"
-              exit 0
-              ;;
-          esac
-
+          # La matriz ya viene filtrada a api|telemedicine (auth/community
+          # auto-migran al arrancar, ver comentario del job).
           TD_NAME="cooppadresd-${{ matrix.service }}"
           TD_ARN=$(aws ecs describe-task-definition \
             --task-definition "$TD_NAME" --region "$AWS_REGION" \

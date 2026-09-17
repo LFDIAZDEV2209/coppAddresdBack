@@ -44,11 +44,47 @@ public sealed class HealthTestMetricsProcessorHostedService(
                         await ProcessAlertTransitionAsync(dbContext, alertEvent, stoppingToken);
                         break;
                 }
+
+                // Rollup snapshot geo: la ciudad del paciente del evento cambia
+                // (evaluación completada → riesgo/score, transición de alerta →
+                // alertas activas). Recomputo set-based de ESA ciudad, idempotente.
+                var eventPatientId = metricEvent switch
+                {
+                    HealthTestCompletedMetricEvent e2 => e2.PatientId,
+                    HealthTestAlertTransitionedMetricEvent e3 => e3.PatientId,
+                    _ => (Guid?)null,
+                };
+                if (eventPatientId.HasValue)
+                {
+                    await RecomputeGeoRollupForPatientAsync(dbContext, eventPatientId.Value, stoppingToken);
+                }
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
                 logger.LogError(ex, "Error procesando evento de métrica de test de salud: {@Event}", metricEvent);
             }
+        }
+    }
+
+    /// <summary>
+    /// Recomputa la fila del rollup geo de la ciudad del paciente afectado por
+    /// el evento (si el paciente tiene ciudad). Idempotente y barato: 1 lookup
+    /// de ciudad + 1 statement set-based filtrado por esa ciudad.
+    /// </summary>
+    private static async Task RecomputeGeoRollupForPatientAsync(
+        AppDbContext dbContext,
+        Guid patientId,
+        CancellationToken ct)
+    {
+        var cityId = await dbContext
+            .PatientProfiles.AsNoTracking()
+            .Where(p => p.Id == patientId)
+            .Select(p => p.CityId)
+            .FirstOrDefaultAsync(ct);
+
+        if (cityId.HasValue)
+        {
+            await HealthTestGeoRollupSql.RecomputeCityAsync(dbContext, cityId.Value, ct);
         }
     }
 

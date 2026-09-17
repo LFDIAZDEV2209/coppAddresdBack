@@ -107,9 +107,10 @@ Los servicios loguean `Cache HIT/MISS {Key}` (Debug) y `Fallo de caché en GET/S
 ## Fail-safe (qué pasa si Valkey se cae)
 
 1. Cada operación de caché falla con timeout ≤ 2 s (connect ≤ 5 s), se registra Warning y la operación degrada a PostgreSQL — **la petición sigue siendo correcta**.
-2. `/health` reporta `Degraded` (componente `valkey`), HTTP 200 — el servicio NO se marca caído.
-3. `docker compose start valkey` → el cliente se reconecta solo y el caché se reabre sin reiniciar servicios.
-4. No hay avalancha: stats con TTL jitter y reconstrucción gradual; AOF (`appendfsync everysec`) arranca el caché tibio tras un reinicio del contenedor.
+2. **Circuit breaker (rev. 2026-09-15)**: sin breaker, un Valkey caído pagaba ese timeout en TODA operación de caché (dashboard = 3-5 ops → ~6 s por request medidos). Tras 2 fallos consecutivos el breaker se abre 30 s en `ValkeyCacheService`: las siguientes operaciones de caché fallan **instantáneo** (miss) y la fuente de datos responde en su latencia normal; a los 30 s se reintenta (half-open) y un éxito re-cierra el breaker. Implementado en las 3 copias (Api/Infrastructure, Auth, Telemedicine). Test: `ValkeyCacheServiceFailOpenTests.Breaker_*`.
+3. `/health` reporta `Degraded` (componente `valkey`), HTTP 200 — el servicio NO se marca caído.
+4. `docker compose start valkey` → el cliente se reconecta solo y el caché se reabre sin reiniciar servicios.
+5. No hay avalancha: stats con TTL jitter y reconstrucción gradual; AOF (`appendfsync everysec`) arranca el caché tibio tras un reinicio del contenedor.
 
 Verificado en local: catálogo 173 ms (miss) → 33 ms (hit); stats 150 ms → 6 ms; con Valkey detenido catálogo/stats/login responden correctamente y `/health` = `Degraded`.
 

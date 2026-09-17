@@ -217,4 +217,16 @@ public class ValidatorsTests
 
         Assert.True(validator.Validate(command).IsValid);
     }
+
+    [Fact]
+    public void Backfill_RangoFuturo_EsValido()
+    {
+        // La carga inicial debe poder cubrir citas ya programadas a futuro;
+        // los lectores prefieren el pre-agregado cuando existe.
+        var validator = new BackfillMetricsCommandValidator();
+        var now = DateTimeOffset.UtcNow;
+        var command = new BackfillMetricsCommand(now.AddDays(-30), now.AddDays(30), null);
+
+        Assert.True(validator.Validate(command).IsValid);
+    }
 }

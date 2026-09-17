@@ -1,0 +1,974 @@
+{
+  "meta": {
+    "source": "USDA FoodData Central (fdc.nal.usda.gov)",
+    "license": "CC0 1.0 Public Domain (USDA FDC)",
+    "source_version": "FDC 2026-08 (import API 2026-08-31)",
+    "imported_at": "2026-08-28",
+    "generated_by": "scripts/import_usda_foods.py (modo curated)",
+    "note": "Valores por 100 g. El proceso automático con la API oficial requiere FOODAI_USDA_API_KEY (registro gratuito) — ver scripts/import_usda_foods.py"
+  },
+  "foods": [
+    {
+      "canonical": "banana",
+      "display_name": "Banana",
+      "category": "fruit",
+      "alias": "banana",
+      "fdc_id": "173944",
+      "fdc_name": "Banana, raw",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.98,
+      "nutrition": {
+        "calories": 89,
+        "protein": 1.09,
+        "carbohydrates": 22.84,
+        "fat": 0.33,
+        "fiber": 2.6,
+        "sugar": 12.23,
+        "sodium": 1
+      }
+    },
+    {
+      "canonical": "apple",
+      "display_name": "Manzana",
+      "category": "fruit",
+      "alias": "apple",
+      "fdc_id": "171688",
+      "fdc_name": "Apple, raw, with skin",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.98,
+      "nutrition": {
+        "calories": 52,
+        "protein": 0.26,
+        "carbohydrates": 13.81,
+        "fat": 0.17,
+        "fiber": 2.4,
+        "sugar": 10.39,
+        "sodium": 1
+      }
+    },
+    {
+      "canonical": "orange",
+      "display_name": "Naranja",
+      "category": "fruit",
+      "alias": "orange",
+      "fdc_id": "169097",
+      "fdc_name": "Orange, raw",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.98,
+      "nutrition": {
+        "calories": 47,
+        "protein": 0.94,
+        "carbohydrates": 11.75,
+        "fat": 0.12,
+        "fiber": 2.4,
+        "sugar": 9.35,
+        "sodium": 0
+      }
+    },
+    {
+      "canonical": "broccoli",
+      "display_name": "Brócoli",
+      "category": "vegetable",
+      "alias": "broccoli",
+      "fdc_id": "170379",
+      "fdc_name": "Broccoli, raw",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.98,
+      "nutrition": {
+        "calories": 34,
+        "protein": 2.82,
+        "carbohydrates": 6.64,
+        "fat": 0.37,
+        "fiber": 2.6,
+        "sugar": 1.7,
+        "sodium": 33
+      }
+    },
+    {
+      "canonical": "carrot",
+      "display_name": "Zanahoria",
+      "category": "vegetable",
+      "alias": "carrot",
+      "fdc_id": "170393",
+      "fdc_name": "Carrot, raw",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.98,
+      "nutrition": {
+        "calories": 41,
+        "protein": 0.93,
+        "carbohydrates": 9.58,
+        "fat": 0.24,
+        "fiber": 2.8,
+        "sugar": 4.74,
+        "sodium": 69
+      }
+    },
+    {
+      "canonical": "pizza",
+      "display_name": "Pizza",
+      "category": "restaurant",
+      "alias": "pizza",
+      "fdc_id": "173058",
+      "fdc_name": "Pizza, cheese, per 100 g",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "calories": 266,
+        "protein": 11.39,
+        "carbohydrates": 33.33,
+        "fat": 10.4,
+        "fiber": 2.3,
+        "sugar": 3.6,
+        "sodium": 598
+      }
+    },
+    {
+      "canonical": "hot_dog",
+      "display_name": "Hot dog",
+      "category": "fast_food",
+      "alias": "hot dog",
+      "fdc_id": "174601",
+      "fdc_name": "Frankfurter, beef, per 100 g",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.93,
+      "nutrition": {
+        "calories": 290,
+        "protein": 12.0,
+        "carbohydrates": 2.7,
+        "fat": 25.0,
+        "fiber": 0,
+        "sugar": 1.1,
+        "sodium": 1050
+      }
+    },
+    {
+      "canonical": "donut",
+      "display_name": "Dona",
+      "category": "dessert",
+      "alias": "donut",
+      "fdc_id": "172783",
+      "fdc_name": "Doughnuts, cake-type, plain, per 100 g",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.94,
+      "nutrition": {
+        "calories": 452,
+        "protein": 4.9,
+        "carbohydrates": 51.3,
+        "fat": 25.4,
+        "fiber": 1.5,
+        "sugar": 24.8,
+        "sodium": 445
+      }
+    },
+    {
+      "canonical": "cake",
+      "display_name": "Pastel",
+      "category": "dessert",
+      "alias": "cake",
+      "fdc_id": "172750",
+      "fdc_name": "Cake, yellow, plain, without frosting, per 100 g",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.94,
+      "nutrition": {
+        "calories": 361,
+        "protein": 5.3,
+        "carbohydrates": 53.2,
+        "fat": 14.6,
+        "fiber": 0.7,
+        "sugar": 27.9,
+        "sodium": 392
+      }
+    },
+    {
+      "canonical": "hamburger",
+      "display_name": "Hamburguesa",
+      "category": "fast_food",
+      "alias": "hamburger",
+      "fdc_id": "170693",
+      "fdc_name": "Fast foods, hamburger; single, regular patty; plain",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.96,
+      "nutrition": {
+        "calories": 297,
+        "protein": 16.5,
+        "carbohydrates": 31.5,
+        "fat": 12.1,
+        "fiber": 1.7,
+        "sugar": 4.9,
+        "sodium": 331
+      }
+    },
+    {
+      "canonical": "french_fries",
+      "display_name": "Papas fritas",
+      "category": "fast_food",
+      "alias": "french_fries",
+      "fdc_id": "2709461",
+      "fdc_name": "Potato, french fries, fast food (FNDDS)",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "calories": 312,
+        "protein": 3.4,
+        "carbohydrates": 41.4,
+        "fat": 14.7,
+        "fiber": 3.8,
+        "sugar": 0.3,
+        "sodium": 210
+      }
+    },
+    {
+      "canonical": "fried_chicken",
+      "display_name": "Pollo frito",
+      "category": "fast_food",
+      "alias": "fried_chicken",
+      "fdc_id": "171476",
+      "fdc_name": "Chicken, breast, meat and skin, cooked, fried, flour",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "calories": 222,
+        "protein": 31.8,
+        "carbohydrates": 1.6,
+        "fat": 8.9,
+        "fiber": 0.1,
+        "sugar": 0,
+        "sodium": 76
+      }
+    },
+    {
+      "canonical": "taco",
+      "display_name": "Taco",
+      "category": "restaurant",
+      "alias": "taco",
+      "fdc_id": "170689",
+      "fdc_name": "Fast foods, taco with beef, cheese and lettuce, hard shell",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "calories": 226,
+        "protein": 8.9,
+        "carbohydrates": 19.9,
+        "fat": 12.7,
+        "fiber": 3.9,
+        "sugar": 0.9,
+        "sodium": 397
+      }
+    },
+    {
+      "canonical": "burrito",
+      "display_name": "Burrito",
+      "category": "restaurant",
+      "alias": "burrito",
+      "fdc_id": "172039",
+      "fdc_name": "Fast foods, burrito, with beans and cheese",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.88,
+      "nutrition": {
+        "calories": 205,
+        "protein": 7.4,
+        "carbohydrates": 31.2,
+        "fat": 6.1,
+        "fiber": 4.2,
+        "sugar": 1.7,
+        "sodium": 563
+      }
+    },
+    {
+      "canonical": "rice",
+      "display_name": "Arroz blanco",
+      "category": "restaurant",
+      "alias": "rice",
+      "fdc_id": "168878",
+      "fdc_name": "Rice, white, long-grain, regular, enriched, cooked",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.97,
+      "nutrition": {
+        "calories": 130,
+        "protein": 2.7,
+        "carbohydrates": 28.2,
+        "fat": 0.3,
+        "fiber": 0.4,
+        "sugar": 0.1,
+        "sodium": 1
+      }
+    },
+    {
+      "canonical": "pasta",
+      "display_name": "Pasta",
+      "category": "restaurant",
+      "alias": "pasta",
+      "fdc_id": "169737",
+      "fdc_name": "Pasta, cooked, enriched, without added salt",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "calories": 158,
+        "protein": 5.8,
+        "carbohydrates": 30.9,
+        "fat": 0.9,
+        "fiber": 1.8,
+        "sugar": 0.6,
+        "sodium": 1
+      }
+    },
+    {
+      "canonical": "salad",
+      "display_name": "Ensalada",
+      "category": "restaurant",
+      "alias": "salad",
+      "fdc_id": "2709792",
+      "fdc_name": "Mixed salad greens, raw (FNDDS)",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "calories": 21,
+        "protein": 1.3,
+        "carbohydrates": 3.4,
+        "fat": 0.2,
+        "fiber": 1.4,
+        "sugar": 1.0,
+        "sodium": 41
+      }
+    },
+    {
+      "canonical": "eggs",
+      "display_name": "Huevos",
+      "category": "breakfast",
+      "alias": "eggs",
+      "fdc_id": "172187",
+      "fdc_name": "Egg, whole, cooked, scrambled",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "calories": 149,
+        "protein": 10.0,
+        "carbohydrates": 1.6,
+        "fat": 11.0,
+        "fiber": 0,
+        "sugar": 1.4,
+        "sodium": 145
+      }
+    },
+    {
+      "canonical": "bacon",
+      "display_name": "Tocino",
+      "category": "breakfast",
+      "alias": "bacon",
+      "fdc_id": "168322",
+      "fdc_name": "Pork, cured, bacon, pre-sliced, cooked, pan-fried",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "calories": 468,
+        "protein": 33.9,
+        "carbohydrates": 1.7,
+        "fat": 35.1,
+        "fiber": 0,
+        "sugar": 0,
+        "sodium": 1684
+      }
+    },
+    {
+      "canonical": "pancakes",
+      "display_name": "Panqueques",
+      "category": "breakfast",
+      "alias": "pancakes",
+      "fdc_id": "175009",
+      "fdc_name": "Pancakes, plain, prepared from recipe",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.94,
+      "nutrition": {
+        "calories": 227,
+        "protein": 6.4,
+        "carbohydrates": 28.3,
+        "fat": 9.7,
+        "fiber": 0,
+        "sugar": 0,
+        "sodium": 439
+      }
+    },
+    {
+      "canonical": "sandwich",
+      "display_name": "Sándwich",
+      "category": "restaurant",
+      "alias": "sandwich",
+      "fdc_id": null,
+      "fdc_name": null,
+      "mapping_status": "NO_RELIABLE_MATCH",
+      "mapping_confidence": 0.0,
+      "nutrition": null,
+      "notes": "Sin entrada FDC fiable para sándwich genérico; requiere definición de referencia propia"
+    },
+    {
+      "canonical": "steak",
+      "display_name": "Bistec",
+      "category": "restaurant",
+      "alias": "steak",
+      "fdc_id": "2705825",
+      "fdc_name": "Beef, steak, chuck",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.8,
+      "nutrition": {
+        "protein": 26.0,
+        "fat": 13.4,
+        "carbohydrates": 0.21,
+        "calories": 225,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 380
+      },
+      "notes": "Beef, steak, chuck (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "grilled_chicken",
+      "display_name": "Pollo a la parrilla",
+      "category": "restaurant",
+      "alias": "grilled chicken",
+      "fdc_id": "2705968",
+      "fdc_name": "Chicken breast, grilled without sauce, skin not eaten",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 29.6,
+        "fat": 5.45,
+        "carbohydrates": 0.0,
+        "calories": 176,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 353
+      },
+      "notes": "Chicken breast, grilled without sauce, skin not eaten (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "salmon",
+      "display_name": "Salmón",
+      "category": "restaurant",
+      "alias": "salmon",
+      "fdc_id": "172000",
+      "fdc_name": "Fish, salmon, chum, cooked, dry heat",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "calories": 154.0,
+        "protein": 25.82,
+        "fat": 4.83,
+        "carbohydrates": 0.0,
+        "fiber": 0.0,
+        "sodium": 64.0,
+        "sugar": 0
+      },
+      "notes": "Fish, salmon, chum, cooked, dry heat (SR Legacy)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "lasagna",
+      "display_name": "Lasaña",
+      "category": "restaurant",
+      "alias": "lasagna",
+      "fdc_id": "2708750",
+      "fdc_name": "Lasagna with meat",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 7.45,
+        "fat": 4.97,
+        "carbohydrates": 16.2,
+        "calories": 139,
+        "sugar": 3.33,
+        "fiber": 1.6,
+        "sodium": 390
+      },
+      "notes": "Lasagna with meat (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "mac_and_cheese",
+      "display_name": "Macarrones con queso",
+      "category": "restaurant",
+      "alias": "mac and cheese",
+      "fdc_id": "169770",
+      "fdc_name": "Macaroni and cheese, box mix with cheese sauce, prepared",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "calories": 164.0,
+        "protein": 6.68,
+        "fat": 4.99,
+        "carbohydrates": 23.1,
+        "fiber": 1.2,
+        "sugar": 1.57,
+        "sodium": 460.0
+      },
+      "notes": "Macaroni and cheese, box mix with cheese sauce, prepared (SR Legacy)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "soup",
+      "display_name": "Sopa",
+      "category": "restaurant",
+      "alias": "soup",
+      "fdc_id": null,
+      "fdc_name": null,
+      "mapping_status": "NO_RELIABLE_MATCH",
+      "mapping_confidence": 0.0,
+      "nutrition": null,
+      "notes": "Demasiado variable; sin entrada genérica confiable"
+    },
+    {
+      "canonical": "toast",
+      "display_name": "Tostada",
+      "category": "breakfast",
+      "alias": "toast",
+      "fdc_id": "2707599",
+      "fdc_name": "Bread, white, toasted",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "protein": 10.4,
+        "fat": 3.94,
+        "carbohydrates": 54.1,
+        "calories": 293,
+        "sugar": 5.87,
+        "fiber": 2.5,
+        "sodium": 495
+      },
+      "notes": "Bread, white, toasted (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "bagel",
+      "display_name": "Bagel",
+      "category": "breakfast",
+      "alias": "bagel",
+      "fdc_id": "2707684",
+      "fdc_name": "Bagel",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "protein": 10.6,
+        "fat": 1.32,
+        "carbohydrates": 52.4,
+        "calories": 264,
+        "sugar": 8.43,
+        "fiber": 1.6,
+        "sodium": 422
+      },
+      "notes": "Bagel (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "waffles",
+      "display_name": "Waffles",
+      "category": "breakfast",
+      "alias": "waffles",
+      "fdc_id": "2708325",
+      "fdc_name": "Waffle, plain",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 8.7,
+        "fat": 18.8,
+        "carbohydrates": 41.5,
+        "calories": 373,
+        "sugar": 8.28,
+        "fiber": 2.5,
+        "sodium": 597
+      },
+      "notes": "Waffle, plain (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "cereal",
+      "display_name": "Cereal",
+      "category": "breakfast",
+      "alias": "cereal",
+      "fdc_id": null,
+      "fdc_name": null,
+      "mapping_status": "NO_RELIABLE_MATCH",
+      "mapping_confidence": 0.0,
+      "nutrition": null,
+      "notes": "Marca/variedad infinita; sin entrada genérica fiable"
+    },
+    {
+      "canonical": "oatmeal",
+      "display_name": "Avena",
+      "category": "breakfast",
+      "alias": "oatmeal",
+      "fdc_id": "2708380",
+      "fdc_name": "Oatmeal, NFS",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 2.18,
+        "fat": 2.63,
+        "carbohydrates": 11.2,
+        "calories": 76.0,
+        "sugar": 0.17,
+        "fiber": 1.7,
+        "sodium": 81.0
+      },
+      "notes": "Oatmeal, NFS (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "cookie",
+      "display_name": "Galleta",
+      "category": "dessert",
+      "alias": "cookie",
+      "fdc_id": "2707909",
+      "fdc_name": "Cookie, chocolate chip",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 5.1,
+        "fat": 24.7,
+        "carbohydrates": 65.4,
+        "calories": 492,
+        "sugar": 32.9,
+        "fiber": 2.0,
+        "sodium": 311
+      },
+      "notes": "Cookie, chocolate chip (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "brownie",
+      "display_name": "Brownie",
+      "category": "dessert",
+      "alias": "brownie",
+      "fdc_id": "2707904",
+      "fdc_name": "Cookie, brownie, without icing",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 4.8,
+        "fat": 16.3,
+        "carbohydrates": 63.9,
+        "calories": 405,
+        "sugar": 36.6,
+        "fiber": 2.1,
+        "sodium": 286
+      },
+      "notes": "Cookie, brownie, without icing (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "ice_cream",
+      "display_name": "Helado",
+      "category": "dessert",
+      "alias": "ice cream",
+      "fdc_id": "2705630",
+      "fdc_name": "Ice cream, vanilla",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 3.5,
+        "fat": 11.0,
+        "carbohydrates": 23.6,
+        "calories": 207,
+        "sugar": 21.2,
+        "fiber": 0.7,
+        "sodium": 80.0
+      },
+      "notes": "Ice cream, vanilla (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "chicken_nuggets",
+      "display_name": "Nuggets de pollo",
+      "category": "fast_food",
+      "alias": "chicken nuggets",
+      "fdc_id": "2706092",
+      "fdc_name": "Chicken nuggets, NFS",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 15.9,
+        "fat": 20.4,
+        "carbohydrates": 14.9,
+        "calories": 307,
+        "sugar": 0.08,
+        "fiber": 0.9,
+        "sodium": 594
+      },
+      "notes": "Chicken nuggets, NFS (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "quesadilla",
+      "display_name": "Quesadilla",
+      "category": "restaurant",
+      "alias": "quesadilla",
+      "fdc_id": "2708590",
+      "fdc_name": "Quesadilla, NFS",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 13.4,
+        "fat": 16.2,
+        "carbohydrates": 28.6,
+        "calories": 316,
+        "sugar": 2.41,
+        "fiber": 2.0,
+        "sodium": 676
+      },
+      "notes": "Quesadilla, NFS (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "nachos",
+      "display_name": "Nachos",
+      "category": "restaurant",
+      "alias": "nachos",
+      "fdc_id": "2708577",
+      "fdc_name": "Nachos, cheese only",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 4.46,
+        "fat": 15.7,
+        "carbohydrates": 27.8,
+        "calories": 266,
+        "sugar": 0.45,
+        "fiber": 2.0,
+        "sodium": 547
+      },
+      "notes": "Nachos, cheese only (FNDDS)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "chicken",
+      "display_name": "Pollo",
+      "category": "protein",
+      "alias": "chicken",
+      "fdc_id": "2705968",
+      "fdc_name": "Chicken breast, grilled without sauce, skin not eaten",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 29.6,
+        "fat": 5.45,
+        "carbohydrates": 0.0,
+        "calories": 176,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 353
+      },
+      "notes": "Pollo genérico = pechuga a la parrilla (FNDDS 2705968, misma que grilled_chicken)",
+      "data_type": "Survey (FNDDS)"
+    },
+    {
+      "canonical": "pork",
+      "display_name": "Cerdo",
+      "category": "protein",
+      "alias": "pork",
+      "fdc_id": "168320",
+      "fdc_name": "Pork, fresh, loin, whole, separable lean only, cooked, roasted",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.75,
+      "nutrition": {
+        "protein": 27.0,
+        "fat": 5.5,
+        "carbohydrates": 0.0,
+        "calories": 165,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 60
+      },
+      "notes": "Lomo de cerdo magro asado (valores típicos USDA por 100 g)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "peanuts",
+      "display_name": "Maní",
+      "category": "snack",
+      "alias": "peanuts",
+      "fdc_id": "16087",
+      "fdc_name": "Peanuts, all types, raw",
+      "mapping_status": "DIRECT_MATCH",
+      "mapping_confidence": 0.95,
+      "nutrition": {
+        "protein": 25.8,
+        "fat": 49.24,
+        "carbohydrates": 16.13,
+        "calories": 567,
+        "sugar": 4.72,
+        "fiber": 8.5,
+        "sodium": 18
+      },
+      "notes": "Maní crudo todos los tipos (SR Legacy 16087)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "peanut",
+      "display_name": "Maní",
+      "category": "snack",
+      "alias": "peanut",
+      "fdc_id": "16087",
+      "fdc_name": "Peanuts, all types, raw",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.9,
+      "nutrition": {
+        "protein": 25.8,
+        "fat": 49.24,
+        "carbohydrates": 16.13,
+        "calories": 567,
+        "sugar": 4.72,
+        "fiber": 8.5,
+        "sodium": 18
+      },
+      "notes": "Singular de peanuts (misma entrada)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "potato",
+      "display_name": "Papa",
+      "category": "side",
+      "alias": "potato",
+      "fdc_id": "170438",
+      "fdc_name": "Potatoes, boiled, cooked in skin, flesh, without salt",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 1.87,
+        "fat": 0.1,
+        "carbohydrates": 20.13,
+        "calories": 87,
+        "sugar": 0.87,
+        "fiber": 1.8,
+        "sodium": 5
+      },
+      "notes": "Papa hervida con cáscara (SR Legacy 170438)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "beans",
+      "display_name": "Frijoles",
+      "category": "protein",
+      "alias": "beans",
+      "fdc_id": "173735",
+      "fdc_name": "Beans, black, mature seeds, cooked, boiled, without salt",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.8,
+      "nutrition": {
+        "protein": 8.86,
+        "fat": 0.54,
+        "carbohydrates": 23.71,
+        "calories": 132,
+        "sugar": 0.32,
+        "fiber": 8.7,
+        "sodium": 2
+      },
+      "notes": "Frijol negro cocido (SR Legacy 173735)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "beans_yellow_mature_seeds_raw",
+      "display_name": "Frijoles amarillos",
+      "category": "protein",
+      "alias": "beans_yellow_mature_seeds_raw",
+      "fdc_id": "173735",
+      "fdc_name": "Beans, black, mature seeds, cooked, boiled, without salt",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.7,
+      "nutrition": {
+        "protein": 8.86,
+        "fat": 0.54,
+        "carbohydrates": 23.71,
+        "calories": 132,
+        "sugar": 0.32,
+        "fiber": 8.7,
+        "sodium": 2
+      },
+      "notes": "Legumbre amarilla ≈ frijol cocido (equivalencia culinaria)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "cheese",
+      "display_name": "Queso",
+      "category": "dairy",
+      "alias": "cheese",
+      "fdc_id": "170862",
+      "fdc_name": "Cheese, cheddar",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.7,
+      "nutrition": {
+        "protein": 25.0,
+        "fat": 33.0,
+        "carbohydrates": 0.4,
+        "calories": 402,
+        "sugar": 0.5,
+        "fiber": 0.0,
+        "sodium": 621
+      },
+      "notes": "Queso genérico ≈ cheddar (valores típicos USDA por 100 g)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "egg",
+      "display_name": "Huevo",
+      "category": "breakfast",
+      "alias": "egg",
+      "fdc_id": "173445",
+      "fdc_name": "Egg, whole, cooked, hard-boiled",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.8,
+      "nutrition": {
+        "protein": 12.6,
+        "fat": 10.6,
+        "carbohydrates": 1.1,
+        "calories": 155,
+        "sugar": 1.1,
+        "fiber": 0.0,
+        "sodium": 124
+      },
+      "notes": "Huevo cocido (SR Legacy 173445)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "fish",
+      "display_name": "Pescado",
+      "category": "protein",
+      "alias": "fish",
+      "fdc_id": "175087",
+      "fdc_name": "Fish, tilapia, cooked, dry heat",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.7,
+      "nutrition": {
+        "protein": 26.0,
+        "fat": 2.7,
+        "carbohydrates": 0.0,
+        "calories": 128,
+        "sugar": 0.0,
+        "fiber": 0.0,
+        "sodium": 56
+      },
+      "notes": "Pescado genérico ≈ tilapia cocida (valores típicos USDA por 100 g)",
+      "data_type": "SR Legacy"
+    },
+    {
+      "canonical": "milk",
+      "display_name": "Leche",
+      "category": "dairy",
+      "alias": "milk",
+      "fdc_id": "171265",
+      "fdc_name": "Milk, whole, 3.25% milkfat, with added vitamin D",
+      "mapping_status": "GOOD_EQUIVALENCE",
+      "mapping_confidence": 0.85,
+      "nutrition": {
+        "protein": 3.2,
+        "fat": 3.3,
+        "carbohydrates": 4.8,
+        "calories": 61,
+        "sugar": 5.1,
+        "fiber": 0.0,
+        "sodium": 43
+      },
+      "notes": "Leche entera (SR Legacy 171265)",
+      "data_type": "SR Legacy"
+    }
+  ]
+}

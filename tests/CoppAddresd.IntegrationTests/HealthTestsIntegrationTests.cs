@@ -995,8 +995,11 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
         Assert.Single(filtered);
         Assert.Equal(patientIn.Id, filtered[0].PatientId);
 
+        // Sin filtro: la BD compartida puede tener asignaciones de otros tests/
+        // datos reales; se verifica presencia, no el total exacto.
         var unfiltered = await _repository.ListAssignmentsWithPatientDataAsync(null);
-        Assert.Equal(2, unfiltered.Count);
+        Assert.Contains(unfiltered, a => a.PatientId == patientIn.Id);
+        Assert.Contains(unfiltered, a => a.PatientId == patientOut.Id);
     }
 
     /// <summary>
@@ -1129,8 +1132,13 @@ public sealed class HealthTestsIntegrationTests : IAsyncLifetime
             },
         ]);
 
-        var geo = await _repository.GetGeoAsync();
+        // El mapa lee el rollup snapshot: recomputar dentro de la transacción
+        // del test para que refleje los datos sembrados (el processor real lo
+        // hace por evento; el backfill completo, al arranque). Se revierte al
+        // final con la transacción.
+        await CoppAddresd.Infrastructure.Metrics.HealthTestGeoRollupSql.RecomputeAllAsync(_db);
 
+        var geo = await _repository.GetGeoAsync();
         var evaluatedCity = Assert.Single(geo.Cities, c => c.CityId == cityA.Id);
         Assert.Equal(2, evaluatedCity.Count);
         Assert.Equal(1, evaluatedCity.EvaluatedCount);

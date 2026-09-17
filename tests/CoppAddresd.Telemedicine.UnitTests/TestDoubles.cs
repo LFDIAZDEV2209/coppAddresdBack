@@ -42,8 +42,8 @@ public static class TestData
             [Clinic]
         );
 
-    public static PatientRefDto Patient(Guid? id = null) =>
-        new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId);
+    public static PatientRefDto Patient(Guid? id = null, string? stateCode = null) =>
+        new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId, stateCode);
 
     public static SpecialtyRefDto Specialty(Guid? id = null) =>
         new(id ?? SpecialtyId, "MED-GEN", "Medicina General", "General");
@@ -347,7 +347,8 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
         Guid? professionalId,
         DateTimeOffset from,
         DateTimeOffset to,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        bool usePreagg = true
     ) =>
         Task.FromResult(
             Items.Count(a =>
@@ -460,6 +461,23 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .Select(a => a.PatientId)
                 .Distinct()
                 .Count()
+        );
+
+    public Task<IReadOnlyList<Guid>> ListPatientIdsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<Guid>>(
+            Items
+                .Where(a =>
+                    (professionalId == null || a.ProfessionalId == professionalId)
+                    && a.ScheduledStart >= from
+                    && a.ScheduledStart < to
+                )
+                .Select(a => a.PatientId)
+                .ToList()
         );
 
     public Task<int> CountDistinctProfessionalsAsync(

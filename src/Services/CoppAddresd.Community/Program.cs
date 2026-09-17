@@ -5,6 +5,7 @@ using CoppAddresd.Community.GraphQL.Mutations;
 using CoppAddresd.Community.GraphQL.Queries;
 using CoppAddresd.Community.GraphQL.Resolvers;
 using CoppAddresd.Community.GraphQL.Subscriptions;
+using CoppAddresd.Community.Messages;
 using CoppAddresd.Community.Metrics;
 using CoppAddresd.Community.Persistence;
 using CoppAddresd.Community.Seeders;
@@ -142,5 +143,9 @@ app.MapGraphQL("/api/v1/community/graphql").WithOptions(o => o.Tool.Enable = fal
 app.MapHealthChecks("/health");
 app.MapGraphQLWebSocket("/api/v1/community/subscriptions");
 app.MapPostStorageEndpoints();
+
+// Endpoint interno ERP → Community (X-Internal-Key) para entregar mensajes
+// directos del perfil de sistema (notificaciones de alertas de tests de salud).
+app.MapInternalMessageEndpoints();
 
 app.Run();

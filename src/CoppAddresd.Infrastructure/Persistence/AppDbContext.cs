@@ -121,6 +121,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<HealthTestAlert> HealthTestAlerts => Set<HealthTestAlert>();
     public DbSet<HealthTestComment> HealthTestComments => Set<HealthTestComment>();
     public DbSet<HealthTestDailyMetric> HealthTestDailyMetrics => Set<HealthTestDailyMetric>();
+    public DbSet<HealthTestGeoRollup> HealthTestGeoRollups => Set<HealthTestGeoRollup>();
+
+    // Health Tests — Notificaciones a pacientes por alertas (SPEC A13)
+    public DbSet<HealthTestNotificationTemplate> HealthTestNotificationTemplates =>
+        Set<HealthTestNotificationTemplate>();
+    public DbSet<HealthTestNotificationTemplateVersion> HealthTestNotificationTemplateVersions =>
+        Set<HealthTestNotificationTemplateVersion>();
+    public DbSet<HealthTestNotification> HealthTestNotifications => Set<HealthTestNotification>();
 
     // Program Progress — Módulo de progreso
     public DbSet<ProgramTemplate> ProgramTemplates => Set<ProgramTemplate>();
