@@ -1,5 +1,5 @@
 """Genera Migrations/Seed/AddHealthTestsCatalogSeed.sql con el seed del
-módulo Tests de Salud: la batería inicial ANTARES (9 instrumentos) con el
+módulo Tests de Salud: la batería inicial Copp Adresd (9 instrumentos) con el
 contenido EXACTO de `ANTARES_Tests_Perfil_Salud (1).html` (preguntas,
 opciones, secciones, hints, unidad/rango de biometría), tal como se
 verificó con la app móvil.
@@ -119,7 +119,7 @@ INSTRUMENTS = [
     ),
     (
         "bateria-antares",
-        "Propósito · ANTARES",
+        "Propósito · Copp Adresd",
         "Las respuestas más importantes del programa. Sé completamente honesto/a.",
         "integral",
         9,
@@ -994,7 +994,7 @@ QUESTIONS = {
         (
             "prop_nota",
             "Nota personal · Para tu equipo médico",
-            "Cuéntanos con tus propias palabras: ¿qué te trajo al programa ANTARES?",
+            "Cuéntanos con tus propias palabras: ¿qué te trajo al programa Copp Adresd?",
             "open",
             "positive",
             "El Dr. Godoy Cruz leerá esto personalmente. Sé tan honesto/a como puedas.",
@@ -1103,7 +1103,7 @@ INDICATORS = [
 
 def build() -> str:
     lines = []
-    lines.append("-- Seed del módulo Tests de Salud: batería inicial ANTARES.")
+    lines.append("-- Seed del módulo Tests de Salud: batería inicial Copp Adresd.")
     lines.append(
         "-- Contenido fiel a ANTARES_Tests_Perfil_Salud (1).html (9 tests, 44 preguntas)."
     )
@@ -1228,7 +1228,7 @@ def build() -> str:
         "INSERT INTO app.health_test_batteries (id, code, name, description, auto_assign_on_patient_create, is_active, created_at)"
     )
     lines.append(
-        f"VALUES ('{v5('battery:bateria-inicial')}', 'bateria-inicial', 'Batería de evaluación inicial ANTARES', 'Evaluación inicial del programa (9 tests del onboarding)', true, true, now())"
+        f"VALUES ('{v5('battery:bateria-inicial')}', 'bateria-inicial', 'Batería de evaluación inicial Copp Adresd', 'Evaluación inicial del programa (9 tests del onboarding)', true, true, now())"
     )
     lines.append("ON CONFLICT (code) DO NOTHING;")
     lines.append("")

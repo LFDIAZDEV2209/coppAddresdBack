@@ -15,7 +15,8 @@ internal static class AppointmentMapper
     public static async Task<IReadOnlyList<AppointmentDto>> BuildDtosAsync(
         IReadOnlyList<Appointment> appointments,
         IAppointmentReferenceDataService referenceData,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var patientIds = appointments.Select(a => a.PatientId).Distinct().ToList();
         var professionalIds = appointments.Select(a => a.ProfessionalId).Distinct().ToList();
@@ -28,9 +29,18 @@ internal static class AppointmentMapper
             .ToList();
 
         var patients = await FetchAllAsync(patientIds, id => referenceData.GetPatientAsync(id, ct));
-        var professionals = await FetchAllAsync(professionalIds, id => referenceData.GetProfessionalAsync(id, ct));
-        var specialties = await FetchAllAsync(specialtyIds, id => referenceData.GetSpecialtyAsync(id, ct));
-        var locations = await FetchAllAsync(locationIds, id => referenceData.GetLocationAsync(id, ct));
+        var professionals = await FetchAllAsync(
+            professionalIds,
+            id => referenceData.GetProfessionalAsync(id, ct)
+        );
+        var specialties = await FetchAllAsync(
+            specialtyIds,
+            id => referenceData.GetSpecialtyAsync(id, ct)
+        );
+        var locations = await FetchAllAsync(
+            locationIds,
+            id => referenceData.GetLocationAsync(id, ct)
+        );
 
         return appointments
             .Select(a => new AppointmentDto(
@@ -54,13 +64,16 @@ internal static class AppointmentMapper
                 a.Status,
                 a.RescheduleCount,
                 a.CancellationReason,
-                a.CreatedAt))
+                a.CreatedAt
+            ))
             .ToList();
     }
 
-    private static async Task<Dictionary<Guid, T>> FetchAllAsync<T>(
+    /// <summary>Dedup + fan-out paralelo (Task.WhenAll) de referencias.</summary>
+    internal static async Task<Dictionary<Guid, T>> FetchAllAsync<T>(
         IReadOnlyList<Guid> ids,
-        Func<Guid, Task<T?>> fetch)
+        Func<Guid, Task<T?>> fetch
+    )
         where T : class
     {
         var result = new Dictionary<Guid, T>();

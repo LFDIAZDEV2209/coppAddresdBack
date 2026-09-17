@@ -145,6 +145,23 @@ if [[ $WATCH -eq 0 ]]; then
   color 32 "  All projects built successfully."
 fi
 
+# Migraciones pendientes del backend. La API NO migra al arrancar (a diferencia
+# del Auth Service): sin este paso, un dev con la BD atrasada arranca con
+# esquema viejo y endpoints como /health-tests/geo fallan con
+# "relation ... does not exist" (500). Idempotente: EF omite las ya aplicadas.
+echo ""
+draw_banner "APPLYING DATABASE MIGRATIONS" 36
+migrate_args=(run --project src/CoppAddresd.Api -- --migrate)
+[[ $WATCH -eq 0 ]] && migrate_args=(run --no-build --project src/CoppAddresd.Api -- --migrate)
+colorn 36 "  Applying pending migrations..."
+if (cd "$ROOT" && dotnet "${migrate_args[@]}" > "$LOGS/migrate.log" 2>&1); then
+  color 32 "  DONE"
+else
+  color 31 "  MIGRATION FAILED. See $LOGS/migrate.log"
+  tail -n 15 "$LOGS/migrate.log" 2>/dev/null | while IFS= read -r line; do color 90 "  $line"; done
+  exit 1
+fi
+
 echo ""
 draw_banner "AI SERVICE (PYTHON/FastAPI)" 36
 AI_ROOT="$ROOT/../ai-service"
