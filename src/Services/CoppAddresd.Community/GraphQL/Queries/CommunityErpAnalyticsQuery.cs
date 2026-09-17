@@ -42,7 +42,7 @@ public sealed record ErpCommunityAnalytics
 /// <c>community.community_daily_metrics</c>); si no hay filas en el rango,
 /// COUNT(*) sobre las tablas OLTP como fallback.
 /// </summary>
-[ExtendObjectType("Query")]
+[ExtendObjectType(typeof(CommunityQuery))]
 public sealed class CommunityErpAnalyticsQuery
 {
     private const string PostsKey = "posts_count";
