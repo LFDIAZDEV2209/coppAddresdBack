@@ -59,7 +59,14 @@ public sealed class TwilioVideoProvider(
                 request.RoomName, ex.Status, ex.Code);
 
             var existing = await GetRoomAsync(request.RoomName, ct);
-            return existing ?? throw ex;
+            if (existing is null)
+            {
+                // La sala no se pudo recuperar: propaga el error original
+                // preservando el stack trace (CA2200).
+                throw;
+            }
+
+            return existing;
         }
     }
 

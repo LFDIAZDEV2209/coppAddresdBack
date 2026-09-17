@@ -18,7 +18,6 @@ public record NotifyAlertsCommand(NotifyAlertsRequest Request, Guid? ActorId = n
     : IRequest<NotifyAlertsResultDto>;
 
 public sealed class NotifyAlertsCommandHandler(
-    IHealthTestRepository healthTestRepository,
     IHealthTestNotificationRepository notificationRepository,
     IHealthTestTemplateRenderer renderer,
     ISmsSender smsSender,
