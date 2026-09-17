@@ -141,3 +141,15 @@ public enum NotificationStatus
     failed = 3,
     skipped = 4,
 }
+
+/// <summary>
+/// Idioma de la notificación enviada al paciente (SPEC A13). Las plantillas
+/// guardan el contenido en español (obligatorio) e inglés (opcional); el emisor
+/// elige el idioma al enviar y el log registra el usado. Se almacena como
+/// <c>varchar</c> con CHECK.
+/// </summary>
+public enum NotificationLanguage
+{
+    es = 1,
+    en = 2,
+}

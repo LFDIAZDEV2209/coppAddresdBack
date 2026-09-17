@@ -79,6 +79,7 @@ public interface IHealthTestNotificationRepository
         NotificationStatus? status,
         DateTime? from,
         DateTime? to,
+        string? search,
         int page,
         int pageSize,
         CancellationToken ct = default

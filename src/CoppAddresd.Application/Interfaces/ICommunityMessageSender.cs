@@ -29,10 +29,13 @@ public interface ICommunityMessageSender
     /// <summary>
     /// Envía un mensaje directo al paciente. <paramref name="patientUserId"/> es
     /// el <c>auth.users</c> del paciente (null → se omite con razón).
+    /// <paramref name="displayName"/> se usa para auto-provisionar el perfil de
+    /// comunidad si el paciente aún no lo tiene.
     /// </summary>
     Task<CommunityMessageResult> SendDirectMessageAsync(
         Guid? patientUserId,
         string body,
         Guid? actorUserId,
+        string? displayName = null,
         CancellationToken ct = default);
 }
