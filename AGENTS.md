@@ -203,7 +203,9 @@ con `JsonPropertyName` y nunca envía `agent: null` (schema del AI Service lo re
 
 **Monitoreo admin**: el frontend NUNCA llama al AI Service directo — `AgentsController` proxya
 `GET /api/v1/agents/executions` hacia `/admin/executions` del AI Service vía
-`AgentExecutionsQueryService` (resiliente: fallo → lista vacía, nunca 500 al cliente).
+`AgentExecutionsQueryService` (resiliente: fallo → lista vacía, nunca 500 al cliente), y
+`GET /api/v1/agents/{id}/graph` (permiso `Agents.View`) hacia `/internal/agents/{id}/graph`
+→ `AgentGraphDto` (nodos, aristas y config efectiva para la UI de flujos; fallo → 404).
 La primera versión de un agente se inserta y activa en UNA transacción
 (`AddFirstVersionAndActivateAsync`, envuelta en `CreateExecutionStrategy` porque
 NpgsqlRetryingExecutionStrategy no soporta transacciones manuales). La activación de una
@@ -254,6 +256,7 @@ Horarios (`erp.professional_schedules`) viven por profesional: hasta 7 filas (un
 - **`OtpProtectionService` es en memoria** (Singleton): contadores se reinician al reiniciar el Auth Service y no se comparten entre réplicas — si se escala horizontalmente, migrar a Redis/`IDistributedCache`.
 - **Twilio Verify puede devolver 429/60203** (rate limit por número) aunque la protección local permita el envío: el error se propaga como `TwilioOtpException` (RateLimited → 429) y `RegisterSend` NO se ejecuta (no consume cuota local).
 - **`AiServiceClient` mapea el contrato del AI Service** (`answer`/`thread_id`/`execution_id`) con `JsonPropertyName` — si el AI Service cambia el schema, ajustar `ChatResponseJson`.
+- **`AiService:InternalApiKey` debe existir en el `appsettings` local del Api** (gitignoreado) y coincidir con `INTERNAL_API_KEY` del `.env` del ai-service: sin ella, chat y agentes hacia el AI Service responden 401 (el proxy degrada a lista vacía / 404).
 - **Comentarios/docs en español** por convención del README.
 
 ## Project skills & docs (MANDATORIO antes de trabajo sustancial)
