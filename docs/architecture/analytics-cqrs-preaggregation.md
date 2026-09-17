@@ -144,3 +144,15 @@ GROUP BY DATE(assigned_at), status
 ON CONFLICT (metric_date, clinic_id, metric_key, dimension_key)
 DO UPDATE SET total_count = EXCLUDED.total_count, last_updated_at = NOW();
 ```
+
+### Cobertura de reconciliación y backfill
+
+| Servicio | Mecanismo | Cobertura |
+|---|---|---|
+| API principal | `MetricsBackfillSeeder.RunBackfillAsync` al iniciar + `POST /api/v1/dashboard/maintenance/reconcile-metrics` | Patients, HealthTests (día + rollup geo), **Biometría**, Inventory, ProgramProgress y Telemedicine (bloque condicional si existen las tablas `tele.*`) |
+| Telemedicine | `MetricsBackfillService` + `POST /api/v1/telemedicine/admin/analytics/backfill` (soporta `dryRun`) | `tele.appointment_daily_metrics` + `tele.professional_daily_stats` |
+| Community | `CommunityMetricsBackfillHostedService` al iniciar + `POST /api/v1/community/maintenance/reconcile-metrics` (header `X-Internal-Key`, soporta `?dryRun=true`) | Rebuild autoritativo de las 5 claves de `community.community_daily_metrics` (`DELETE` + re-`INSERT`, porque likes/reposts/hourly tienen decrementos en vivo) |
+
+**Reglas del backfill**: el recálculo es autoritativo (`DO UPDATE SET total_count = EXCLUDED.total_count`) — nunca se suma a los contadores del processor; ejecutar en tráfico bajo y, si hubo escritura concurrente, re-ejecutar una vez para converger. El rollup es descartable: todo se reconstruye desde el OLTP (las únicas claves no reconstruibles son las marcadas "solo evento" en `docs/modules/program-progress/analytics.md` §6).
+
+**Limitación conocida (Fase 1)**: la cola es `System.Threading.Channels` en memoria por réplica — los eventos en vuelo durante un crash/reinicio se pierden y, con varias réplicas, cada una ve solo sus eventos. Mitigación actual: backfill idempotente al iniciar + endpoints de reconciliación. Escala horizontal exacta requeriría un bus durable (Redis Streams/SQS) — Fase 2.
