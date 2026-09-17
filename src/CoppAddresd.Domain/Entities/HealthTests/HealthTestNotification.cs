@@ -20,6 +20,9 @@ public sealed class HealthTestNotification
 
     public NotificationChannel Channel { get; set; }
 
+    /// <summary>Idioma en que se envió el mensaje (el emisor lo elige al enviar).</summary>
+    public NotificationLanguage Language { get; set; } = NotificationLanguage.es;
+
     /// <summary>Plantilla usada (null si el cuerpo se editó libremente).</summary>
     public Guid? TemplateId { get; set; }
 

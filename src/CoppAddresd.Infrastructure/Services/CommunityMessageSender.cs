@@ -39,6 +39,7 @@ public sealed class CommunityMessageSender(
         Guid? patientUserId,
         string body,
         Guid? actorUserId,
+        string? displayName = null,
         CancellationToken ct = default)
     {
         if (patientUserId is null || patientUserId == Guid.Empty)
@@ -76,7 +77,7 @@ public sealed class CommunityMessageSender(
             )
             {
                 Content = JsonContent.Create(
-                    new DirectMessagePayload(null, patientUserId, body, actorUserId)
+                    new DirectMessagePayload(null, patientUserId, body, actorUserId, displayName)
                 ),
             };
             request.Headers.TryAddWithoutValidation(
@@ -122,7 +123,8 @@ public sealed class CommunityMessageSender(
         Guid? RecipientProfileId,
         Guid? PatientUserId,
         string Body,
-        Guid? ActorUserId
+        Guid? ActorUserId,
+        string? DisplayName = null
     );
 
     /// <summary>Respuesta del endpoint interno de Community.</summary>
