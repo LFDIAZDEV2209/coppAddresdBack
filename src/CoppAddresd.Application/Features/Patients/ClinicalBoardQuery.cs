@@ -4,11 +4,14 @@ using MediatR;
 namespace CoppAddresd.Application.Features.Patients;
 
 /// <summary>
-/// Tablero clínico por paciente del módulo Pacientes: cinco señales que la
+/// Tablero clínico por paciente del módulo Pacientes: las señales que la
 /// plataforma ya produce (riesgo de la última evaluación, alertas activas,
-/// última evaluación, próxima evaluación pendiente y estado de seguimiento).
-/// Paginado y filtrable; el alcance (clínica activa + propio vs global) lo
-/// resuelve el backend, nunca el cliente. Sin caché: es una vista viva.
+/// última evaluación, próxima evaluación pendiente y estado de seguimiento)
+/// más los datos de directorio útiles (diagnóstico principal, ubicación,
+/// aseguradora, profesionales y estado del paciente). Incluye un resumen por
+/// buckets para las tarjetas del tab. Paginado y filtrable; el alcance
+/// (clínica activa + propio vs global) lo resuelve el backend, nunca el
+/// cliente. Sin caché: es una vista viva.
 /// </summary>
 public record GetClinicalBoardQuery(
     int Page = 1,
@@ -18,7 +21,10 @@ public record GetClinicalBoardQuery(
     bool? HasAlerts = null,
     string? FollowUp = null,
     Guid? ClinicId = null,
-    Guid? OwnProfessionalId = null
+    Guid? OwnProfessionalId = null,
+    string? Status = null,
+    Guid? InsurerId = null,
+    string? StateCode = null
 ) : IRequest<PaginatedClinicalBoardResult>;
 
 /// <summary>Filtros de riesgo admitidos por la API (bucket del frontend).</summary>
@@ -28,12 +34,15 @@ public static class ClinicalBoardFilters
     public const string RiskModerate = "moderate";
     public const string RiskLow = "low";
 
+    /// <summary>Severidad explícitamente crítica (subconjunto de <c>high</c>).</summary>
+    public const string RiskCritical = "critical";
+
     public const string FollowUpOnTrack = "al-dia";
     public const string FollowUpOverdue = "vencido";
     public const string FollowUpUnassigned = "sin-asignacion";
 
     public static readonly IReadOnlySet<string> Risks = new HashSet<string>(
-        [RiskHigh, RiskModerate, RiskLow],
+        [RiskHigh, RiskModerate, RiskLow, RiskCritical],
         StringComparer.OrdinalIgnoreCase
     );
 
@@ -68,16 +77,23 @@ public sealed class GetClinicalBoardQueryHandler(IPatientDashboardRepository rep
         var followUp = ClinicalBoardFilters.FollowUps.Contains(request.FollowUp ?? string.Empty)
             ? request.FollowUp!.Trim().ToLowerInvariant()
             : null;
+        var status = string.IsNullOrWhiteSpace(request.Status) ? null : request.Status.Trim();
+        var stateCode = string.IsNullOrWhiteSpace(request.StateCode)
+            ? null
+            : request.StateCode.Trim().ToUpperInvariant();
 
         var now = DateTime.UtcNow;
 
-        var (items, total) = await repository.GetClinicalBoardAsync(
+        var (items, total, summary) = await repository.GetClinicalBoardAsync(
             page,
             pageSize,
             search,
             risk,
             request.HasAlerts,
             followUp,
+            status,
+            request.InsurerId,
+            stateCode,
             request.ClinicId,
             request.OwnProfessionalId,
             now,
@@ -86,14 +102,17 @@ public sealed class GetClinicalBoardQueryHandler(IPatientDashboardRepository rep
 
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 
-        return new PaginatedClinicalBoardResult(items, total, page, pageSize, totalPages);
+        return new PaginatedClinicalBoardResult(items, summary, total, page, pageSize, totalPages);
     }
 }
 
 /// <summary>
-/// Fila del tablero clínico: identificación del paciente + cinco señales.
-/// Los nulos son honestos: sin evaluaciones → <c>RiskLevel</c> null y fechas
-/// null; sin asignaciones pendientes → <c>FollowUpState = sin-asignacion</c>.
+/// Fila del tablero clínico: identificación del paciente + datos de directorio
+/// útiles (diagnóstico principal, ubicación, aseguradora, profesionales y
+/// estado) + señales clínicas. Los nulos son honestos: sin evaluaciones →
+/// <c>RiskLevel</c> null y fechas null; sin asignaciones pendientes →
+/// <c>FollowUpState = sin-asignacion</c>; <c>ProfessionalNames</c> solo viaja
+/// con alcance global (con alcance propio todos son del mismo profesional).
 /// </summary>
 public record ClinicalBoardItemDto(
     Guid PatientId,
@@ -101,6 +120,13 @@ public record ClinicalBoardItemDto(
     string FirstName,
     string LastName,
     string? DocumentNumber,
+    string? PrimaryDiagnosisCode,
+    string? PrimaryDiagnosisDescription,
+    string? StateCode,
+    string? StateName,
+    string? InsurerName,
+    IReadOnlyList<string> ProfessionalNames,
+    string Status,
     string? RiskLevel,
     DateTime? LastEvaluationAt,
     string? LastEvaluationInstrument,
@@ -110,9 +136,29 @@ public record ClinicalBoardItemDto(
     string FollowUpState
 );
 
-/// <summary>Resultado paginado del tablero clínico.</summary>
+/// <summary>
+/// Resumen del tablero para las tarjetas del tab, sobre el alcance y los
+/// filtros no clínicos (búsqueda, estado, aseguradora, estado geográfico):
+/// los filtros clínicos (riesgo/alertas/seguimiento) no lo acotan para que las
+/// tarjetas funcionen como puntos de entrada. Los buckets de riesgo replican
+/// exactamente las condiciones de los filtros (high incluye critical).
+/// </summary>
+public record ClinicalBoardSummaryDto(
+    int Total,
+    int WithoutEvaluation,
+    int RiskHigh,
+    int RiskModerate,
+    int RiskLow,
+    int WithActiveAlerts,
+    int FollowUpOnTrack,
+    int FollowUpOverdue,
+    int FollowUpUnassigned
+);
+
+/// <summary>Resultado paginado del tablero clínico (+ resumen de tarjetas).</summary>
 public record PaginatedClinicalBoardResult(
     IReadOnlyList<ClinicalBoardItemDto> Data,
+    ClinicalBoardSummaryDto Summary,
     int Total,
     int Page,
     int PageSize,
