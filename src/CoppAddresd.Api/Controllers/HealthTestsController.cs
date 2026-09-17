@@ -756,6 +756,7 @@ public class HealthTestsController(
         [FromQuery] string? status = null,
         [FromQuery] DateTime? from = null,
         [FromQuery] DateTime? to = null,
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default
@@ -791,6 +792,7 @@ public class HealthTestsController(
                     parsedStatus,
                     from,
                     to,
+                    search,
                     page,
                     pageSize
                 ),
