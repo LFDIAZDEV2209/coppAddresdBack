@@ -221,9 +221,12 @@ public sealed class PatientDashboardIntegrationTests : IAsyncLifetime
 
         var repository = new PatientDashboardRepository(_db, new PatientRepository(_db));
 
-        var (items, total) = await repository.GetClinicalBoardAsync(
+        var (items, total, summary) = await repository.GetClinicalBoardAsync(
             1,
             50,
+            null,
+            null,
+            null,
             null,
             null,
             null,
@@ -235,6 +238,13 @@ public sealed class PatientDashboardIntegrationTests : IAsyncLifetime
         );
 
         Assert.Equal(3, total);
+        Assert.Equal(3, summary.Total);
+        Assert.Equal(2, summary.WithoutEvaluation);
+        Assert.Equal(1, summary.RiskHigh);
+        Assert.Equal(1, summary.WithActiveAlerts);
+        Assert.Equal(1, summary.FollowUpOnTrack);
+        Assert.Equal(1, summary.FollowUpOverdue);
+        Assert.Equal(1, summary.FollowUpUnassigned);
         var clinical = Assert.Single(items, i => i.PatientId == withData.Id);
         Assert.Equal("high", clinical.RiskLevel);
         Assert.Equal(1, clinical.ActiveAlertCount);
@@ -253,11 +263,14 @@ public sealed class PatientDashboardIntegrationTests : IAsyncLifetime
         Assert.Null(emptyItem.LastEvaluationAt);
 
         // Filtros SQL: riesgo alto solo devuelve al paciente con evaluación high.
-        var (highRisk, highTotal) = await repository.GetClinicalBoardAsync(
+        var (highRisk, highTotal, _) = await repository.GetClinicalBoardAsync(
             1,
             50,
             null,
             ClinicalBoardFilters.RiskHigh,
+            null,
+            null,
+            null,
             null,
             null,
             clinicId,
@@ -269,13 +282,16 @@ public sealed class PatientDashboardIntegrationTests : IAsyncLifetime
         Assert.Equal(withData.Id, Assert.Single(highRisk).PatientId);
 
         // Filtro de vencidos.
-        var (overdueRows, overdueTotal) = await repository.GetClinicalBoardAsync(
+        var (overdueRows, overdueTotal, _) = await repository.GetClinicalBoardAsync(
             1,
             50,
             null,
             null,
             null,
             ClinicalBoardFilters.FollowUpOverdue,
+            null,
+            null,
+            null,
             clinicId,
             null,
             DateTime.UtcNow,
@@ -285,12 +301,15 @@ public sealed class PatientDashboardIntegrationTests : IAsyncLifetime
         Assert.Equal(overdue.Id, Assert.Single(overdueRows).PatientId);
 
         // Filtro de alertas activas.
-        var (alertRows, alertTotal) = await repository.GetClinicalBoardAsync(
+        var (alertRows, alertTotal, _) = await repository.GetClinicalBoardAsync(
             1,
             50,
             null,
             null,
             true,
+            null,
+            null,
+            null,
             null,
             clinicId,
             null,
