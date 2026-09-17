@@ -31,6 +31,13 @@ public sealed class HealthTestNotificationConfiguration
             .HasDefaultValue(NotificationChannel.community)
             .HasConversion<string>();
 
+        builder
+            .Property(x => x.Language)
+            .HasColumnName("language")
+            .HasMaxLength(5)
+            .HasDefaultValue(NotificationLanguage.es)
+            .HasConversion<string>();
+
         builder.Property(x => x.TemplateId).HasColumnName("template_id");
 
         builder.Property(x => x.Recipient).HasColumnName("recipient").HasMaxLength(200);

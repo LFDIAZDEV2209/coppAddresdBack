@@ -63,4 +63,16 @@ public sealed class HealthTestTemplateRendererTests
     {
         Assert.Equal(expected, HealthTestTemplateRenderer.SeverityLabel(severity));
     }
+
+    [Fact]
+    public void Render_en_ingles_usa_la_etiqueta_de_severidad_en_ingles()
+    {
+        var context = new HealthTestNotificationRenderContext(
+            PatientName: "Ana",
+            Severity: HealthTestSeverity.critical,
+            Language: NotificationLanguage.en
+        );
+
+        Assert.Equal("Ana: critical", _renderer.Render("[paciente]: [severidad]", context));
+    }
 }
