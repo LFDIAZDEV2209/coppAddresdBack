@@ -93,4 +93,82 @@ public class AgentExecutionsQueryServiceTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public async Task GetGraphAsync_envia_key_y_parsa_descriptor()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {
+                  "agent_type_id": "ag-1",
+                  "source": "runtime",
+                  "version_id": "v-3",
+                  "nodes": [
+                    {"id": "guardrails", "label": "Guardrails", "kind": "guard", "description": "d", "meta": {}},
+                    {"id": "agent", "label": "Agente (LLM)", "kind": "llm", "description": null, "meta": {}}
+                  ],
+                  "edges": [
+                    {"source": "guardrails", "target": "agent", "kind": "conditional", "label": "seguro"}
+                  ],
+                  "config": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4",
+                    "temperature": 0.3,
+                    "max_tokens": 1024,
+                    "tools": ["calculate", "retrieve_knowledge"],
+                    "rag": {"enabled": true, "knowledge_base_count": 2, "top_k": 4},
+                    "memory": {"enabled": true, "categories": ["clinico"]},
+                    "max_tool_calls": 5,
+                    "recursion_limit": 18
+                  }
+                }
+                """),
+        });
+        var client = BuildClient(handler);
+
+        var result = await client.GetGraphAsync("ag-1");
+
+        var request = handler.Requests.Single();
+        Assert.Equal("secret-internal-key", request.Headers["X-Internal-Key"]);
+        Assert.Equal("/internal/agents/ag-1/graph", request.Path);
+        Assert.NotNull(result);
+        Assert.Equal("runtime", result!.Source);
+        Assert.Equal("v-3", result.VersionId);
+        Assert.Equal(2, result.Nodes.Count);
+        Assert.Equal("llm", result.Nodes[1].Kind);
+        Assert.Single(result.Edges);
+        Assert.Equal("conditional", result.Edges[0].Kind);
+        Assert.True(result.Config.Rag.Enabled);
+        Assert.Equal(2, result.Config.Rag.KnowledgeBaseCount);
+        Assert.True(result.Config.Memory.Enabled);
+        Assert.Equal(5, result.Config.MaxToolCalls);
+        Assert.Contains("retrieve_knowledge", result.Config.Tools);
+    }
+
+    [Fact]
+    public async Task GetGraphAsync_404_devuelve_null()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var client = BuildClient(handler);
+
+        var result = await client.GetGraphAsync("sin-grafo");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetGraphAsync_error_devuelve_null()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("boom"),
+        });
+        var client = BuildClient(handler);
+
+        var result = await client.GetGraphAsync("ag-2");
+
+        Assert.Null(result);
+    }
 }
