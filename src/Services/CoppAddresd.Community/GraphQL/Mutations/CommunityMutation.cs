@@ -379,7 +379,7 @@ public sealed class CommunityMutation
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Reposts)
-            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
+            .Include(p => p.Poll!).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)

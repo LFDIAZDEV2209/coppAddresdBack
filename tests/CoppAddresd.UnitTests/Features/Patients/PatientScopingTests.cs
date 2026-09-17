@@ -69,7 +69,7 @@ public class PatientScopingTests
 
         _repository
             .GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => Task.FromResult(persisted!));
+            .Returns(callInfo => Task.FromResult<PatientProfile?>(persisted));
 
         var handler = new CreatePatientCommandHandler(_repository, _catalogs, _createLogger);
 

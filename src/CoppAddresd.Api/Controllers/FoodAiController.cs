@@ -12,7 +12,6 @@ namespace CoppAddresd.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/[controller]")]
-[AllowAnonymous]
 public class FoodAiController : ControllerBase
 {
     private static readonly HashSet<string> FeedbackTypes = new(StringComparer.Ordinal)
@@ -47,6 +46,7 @@ public class FoodAiController : ControllerBase
     /// no expone datos sensibles.
     /// </summary>
     [HttpGet("health")]
+    [AllowAnonymous]
     public async Task<ActionResult> Health(CancellationToken ct)
     {
         var status = await _foodAiClient.GetHealthAsync(ct);
@@ -65,6 +65,7 @@ public class FoodAiController : ControllerBase
     /// Food AI Service. Respuesta síncrona: { analysisId, status }.
     /// </summary>
     [HttpPost("analyze")]
+    [AllowAnonymous]
     public async Task<ActionResult<AnalyzeFoodImageResult>> Analyze(
         [FromForm] IFormFile image,
         CancellationToken ct
@@ -164,6 +165,7 @@ public class FoodAiController : ControllerBase
     /// alimento no existe o no tiene entrada.
     /// </summary>
     [HttpGet("nutrition/{foodKey}")]
+    [AllowAnonymous]
     public async Task<ActionResult<CoppAddresd.Application.DTOs.FoodAi.FoodNutritionDto>> Nutrition(
         string foodKey,
         CancellationToken ct

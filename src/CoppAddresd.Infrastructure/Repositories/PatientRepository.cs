@@ -32,7 +32,7 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
                 .ThenInclude(a => a.Allergen)
             .Include(x => x.VitalSigns)
             .Include(x => x.Assignments)
-                .ThenInclude(a => a.Professional)
+                .ThenInclude(a => a.Professional!)
                     .ThenInclude(p => p.Employee);
 
     public async Task<PatientProfile?> GetByMedicalRecordNumberAsync(

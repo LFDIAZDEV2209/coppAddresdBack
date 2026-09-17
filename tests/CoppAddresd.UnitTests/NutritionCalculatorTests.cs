@@ -78,7 +78,7 @@ public class NutritionCalculatorTests
         Assert.NotNull(result.NutritionRange);
         Assert.Equal(83.66m, result.NutritionRange!.Min.Calories); // 89 × 0.94
         Assert.Equal(126.38m, result.NutritionRange.Max.Calories); // 89 × 1.42
-        Assert.True(result.NutritionRange.Min.Calories <= result.Nutrition.Calories);
+        Assert.True(result.NutritionRange.Min.Calories <= result.Nutrition!.Calories);
         Assert.True(result.Nutrition.Calories <= result.NutritionRange.Max.Calories);
     }
 
