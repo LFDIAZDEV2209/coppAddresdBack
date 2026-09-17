@@ -98,14 +98,54 @@ GraphQL Mutation (CommunityMutation)
 
 Rango por defecto: últimos 30 días (inclusive). El fallback cuenta **todos** los posts/comentarios creados en el rango (incluye soft-deleted) para ser consistente con el rollup, que no decrementa al eliminar.
 
-## 6. Tests
+## 6. Backfill / reconciliación del rollup
+
+La cola de métricas es **en memoria y por réplica**: los eventos perdidos por un reinicio/cambio de instancia no se recuperan solos una vez que el rango consultado ya tiene filas del rollup (el lector solo cae al OLTP cuando el rango tiene **cero** filas). Para cubrir esa pérdida existe una reconstrucción autoritativa desde el OLTP.
+
+### 6.1. Semántica autoritativa (DELETE + INSERT, no upsert de sobrescritura)
+
+`RecomputeAllAsync` (`Metrics/CommunityMetricsBackfillSql.cs`) ejecuta, en **una sola transacción**:
+
+1. `DELETE` de las 5 claves administradas (`posts_count`, `comments_count`, `likes_count`, `reposts_count`, `hourly_activity`) — **todas las fechas/dimensiones**.
+2. Re-INSERT del recálculo set-based desde el OLTP con la **misma semántica exacta del processor**:
+   - `posts_count/total` + `posts_count/<tipo>` (`Texto→texto`, `Imagen→imagen`, `Video→video`, `Encuesta→poll`, `Logro→logro`, `NULL→general`); **incluye posts soft-deleted** (el rollup no decrementa al eliminar).
+   - `comments_count/total` — **incluye comentarios soft-deleted**.
+   - `likes_count/total` — solo las **filas actuales** de `community.likes` (el unlike las borra físicamente).
+   - `reposts_count/total` — solo las **filas actuales** de `community.reposts`.
+   - `hourly_activity/<hora>` = posts + comentarios + reposts por **hora UTC**, dimensión sin padding (`"0"`..`"23"`), igual que `HourOfDay.ToString()` del processor (nunca `"05"`).
+   - Día/hora derivados de `(created_at AT TIME ZONE 'UTC')`, la misma fuente (`DateTime.UtcNow`) que usan las mutaciones al emitir los eventos.
+
+El `DELETE` + re-INSERT (en vez de solo `ON CONFLICT DO UPDATE`) es obligatorio porque `likes_count`, `reposts_count` y `hourly_activity` se **decrementan** en vivo: un rebuild que solo sobrescriba dejaría celdas obsoletas de días/horas cuya actividad actual ya no existe. Resultado: la tabla queda **exactamente igual al OLTP** — las celdas con conteo 0 desaparecen y las dimensiones obsoletas (p. ej. `"05"` con padding o `posts_count/encuesta`) se eliminan.
+
+### 6.2. Arranque del servicio
+
+`CommunityMetricsBackfillHostedService` corre el rebuild completo al arrancar (idempotente), **antes** de que `CommunityMetricsProcessorHostedService` empiece a drenar la cola (registro previo en `Program.cs`). Cualquier error se loguea y **nunca tumba el arranque**: el rollup se puede reparar después con el endpoint interno.
+
+### 6.3. Endpoint interno de reconciliación
+
+```
+POST /api/v1/community/maintenance/reconcile-metrics[?dryRun=true]
+Header: X-Internal-Key
+```
+
+- Misma autenticación que los endpoints internos de mensajería: `Community:InternalApiKey` (o env `COMMUNITY_INTERNAL_API_KEY`); si la clave no está configurada → **503**; clave incorrecta → **401**.
+- `dryRun=true` corre el rebuild dentro de la transacción y hace **rollback**: no escribe y reporta lo que habría escrito.
+- Respuesta JSON (`CommunityMetricsBackfillResult`): `dryRun`, `deletedRows`, `insertedRows`, `rowsPerKey` (filas por `metric_key`), `duration` y `note`.
+- **Nota de convergencia**: el rebuild es autoritativo frente al processor, pero si hay tráfico concurrente (otras réplicas procesando eventos) durante la ejecución, **re-ejecutar una vez** converge — la segunda corrida ya incluye esos eventos.
+
+> El rollup es **descartable y rebuildable desde el OLTP**: ante cualquier duda de consistencia, la respuesta es re-ejecutar la reconciliación, no inspeccionar celdas.
+
+## 7. Tests
 
 `tests/CoppAddresd.Community.UnitTests/CommunityMetricsProcessorTests.cs` — los upserts son SQL PostgreSQL específico (`ON CONFLICT ... EXCLUDED`, `NOW()`, `GREATEST`, schema calificado), por lo que **no** se testean con InMemory ni SQLite: se ejercita el pipeline completo (cola + `HostedService` + rollup real) contra una BD aislada (`coppaddresd_comm_metrics_test_*`).
 
-- Requieren `COP_TEST_DB_CONNECTION` (misma convención que los tests de integración); si no está definida, se reportan **SKIPPED** (`RequiresPostgresFactAttribute`).
-- Scenarios: incremento total + tipo, acumulación mismo día, like add/remove = 0 (sin negativos), hora pico, separación de claves por métrica.
+`tests/CoppAddresd.Community.UnitTests/CommunityMetricsBackfillTests.cs` — backfill/reconciliación (mismo gating de PostgreSQL): equivalencia exacta contra el OLTP (incluye soft-deleted), mapeo de tipos (`NULL→general`, `Encuesta→poll`), limpieza de celdas obsoletas/erróneas (valor stale, dimensión legacy, dimensión con padding, fecha sin actividad) e idempotencia (dos corridas = mismo estado), más el `dryRun` del servicio (rollback sin escritura).
 
-## 7. Migración
+- Requieren `COP_TEST_DB_CONNECTION` (misma convención que los tests de integración); si no está definida, se reportan **SKIPPED** (`RequiresPostgresFactAttribute`).
+- Scenarios del processor: incremento total + tipo, acumulación mismo día, like add/remove = 0 (sin negativos), hora pico, separación de claves por métrica.
+- Scenarios del backfill: equivalencia contra OLTP (soft-deleted incluidos), `NULL→general`/`Encuesta→poll`, limpieza de celdas obsoletas, idempotencia y `dryRun` sin escritura.
+
+## 8. Migración
 
 `AddCommunityDailyMetrics` (schema `community.`): crea `community_daily_metrics` + índice `ix_community_daily_metrics_key_dim_date`.
 
