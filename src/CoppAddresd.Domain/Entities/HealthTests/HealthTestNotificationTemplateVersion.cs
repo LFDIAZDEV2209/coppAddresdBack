@@ -6,7 +6,8 @@ namespace CoppAddresd.Domain.Entities.HealthTests;
 /// Snapshot inmutable del contenido de una
 /// <see cref="HealthTestNotificationTemplate"/> (SPEC A13). Se genera al crear o
 /// editar la plantilla y permite historial y restauración desde el Template
-/// Studio del ERP.
+/// Studio del ERP. Conserva el contenido bilingüe (español obligatorio, inglés
+/// opcional).
 /// </summary>
 public sealed class HealthTestNotificationTemplateVersion
 {
@@ -17,7 +18,9 @@ public sealed class HealthTestNotificationTemplateVersion
     /// <summary>Número de versión incremental por plantilla (1, 2, 3...).</summary>
     public int Version { get; set; }
 
-    public string Name { get; set; } = default!;
+    public string NameEs { get; set; } = default!;
+
+    public string? NameEn { get; set; }
 
     public NotificationChannel Channel { get; set; }
 
@@ -27,9 +30,13 @@ public sealed class HealthTestNotificationTemplateVersion
 
     public string? IndicatorCode { get; set; }
 
-    public string? Subject { get; set; }
+    public string? SubjectEs { get; set; }
 
-    public string BodyTemplate { get; set; } = default!;
+    public string? SubjectEn { get; set; }
+
+    public string BodyTemplateEs { get; set; } = default!;
+
+    public string? BodyTemplateEn { get; set; }
 
     /// <summary>Nota opcional del cambio (ej. "ajuste de tono").</summary>
     public string? Note { get; set; }

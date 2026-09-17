@@ -140,7 +140,11 @@ public sealed class CreateNotificationTemplateCommandHandler(
     {
         var request = command.Request;
         var code = (request.Code ?? string.Empty).Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(request.BodyTemplate))
+        if (
+            string.IsNullOrWhiteSpace(code)
+            || string.IsNullOrWhiteSpace(request.NameEs)
+            || string.IsNullOrWhiteSpace(request.BodyTemplateEs)
+        )
         {
             return null;
         }
@@ -155,17 +159,16 @@ public sealed class CreateNotificationTemplateCommandHandler(
         {
             Id = Guid.NewGuid(),
             Code = code,
-            Name = request.Name.Trim(),
+            NameEs = request.NameEs.Trim(),
+            NameEn = TrimOrNull(request.NameEn),
             Channel = request.Channel,
             Severity = request.Severity,
-            TestCategory = string.IsNullOrWhiteSpace(request.TestCategory)
-                ? null
-                : request.TestCategory.Trim(),
-            IndicatorCode = string.IsNullOrWhiteSpace(request.IndicatorCode)
-                ? null
-                : request.IndicatorCode.Trim(),
-            Subject = string.IsNullOrWhiteSpace(request.Subject) ? null : request.Subject.Trim(),
-            BodyTemplate = request.BodyTemplate.Trim(),
+            TestCategory = TrimOrNull(request.TestCategory),
+            IndicatorCode = TrimOrNull(request.IndicatorCode),
+            SubjectEs = TrimOrNull(request.SubjectEs),
+            SubjectEn = TrimOrNull(request.SubjectEn),
+            BodyTemplateEs = request.BodyTemplateEs.Trim(),
+            BodyTemplateEn = TrimOrNull(request.BodyTemplateEn),
             IsActive = request.IsActive,
             CreatedAt = DateTime.UtcNow,
         };
@@ -179,6 +182,9 @@ public sealed class CreateNotificationTemplateCommandHandler(
         return HealthTestNotificationTemplateDto.FromEntity(template, 0, 1);
     }
 
+    private static string? TrimOrNull(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static HealthTestNotificationTemplateVersion Snapshot(
         HealthTestNotificationTemplate template,
         int version,
@@ -190,13 +196,16 @@ public sealed class CreateNotificationTemplateCommandHandler(
             Id = Guid.NewGuid(),
             TemplateId = template.Id,
             Version = version,
-            Name = template.Name,
+            NameEs = template.NameEs,
+            NameEn = template.NameEn,
             Channel = template.Channel,
             Severity = template.Severity,
             TestCategory = template.TestCategory,
             IndicatorCode = template.IndicatorCode,
-            Subject = template.Subject,
-            BodyTemplate = template.BodyTemplate,
+            SubjectEs = template.SubjectEs,
+            SubjectEn = template.SubjectEn,
+            BodyTemplateEs = template.BodyTemplateEs,
+            BodyTemplateEn = template.BodyTemplateEn,
             Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
             CreatedBy = actorId,
             CreatedAt = DateTime.UtcNow,
@@ -225,31 +234,33 @@ public sealed class UpdateNotificationTemplateCommandHandler(
         }
 
         var request = command.Request;
-        if (string.IsNullOrWhiteSpace(request.BodyTemplate))
+        if (string.IsNullOrWhiteSpace(request.NameEs) || string.IsNullOrWhiteSpace(request.BodyTemplateEs))
         {
             return null;
         }
 
         var contentChanged =
-            template.BodyTemplate != request.BodyTemplate.Trim()
-            || template.Name != request.Name.Trim()
+            template.BodyTemplateEs != request.BodyTemplateEs.Trim()
+            || template.BodyTemplateEn != TrimOrNull(request.BodyTemplateEn)
+            || template.NameEs != request.NameEs.Trim()
+            || template.NameEn != TrimOrNull(request.NameEn)
             || template.Channel != request.Channel
-            || template.Subject != (request.Subject?.Trim())
+            || template.SubjectEs != TrimOrNull(request.SubjectEs)
+            || template.SubjectEn != TrimOrNull(request.SubjectEn)
             || template.Severity != request.Severity
-            || template.TestCategory != (request.TestCategory?.Trim())
-            || template.IndicatorCode != (request.IndicatorCode?.Trim());
+            || template.TestCategory != TrimOrNull(request.TestCategory)
+            || template.IndicatorCode != TrimOrNull(request.IndicatorCode);
 
-        template.Name = request.Name.Trim();
+        template.NameEs = request.NameEs.Trim();
+        template.NameEn = TrimOrNull(request.NameEn);
         template.Channel = request.Channel;
         template.Severity = request.Severity;
-        template.TestCategory = string.IsNullOrWhiteSpace(request.TestCategory)
-            ? null
-            : request.TestCategory.Trim();
-        template.IndicatorCode = string.IsNullOrWhiteSpace(request.IndicatorCode)
-            ? null
-            : request.IndicatorCode.Trim();
-        template.Subject = string.IsNullOrWhiteSpace(request.Subject) ? null : request.Subject.Trim();
-        template.BodyTemplate = request.BodyTemplate.Trim();
+        template.TestCategory = TrimOrNull(request.TestCategory);
+        template.IndicatorCode = TrimOrNull(request.IndicatorCode);
+        template.SubjectEs = TrimOrNull(request.SubjectEs);
+        template.SubjectEn = TrimOrNull(request.SubjectEn);
+        template.BodyTemplateEs = request.BodyTemplateEs.Trim();
+        template.BodyTemplateEn = TrimOrNull(request.BodyTemplateEn);
         template.IsActive = request.IsActive;
         template.UpdatedAt = DateTime.UtcNow;
 
@@ -270,6 +281,9 @@ public sealed class UpdateNotificationTemplateCommandHandler(
         return HealthTestNotificationTemplateDto.FromEntity(template, 0, template.Versions.Count);
     }
 
+    private static string? TrimOrNull(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static HealthTestNotificationTemplateVersion Snapshot(
         HealthTestNotificationTemplate template,
         int version,
@@ -281,13 +295,16 @@ public sealed class UpdateNotificationTemplateCommandHandler(
             Id = Guid.NewGuid(),
             TemplateId = template.Id,
             Version = version,
-            Name = template.Name,
+            NameEs = template.NameEs,
+            NameEn = template.NameEn,
             Channel = template.Channel,
             Severity = template.Severity,
             TestCategory = template.TestCategory,
             IndicatorCode = template.IndicatorCode,
-            Subject = template.Subject,
-            BodyTemplate = template.BodyTemplate,
+            SubjectEs = template.SubjectEs,
+            SubjectEn = template.SubjectEn,
+            BodyTemplateEs = template.BodyTemplateEs,
+            BodyTemplateEn = template.BodyTemplateEn,
             Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
             CreatedBy = actorId,
             CreatedAt = DateTime.UtcNow,
@@ -366,15 +383,20 @@ public sealed class CloneNotificationTemplateCommandHandler(
         {
             Id = Guid.NewGuid(),
             Code = code,
-            Name = string.IsNullOrWhiteSpace(command.Request.Name)
-                ? $"{source.Name} (copia)"
-                : command.Request.Name!.Trim(),
+            NameEs = string.IsNullOrWhiteSpace(command.Request.NameEs)
+                ? $"{source.NameEs} (copia)"
+                : command.Request.NameEs!.Trim(),
+            NameEn = string.IsNullOrWhiteSpace(command.Request.NameEn)
+                ? (string.IsNullOrWhiteSpace(source.NameEn) ? null : $"{source.NameEn} (copy)")
+                : command.Request.NameEn!.Trim(),
             Channel = source.Channel,
             Severity = source.Severity,
             TestCategory = source.TestCategory,
             IndicatorCode = source.IndicatorCode,
-            Subject = source.Subject,
-            BodyTemplate = source.BodyTemplate,
+            SubjectEs = source.SubjectEs,
+            SubjectEn = source.SubjectEn,
+            BodyTemplateEs = source.BodyTemplateEs,
+            BodyTemplateEn = source.BodyTemplateEn,
             IsActive = false,
             CreatedAt = DateTime.UtcNow,
         };
@@ -386,13 +408,16 @@ public sealed class CloneNotificationTemplateCommandHandler(
                 Id = Guid.NewGuid(),
                 TemplateId = clone.Id,
                 Version = 1,
-                Name = clone.Name,
+                NameEs = clone.NameEs,
+                NameEn = clone.NameEn,
                 Channel = clone.Channel,
                 Severity = clone.Severity,
                 TestCategory = clone.TestCategory,
                 IndicatorCode = clone.IndicatorCode,
-                Subject = clone.Subject,
-                BodyTemplate = clone.BodyTemplate,
+                SubjectEs = clone.SubjectEs,
+                SubjectEn = clone.SubjectEn,
+                BodyTemplateEs = clone.BodyTemplateEs,
+                BodyTemplateEn = clone.BodyTemplateEn,
                 Note = $"Clonada de {source.Code}",
                 CreatedBy = command.ActorId,
                 CreatedAt = DateTime.UtcNow,
@@ -432,13 +457,16 @@ public sealed class RestoreNotificationTemplateVersionCommandHandler(
             return null;
         }
 
-        template.Name = version.Name;
+        template.NameEs = version.NameEs;
+        template.NameEn = version.NameEn;
         template.Channel = version.Channel;
         template.Severity = version.Severity;
         template.TestCategory = version.TestCategory;
         template.IndicatorCode = version.IndicatorCode;
-        template.Subject = version.Subject;
-        template.BodyTemplate = version.BodyTemplate;
+        template.SubjectEs = version.SubjectEs;
+        template.SubjectEn = version.SubjectEn;
+        template.BodyTemplateEs = version.BodyTemplateEs;
+        template.BodyTemplateEn = version.BodyTemplateEn;
         template.UpdatedAt = DateTime.UtcNow;
 
         await repository.UpdateTemplateAsync(template, ct);
@@ -450,13 +478,16 @@ public sealed class RestoreNotificationTemplateVersionCommandHandler(
                 Id = Guid.NewGuid(),
                 TemplateId = template.Id,
                 Version = next,
-                Name = template.Name,
+                NameEs = template.NameEs,
+                NameEn = template.NameEn,
                 Channel = template.Channel,
                 Severity = template.Severity,
                 TestCategory = template.TestCategory,
                 IndicatorCode = template.IndicatorCode,
-                Subject = template.Subject,
-                BodyTemplate = template.BodyTemplate,
+                SubjectEs = template.SubjectEs,
+                SubjectEn = template.SubjectEn,
+                BodyTemplateEs = template.BodyTemplateEs,
+                BodyTemplateEn = template.BodyTemplateEn,
                 Note = $"Restaurada desde v{version.Version}",
                 CreatedBy = command.ActorId,
                 CreatedAt = DateTime.UtcNow,

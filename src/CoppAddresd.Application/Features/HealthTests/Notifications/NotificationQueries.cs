@@ -12,6 +12,7 @@ public record ListNotificationsQuery(
     NotificationStatus? Status = null,
     DateTime? From = null,
     DateTime? To = null,
+    string? Search = null,
     int Page = 1,
     int PageSize = 20
 ) : IRequest<PaginatedHealthTestsResult<HealthTestNotificationDto>>;
@@ -35,6 +36,7 @@ public sealed class ListNotificationsQueryHandler(
             request.Status,
             request.From,
             request.To,
+            request.Search,
             page,
             pageSize,
             ct

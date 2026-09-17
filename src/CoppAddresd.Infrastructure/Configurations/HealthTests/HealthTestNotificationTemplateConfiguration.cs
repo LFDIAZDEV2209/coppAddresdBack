@@ -21,7 +21,9 @@ public sealed class HealthTestNotificationTemplateConfiguration
 
         builder.Property(x => x.Code).HasColumnName("code").HasMaxLength(64);
 
-        builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(200);
+        builder.Property(x => x.NameEs).HasColumnName("name_es").HasMaxLength(200);
+
+        builder.Property(x => x.NameEn).HasColumnName("name_en").HasMaxLength(200);
 
         builder
             .Property(x => x.Channel)
@@ -40,9 +42,13 @@ public sealed class HealthTestNotificationTemplateConfiguration
 
         builder.Property(x => x.IndicatorCode).HasColumnName("indicator_code").HasMaxLength(64);
 
-        builder.Property(x => x.Subject).HasColumnName("subject").HasMaxLength(200);
+        builder.Property(x => x.SubjectEs).HasColumnName("subject_es").HasMaxLength(200);
 
-        builder.Property(x => x.BodyTemplate).HasColumnName("body_template").HasColumnType("text");
+        builder.Property(x => x.SubjectEn).HasColumnName("subject_en").HasMaxLength(200);
+
+        builder.Property(x => x.BodyTemplateEs).HasColumnName("body_template_es").HasColumnType("text");
+
+        builder.Property(x => x.BodyTemplateEn).HasColumnName("body_template_en").HasColumnType("text");
 
         builder.Property(x => x.IsActive).HasColumnName("is_active").HasDefaultValue(true);
 
