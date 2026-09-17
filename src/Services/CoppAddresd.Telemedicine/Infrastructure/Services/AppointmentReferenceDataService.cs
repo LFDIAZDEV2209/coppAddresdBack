@@ -63,14 +63,27 @@ public sealed class AppointmentReferenceDataService(
         CancellationToken ct = default
     ) => await GetCachedAsync<LocationRefDto>($"locations/{locationId}", ct);
 
-    private Task<T?> GetCachedAsync<T>(string referencePath, CancellationToken ct)
-        where T : class =>
-        cache.GetOrCreateAsync<T?>(
-            $"ref:{referencePath}:{KeyVersion}",
-            ReferenceTtl,
-            token => GetAsync<T>($"/api/v1/internal/telemedicine/{referencePath}", token),
-            ct
-        );
+    private async Task<T?> GetCachedAsync<T>(string referencePath, CancellationToken ct)
+        where T : class
+    {
+        var key = $"ref:{referencePath}:{KeyVersion}";
+
+        var cached = await cache.GetAsync<T>(key, ct);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
+        // Cache-aside manual: el lookup interno puede devolver null (404) y
+        // ese miss no se cachea; GetAsync<T>/SetAsync<T> respetan el contrato T.
+        var fetched = await GetAsync<T>($"/api/v1/internal/telemedicine/{referencePath}", ct);
+        if (fetched is not null)
+        {
+            await cache.SetAsync(key, fetched, ReferenceTtl, ct);
+        }
+
+        return fetched;
+    }
 
     private async Task<T?> GetAsync<T>(string path, CancellationToken ct)
         where T : class

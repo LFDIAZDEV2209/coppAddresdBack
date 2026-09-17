@@ -38,7 +38,7 @@ public sealed class UpdateNutritionIntakeCommandValidator
             .IsInEnum()
             .WithMessage("Código de comida/hidratación inválido (des/alm/mer/cen/agua).");
 
-        RuleFor(x => x.Intake)
+        RuleFor(x => x.Intake!)
             .SetValidator(new NutritionIntakePayloadValidator())
             .When(x => x.Intake is not null);
     }

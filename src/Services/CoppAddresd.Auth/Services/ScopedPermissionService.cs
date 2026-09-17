@@ -517,7 +517,7 @@ public class ScopedPermissionService(AuthDbContext dbContext, ICacheService cach
     {
         var roles = await dbContext
             .ScopedRoleAssignments.Where(a => a.UserId == userId)
-            .Select(a => new ScopedRoleView(a.RoleId, a.Role.Name, a.ScopeType, a.ScopeId))
+            .Select(a => new ScopedRoleView(a.RoleId, a.Role.Name!, a.ScopeType, a.ScopeId))
             .ToListAsync(ct);
 
         var permissions = await dbContext
