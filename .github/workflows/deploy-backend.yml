@@ -159,13 +159,15 @@ jobs:
             telemedicine)
               echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-telemedicine" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
+              # AuthService__BaseUrl: validación de sesiones ERP (ErpSessionValidation); sin ella todo token ERP responde 500.
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"AuthService__BaseUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
               ;;
             community)
               echo "dockerfile=src/Services/CoppAddresd.Community/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-community" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
+              # AuthService__BaseUrl: validación de sesiones ERP (ErpSessionValidation); sin ella todo token ERP responde 500 (dashboard ERP de comunidad roto).
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"},{\"name\":\"AuthService__BaseUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               # Community firma URLs locales igual que la API: sin la clave HMAC el contenedor revienta al arrancar.
               echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
               ;;
