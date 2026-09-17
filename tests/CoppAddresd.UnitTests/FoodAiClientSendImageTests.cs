@@ -82,14 +82,14 @@ public class FoodAiClientSendImageTests
         Assert.Equal(80, result.Foods[0].BoundingBox.Y);
         Assert.Equal(300, result.Foods[0].BoundingBox.Width);
         Assert.Equal(180, result.Foods[0].BoundingBox.Height);
-        Assert.NotNull(result.Foods[0].Segmentation);
-        Assert.Equal("aGVsbG8=", result.Foods[0].Segmentation.Mask);
-        Assert.Equal(52341, result.Foods[0].Segmentation.AreaPixels);
-        Assert.NotNull(result.Foods[0].Portion);
-        Assert.Equal("medium", result.Foods[0].Portion.PortionSize);
-        Assert.Equal(118, result.Foods[0].Portion.EstimatedGrams);
-        Assert.Equal(0.55, result.Foods[0].Portion.Confidence);
-        Assert.Equal("basic_reference", result.Foods[0].Portion.Method);
+        var segmentation = result.Foods[0].Segmentation!;
+        Assert.Equal("aGVsbG8=", segmentation.Mask);
+        Assert.Equal(52341, segmentation.AreaPixels);
+        var portion = result.Foods[0].Portion!;
+        Assert.Equal("medium", portion.PortionSize);
+        Assert.Equal(118, portion.EstimatedGrams);
+        Assert.Equal(0.55, portion.Confidence);
+        Assert.Equal("basic_reference", portion.Method);
         Assert.Null(result.Foods[1].Portion);
         Assert.Null(result.Foods[1].Segmentation);
     }

@@ -549,7 +549,7 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
             _ => "65+",
         };
 
-    private static int AgeBucketOrder(string bucket) =>
+    private static int AgeBucketOrder(string? bucket) =>
         bucket switch
         {
             "0-17" => 0,

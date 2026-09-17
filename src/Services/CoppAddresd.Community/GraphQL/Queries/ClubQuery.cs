@@ -113,7 +113,7 @@ public sealed class ClubQuery
             .Include(p => p.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Likes)
-            .Include(p => p.Poll).ThenInclude(poll => poll.Options).ThenInclude(o => o.Votes)
+            .Include(p => p.Poll!).ThenInclude(poll => poll.Options).ThenInclude(o => o.Votes)
             .ToListAsync(ct);
 
         return posts;
@@ -139,7 +139,7 @@ public sealed class ClubQuery
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
-            .Include(p => p.Poll).ThenInclude(poll => poll.Options).ThenInclude(o => o.Votes)
+            .Include(p => p.Poll!).ThenInclude(poll => poll.Options).ThenInclude(o => o.Votes)
             .ToListAsync(ct);
 
     /// <summary>Eventos del club ordenados por inicio (próximos primero).</summary>
@@ -308,8 +308,8 @@ public sealed class ClubQuery
 
         var commentReports = await db.CommentReports
             .AsNoTracking()
-            .Where(r => r.Comment!.Post.ClubId == clubId)
-            .Include(r => r.Comment).ThenInclude(c => c.Post)
+            .Where(r => r.Comment!.Post!.ClubId == clubId)
+            .Include(r => r.Comment!).ThenInclude(c => c.Post)
             .ToListAsync(ct);
 
         var result = postReports.Select(r => new ModerationReportDto(

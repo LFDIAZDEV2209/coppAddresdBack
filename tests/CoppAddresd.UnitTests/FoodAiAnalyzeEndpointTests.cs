@@ -140,8 +140,8 @@ public class FoodAiAnalyzeEndpointTests
         Assert.Single(body.Foods);
         Assert.Equal("pizza", body.Foods[0].Name);
         Assert.Equal(0.94, body.Foods[0].Confidence);
-        Assert.Equal(120, body.Foods[0].BoundingBox.X);
-        Assert.Equal(300, body.Foods[0].BoundingBox.Width);
+        Assert.Equal(120, body.Foods[0].BoundingBox!.X);
+        Assert.Equal(300, body.Foods[0].BoundingBox!.Width);
     }
 
     [Fact]

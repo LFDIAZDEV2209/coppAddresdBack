@@ -77,7 +77,7 @@ public class FoodAiAnalyzeDisposedStreamTests
         }
 
         public string ContentType { get; } = "image/png";
-        public string? ContentDisposition => null;
+        public string ContentDisposition => string.Empty;
         public IHeaderDictionary Headers { get; } = new HeaderDictionary();
         public long Length { get; }
         public string Name { get; } = "image";
@@ -166,7 +166,6 @@ public class FoodAiAnalyzeDisposedStreamTests
 
         public async Task<TResponse> Send<TResponse>(
             IRequest<TResponse> request, CancellationToken cancellationToken = default)
-            where TResponse : notnull
         {
             if (request is AnalyzeFoodImageCommand command)
             {
@@ -181,8 +180,8 @@ public class FoodAiAnalyzeDisposedStreamTests
             throw new NotSupportedException();
 
         public IAsyncEnumerable<TResponse> CreateStream<TResponse>(
-            IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
-            where TResponse : notnull => throw new NotSupportedException();
+            IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
         public IAsyncEnumerable<object?> CreateStream(
             object request, CancellationToken cancellationToken = default) =>

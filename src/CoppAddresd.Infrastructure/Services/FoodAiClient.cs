@@ -112,7 +112,7 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
             body.ClassifierVersion ?? "none",
             body.InferenceTimeMs ?? 0,
             (body.Foods ?? []).Select(f => new DetectedFoodDto(
-                f.Name,
+                RequireValue(f.Name),
                 f.Confidence,
                 new BoundingBoxDto(f.BoundingBox?.X ?? 0, f.BoundingBox?.Y ?? 0, f.BoundingBox?.Width ?? 0, f.BoundingBox?.Height ?? 0),
                 f.Segmentation is null

@@ -2182,7 +2182,7 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
 
         var codes = await db.ClinicalMeasurements
             .Where(m => m.PatientId == patientId)
-            .Select(m => m.Metric.Code)
+            .Select(m => m.Metric!.Code)
             .ToListAsync();
         Assert.Contains("heart_rate", codes);
         Assert.Contains("systolic_bp", codes);
@@ -2201,7 +2201,7 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         var completion = await db.TaskCompletions.SingleAsync(t =>
             t.EnrollmentId == enrollmentId && t.LocalDate == tuesday && t.TaskCode == TaskCode.vitals);
         var anchor = await db.ClinicalMeasurements.SingleAsync(m =>
-            m.PatientId == patientId && m.Metric.Code == "heart_rate");
+            m.PatientId == patientId && m.Metric!.Code == "heart_rate");
         Assert.Equal(anchor.Id, completion.VitalSignsBatchId);
     }
 
@@ -2293,7 +2293,7 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         await using var db = fixture.CreateDbContext();
         var celsius = await db.UnitOfMeasures.SingleAsync(u => u.Code == "celsius");
         var tempRow = await db.ClinicalMeasurements.SingleAsync(m =>
-            m.PatientId == patientId && m.Metric.Code == "temperature_c");
+            m.PatientId == patientId && m.Metric!.Code == "temperature_c");
         // UnitId se resuelve desde DefaultUnitId de la métrica (celsius).
         Assert.Equal(celsius.Id, tempRow.UnitId);
     }
