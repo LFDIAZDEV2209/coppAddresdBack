@@ -66,10 +66,14 @@ Nota: usar `127.0.0.1`, no `localhost` (evita que el cliente resuelva primero a 
 | Auth: códigos de permisos por rol                                                                                                                 | `roles:<roleId>:codes:v1`                         | 15 min           | `Remove` en AssignToRole/RemoveFromRole                                                       | Cambia solo cuando un admin edita el rol; TTL alineado con la vida del access token                       |
 | Tele: referencias del backend (profesional/paciente/especialidad/sede por cita)                                                                   | `ref:<recurso>:v1`                                | 10 min           | TTL                                                                                           | Pantallas de agenda/salas repiten las mismas referencias                                                  |
 
+| Inventory: analytics del módulo (KPIs/serie/top productos)                                                                                        | `stats:inventory-analytics:<sha256(rango)>:v1`    | 30-60 s (jitter) | TTL (staleness máximo = TTL, tolerado)                                                        | Agregados sobre rollup `erp.inventory_daily_metrics` + catálogo; sin PHI                                 |
+| Tele: analytics del dashboard (SOLO agregados)                                                                                                    | `stats:dashboard-analytics:<profesional\|global>:<rango>:v1` | 30-60 s (jitter) | TTL                                                                                           | KPIs/series/distribuciones sobre rollup `tele.appointment_daily_metrics`. Las próximas citas (PHI a nivel fila: nombre de paciente) NUNCA entran al payload cacheado: se consultan en vivo y se fusionan tras el hit |
+
 **NO se cachea (decisión deliberada):**
 
 - Tokens, refresh tokens, códigos OTP, contraseñas — seguridad.
 - Perfiles de pacientes / encuentros clínicos (PHI a nivel fila) — privacidad y frescura clínica.
+- Dashboards con PHI a nivel fila: `GET /api/v1/program-progress/erp/dashboard` (top5/mejoraron/empeoraron con nombre de paciente) no se cachea; en Telemedicina se cachean SOLO los agregados y las próximas citas se resuelven en vivo (ver fila `stats:dashboard-analytics`).
 - Listados paginados con filtros (`/patients`, directorio de profesionales) — baja tasa de re-petición; el beneficio real está en índices/paginación.
 - Consultas de autorización por usuario dentro de Auth (asignaciones, overrides, globales) — la revocación debe ser inmediata; lo agregado (por rol/catálogo) sí se cachea.
 - Health-tests `/stats` — frescura de alertas clínicas manda.

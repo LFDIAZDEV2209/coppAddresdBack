@@ -36,8 +36,20 @@ public record GetInventoryAnalyticsQuery(DateOnly? DateFrom = null, DateOnly? Da
     : IRequest<InventoryAnalyticsDto>;
 
 public sealed class GetInventoryAnalyticsQueryHandler(
-    IInventoryRepository repository) : IRequestHandler<GetInventoryAnalyticsQuery, InventoryAnalyticsDto>
+    IInventoryRepository repository,
+    ICacheService cache) : IRequestHandler<GetInventoryAnalyticsQuery, InventoryAnalyticsDto>
 {
     public async Task<InventoryAnalyticsDto> Handle(GetInventoryAnalyticsQuery request, CancellationToken ct)
-        => await repository.GetAnalyticsAsync(request.DateFrom, request.DateTo, ct);
+    {
+        // El rango forma parte del alcance: cada combinación tiene su clave.
+        var scopeHash = CacheKeys.HashScope(
+            request.DateFrom?.ToString("yyyy-MM-dd") ?? "desde",
+            request.DateTo?.ToString("yyyy-MM-dd") ?? "hasta");
+
+        return await cache.GetOrCreateAsync(
+            CacheKeys.Stats("inventory-analytics", scopeHash),
+            CacheKeys.StatsTtl(),
+            token => repository.GetAnalyticsAsync(request.DateFrom, request.DateTo, token),
+            ct);
+    }
 }

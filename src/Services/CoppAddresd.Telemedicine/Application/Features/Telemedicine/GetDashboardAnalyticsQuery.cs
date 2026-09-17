@@ -1,6 +1,7 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.ReferenceData;
 using CoppAddresd.Telemedicine.Domain.Enums;
+using CoppAddresd.Telemedicine.Infrastructure.Cache;
 using MediatR;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
@@ -67,10 +68,19 @@ public sealed record GetDashboardAnalyticsQuery(
 
 public sealed class GetDashboardAnalyticsQueryHandler(
     IAppointmentRepository appointments,
-    IAppointmentReferenceDataService referenceData
+    IAppointmentReferenceDataService referenceData,
+    ICacheService cache
 ) : IRequestHandler<GetDashboardAnalyticsQuery, DashboardAnalyticsDto>
 {
     private const int UpcomingLimit = 8;
+
+    /// <summary>
+    /// TTL de stats con jitter (30-60 s): el dashboard roza el presente
+    /// (KPI/serie de hoy), el staleness máximo tolerado es un TTL y la clave
+    /// por alcance+rango evita expiraciones sincronizadas (stampede).
+    /// </summary>
+    private static TimeSpan JitteredStatsTtl() =>
+        TimeSpan.FromSeconds(Random.Shared.Next(30, 61));
 
     public async Task<DashboardAnalyticsDto> Handle(
         GetDashboardAnalyticsQuery request,
@@ -78,6 +88,47 @@ public sealed class GetDashboardAnalyticsQueryHandler(
     )
     {
         var now = DateTimeOffset.UtcNow;
+
+        // Clave: alcance (profesional o global) + rango SOLICITADO (null usa el
+        // default de 30 días y comparte clave: staleness ≤ TTL).
+        var scope = request.ProfessionalId?.ToString() ?? "global";
+        var fromKey = request.From?.ToUniversalTime().ToString("o") ?? "default";
+        var toKey = request.To?.ToUniversalTime().ToString("o") ?? "default";
+        var cacheKey = $"stats:dashboard-analytics:{scope}:{fromKey}:{toKey}:v1";
+
+        // Los AGREGADOS (KPIs, series, distribuciones) se cachean; las próximas
+        // citas llevan nombre de paciente (PHI a nivel fila, política de caché
+        // en docs/modules/cache/README.md) y se resuelven SIEMPRE en vivo,
+        // nunca dentro del payload cacheado.
+        var aggregates = await cache.GetOrCreateAsync(
+            cacheKey,
+            JitteredStatsTtl(),
+            token => BuildAggregatesAsync(request, now, token),
+            ct
+        );
+
+        var upcoming = await appointments.ListUpcomingAsync(
+            request.ProfessionalId,
+            now,
+            UpcomingLimit,
+            ct
+        );
+        var upcomingDtos = await AppointmentMapper.BuildDtosAsync(upcoming, referenceData, ct);
+
+        return aggregates with { UpcomingAppointments = upcomingDtos };
+    }
+
+    /// <summary>
+    /// Construye el payload agregado (sin próximas citas): es la unidad
+    /// cacheada. En miss corre las consultas rollup-first del repositorio; en
+    /// hit se evita todo su costo (la lista viva de citas va aparte).
+    /// </summary>
+    private async Task<DashboardAnalyticsDto> BuildAggregatesAsync(
+        GetDashboardAnalyticsQuery request,
+        DateTimeOffset now,
+        CancellationToken ct
+    )
+    {
         var to = (request.To ?? now).ToUniversalTime();
         var from = (request.From ?? to.AddDays(-30)).ToUniversalTime();
 
@@ -110,12 +161,6 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             request.ProfessionalId,
             from,
             to,
-            ct
-        );
-        var upcoming = await appointments.ListUpcomingAsync(
-            request.ProfessionalId,
-            now,
-            UpcomingLimit,
             ct
         );
 
@@ -173,8 +218,6 @@ public sealed class GetDashboardAnalyticsQueryHandler(
 
         var hourlyDistribution = BuildCompleteHourlyDistribution(hours);
 
-        var upcomingDtos = await AppointmentMapper.BuildDtosAsync(upcoming, referenceData, ct);
-
         var activityDtos = await BuildProfessionalActivityDtosAsync(
             professionalActivity,
             referenceData,
@@ -205,7 +248,7 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             statusDistribution,
             hourlyDistribution,
             activityDtos,
-            upcomingDtos,
+            [], // próximas citas: SIEMPRE en vivo (PHI), ver Handle
             states
         );
     }
