@@ -512,6 +512,25 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         return await query.Select(a => a.PatientId).Distinct().CountAsync(ct);
     }
 
+    public async Task<IReadOnlyList<Guid>> ListPatientIdsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    )
+    {
+        var query = dbContext
+            .Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            query = query.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        return await query.Select(a => a.PatientId).ToListAsync(ct);
+    }
+
     public async Task<int> CountDistinctProfessionalsAsync(
         DateTimeOffset from,
         DateTimeOffset to,

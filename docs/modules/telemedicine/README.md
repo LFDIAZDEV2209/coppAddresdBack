@@ -319,7 +319,9 @@ endpoints por-Id ya existían desde Fase 3):
   `professionalId`) sin adivinar ids. Accesible a cualquier usuario autenticado.
 - **Analytics del dashboard** (`GetDashboardAnalyticsQuery`): payload completo
   para las gráficas del dashboard — KPIs, serie temporal diaria, distribución
-  por estado y por hora, actividad por profesional y próximas citas. Sin
+  por estado y por hora, actividad por profesional, próximas citas y conteo por
+  estado USA del paciente (`States`, vía `StateCode` de la referencia ERP con
+  dedup + caché). Sin
   migración: solo agrupaciones de lectura (proyección ligera + agrupación en
   memoria, porque Npgsql no traduce `DateTimeOffset.Date`/enums-string en
   GroupBy; rango acotado del dashboard). Consultas **secuenciales**: EF Core no

@@ -21,8 +21,9 @@ public class GetDashboardAnalyticsQueryHandlerTests
         AppointmentStatus status,
         DateTimeOffset start,
         Guid? professionalId = null,
-        Guid? patientId = null)
-        => new()
+        Guid? patientId = null
+    ) =>
+        new()
         {
             Id = Guid.NewGuid(),
             PatientId = patientId ?? TestData.PatientId,
@@ -42,8 +43,7 @@ public class GetDashboardAnalyticsQueryHandlerTests
     public async Task Handle_VistaGlobal_CalculaKPIsYSeriesCompletas()
     {
         var now = DateTimeOffset.UtcNow;
-        _appointments.Items.AddRange(
-        [
+        _appointments.Items.AddRange([
             Appointment(AppointmentStatus.Completed, now.AddDays(-3)),
             Appointment(AppointmentStatus.Completed, now.AddDays(-2)),
             Appointment(AppointmentStatus.Cancelled, now.AddDays(-1)),
@@ -52,7 +52,10 @@ public class GetDashboardAnalyticsQueryHandlerTests
         ]);
 
         var handler = BuildHandler();
-        var result = await handler.Handle(new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now), CancellationToken.None);
+        var result = await handler.Handle(
+            new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now),
+            CancellationToken.None
+        );
 
         Assert.Equal(5, result.Kpis.TotalAppointments);
         Assert.Equal(2, result.Kpis.Completed);
@@ -68,7 +71,10 @@ public class GetDashboardAnalyticsQueryHandlerTests
 
         // La distribución por estado solo incluye estados presentes.
         Assert.Equal(4, result.StatusDistribution.Count);
-        Assert.Contains(result.StatusDistribution, s => s.Status == AppointmentStatus.Completed && s.Count == 2);
+        Assert.Contains(
+            result.StatusDistribution,
+            s => s.Status == AppointmentStatus.Completed && s.Count == 2
+        );
     }
 
     [Fact]
@@ -76,16 +82,30 @@ public class GetDashboardAnalyticsQueryHandlerTests
     {
         var now = DateTimeOffset.UtcNow;
         var otherProfessional = Guid.NewGuid();
-        _appointments.Items.AddRange(
-        [
+        _appointments.Items.AddRange([
             Appointment(AppointmentStatus.Completed, now.AddDays(-5)),
-            Appointment(AppointmentStatus.Completed, now.AddDays(-4), professionalId: otherProfessional),
-            Appointment(AppointmentStatus.Completed, now.AddDays(-4), professionalId: otherProfessional),
-            Appointment(AppointmentStatus.Cancelled, now.AddDays(-3), professionalId: otherProfessional),
+            Appointment(
+                AppointmentStatus.Completed,
+                now.AddDays(-4),
+                professionalId: otherProfessional
+            ),
+            Appointment(
+                AppointmentStatus.Completed,
+                now.AddDays(-4),
+                professionalId: otherProfessional
+            ),
+            Appointment(
+                AppointmentStatus.Cancelled,
+                now.AddDays(-3),
+                professionalId: otherProfessional
+            ),
         ]);
 
         var handler = BuildHandler();
-        var result = await handler.Handle(new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now), CancellationToken.None);
+        var result = await handler.Handle(
+            new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now),
+            CancellationToken.None
+        );
 
         Assert.Equal(2, result.ProfessionalActivity.Count);
 
@@ -94,7 +114,9 @@ public class GetDashboardAnalyticsQueryHandlerTests
         Assert.Equal(2, other.Completed);
         Assert.Equal(1, other.Cancelled);
 
-        var mine = result.ProfessionalActivity.First(a => a.ProfessionalId == TestData.ProfessionalId);
+        var mine = result.ProfessionalActivity.First(a =>
+            a.ProfessionalId == TestData.ProfessionalId
+        );
         Assert.Equal(1, mine.Total);
         Assert.Equal("Dra. Ana Pérez", mine.ProfessionalName);
     }
@@ -104,17 +126,25 @@ public class GetDashboardAnalyticsQueryHandlerTests
     {
         var now = DateTimeOffset.UtcNow;
         var otherProfessional = Guid.NewGuid();
-        _appointments.Items.AddRange(
-        [
+        _appointments.Items.AddRange([
             Appointment(AppointmentStatus.Completed, now.AddDays(-5)),
-            Appointment(AppointmentStatus.Cancelled, now.AddDays(-4), professionalId: otherProfessional),
-            Appointment(AppointmentStatus.Completed, now.AddDays(-3), professionalId: otherProfessional),
+            Appointment(
+                AppointmentStatus.Cancelled,
+                now.AddDays(-4),
+                professionalId: otherProfessional
+            ),
+            Appointment(
+                AppointmentStatus.Completed,
+                now.AddDays(-3),
+                professionalId: otherProfessional
+            ),
         ]);
 
         var handler = BuildHandler();
         var result = await handler.Handle(
             new GetDashboardAnalyticsQuery(TestData.ProfessionalId, now.AddDays(-30), now),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         Assert.Equal(1, result.Kpis.TotalAppointments);
         Assert.Equal(1, result.Kpis.Completed);
@@ -126,17 +156,30 @@ public class GetDashboardAnalyticsQueryHandlerTests
     public async Task Handle_SeriesPorHora_SiempreCubreLas24Horas()
     {
         var now = DateTimeOffset.UtcNow;
-        _appointments.Items.AddRange(
-        [
-            Appointment(AppointmentStatus.Completed, new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero)),
-            Appointment(AppointmentStatus.Completed, new DateTimeOffset(2026, 8, 10, 9, 30, 0, TimeSpan.Zero)),
-            Appointment(AppointmentStatus.Completed, new DateTimeOffset(2026, 8, 11, 14, 0, 0, TimeSpan.Zero)),
+        _appointments.Items.AddRange([
+            Appointment(
+                AppointmentStatus.Completed,
+                new DateTimeOffset(2026, 8, 10, 9, 0, 0, TimeSpan.Zero)
+            ),
+            Appointment(
+                AppointmentStatus.Completed,
+                new DateTimeOffset(2026, 8, 10, 9, 30, 0, TimeSpan.Zero)
+            ),
+            Appointment(
+                AppointmentStatus.Completed,
+                new DateTimeOffset(2026, 8, 11, 14, 0, 0, TimeSpan.Zero)
+            ),
         ]);
 
         var handler = BuildHandler();
         var result = await handler.Handle(
-            new GetDashboardAnalyticsQuery(null, new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 8, 31, 0, 0, 0, TimeSpan.Zero)),
-            CancellationToken.None);
+            new GetDashboardAnalyticsQuery(
+                null,
+                new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero),
+                new DateTimeOffset(2026, 8, 31, 0, 0, 0, TimeSpan.Zero)
+            ),
+            CancellationToken.None
+        );
 
         Assert.Equal(24, result.HourlyDistribution.Count);
         Assert.Equal(2, result.HourlyDistribution.First(h => h.Hour == 9).Count);
@@ -148,8 +191,7 @@ public class GetDashboardAnalyticsQueryHandlerTests
     public async Task Handle_ProximasCitas_ResuelveNombresYSoloFuturas()
     {
         var now = DateTimeOffset.UtcNow;
-        _appointments.Items.AddRange(
-        [
+        _appointments.Items.AddRange([
             Appointment(AppointmentStatus.Completed, now.AddDays(-1)),
             Appointment(AppointmentStatus.Confirmed, now.AddDays(1)),
             Appointment(AppointmentStatus.Confirmed, now.AddDays(3)),
@@ -157,11 +199,58 @@ public class GetDashboardAnalyticsQueryHandlerTests
         ]);
 
         var handler = BuildHandler();
-        var result = await handler.Handle(new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now.AddDays(30)), CancellationToken.None);
+        var result = await handler.Handle(
+            new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now.AddDays(30)),
+            CancellationToken.None
+        );
 
         Assert.Equal(3, result.UpcomingAppointments.Count);
         Assert.All(result.UpcomingAppointments, a => Assert.True(a.ScheduledStart >= now));
         Assert.Equal("María Gómez", result.UpcomingAppointments[0].PatientName);
-        Assert.DoesNotContain(result.UpcomingAppointments, a => a.Status == AppointmentStatus.Completed);
+        Assert.DoesNotContain(
+            result.UpcomingAppointments,
+            a => a.Status == AppointmentStatus.Completed
+        );
+    }
+
+    [Fact]
+    public async Task Handle_VistaGlobal_AgrupaCitasPorEstadoDelPaciente()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ca = Guid.NewGuid();
+        var tx = Guid.NewGuid();
+        _referenceData.Patients[ca] = TestData.Patient(ca, "CA");
+        _referenceData.Patients[tx] = TestData.Patient(tx, "TX");
+        _appointments.Items.AddRange([
+            Appointment(AppointmentStatus.Completed, now.AddDays(-3), patientId: ca),
+            Appointment(AppointmentStatus.Confirmed, now.AddDays(-2), patientId: ca),
+            Appointment(AppointmentStatus.Completed, now.AddDays(-1), patientId: tx),
+        ]);
+
+        var handler = BuildHandler();
+        var result = await handler.Handle(
+            new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now),
+            CancellationToken.None
+        );
+
+        Assert.Equal(2, result.States.Count);
+        Assert.Contains(result.States, s => s.Code == "CA" && s.Count == 2);
+        Assert.Contains(result.States, s => s.Code == "TX" && s.Count == 1);
+    }
+
+    [Fact]
+    public async Task Handle_PacientesSinEstado_NoAparecenEnStates()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _appointments.Items.AddRange([Appointment(AppointmentStatus.Completed, now.AddDays(-3))]);
+
+        var handler = BuildHandler();
+        var result = await handler.Handle(
+            new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now),
+            CancellationToken.None
+        );
+
+        Assert.Empty(result.States);
+        Assert.Equal(1, result.Kpis.TotalAppointments);
     }
 }

@@ -31,7 +31,7 @@ public sealed class ClubSeederTests(CommunityTestDatabase dbFixture) : IDisposab
                 Id = Guid.NewGuid(),
                 UserId = null,
                 IsSystem = true,
-                DisplayName = "Equipo ANTARES",
+                DisplayName = "Equipo Copp Adresd",
                 Status = ProfileStatus.Active,
             });
             await db.SaveChangesAsync(CancellationToken.None);

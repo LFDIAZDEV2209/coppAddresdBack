@@ -51,6 +51,7 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         await dbContext
             .PatientProfiles.AsNoTracking()
             .Where(x => x.DeletedAt == null && x.UserId == userId)
+            .Include(x => x.State)
             .FirstOrDefaultAsync(ct);
 
     public async Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(

@@ -61,6 +61,27 @@ public static class ApplicationServiceExtensions
             configuration.GetSection(TelemedicineServiceSettings.SectionName)
         );
 
+        // Canal "app/community" de las notificaciones de alertas de tests
+        // (SPEC A13): cliente tipado hacia el endpoint interno de mensajería
+        // del microservicio de Comunidad. La clave interna viaja por request
+        // (header X-Internal-Key) desde CommunityMessageSender.
+        services.Configure<CommunityServiceSettings>(
+            configuration.GetSection(CommunityServiceSettings.SectionName)
+        );
+        services
+            .AddHttpClient<ICommunityMessageSender, CommunityMessageSender>(
+                (sp, client) =>
+                {
+                    var communitySettings = sp
+                        .GetRequiredService<IOptions<CommunityServiceSettings>>()
+                        .Value;
+                    client.BaseAddress = new Uri(communitySettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(communitySettings.TimeoutSeconds);
+                }
+            )
+            .AddResiliencePolicy()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
         services.AddMediatR(cfg =>
         {
             cfg.RegisterServicesFromAssembly(

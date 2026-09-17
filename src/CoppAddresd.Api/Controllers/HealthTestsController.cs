@@ -6,6 +6,7 @@ using CoppAddresd.Application.Features.HealthTests.Alerts;
 using CoppAddresd.Application.Features.HealthTests.Assignments;
 using CoppAddresd.Application.Features.HealthTests.Catalog;
 using CoppAddresd.Application.Features.HealthTests.Execution;
+using CoppAddresd.Application.Features.HealthTests.Notifications;
 using CoppAddresd.Application.Features.HealthTests.Queries;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Interfaces;
@@ -499,6 +500,278 @@ public class HealthTestsController(
         CancellationToken ct
     ) => Ok(await mediator.Send(new AddCommentCommand(request, context.UserId ?? Guid.Empty), ct));
 
+    // ============ NOTIFICACIONES DE ALERTAS (SPEC A13) ============
+
+    /// <summary>Catálogo paginado de plantillas de notificación (Template Studio).</summary>
+    [HttpGet("notification-templates")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<
+        ActionResult<PaginatedHealthTestsResult<HealthTestNotificationTemplateDto>>
+    > ListNotificationTemplates(
+        [FromQuery] string? channel = null,
+        [FromQuery] string? search = null,
+        [FromQuery] bool? isActive = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default
+    )
+    {
+        if (!TryParseChannel(channel, out var parsedChannel, out var error))
+        {
+            return BadRequest(new { message = error });
+        }
+
+        return Ok(
+            await mediator.Send(
+                new ListNotificationTemplatesQuery(parsedChannel, search, isActive, page, pageSize),
+                ct
+            )
+        );
+    }
+
+    /// <summary>Detalle de una plantilla de notificación.</summary>
+    [HttpGet("notification-templates/{id:guid}")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationTemplateDto>> GetNotificationTemplate(
+        Guid id,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(new GetNotificationTemplateQuery(id), ct);
+        return result is null
+            ? NotFound(new { message = "Plantilla no encontrada" })
+            : Ok(result);
+    }
+
+    /// <summary>Crea una plantilla de notificación.</summary>
+    [HttpPost("notification-templates")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationTemplateDto>> CreateNotificationTemplate(
+        [FromBody] CreateNotificationTemplateRequest request,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new CreateNotificationTemplateCommand(request, context.UserId),
+            ct
+        );
+        return result is null
+            ? Conflict(new { message = "Código de plantilla inválido o ya existente" })
+            : Ok(result);
+    }
+
+    /// <summary>Actualiza una plantilla de notificación (genera versión si cambia el contenido).</summary>
+    [HttpPut("notification-templates/{id:guid}")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationTemplateDto>> UpdateNotificationTemplate(
+        Guid id,
+        [FromBody] UpdateNotificationTemplateRequest request,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new UpdateNotificationTemplateCommand(id, request, context.UserId),
+            ct
+        );
+        return result is null
+            ? NotFound(new { message = "Plantilla no encontrada o inválida" })
+            : Ok(result);
+    }
+
+    /// <summary>Desactiva (borrado lógico) una plantilla de notificación.</summary>
+    [HttpDelete("notification-templates/{id:guid}")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationTemplateDto>> DeleteNotificationTemplate(
+        Guid id,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new SetNotificationTemplateActiveCommand(id, false, context.UserId),
+            ct
+        );
+        return result is null
+            ? NotFound(new { message = "Plantilla no encontrada" })
+            : Ok(result);
+    }
+
+    /// <summary>Activa o desactiva una plantilla de notificación.</summary>
+    [HttpPost("notification-templates/{id:guid}/activate")]
+    [HttpPost("notification-templates/{id:guid}/deactivate")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationTemplateDto>> SetNotificationTemplateActive(
+        Guid id,
+        CancellationToken ct
+    )
+    {
+        var isActive = Request.Path.Value?.EndsWith("/activate", StringComparison.OrdinalIgnoreCase)
+            == true;
+        var result = await mediator.Send(
+            new SetNotificationTemplateActiveCommand(id, isActive, context.UserId),
+            ct
+        );
+        return result is null
+            ? NotFound(new { message = "Plantilla no encontrada" })
+            : Ok(result);
+    }
+
+    /// <summary>Clona una plantilla de notificación.</summary>
+    [HttpPost("notification-templates/{id:guid}/clone")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationTemplateDto>> CloneNotificationTemplate(
+        Guid id,
+        [FromBody] CloneNotificationTemplateRequest request,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new CloneNotificationTemplateCommand(id, request, context.UserId),
+            ct
+        );
+        return result is null
+            ? Conflict(new { message = "No se pudo clonar (código inválido o ya existente)" })
+            : Ok(result);
+    }
+
+    /// <summary>Historial de versiones de una plantilla.</summary>
+    [HttpGet("notification-templates/{id:guid}/versions")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<
+        ActionResult<IReadOnlyList<HealthTestNotificationTemplateVersionDto>>
+    > ListNotificationTemplateVersions(Guid id, CancellationToken ct) =>
+        Ok(await mediator.Send(new ListNotificationTemplateVersionsQuery(id), ct));
+
+    /// <summary>Restaura una versión anterior como nueva versión vigente.</summary>
+    [HttpPost("notification-templates/{id:guid}/versions/{version:int}/restore")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationTemplateDto>> RestoreNotificationTemplateVersion(
+        Guid id,
+        int version,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new RestoreNotificationTemplateVersionCommand(id, version, context.UserId),
+            ct
+        );
+        return result is null
+            ? NotFound(new { message = "Plantilla o versión no encontrada" })
+            : Ok(result);
+    }
+
+    /// <summary>Envía una notificación de prueba con una plantilla (Template Studio).</summary>
+    [HttpPost("notification-templates/{id:guid}/test")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<NotifyAlertItemResultDto>> SendTestNotification(
+        Guid id,
+        [FromBody] SendTestNotificationRequest request,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new SendTestNotificationCommand(id, request, context.UserId),
+            ct
+        );
+        return result is null
+            ? NotFound(new { message = "Plantilla no encontrada" })
+            : Ok(result);
+    }
+
+    /// <summary>
+    /// Notifica (o previsualiza) en lote las alertas seleccionadas. En modo
+    /// <c>preview</c> no envía ni registra; en modo envío despacha por cada
+    /// canal (comunidad/sms) y persiste el log de entregas.
+    /// </summary>
+    [HttpPost("alerts/notify")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<NotifyAlertsResultDto>> NotifyAlerts(
+        [FromBody] NotifyAlertsRequest request,
+        CancellationToken ct
+    )
+    {
+        var (allowed, _) = await ResolveScopeAsync(ct);
+        if (!allowed)
+        {
+            return Forbid();
+        }
+
+        return Ok(await mediator.Send(new NotifyAlertsCommand(request, context.UserId), ct));
+    }
+
+    /// <summary>Registro paginado de notificaciones enviadas.</summary>
+    [HttpGet("notifications")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<
+        ActionResult<PaginatedHealthTestsResult<HealthTestNotificationDto>>
+    > ListNotifications(
+        [FromQuery] Guid? alertId = null,
+        [FromQuery] Guid? patientId = null,
+        [FromQuery] string? channel = null,
+        [FromQuery] string? status = null,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken ct = default
+    )
+    {
+        if (!TryParseChannel(channel, out var parsedChannel, out var channelError))
+        {
+            return BadRequest(new { message = channelError });
+        }
+
+        NotificationStatus? parsedStatus = null;
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<NotificationStatus>(status, true, out var parsed))
+            {
+                return BadRequest(new { message = "Estado inválido" });
+            }
+            parsedStatus = parsed;
+        }
+
+        var (allowed, _) = await ResolveScopeAsync(ct);
+        if (!allowed)
+        {
+            return Forbid();
+        }
+
+        return Ok(
+            await mediator.Send(
+                new ListNotificationsQuery(
+                    alertId,
+                    patientId,
+                    parsedChannel,
+                    parsedStatus,
+                    from,
+                    to,
+                    page,
+                    pageSize
+                ),
+                ct
+            )
+        );
+    }
+
+    /// <summary>Agregados para los gráficos de alertas y notificaciones.</summary>
+    [HttpGet("notifications/charts")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<HealthTestNotificationChartsDto>> GetNotificationCharts(
+        [FromQuery] int days = 30,
+        CancellationToken ct = default
+    )
+    {
+        var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
+        if (!allowed)
+        {
+            return Forbid();
+        }
+
+        return Ok(
+            await mediator.Send(new GetNotificationChartsQuery(ownProfessionalId, days), ct)
+        );
+    }
+
     // ===================== GEO (mapa) =====================
 
     /// <summary>Geo agregado para el mapa de Tests de Salud (ciudades con % alto riesgo).</summary>
@@ -573,6 +846,31 @@ public class HealthTestsController(
         }
 
         return (false, null);
+    }
+
+    /// <summary>Parsea el canal de notificación desde query string (vacío = sin filtro).</summary>
+    private static bool TryParseChannel(
+        string? value,
+        out NotificationChannel? channel,
+        out string? error
+    )
+    {
+        channel = null;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (!Enum.TryParse<NotificationChannel>(value, true, out var parsed))
+        {
+            error = "Canal inválido";
+            return false;
+        }
+
+        channel = parsed;
+        return true;
     }
 }
 

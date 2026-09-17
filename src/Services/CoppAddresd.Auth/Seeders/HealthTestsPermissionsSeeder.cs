@@ -27,6 +27,7 @@ public static class HealthTestsPermissionsSeeder
         "HealthTests.Manage",
         "HealthTests.Assign",
         "HealthTests.Review",
+        "HealthTests.Notify",
     ];
 
     public static async Task SeedAsync(
