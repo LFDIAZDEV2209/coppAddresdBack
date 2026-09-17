@@ -73,7 +73,7 @@ public static class ClubSeeder
         // el resto se busca por nombre y se crea con GUID fijo si no existe.
         var systemProfile = await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem, ct)
             ?? throw new InvalidOperationException(
-                "ClubSeeder requiere el perfil de sistema 'Equipo ANTARES' (lo crea CommunitySeeder).");
+                "ClubSeeder requiere el perfil de sistema 'Equipo Copp Adresd' (lo crea CommunitySeeder).");
 
         var byName = await db.Profiles
             .Where(p => DemoMembers.Select(d => d.Name).Contains(p.DisplayName))
