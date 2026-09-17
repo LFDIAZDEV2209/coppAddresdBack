@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
 
@@ -36,21 +37,27 @@ public class WeightAuthorizationTests
         var mediator = new Mock<IMediator>();
         mediator.Setup(x => x.Send(It.IsAny<RecordWeightCommand>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RecordedWeightDto(Guid.NewGuid(), 80, new DateOnly(2026, 9, 14), DateTime.UtcNow));
-        using var server = new TestServer(new WebHostBuilder().ConfigureServices(services => {
-            services.AddControllers().AddApplicationPart(typeof(ProgramController).Assembly);
-            services.AddSingleton(actor.Object);
-            services.AddSingleton(mediator.Object);
-            services.AddSingleton(Mock.Of<IObjectStorageService>());
-            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => {
-                options.TokenValidationParameters = new() { ValidateIssuer = false, ValidateAudience = false,
-                    IssuerSigningKey = key, ValidateLifetime = true };
-            });
-            services.AddAuthorization();
-        }).Configure(app => {
-            app.UseRouting(); app.UseAuthentication(); app.UseAuthorization();
-            app.UseEndpoints(endpoints => endpoints.MapControllers());
-        }));
-        using var client = server.CreateClient();
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(webBuilder => {
+                webBuilder.UseTestServer();
+                webBuilder.ConfigureServices(services => {
+                    services.AddControllers().AddApplicationPart(typeof(ProgramController).Assembly);
+                    services.AddSingleton(actor.Object);
+                    services.AddSingleton(mediator.Object);
+                    services.AddSingleton(Mock.Of<IObjectStorageService>());
+                    services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => {
+                        options.TokenValidationParameters = new() { ValidateIssuer = false, ValidateAudience = false,
+                            IssuerSigningKey = key, ValidateLifetime = true };
+                    });
+                    services.AddAuthorization();
+                });
+                webBuilder.Configure(app => {
+                    app.UseRouting(); app.UseAuthentication(); app.UseAuthorization();
+                    app.UseEndpoints(endpoints => endpoints.MapControllers());
+                });
+            })
+            .StartAsync();
+        using var client = host.GetTestServer().CreateClient();
         if (role is not null) {
             // Incluso un permiso administrativo no convierte ClinicAdmin en Admin global.
             var token = new JwtSecurityToken(claims: [new Claim(ClaimTypes.Role, role),
