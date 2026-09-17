@@ -2,6 +2,9 @@ using System.Globalization;
 using CoppAddresd.Api.Seeders;
 using CoppAddresd.Application.Features.Dashboard;
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Entities.HealthTests;
+using CoppAddresd.Domain.Entities.ProgramProgress;
+using CoppAddresd.Domain.Enums.HealthTests;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,9 +14,12 @@ namespace CoppAddresd.Api.Controllers;
 
 /// <summary>
 /// Dashboard Home del ERP (datos agregados de plataforma).
-/// Lee exclusivamente los rollups diarios de pre-agregación CQRS del <see cref="AppDbContext"/>
-/// (pacientes, tests de salud, inventario y programa ANTARES) en O(1), sin escanear las
-/// tablas transaccionales. Claves de rollup verificadas contra los processors:
+/// Lee los rollups diarios de pre-agregación CQRS del <see cref="AppDbContext"/>
+/// (pacientes, tests de salud, inventario y programa ANTARES) en O(1). Cuando el
+/// rollup de un bloque no tiene filas (backfill pendiente / BD recién creada),
+/// cae al conteo OLTP de la ventana con la misma semántica que el processor y el
+/// backfill; nunca mezcla rollup + OLTP en la misma suma. Claves de rollup
+/// verificadas contra los processors:
 /// <list type="bullet">
 /// <item><c>app.patient_daily_metrics</c>: "total_patients"/"new_patients" dimensión "general", fila global <see cref="Guid.Empty"/>.</item>
 /// <item><c>app.health_test_daily_metrics</c>: "assignments_count" dimensión "completed", fila global <see cref="Guid.Empty"/>.</item>
@@ -112,6 +118,47 @@ public class DashboardController(AppDbContext dbContext, MetricsBackfillSeeder b
                         && m.MetricDate >= from && m.MetricDate <= to)
             .ToListAsync(ct);
 
+        // Regla 8 CQRS: fallback OLTP si el rollup de tests de salud está vacío.
+        if (healthTestsDaily.Count == 0)
+        {
+            var hasRollup = await dbContext.HealthTestDailyMetrics.AsNoTracking()
+                .AnyAsync(m => m.MetricKey == "assignments_count", ct);
+            if (!hasRollup)
+            {
+                // Misma semántica que el backfill: asignaciones en estado completed
+                // fechadas por CompletedAt y, si no lo tienen, por AssignedAt.
+                var fromDateTime = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                var toDateTime = to.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
+
+                // Se materializan solo los timestamps de la ventana y se agrupa en
+                // memoria: GroupBy(DateOnly.FromDateTime(coalesce)) no traduce a SQL.
+                var completionDates = await dbContext.HealthTestAssignments.AsNoTracking()
+                    .Where(a => a.Status == HealthTestAssignmentStatus.completed
+                                && (a.CompletedAt ?? a.AssignedAt) >= fromDateTime
+                                && (a.CompletedAt ?? a.AssignedAt) <= toDateTime)
+                    .Select(a => a.CompletedAt ?? a.AssignedAt)
+                    .ToListAsync(ct);
+
+                var dbDaily = completionDates
+                    .GroupBy(d => DateOnly.FromDateTime(d))
+                    .Select(g => new
+                    {
+                        MetricDate = g.Key,
+                        TotalCount = (long)g.Count()
+                    });
+
+                healthTestsDaily = dbDaily.Select(d => new HealthTestDailyMetric
+                {
+                    ClinicId = GlobalId,
+                    MetricKey = "assignments_count",
+                    DimensionKey = "completed",
+                    MetricDate = d.MetricDate,
+                    TotalCount = d.TotalCount,
+                    LastUpdatedAt = DateTime.UtcNow
+                }).ToList();
+            }
+        }
+
         // Inventario: documentos de entrada/salida del período (dimensión "total").
         var inventoryDaily = await dbContext.InventoryDailyMetrics.AsNoTracking()
             .Where(m => (m.MetricKey == "entries_count" || m.MetricKey == "exits_count")
@@ -119,12 +166,91 @@ public class DashboardController(AppDbContext dbContext, MetricsBackfillSeeder b
                         && m.MetricDate >= from && m.MetricDate <= to)
             .ToListAsync(ct);
 
+        // Regla 8 CQRS: fallback OLTP si el rollup de inventario está vacío.
+        if (inventoryDaily.Count == 0)
+        {
+            var hasRollup = await dbContext.InventoryDailyMetrics.AsNoTracking()
+                .AnyAsync(m => m.MetricKey == "entries_count" || m.MetricKey == "exits_count", ct);
+            if (!hasRollup)
+            {
+                // Misma semántica que el backfill: una fila por documento fechado
+                // por erp.inventory_entries.date / erp.inventory_exits.date
+                // (columna date: límites sin zona horaria, como el fallback del
+                // repositorio de inventario).
+                var fromDateTime = from.ToDateTime(TimeOnly.MinValue);
+                var toExclusive = to.AddDays(1).ToDateTime(TimeOnly.MinValue);
+
+                var entryDates = await dbContext.InventoryEntries.AsNoTracking()
+                    .Where(e => e.Date >= fromDateTime && e.Date < toExclusive)
+                    .Select(e => e.Date)
+                    .ToListAsync(ct);
+
+                var exitDates = await dbContext.InventoryExits.AsNoTracking()
+                    .Where(e => e.Date >= fromDateTime && e.Date < toExclusive)
+                    .Select(e => e.Date)
+                    .ToListAsync(ct);
+
+                inventoryDaily = entryDates
+                    .GroupBy(d => DateOnly.FromDateTime(d))
+                    .Select(g => new InventoryDailyMetric
+                    {
+                        MetricDate = g.Key,
+                        MetricKey = "entries_count",
+                        DimensionKey = "total",
+                        TotalCount = g.Count(),
+                        LastUpdatedAt = DateTime.UtcNow
+                    })
+                    .Concat(exitDates
+                        .GroupBy(d => DateOnly.FromDateTime(d))
+                        .Select(g => new InventoryDailyMetric
+                        {
+                            MetricDate = g.Key,
+                            MetricKey = "exits_count",
+                            DimensionKey = "total",
+                            TotalCount = g.Count(),
+                            LastUpdatedAt = DateTime.UtcNow
+                        }))
+                    .ToList();
+            }
+        }
+
         // Programa ANTARES: tareas completadas del período (dimensión "general").
         var programDaily = await dbContext.ProgramDailyMetrics.AsNoTracking()
             .Where(m => m.MetricKey == "tasks_completed_today"
                         && m.DimensionKey == "general"
                         && m.MetricDate >= from && m.MetricDate <= to)
             .ToListAsync(ct);
+
+        // Regla 8 CQRS: fallback OLTP si el rollup del programa está vacío.
+        if (programDaily.Count == 0)
+        {
+            var hasRollup = await dbContext.ProgramDailyMetrics.AsNoTracking()
+                .AnyAsync(m => m.MetricKey == "tasks_completed_today", ct);
+            if (!hasRollup)
+            {
+                // Misma semántica que el backfill: una fila por task_completions
+                // fechada por completed_at (reloj del servidor).
+                var fromDateTime = from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                var toDateTime = to.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
+
+                var completionDates = await dbContext.TaskCompletions.AsNoTracking()
+                    .Where(t => t.CompletedAt >= fromDateTime && t.CompletedAt <= toDateTime)
+                    .Select(t => t.CompletedAt)
+                    .ToListAsync(ct);
+
+                programDaily = completionDates
+                    .GroupBy(d => DateOnly.FromDateTime(d))
+                    .Select(g => new ProgramDailyMetric
+                    {
+                        MetricDate = g.Key,
+                        MetricKey = "tasks_completed_today",
+                        DimensionKey = "general",
+                        TotalCount = g.Count(),
+                        LastUpdatedAt = DateTime.UtcNow
+                    })
+                    .ToList();
+            }
+        }
 
         // ── Agregados del período (una fila por día y clave → suma directa) ────
         var newPatients30d = patientDaily.Sum(m => m.TotalCount);
