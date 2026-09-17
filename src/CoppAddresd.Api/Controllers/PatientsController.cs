@@ -58,7 +58,8 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
 
     /// <summary>
     /// Tablero clínico por paciente (riesgo, alertas, evaluaciones y
-    /// seguimiento), paginado y filtrable, con el mismo alcance del listado.
+    /// seguimiento + datos de directorio y resumen para tarjetas), paginado y
+    /// filtrable, con el mismo alcance del listado.
     /// </summary>
     [HttpGet("clinical-board")]
     public async Task<ActionResult<PaginatedClinicalBoardResult>> ClinicalBoard(
@@ -68,6 +69,9 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         [FromQuery] string? risk = null,
         [FromQuery] bool? hasAlerts = null,
         [FromQuery] string? followUp = null,
+        [FromQuery] string? status = null,
+        [FromQuery] Guid? insurerId = null,
+        [FromQuery] string? state = null,
         CancellationToken ct = default
     )
     {
@@ -85,7 +89,10 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
                     hasAlerts,
                     followUp,
                     context.ActiveClinicId,
-                    ownProfessionalId
+                    ownProfessionalId,
+                    status,
+                    insurerId,
+                    state
                 ),
                 ct
             )
