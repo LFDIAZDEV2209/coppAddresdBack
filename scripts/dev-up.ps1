@@ -352,6 +352,7 @@ if ($failed) {
 
 Draw-Banner "ALL SERVICES RUNNING" 'Green'
 Write-Host "  Stop with: .\scripts\dev-down.ps1" -ForegroundColor Gray
+Write-Host "  Esta ventana puede cerrarse: los servicios corren desacoplados en segundo plano." -ForegroundColor Gray
 Write-Host "  Logs in: $logs" -ForegroundColor Gray
 Write-Host "  View logs: .\scripts\dev-logs.ps1 <service> [-Follow] [-Err]" -ForegroundColor Gray
 Write-Host "  Services: auth, community, gateway, telemedicine, api, ai, postgres, front, antares, foodai" -ForegroundColor Gray
