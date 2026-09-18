@@ -897,6 +897,7 @@ public sealed class ClubMutation
                 existing.Status = EventAttendanceStatus.Confirmado;
                 existing.CreatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
+                await db.Entry(@event).ReloadAsync(ct);
                 return existing;
             }
             return existing;
@@ -933,6 +934,9 @@ public sealed class ClubMutation
         }
 
         await db.SaveChangesAsync(ct);
+        // ExecuteUpdateAsync no actualiza el tracker: recargar para que lecturas
+        // posteriores en el mismo DbContext vean los contadores reales.
+        await db.Entry(@event).ReloadAsync(ct);
         return attendance;
     }
 

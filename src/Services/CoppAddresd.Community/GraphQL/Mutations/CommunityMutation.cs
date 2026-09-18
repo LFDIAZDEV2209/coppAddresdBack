@@ -275,11 +275,16 @@ public sealed class CommunityMutation
         if (question.Length < 3 || question.Length > 300)
             throw new GraphQLException("La pregunta debe tener entre 3 y 300 caracteres.");
 
-        var normalized = (options ?? [])
+        var trimmed = (options ?? [])
             .Select(o => o.Trim())
             .Where(o => o.Length > 0)
+            .ToList();
+        var normalized = trimmed
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        // Duplicados (case-insensitive): se rechazan aunque el conteo único quede en rango.
+        if (normalized.Count != trimmed.Count)
+            throw new GraphQLException("La encuesta necesita entre 2 y 4 opciones únicas (sin duplicados).");
         if (normalized.Count is < 2 or > 4)
             throw new GraphQLException("La encuesta necesita entre 2 y 4 opciones.");
         if (normalized.Any(o => o.Length > 100))
@@ -361,8 +366,14 @@ public sealed class CommunityMutation
             .FirstOrDefaultAsync(o => o.Id == optionId, ct)
             ?? throw new GraphQLException("No se encontró la opción de la encuesta.");
 
+        // Un voto por perfil por encuesta (no por opción): cualquier voto previo
+        // en otra opción de la misma encuesta bloquea el nuevo voto.
+        var pollOptionIds = await db.PollOptions
+            .Where(o => o.PollId == option.PollId)
+            .Select(o => o.Id)
+            .ToListAsync(ct);
         var alreadyVoted = await db.PollVotes.AnyAsync(v =>
-            v.OptionId == option.Id && v.ProfileId == profile.Id, ct);
+            pollOptionIds.Contains(v.OptionId) && v.ProfileId == profile.Id, ct);
         if (alreadyVoted)
             throw new GraphQLException("Ya votaste esta encuesta.");
 
