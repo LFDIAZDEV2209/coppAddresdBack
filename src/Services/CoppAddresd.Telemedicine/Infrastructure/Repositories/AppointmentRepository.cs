@@ -590,6 +590,18 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .OrderBy(a => a.ScheduledEnd)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<Appointment>> ListByStatusStartingBetweenAsync(
+        AppointmentStatus status,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
+            .Where(a => a.Status == status && a.ScheduledStart >= from && a.ScheduledStart < to)
+            .OrderBy(a => a.ScheduledStart)
+            .ToListAsync(ct);
+
     private async Task SaveWithConflictTranslationAsync(CancellationToken ct)
     {
         try

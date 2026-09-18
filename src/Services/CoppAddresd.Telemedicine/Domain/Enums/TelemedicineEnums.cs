@@ -104,6 +104,24 @@ public enum AlertType
     System,
 }
 
+/// <summary>
+/// Tipos de notificación despachada con deduplicación por cita (F2). El valor
+/// forma parte de la clave única <c>(appointment_id, kind)</c> de
+/// <c>tele.notification_dispatch</c>: cada tipo se envía como máximo una vez
+/// por cita. El destinatario y los canales los decide el emisor.
+/// </summary>
+public enum NotificationDispatchKind
+{
+    /// <summary>Primer recordatorio: push al paciente 24 h antes (configurable).</summary>
+    Reminder24h,
+
+    /// <summary>Segundo recordatorio: push (+ SMS según ventana) al paciente 1 h antes.</summary>
+    Reminder1h,
+
+    /// <summary>Recordatorio al profesional 1 h antes (push).</summary>
+    ProfessionalReminder1h,
+}
+
 /// <summary>Severidad de una alerta para priorizar la bandeja.</summary>
 public enum AlertSeverity
 {

@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
+using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 
@@ -15,6 +16,7 @@ public class CreateRequestHandlerTests
     private readonly FakeRequestRepository _requests = new();
     private readonly FakeSettingsProvider _settings = new();
     private readonly FakeAlertRepository _alerts = new();
+    private readonly FakeTelemedicineNotifier _notifier = new();
     private readonly CreateTelemedicineRequestCommandHandler _handler;
 
     public CreateRequestHandlerTests()
@@ -23,7 +25,8 @@ public class CreateRequestHandlerTests
             _requests,
             _referenceData,
             _settings,
-            _alerts
+            _alerts,
+            notifier: _notifier
         );
         _referenceData.Patients[TestData.PatientId] = TestData.Patient();
         _referenceData.Specialties[TestData.SpecialtyId] = TestData.Specialty();
@@ -51,8 +54,9 @@ public class CreateRequestHandlerTests
         var entity = Assert.Single(_requests.Items);
         Assert.Equal(TestData.PatientId, entity.PatientId);
         Assert.Null(entity.ProfessionalId);
-        // Sin profesional elegido → no hay destinatario → sin alerta.
+        // Sin profesional elegido → no hay destinatario → sin alerta ni notificación.
         Assert.Empty(_alerts.Items);
+        Assert.Empty(_notifier.Sent);
     }
 
     [Fact]
@@ -81,6 +85,37 @@ public class CreateRequestHandlerTests
         var alert = Assert.Single(_alerts.Items);
         Assert.Equal(AlertType.NewRequest, alert.Type);
         Assert.Equal(TestData.UserId, alert.RecipientUserId);
+    }
+
+    [Fact]
+    public async Task Handle_ConProfesional_EnviaPushDeNuevaSolicitud()
+    {
+        _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(
+            userId: TestData.UserId
+        );
+
+        var command = new CreateTelemedicineRequestCommand(
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            TestData.ProfessionalId,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true
+        );
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        var notification = Assert.Single(_notifier.Sent);
+        Assert.Equal(TestData.UserId, notification.UserId);
+        Assert.Equal("Nueva solicitud de María Gómez", notification.Title);
+        Assert.Equal(
+            new[] { TelemedicineNotificationChannel.Push },
+            notification.Channels
+        );
     }
 
     [Fact]

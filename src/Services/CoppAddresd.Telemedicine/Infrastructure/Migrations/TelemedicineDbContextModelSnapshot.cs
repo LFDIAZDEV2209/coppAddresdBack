@@ -378,6 +378,37 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.ToTable("clinical_encounters", "tele");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.NotificationDispatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notification_dispatch");
+
+                    b.HasIndex("AppointmentId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ix_notification_dispatch_appointment_id_kind");
+
+                    b.ToTable("notification_dispatch", "tele");
+                });
+
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ProfessionalDailyStat", b =>
                 {
                     b.Property<Guid>("ProfessionalId")
@@ -712,9 +743,21 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("min_advance_booking_hours");
 
+                    b.Property<bool>("NotificationsEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("notifications_enabled");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid")
                         .HasColumnName("organization_id");
+
+                    b.Property<int>("ReminderFirstHoursBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("reminder_first_hours_before");
+
+                    b.Property<int>("ReminderSecondHoursBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("reminder_second_hours_before");
 
                     b.Property<int>("RoomCloseAfterMinutes")
                         .HasColumnType("integer")
@@ -723,6 +766,10 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.Property<int>("RoomOpenBeforeMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("room_open_before_minutes");
+
+                    b.Property<int>("SmsReminderHoursBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("sms_reminder_hours_before");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")

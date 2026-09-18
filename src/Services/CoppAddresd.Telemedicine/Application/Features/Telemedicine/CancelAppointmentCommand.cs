@@ -5,6 +5,7 @@ using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
@@ -44,7 +45,9 @@ public sealed class CancelAppointmentCommandHandler(
     IAppointmentRepository appointments,
     IAppointmentReferenceDataService referenceData,
     IAlertRepository alerts,
-    ITelemedicineMetricsQueue? metricsQueue = null
+    ITelemedicineMetricsQueue? metricsQueue = null,
+    ITelemedicineNotifier? notifier = null,
+    ILogger<CancelAppointmentCommandHandler>? logger = null
 ) : IRequestHandler<CancelAppointmentCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(CancelAppointmentCommand request, CancellationToken ct)
@@ -146,6 +149,28 @@ public sealed class CancelAppointmentCommandHandler(
         )
         {
             await alerts.AddRangeAsync([alert], ct);
+        }
+
+        // F2: push a la OTRA parte (best-effort): si canceló el profesional, al
+        // paciente; si canceló el paciente, al profesional. Admin/System actúan
+        // sobre la cita del paciente → se notifica al paciente.
+        var recipientUserId =
+            cancelledBy == CancelledBy.Patient ? professional?.UserId : patient?.UserId;
+        if (recipientUserId is { } notifyUserId)
+        {
+            await NotificationSupport.TrySendAsync(
+                notifier,
+                logger,
+                new TelemedicineNotification(
+                    notifyUserId,
+                    "Cita cancelada",
+                    $"La cita del {entity.ScheduledStart:g} fue cancelada: {request.Reason}",
+                    [TelemedicineNotificationChannel.Push],
+                    NotificationSupport.Data(appointmentId: entity.Id, screen: "room"),
+                    $"appointment:{entity.Id:N}:cancelled"
+                ),
+                ct
+            );
         }
 
         var specialty = await referenceData.GetSpecialtyAsync(entity.SpecialtyId, ct);

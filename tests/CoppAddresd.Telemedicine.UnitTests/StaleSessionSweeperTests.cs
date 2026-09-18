@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
+using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
@@ -10,7 +11,8 @@ namespace CoppAddresd.Telemedicine.UnitTests;
 /// Barrido de citas vencidas: cierra citas InProgress vencidas como NoShow (el
 /// paciente nunca ingresó) o Completed (ingresó), y citas Confirmed que nunca
 /// iniciaron sesión como NoShow. Completa la sala del proveedor best-effort y
-/// respeta la gracia de la ventana de sala.
+/// respeta la gracia de la ventana de sala. F2: en el camino NoShow notifica al
+/// paciente (push + SMS) best-effort.
 /// </summary>
 public class StaleSessionSweeperTests
 {
@@ -18,6 +20,8 @@ public class StaleSessionSweeperTests
     private readonly FakeRoomRepository _rooms = new();
     private readonly FakeSettingsProvider _settings = new();
     private readonly FakeVideoProvider _video = new();
+    private readonly FakeReferenceDataService _referenceData = new();
+    private readonly FakeTelemedicineNotifier _notifier = new();
 
     private StaleSessionSweeper CreateSweeper() =>
         new(
@@ -25,6 +29,8 @@ public class StaleSessionSweeperTests
             _rooms,
             _settings,
             _video,
+            _referenceData,
+            _notifier,
             NullLogger<StaleSessionSweeper>.Instance
         );
 
@@ -193,5 +199,48 @@ public class StaleSessionSweeperTests
 
         Assert.Equal(0, closed);
         Assert.Equal(AppointmentStatus.Confirmed, appointment.Status);
+    }
+
+    [Fact]
+    public async Task Sweep_NoShow_NotificaAlPacientePushYSms()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _referenceData.Patients[TestData.PatientId] = TestData.Patient(
+            userId: TestData.PatientUserId
+        );
+        var appointment = TestData.Appointment(
+            status: AppointmentStatus.Confirmed,
+            start: now.AddHours(-2)
+        );
+        _appointments.Items.Add(appointment);
+
+        var closed = await CreateSweeper().SweepAsync(now);
+
+        Assert.Equal(1, closed);
+        var notification = Assert.Single(_notifier.Sent);
+        Assert.Equal(TestData.PatientUserId, notification.UserId);
+        Assert.Equal(
+            [TelemedicineNotificationChannel.Push, TelemedicineNotificationChannel.Sms],
+            notification.Channels
+        );
+    }
+
+    [Fact]
+    public async Task Sweep_NoShowConNotificacionesDeshabilitadas_NoNotifica()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _settings.Settings.NotificationsEnabled = false;
+        _referenceData.Patients[TestData.PatientId] = TestData.Patient(
+            userId: TestData.PatientUserId
+        );
+        var appointment = TestData.Appointment(
+            status: AppointmentStatus.Confirmed,
+            start: now.AddHours(-2)
+        );
+        _appointments.Items.Add(appointment);
+
+        await CreateSweeper().SweepAsync(now);
+
+        Assert.Empty(_notifier.Sent);
     }
 }

@@ -20,6 +20,8 @@ public sealed class StaleSessionSweeper(
     IRoomRepository rooms,
     ITelemedicineSettingsProvider settingsProvider,
     IVideoProvider videoProvider,
+    IAppointmentReferenceDataService referenceData,
+    ITelemedicineNotifier notifier,
     ILogger<StaleSessionSweeper> logger)
 {
     /// <summary>Cierra las citas vencidas y devuelve cuántas cerró.</summary>
@@ -87,6 +89,12 @@ public sealed class StaleSessionSweeper(
             appointment.UpdatedAt = now.UtcDateTime;
             await appointments.UpdateAsync(appointment, ct);
 
+            // F2: aviso informativo al paciente que no ingresó (push + SMS).
+            if (appointment.Status == AppointmentStatus.NoShow)
+            {
+                await NotifyNoShowAsync(appointment, settings, ct);
+            }
+
             logger.LogInformation(
                 "Barrido: cita {AppointmentId} cerrada como {Status} (fin programado {ScheduledEnd:u}).",
                 appointment.Id,
@@ -153,6 +161,9 @@ public sealed class StaleSessionSweeper(
             appointment.UpdatedAt = now.UtcDateTime;
             await appointments.UpdateAsync(appointment, ct);
 
+            // F2: aviso informativo al paciente que no ingresó (push + SMS).
+            await NotifyNoShowAsync(appointment, settings, ct);
+
             logger.LogInformation(
                 "Barrido: cita {AppointmentId} nunca iniciada cerrada como NoShow (fin programado {ScheduledEnd:u}).",
                 appointment.Id,
@@ -162,6 +173,56 @@ public sealed class StaleSessionSweeper(
         }
 
         return closed;
+    }
+
+    /// <summary>
+    /// Avisa al paciente que no asistió a su cita (F2), best-effort: un fallo
+    /// del backend de notificaciones nunca revierte ni detiene el cierre por
+    /// NoShow. Se omite si las notificaciones están deshabilitadas o el paciente
+    /// no tiene usuario de Auth.
+    /// </summary>
+    private async Task NotifyNoShowAsync(
+        Appointment appointment,
+        TelemedicineSettings settings,
+        CancellationToken ct)
+    {
+        if (!settings.NotificationsEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            var patient = await referenceData.GetPatientAsync(appointment.PatientId, ct);
+            if (patient?.UserId is not { } patientUserId)
+            {
+                logger.LogDebug(
+                    "Paciente {PatientId} sin usuario de Auth: se omite la notificación de NoShow.",
+                    appointment.PatientId
+                );
+                return;
+            }
+
+            await notifier.SendAsync(
+                new TelemedicineNotification(
+                    patientUserId,
+                    "No asististe a tu cita",
+                    $"No registramos tu ingreso a la cita de telemedicina del {appointment.ScheduledStart:g}. Puedes agendar una nueva cita.",
+                    [TelemedicineNotificationChannel.Push, TelemedicineNotificationChannel.Sms],
+                    NotificationSupport.Data(appointmentId: appointment.Id, screen: "room"),
+                    $"appointment:{appointment.Id:N}:noshow"
+                ),
+                ct
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "Barrido: no se pudo notificar el NoShow de la cita {AppointmentId}.",
+                appointment.Id
+            );
+        }
     }
 
     private async Task CompleteProviderRoomAsync(VirtualRoom room, CancellationToken ct)
