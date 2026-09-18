@@ -88,13 +88,26 @@ internal static class SessionSupport
     /// <summary>
     /// Ventana de acceso a la sala, desde la configuración efectiva de la
     /// organización/clínica: abre <c>RoomOpenBeforeMinutes</c> antes del inicio y
-    /// cierra <c>RoomCloseAfterMinutes</c> después del fin de la cita.
+    /// cierra <c>RoomCloseAfterMinutes</c> después del fin de la cita. Si la cita
+    /// fue reabierta, el ciclo nuevo corre desde <c>ReopenedAt</c> y el cierre
+    /// usa el mayor de los fines (programado o reapertura + duración).
     /// </summary>
     public static (DateTimeOffset Open, DateTimeOffset Close) Window(
         Appointment appointment,
         TelemedicineSettings settings)
-        => (appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
+    {
+        if (appointment.ReopenedAt is { } reopenedAt)
+        {
+            var reopenedEnd = reopenedAt.AddMinutes(appointment.DurationMinutes);
+            var end = reopenedEnd > appointment.ScheduledEnd ? reopenedEnd : appointment.ScheduledEnd;
+
+            return (reopenedAt.AddMinutes(-settings.RoomOpenBeforeMinutes),
+                end.AddMinutes(settings.RoomCloseAfterMinutes));
+        }
+
+        return (appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
             appointment.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes));
+    }
 
     /// <summary>La cita debe estar en un estado que admita sala/sesión (confirmada o en curso).</summary>
     public static void EnsureCanStartOrJoin(AppointmentStatus status)
@@ -130,6 +143,16 @@ internal static class SessionSupport
     /// <summary>Nombre determinista de la sala en el proveedor (base de la idempotencia).</summary>
     public static string ProviderRoomName(Guid appointmentId)
         => $"apt-{appointmentId:N}";
+
+    /// <summary>
+    /// Nombre de la sala del ciclo actual: la cita original usa el nombre base y
+    /// cada reapertura un sufijo propio (el proveedor no permite reusar salas
+    /// completadas).
+    /// </summary>
+    public static string ProviderRoomName(Guid appointmentId, int reopenCount)
+        => reopenCount <= 0
+            ? ProviderRoomName(appointmentId)
+            : $"apt-{appointmentId:N}-r{reopenCount}";
 
     /// <summary>
     /// Cierra la sesión activa más reciente de la sala (si existe): la marca

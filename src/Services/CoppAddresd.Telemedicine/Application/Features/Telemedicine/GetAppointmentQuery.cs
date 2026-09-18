@@ -33,6 +33,7 @@ public sealed class GetAppointmentQueryHandler(
         {
             RoomOpensAt = entity.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
             RoomClosesAt = entity.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes),
+            CompletedAt = entity.CompletedAt,
         };
     }
 }

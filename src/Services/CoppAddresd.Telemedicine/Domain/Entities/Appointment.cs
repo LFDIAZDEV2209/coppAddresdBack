@@ -50,6 +50,15 @@ public sealed class Appointment
 
     public DateTimeOffset? CancelledAt { get; set; }
 
+    /// <summary>Instante de finalización; ancla la gracia de reapertura (60 min).</summary>
+    public DateTimeOffset? CompletedAt { get; set; }
+
+    /// <summary>Instante de la última reapertura: extiende la ventana de sala y arranca un ciclo nuevo.</summary>
+    public DateTimeOffset? ReopenedAt { get; set; }
+
+    /// <summary>Cantidad de reaperturas aplicadas (nombra la sala nueva del proveedor).</summary>
+    public int ReopenCount { get; set; }
+
     public string? NoShowReason { get; set; }
 
     /// <summary>Token de concurrencia optimista (xmin de PostgreSQL).</summary>

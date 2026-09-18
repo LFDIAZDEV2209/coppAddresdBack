@@ -134,7 +134,7 @@ La autorización de los 4 primeros se resuelve en el handler a partir del JWT: e
 
 ### Reglas de negocio
 
-- **Ventana de acceso**: abre `RoomOpenBeforeMinutes` (default 10) antes del inicio y cierra `RoomCloseAfterMinutes` (default 15) después del fin (settings por org/clínica). `join-token`/`session/start` fuera de la ventana → 409.
+- **Ventana de acceso**: abre `RoomOpenBeforeMinutes` (default 10) antes del inicio y cierra `RoomCloseAfterMinutes` (default 15) después del fin (settings por org/clínica); una cita reabierta extiende la ventana desde `reopened_at` (ver reapertura). `join-token`/`session/start` fuera de la ventana → 409.
 - **Sala lazy e idempotente**: se crea en el primer `join-token`/`start` dentro de la ventana. Nombre determinista `apt-{appointmentId}` → idempotencia por índice único `(provider, provider_room_name)` + `UniqueName` de Twilio (una carrera entre dos join-token devuelve la misma sala).
 - **Sesión**: una activa a la vez por cita (`start` doble → 409, protegido además por el token de concurrencia xmin de la cita). `end` es idempotente: sin sesión activa → no-op 200.
 - **Webhooks**: firma `X-Twilio-Signature` validada (deshabilitada en dev, `Twilio:ValidateWebhookSignature`). Clave de idempotencia `(event_type, room_sid, participant_sid)` en `tele.telemedicine_webhook_events` (índice único): los duplicados concurrentes se serializan y el perdedor recibe `Duplicate` con rollback de sus mutaciones. El procesamiento es atómico (reserva de la clave + mutaciones en una transacción).
@@ -143,6 +143,7 @@ La autorización de los 4 primeros se resuelve en el handler a partir del JWT: e
 - **Barrido de citas vencidas**: `StaleSessionSweepHostedService` (cada 5 min, delay inicial 1 min) cierra citas vencidas más la gracia de `RoomCloseAfterMinutes` efectiva (settings por org/clínica): `InProgress` → `NoShow` si el paciente nunca ingresó (`patient_joined_at` null), `Completed` si ingresó; `Confirmed` sin sesión iniciada → `NoShow`. La sala del proveedor se completa best-effort y la sesión activa se cierra con `end_reason = stale-sweep`.
 - **Ventana en el detalle**: `GET /appointments/{id}` incluye `RoomOpensAt`/`RoomClosesAt` calculados con los settings efectivos (las listas los omiten) — la UI decide el estado de la sala sin esperar la creación lazy.
 - **Completar la sala en Twilio es best-effort** en `session/end`: si Twilio no responde, la sesión/cita se finalizan igual (la sala termina sola o vía webhook).
+- **Reapertura (gracia de 60 minutos)**: `POST /api/v1/appointments/{id}/session/reopen` reabre una cita `Completed` dentro de los 60 minutos posteriores a `completed_at`, por el profesional asignado o un supervisor con `Appointments.SessionsManage` (pacientes: sin acceso). Efectos: la cita vuelve a `InProgress` (`reopened_at`, `reopen_count++`), se crea una sala nueva en el proveedor `apt-{id}-r{n}` (completar una sala Twilio es irreversible) y la ventana efectiva abre `reopened_at − RoomOpenBeforeMinutes` y cierra `max(ScheduledEnd, reopened_at + duración) + RoomCloseAfterMinutes`; el barrido de citas vencidas usa esa misma ventana. Un encuentro clínico completado sigue inmutable.
 
 ### Identidad (backend)
 

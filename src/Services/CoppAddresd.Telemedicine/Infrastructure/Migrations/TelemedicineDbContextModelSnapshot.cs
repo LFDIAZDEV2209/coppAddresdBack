@@ -48,6 +48,10 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("clinic_id");
 
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -80,6 +84,14 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.Property<Guid>("ProfessionalId")
                         .HasColumnType("uuid")
                         .HasColumnName("professional_id");
+
+                    b.Property<int>("ReopenCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("reopen_count");
+
+                    b.Property<DateTimeOffset?>("ReopenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reopened_at");
 
                     b.Property<Guid?>("RequestId")
                         .HasColumnType("uuid")
