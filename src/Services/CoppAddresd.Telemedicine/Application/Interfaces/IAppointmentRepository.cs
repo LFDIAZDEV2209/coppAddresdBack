@@ -204,4 +204,17 @@ public interface IAppointmentRepository
         DateTimeOffset before,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Citas en <paramref name="status"/> cuyo inicio cae en <c>[from, to)</c>,
+    /// ordenadas por inicio (lectura sin tracking). Base del barrido de
+    /// recordatorios: las ventanas efectivas por organización/clínica se
+    /// aplican sobre las candidatas en el barrido.
+    /// </summary>
+    Task<IReadOnlyList<Appointment>> ListByStatusStartingBetweenAsync(
+        AppointmentStatus status,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    );
 }

@@ -17,7 +17,7 @@ Fases implementadas:
 - **Fase 11 — Testing formal**: proyectos `tests/CoppAddresd.Telemedicine.UnitTests` (134 tests: reglas puras de agendamiento/sala/encuentro, materializador de alertas, guard de referencias, mappers, validadores y handlers con fakes en memoria) e `tests/CoppAddresd.Telemedicine.IntegrationTests` (25 tests contra PostgreSQL real en BD aislada `coppaddresd_tele_test_*` — creada, migrada y eliminada por corrida vía `COP_TEST_DB_CONNECTION`): anti doble reserva concurrente (exclusión GiST + índice único parcial), idempotencia del webhook (clave única + rollback), persistencia del agregado, idempotencia de sala/encuentro y fallback de settings.
 - **Fase 12 — Hardening**: auditoría clínica del encuentro — `tele.clinical_encounters` adjunta el trigger `audit.audit_trigger_function` vía migración condicional (`AttachClinicalEncounterAudit`, 4ª migración de `tele.`), y el actor del JWT + correlation id se propagan a los GUC `audit.*` por `AuditTriggerInterceptor`/`HttpAuditActorContext` (el guardado del encuentro usa transacción explícita corta para que el interceptor dispare). Bugs reales corregidos (descubiertos en el E2E de la fase): idempotencia del proveedor ante "Room exists" de Twilio (409/20429 → recupera la sala existente) y tracking `Added` de sesiones nuevas en el agregado (el fixup de EF las marcaba `Modified` → 409 de concurrencia al iniciar sesión tras un join previo). Detalle en la sección Fase 11-12.
 
-Pendiente: integración con el SDK de video del navegador (Twilio) en la sala virtual (el `join-token` ya se genera y se muestra); alertas al PACIENTE (requieren `PatientRefDto.UserId` + app móvil); alerta `UpcomingAppointment` (scheduler); `room-ended` sin sesión → NoShow (decisión de negocio aparte); exponer el filtro `clinicId` en la UI admin (el backend ya lo acepta); propagación de actor en el BACKEND (su `HttpAuditActorContext` sigue devolviendo System; el microservicio ya la tiene resuelta vía JWT).
+Pendiente: integración con el SDK de video del navegador (Twilio) en la sala virtual (el `join-token` ya se genera y se muestra); alerta `UpcomingAppointment` en la bandeja (los recordatorios push/SMS de F2 ya se disparan por scheduler); `room-ended` sin sesión → NoShow (decisión de negocio aparte); exponer el filtro `clinicId` en la UI admin (el backend ya lo acepta); propagación de actor en el BACKEND (su `HttpAuditActorContext` sigue devolviendo System; el microservicio ya la tiene resuelta vía JWT).
 
 ## Arquitectura
 
@@ -47,6 +47,7 @@ Controllers → MediatR (Application) → Domain
 | `telemedicine_sessions`     | Sesión de video (estado independiente de la cita y de la sala)                                                                                                                                                                                                                                                                        |
 | `clinical_encounters`       | Encuentro clínico, `clinical_data` jsonb extensible                                                                                                                                                                                                                                                                                   |
 | `telemedicine_alerts`       | Bandeja (eventos de dominio materializados; canal de entrega desacoplado)                                                                                                                                                                                                                                                             |
+| `notification_dispatch`     | Despachos de notificación F2: dedupe por `(appointment_id, kind)` (único) — un recordatorio nunca se envía dos veces                                                                                                                                                                                                                  |
 | `telemedicine_settings`     | Reglas parametrizadas por organización/clínica                                                                                                                                                                                                                                                                                        |
 
 **Estados separados a propósito**: cita ≠ sesión ≠ sala (máquinas de estado independientes).
@@ -510,6 +511,82 @@ exactos), una solicitud Converted → una sola cita (`request_id` único).
 - Auditoría SOLO del encuentro clínico en esta fase (PHI); extender a cita/sesión
   si el dominio lo exige (mismo mecanismo).
 - El actor del BACKEND sigue sin propagarse (pendiente transversal del proyecto).
+
+## F2 — Recordatorios y notificaciones (schedule + entrega desacoplada)
+
+F2 separa responsabilidades: **Telemedicina es dueña de la agenda y de los
+eventos** (decide a quién, qué y cuándo notificar); **el backend es dueño de la
+entrega** (push/SMS). Contrato interno (mismo `Backend:BaseUrl` +
+`X-Internal-Key` que los datos de referencia):
+
+```text
+POST {Backend:BaseUrl}/api/v1/internal/telemedicine/notifications
+{ "userId", "title", "body", "channels": ["Push","Sms"],
+  "data": { "appointmentId", "screen" }, "dedupeKey" }
+→ 200 con estado por canal
+```
+
+El emisor es `ITelemedicineNotifier` (HttpClient resiliente, `TelemedicineNotifier`,
+misma config `Backend` que `AppointmentReferenceDataService`). Es **best-effort**:
+un fallo/timeout se registra y nunca rompe el flujo de negocio (patrón de las
+alertas del webhook).
+
+### Recordatorios (scheduler)
+
+`AppointmentReminderSweepHostedService` (cada **10 min**, delay inicial **1 min**,
+patrón `StaleSessionSweepHostedService`) ejecuta `AppointmentReminderSweeper`
+sobre las citas `Confirmed` de las próximas 24 h:
+
+| Banda (settings)                                              | Destinatario | Canales                                              | Kind                     |
+| ------------------------------------------------------------- | ------------ | ---------------------------------------------------- | ------------------------ |
+| `(ReminderSecondHoursBefore, ReminderFirstHoursBefore]` (24 h) | Paciente     | Push                                                 | `Reminder24h`            |
+| `(0, ReminderSecondHoursBefore]` (1 h)                        | Paciente     | Push + SMS (`≤ SmsReminderHoursBefore`)              | `Reminder1h`             |
+| `(0, ReminderSecondHoursBefore]` (1 h)                        | Profesional  | Push                                                 | `ProfessionalReminder1h` |
+
+- Solo se envía mientras la cita siga `Confirmed` (revalidación inmediata al
+  envío): `Cancelled/Completed/NoShow` se omiten y `InProgress` no recibe
+  recordatorios. Una cita que ya entró a la banda corta no recibe además el
+  aviso de 24 h.
+- **Dedupe en `tele.notification_dispatch`** (`appointment_id`, `kind`,
+  `sent_at`; único `(appointment_id, kind)`): si el backend acepta el envío se
+  registra la fila; si lo rechaza NO se registra y el tick siguiente reintenta.
+  La carrera entre réplicas la resuelve el índice único (el perdedor no reenvía).
+- Sin usuario de Auth del destinatario (`PatientRefDto.UserId` /
+  `ProfessionalRefDto.UserId`) se omite el envío (log Debug). La referencia de
+  paciente expone `userId` cuando el backend lo provee (trabajo paralelo del
+  dueño de delivery).
+
+### Hooks de eventos (best-effort)
+
+| Evento                                        | Destinatario                                                                  | Mensaje                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
+| `CreateTelemedicineRequestCommand`            | Profesional elegido                                                           | "Nueva solicitud de {paciente}" (push) |
+| `CancelAppointmentCommand`                    | Profesional cancela → paciente; paciente cancela → profesional; admin/sistema → paciente | "Cita cancelada" + motivo (push) |
+| `StaleSessionSweeper` (cierre por `NoShow`)   | Paciente                                                                      | "No asististe a tu cita…" (push + SMS) |
+
+### Settings (`tele.telemedicine_settings`)
+
+| Columna                        | Default | Efecto                                                        |
+| ------------------------------ | ------- | ------------------------------------------------------------- |
+| `NotificationsEnabled`         | `true`  | Interruptor maestro de notificaciones (barridos y hooks)      |
+| `ReminderFirstHoursBefore`     | `24`    | Anticipación del primer recordatorio (paciente, push); 0 = off |
+| `ReminderSecondHoursBefore`    | `1`     | Anticipación del segundo recordatorio (paciente push+SMS y profesional push); 0 = off |
+| `SmsReminderHoursBefore`       | `1`     | Ventana en la que el recordatorio del paciente incluye SMS     |
+
+### Datos
+
+Migración `AddTelemedicineNotifications`: columnas de settings (defaults BD
+`true`/`24`/`1`/`1` para que las filas existentes queden con recordatorios
+activos) + tabla `tele.notification_dispatch` con índice único
+`(appointment_id, kind)`.
+
+### Tests (F2)
+
+18 tests nuevos en `CoppAddresd.Telemedicine.UnitTests` (notificador fake +
+contrato HTTP del emisor): recordatorios por ventana/canal con dedupe,
+revalidación de estado, settings deshabilitados, reintento con backend caído,
+shape del contrato de entrega, hooks de solicitud/cancelación/no-show y elección
+de destinatario según quién cancela. Total de la suite: **224**.
 
 ## Comandos
 

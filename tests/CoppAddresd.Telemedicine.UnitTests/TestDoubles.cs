@@ -42,8 +42,8 @@ public static class TestData
             [Clinic]
         );
 
-    public static PatientRefDto Patient(Guid? id = null, string? stateCode = null) =>
-        new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId, stateCode);
+    public static PatientRefDto Patient(Guid? id = null, string? stateCode = null, Guid? userId = null) =>
+        new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId, stateCode, userId);
 
     public static SpecialtyRefDto Specialty(Guid? id = null) =>
         new(id ?? SpecialtyId, "MED-GEN", "Medicina General", "General");
@@ -525,6 +525,21 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .OrderBy(a => a.ScheduledEnd)
                 .ToList()
         );
+
+    public Task<IReadOnlyList<Appointment>> ListByStatusStartingBetweenAsync(
+        AppointmentStatus status,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<Appointment>>(
+            Items
+                .Where(a =>
+                    a.Status == status && a.ScheduledStart >= from && a.ScheduledStart < to
+                )
+                .OrderBy(a => a.ScheduledStart)
+                .ToList()
+        );
 }
 
 /// <summary>Repositorio de solicitudes en memoria.</summary>
@@ -847,6 +862,50 @@ public sealed class FakeAlertRepository : IAlertRepository
         foreach (var a in targets)
             a.ReadAt = DateTimeOffset.UtcNow;
         return Task.FromResult(targets.Count);
+    }
+}
+
+/// <summary>
+/// Notificador de prueba: registra los envíos en memoria. Configurable para
+/// simular el backend caído (<see cref="Accepted"/> = false).
+/// </summary>
+public sealed class FakeTelemedicineNotifier : ITelemedicineNotifier
+{
+    public List<TelemedicineNotification> Sent { get; } = [];
+
+    /// <summary>Respuesta del backend simulado (true = 2xx aceptado).</summary>
+    public bool Accepted { get; set; } = true;
+
+    public Task<bool> SendAsync(
+        TelemedicineNotification notification,
+        CancellationToken ct = default
+    )
+    {
+        Sent.Add(notification);
+        return Task.FromResult(Accepted);
+    }
+}
+
+/// <summary>Repositorio de despachos en memoria (dedupe por cita + tipo).</summary>
+public sealed class FakeNotificationDispatchRepository : INotificationDispatchRepository
+{
+    public List<NotificationDispatch> Items { get; } = [];
+
+    public Task<bool> ExistsAsync(
+        Guid appointmentId,
+        NotificationDispatchKind kind,
+        CancellationToken ct = default
+    ) => Task.FromResult(Items.Any(d => d.AppointmentId == appointmentId && d.Kind == kind));
+
+    public Task<bool> TryAddAsync(NotificationDispatch dispatch, CancellationToken ct = default)
+    {
+        if (Items.Any(d => d.AppointmentId == dispatch.AppointmentId && d.Kind == dispatch.Kind))
+        {
+            return Task.FromResult(false);
+        }
+
+        Items.Add(dispatch);
+        return Task.FromResult(true);
     }
 }
 

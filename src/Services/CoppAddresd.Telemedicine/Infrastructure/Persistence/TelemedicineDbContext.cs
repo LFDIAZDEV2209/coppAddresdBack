@@ -25,6 +25,9 @@ public sealed class TelemedicineDbContext(DbContextOptions<TelemedicineDbContext
     public DbSet<AppointmentDailyMetric> AppointmentDailyMetrics => Set<AppointmentDailyMetric>();
     public DbSet<ProfessionalDailyStat> ProfessionalDailyStats => Set<ProfessionalDailyStat>();
 
+    /// <summary>Despachos de notificación por cita (deduplicación F2).</summary>
+    public DbSet<NotificationDispatch> NotificationDispatches => Set<NotificationDispatch>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Todo el modelo de este servicio vive en el schema tele.

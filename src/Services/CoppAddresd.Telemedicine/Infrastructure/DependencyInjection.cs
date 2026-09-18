@@ -5,6 +5,7 @@ using CoppAddresd.Telemedicine.Infrastructure.Cache;
 using CoppAddresd.Telemedicine.Infrastructure.Configuration;
 using CoppAddresd.Telemedicine.Infrastructure.Extensions;
 using CoppAddresd.Telemedicine.Infrastructure.Metrics;
+using CoppAddresd.Telemedicine.Infrastructure.Notifications;
 using CoppAddresd.Telemedicine.Infrastructure.Persistence;
 using CoppAddresd.Telemedicine.Infrastructure.Repositories;
 using CoppAddresd.Telemedicine.Infrastructure.Security;
@@ -71,6 +72,7 @@ public static class DependencyInjection
         services.AddScoped<IEncounterRepository, EncounterRepository>();
         services.AddScoped<IAlertRepository, AlertRepository>();
         services.AddScoped<ITelemedicineUnitOfWork, TelemedicineUnitOfWork>();
+        services.AddScoped<INotificationDispatchRepository, NotificationDispatchRepository>();
 
         // Métricas analíticas pre-agregadas en segundo plano (Fase 1 Pre-agregación CQRS)
         services.AddSingleton<ITelemedicineMetricsQueue, TelemedicineMetricsQueue>();
@@ -81,6 +83,11 @@ public static class DependencyInjection
         services.AddScoped<StaleSessionSweeper>();
         services.AddHostedService<StaleSessionSweepHostedService>();
 
+        // F2: barrido de recordatorios de citas confirmadas (push/SMS vía backend)
+        // con deduplicación en tele.notification_dispatch.
+        services.AddScoped<AppointmentReminderSweeper>();
+        services.AddHostedService<AppointmentReminderSweepHostedService>();
+
         // Backfill/reparación de las métricas pre-agregadas (operación admin).
         services.AddScoped<IMetricsBackfillService, MetricsBackfillService>();
 
@@ -89,6 +96,8 @@ public static class DependencyInjection
         );
 
         AddBackendReferenceDataClient(services, configuration);
+
+        AddBackendNotifierClient(services, configuration);
 
         AddAuthScopedAuthorizationClient(services, configuration);
 
@@ -226,6 +235,33 @@ public static class DependencyInjection
 
         services
             .AddHttpClient<IAppointmentReferenceDataService, AppointmentReferenceDataService>(
+                (sp, client) =>
+                {
+                    var settings = sp.GetRequiredService<IOptions<BackendServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(settings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
+                }
+            )
+            .AddResiliencePolicy();
+    }
+
+    /// <summary>
+    /// Cliente de entrega de notificaciones hacia el backend del ERP (F2,
+    /// <c>Backend:BaseUrl</c> + header <c>X-Internal-Key</c>, misma configuración
+    /// que los datos de referencia), con resiliencia estándar del proyecto.
+    /// </summary>
+    private static void AddBackendNotifierClient(
+        IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        services.Configure<BackendServiceSettings>(
+            configuration.GetSection(BackendServiceSettings.SectionName)
+        );
+
+        services
+            .AddHttpClient<ITelemedicineNotifier, TelemedicineNotifier>(
                 (sp, client) =>
                 {
                     var settings = sp.GetRequiredService<IOptions<BackendServiceSettings>>().Value;
