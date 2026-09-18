@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
+using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using MediatR;
 
@@ -8,7 +9,8 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// Detalle del encuentro clínico de una cita (espacio clínico de la consulta).
 /// Acceso restringido al profesional de la cita (identidad) o a un supervisor
 /// (<c>Telemedicine.SessionsManage</c>); el paciente NO accede a datos clínicos.
-/// 404 si la cita no existe o si aún no se creó el encuentro (creación perezosa).
+/// 404 solo si la cita no existe; si el encuentro aún no se creó (creación
+/// perezosa) se devuelve un borrador vacío para que la UI no reciba 404.
 /// </summary>
 public sealed record GetClinicalEncounterQuery(
     Guid AppointmentId,
@@ -31,9 +33,24 @@ public sealed class GetClinicalEncounterQueryHandler(
         await SessionSupport.RequireSessionOwnerAsync(
             referenceData, appointment, request.UserId, request.HasManagePermission, ct);
 
-        var encounter = await encounters.GetByAppointmentIdAsync(request.AppointmentId, ct)
-            ?? throw new NotFoundException(
-                "Registro clínico de la cita", request.AppointmentId);
+        var encounter = await encounters.GetByAppointmentIdAsync(request.AppointmentId, ct);
+        if (encounter is null)
+        {
+            // Creación perezosa: sin fila persistida devolvemos un borrador
+            // vacío (Id vacío) en vez de 404; el primer guardado lo crea real.
+            return new ClinicalEncounterDto(
+                Guid.Empty,
+                appointment.Id,
+                SessionId: null,
+                appointment.PatientId,
+                appointment.ProfessionalId,
+                appointment.ScheduledStart,
+                EncounterStatus.Draft,
+                ClinicalData: null,
+                Notes: null,
+                appointment.CreatedAt,
+                UpdatedAt: null);
+        }
 
         return new ClinicalEncounterDto(
             encounter.Id,
