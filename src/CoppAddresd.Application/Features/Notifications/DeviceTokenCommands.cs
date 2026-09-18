@@ -50,8 +50,9 @@ public sealed class RegisterDeviceTokenCommandHandler(
     }
 
     /// <summary>
-    /// Normaliza la plataforma a la convención del dominio ("android" | "ios").
-    /// Valores desconocidos se conservan en minúsculas (el envío FCM los
+    /// Normaliza la plataforma a la convención del dominio
+    /// ("android" | "ios" | "web"); "web" cubre los tokens FCM de clientes web
+    /// (ERP). Valores desconocidos se conservan en minúsculas (el envío FCM los
     /// interpreta en el futuro); se evita null/whitespace.
     /// </summary>
     private static string NormalizePlatform(string platform)

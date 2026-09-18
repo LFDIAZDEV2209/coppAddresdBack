@@ -66,12 +66,13 @@ public class NotificationsController(IMediator mediator) : ControllerBase
     /// <summary>
     /// Envía una notificación push (FCM) a todos los dispositivos del usuario
     /// indicado y coordina la inyección del mensaje en su chat (best-effort,
-    /// sin LLM). Lo invoca el ERP (admin): el userId destino viene en el body,
-    /// no del JWT. Con FCM no configurado (Enabled=false) responde 200 con
-    /// sentCount=0/disabledCount>0, sin romper el flujo.
+    /// sin LLM). El userId destino viene en el body, no del JWT: queda
+    /// protegido por el <c>[Authorize]</c> del controlador (F2 — antes era
+    /// <c>[AllowAnonymous]</c> y permitía push anónimos). Con FCM no
+    /// configurado (Enabled=false) responde 200 con sentCount=0/disabledCount>0,
+    /// sin romper el flujo.
     /// </summary>
     [HttpPost("send")]
-    [AllowAnonymous]
     [ProducesResponseType(typeof(SendPushNotificationResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -28,7 +28,12 @@ public sealed record AppointmentPatientRefDto(
     string? Email,
     Guid? ClinicId,
     Guid? LocationId,
-    string? StateCode
+    string? StateCode,
+    /// <summary>
+    /// Usuario de Auth del paciente (destinatario de notificaciones). Null =
+    /// paciente sin cuenta (no notificable); el emisor omite el envío.
+    /// </summary>
+    Guid? UserId = null
 );
 
 public sealed record AppointmentSpecialtyRefDto(Guid Id, string Code, string Name, string Category);
@@ -116,7 +121,8 @@ public sealed class GetAppointmentPatientRefQueryHandler(IPatientRepository pati
             patient.Email,
             patient.ClinicId,
             patient.LocationId,
-            patient.State?.Code
+            patient.State?.Code,
+            patient.UserId
         );
     }
 }
@@ -222,7 +228,8 @@ public sealed class GetAppointmentPatientByUserIdQueryHandler(IPatientRepository
             patient.Email,
             patient.ClinicId,
             patient.LocationId,
-            patient.State?.Code
+            patient.State?.Code,
+            patient.UserId
         );
     }
 }
