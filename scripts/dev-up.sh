@@ -9,6 +9,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOGS="$ROOT/scripts/logs"
 mkdir -p "$LOGS"
 
+# El SDK de .NET 10 en Arch Linux no incluye el directorio PrunePackageData de
+# Microsoft.AspNetCore.App: sin este flag el build falla con NETSDK1226
+# ("package prune data not found"). El flag solo relaja esa validación, así que
+# es inofensivo donde el directorio sí existe.
+export AllowMissingPrunePackageData=true
+
 WATCH=0
 [[ "${1:-}" == "--watch" ]] && WATCH=1
 
