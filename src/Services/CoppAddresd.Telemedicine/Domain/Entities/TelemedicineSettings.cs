@@ -28,7 +28,7 @@ public sealed class TelemedicineSettings
     /// <summary>Minutos antes del inicio en que la sala acepta participantes.</summary>
     public int RoomOpenBeforeMinutes { get; set; } = 10;
 
-    /// <summary>Minutos después del inicio en que la sala deja de aceptar participantes.</summary>
+    /// <summary>Minutos después del fin de la cita en que la sala deja de aceptar participantes.</summary>
     public int RoomCloseAfterMinutes { get; set; } = 15;
 
     /// <summary>TTL del token de acceso a la sala (segundos).</summary>

@@ -454,8 +454,8 @@ def create_rooms_sessions_encounters(
                     room_id, appointment["id"],
                     f"RM{str(appointment['id'])[:8].upper()}",
                     f"apt-{appointment['id']}",
-                    appointment["start"] - timedelta(minutes=15),
-                    appointment["end"] + timedelta(minutes=20),
+                    appointment["start"] - timedelta(minutes=10),
+                    appointment["end"] + timedelta(minutes=15),
                     SEED_USER_ID, appointment["start"] - timedelta(days=1),
                 ),
             )
@@ -508,8 +508,8 @@ def create_rooms_sessions_encounters(
                     room_id, appointment["id"],
                     f"RM{str(appointment['id'])[:8].upper()}",
                     f"apt-{appointment['id']}",
-                    appointment["start"] - timedelta(minutes=15),
-                    appointment["end"] + timedelta(minutes=20),
+                    appointment["start"] - timedelta(minutes=10),
+                    appointment["end"] + timedelta(minutes=15),
                     SEED_USER_ID, appointment["start"] - timedelta(hours=2),
                 ),
             )

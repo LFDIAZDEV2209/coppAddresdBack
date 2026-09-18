@@ -92,7 +92,7 @@ public class SessionSupportTests
         var (open, close) = SessionSupport.Window(appointment, settings);
 
         Assert.Equal(appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes), open);
-        Assert.Equal(appointment.ScheduledStart.AddMinutes(settings.RoomCloseAfterMinutes), close);
+        Assert.Equal(appointment.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes), close);
     }
 
     [Theory]

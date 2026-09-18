@@ -88,13 +88,13 @@ internal static class SessionSupport
     /// <summary>
     /// Ventana de acceso a la sala, desde la configuración efectiva de la
     /// organización/clínica: abre <c>RoomOpenBeforeMinutes</c> antes del inicio y
-    /// cierra <c>RoomCloseAfterMinutes</c> después.
+    /// cierra <c>RoomCloseAfterMinutes</c> después del fin de la cita.
     /// </summary>
     public static (DateTimeOffset Open, DateTimeOffset Close) Window(
         Appointment appointment,
         TelemedicineSettings settings)
         => (appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
-            appointment.ScheduledStart.AddMinutes(settings.RoomCloseAfterMinutes));
+            appointment.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes));
 
     /// <summary>La cita debe estar en un estado que admita sala/sesión (confirmada o en curso).</summary>
     public static void EnsureCanStartOrJoin(AppointmentStatus status)
