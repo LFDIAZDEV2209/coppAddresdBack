@@ -47,6 +47,7 @@ public class PatientAppointmentCycleTests
 
         var requestsRepo = new RequestRepository(_ctx.Create());
         var appointmentsRepo = new AppointmentRepository(_ctx.Create());
+        var roomsRepo = new RoomRepository(_ctx.Create());
         var alertsRepo = new AlertRepository(_ctx.Create());
         var settings = new FakeSettingsProvider();
 
@@ -98,7 +99,12 @@ public class PatientAppointmentCycleTests
         Assert.Equal(AppointmentStatus.Confirmed, appointmentDto.Status);
 
         // 3) "Mis citas" del paciente lista la cita (identidad, filtro por estado).
-        var myAppointments = new GetMyAppointmentsQueryHandler(appointmentsRepo, referenceData);
+        var myAppointments = new GetMyAppointmentsQueryHandler(
+            appointmentsRepo,
+            referenceData,
+            settings,
+            roomsRepo
+        );
         var page = await myAppointments.Handle(
             new GetMyAppointmentsQuery(
                 patientUserId,

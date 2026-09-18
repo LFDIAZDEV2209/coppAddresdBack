@@ -30,6 +30,22 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
         await Query(includeSessions)
             .FirstOrDefaultAsync(r => r.ProviderRoomSid == providerRoomSid, ct);
 
+    public async Task<IReadOnlyList<VirtualRoom>> ListByAppointmentIdsAsync(
+        IReadOnlyCollection<Guid> appointmentIds,
+        CancellationToken ct = default
+    )
+    {
+        if (appointmentIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await dbContext
+            .Rooms.AsNoTracking()
+            .Where(r => appointmentIds.Contains(r.AppointmentId))
+            .ToListAsync(ct);
+    }
+
     public async Task<VirtualRoom?> GetForUpdateAsync(
         Guid appointmentId,
         CancellationToken ct = default
