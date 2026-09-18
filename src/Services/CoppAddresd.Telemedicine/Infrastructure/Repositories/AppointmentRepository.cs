@@ -23,6 +23,14 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     /// </summary>
     private readonly HashSet<Guid> _loadedSessionIds = [];
 
+    /// <summary>
+    /// Id de la sala cargada de BD (si existía) en <see cref="GetForUpdateAsync"/>.
+    /// Distingue la sala NUEVA (creada en memoria) de la existente: una sala
+    /// cargada que se modifica (p. ej. Status → Ended) también queda Modified,
+    /// así que el estado de EF por sí solo no alcanza para decidir el INSERT.
+    /// </summary>
+    private readonly HashSet<Guid> _loadedRoomIds = [];
+
     public async Task<Appointment?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         await dbContext.Appointments.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
 
@@ -41,6 +49,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         // sesiones conocidas son las de la sala (referencia para el estado Added).
         if (appointment?.Room is not null)
         {
+            _loadedRoomIds.Add(appointment.Room.Id);
             _loadedSessionIds.UnionWith(appointment.Room.Sessions.Select(s => s.Id));
         }
 
@@ -75,6 +84,16 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             {
                 dbContext.Entry(reschedule).State = EntityState.Added;
             }
+        }
+
+        // NOTA: la sala NUEVA (creada en memoria al iniciar o reabrir una cita
+        // sin sala previa) sufre el mismo fixup que las sesiones: EF la marca
+        // Modified por su Guid pre-generado. DbSet.Add la inserta de verdad;
+        // la sala cargada de BD (registrada en _loadedRoomIds) se actualiza
+        // normalmente aunque sus campos cambien (p. ej. Status → Ended).
+        if (appointment.Room is { } room && !_loadedRoomIds.Contains(room.Id))
+        {
+            dbContext.Rooms.Add(room);
         }
 
         // NOTA: las sesiones NUEVAS se re-trackean con DbSet.Add. El fixup de EF
