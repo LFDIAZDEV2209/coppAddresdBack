@@ -131,6 +131,36 @@ internal static class SessionSupport
     public static string ProviderRoomName(Guid appointmentId)
         => $"apt-{appointmentId:N}";
 
+    /// <summary>
+    /// Cierra la sesión activa más reciente de la sala (si existe): la marca
+    /// como terminada, calcula la duración y registra motivo/autor. La usan el
+    /// webhook del proveedor y el barrido de sesiones estancadas.
+    /// </summary>
+    public static void EndActiveSession(
+        VirtualRoom room,
+        string endReason,
+        Guid? endedBy,
+        DateTimeOffset now)
+    {
+        var active = room.Sessions
+            .Where(s => s.Status == TelemedicineSessionStatus.Active)
+            .OrderByDescending(s => s.StartedAt)
+            .FirstOrDefault();
+
+        if (active is null)
+        {
+            return;
+        }
+
+        active.Status = TelemedicineSessionStatus.Ended;
+        active.EndedAt = now;
+        active.DurationSeconds = active.StartedAt is { } startedAt
+            ? (long)Math.Max(0, (now - startedAt).TotalSeconds)
+            : null;
+        active.EndedBy = endedBy;
+        active.EndReason = endReason;
+    }
+
     /// <summary>Instancia la sala de dominio para una cita (sin persistir).</summary>
     public static VirtualRoom NewRoom(
         Appointment appointment,

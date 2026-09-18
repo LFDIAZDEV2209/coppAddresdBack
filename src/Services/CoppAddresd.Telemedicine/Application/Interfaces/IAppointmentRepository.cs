@@ -192,4 +192,16 @@ public interface IAppointmentRepository
         int limit,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Citas en <paramref name="status"/> cuyo fin programado es anterior a
+    /// <paramref name="before"/>, ordenadas por fin (lectura sin tracking).
+    /// Base del barrido de sesiones estancadas: la gracia efectiva por cita
+    /// (settings de la organización/clínica) se aplica en el barrido.
+    /// </summary>
+    Task<IReadOnlyList<Appointment>> ListByStatusEndingBeforeAsync(
+        AppointmentStatus status,
+        DateTimeOffset before,
+        CancellationToken ct = default
+    );
 }

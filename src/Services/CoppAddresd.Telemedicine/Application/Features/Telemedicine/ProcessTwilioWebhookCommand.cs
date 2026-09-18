@@ -117,7 +117,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
             case "room-ended":
                 room.Status = VirtualRoomStatus.Ended;
                 room.UpdatedAt = now.UtcDateTime;
-                EndActiveSession(room, endReason: "room-ended", endedBy: null, now);
+                SessionSupport.EndActiveSession(room, endReason: "room-ended", endedBy: null, now);
                 await CompleteAppointmentIfInProgressAsync(room.AppointmentId, now, ct);
                 await EmitSessionAlertsAsync(room.AppointmentId, eventType, participantIdentity, ct);
                 break;
@@ -129,6 +129,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
                     room.UpdatedAt = now.UtcDateTime;
                 }
                 TouchActiveSession(room, now);
+                await TrackPatientJoinAsync(room, participantIdentity, now, ct);
                 await EmitSessionAlertsAsync(room.AppointmentId, eventType, participantIdentity, ct);
                 break;
 
@@ -210,27 +211,6 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         }
     }
 
-    private static void EndActiveSession(VirtualRoom room, string endReason, Guid? endedBy, DateTimeOffset now)
-    {
-        var active = room.Sessions
-            .Where(s => s.Status == TelemedicineSessionStatus.Active)
-            .OrderByDescending(s => s.StartedAt)
-            .FirstOrDefault();
-
-        if (active is null)
-        {
-            return;
-        }
-
-        active.Status = TelemedicineSessionStatus.Ended;
-        active.EndedAt = now;
-        active.DurationSeconds = active.StartedAt is { } startedAt
-            ? (long)Math.Max(0, (now - startedAt).TotalSeconds)
-            : null;
-        active.EndedBy = endedBy;
-        active.EndReason = endReason;
-    }
-
     private static void TouchActiveSession(VirtualRoom room, DateTimeOffset now)
     {
         var active = room.Sessions
@@ -242,6 +222,43 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         {
             active.LastProviderEventAt = now.UtcDateTime;
         }
+    }
+
+    /// <summary>
+    /// Registra el primer ingreso del paciente a la sala (identidad del token
+    /// distinta a la del profesional). Si el backend no resuelve al profesional
+    /// no se marca nada, para no confundir NoShow con Completed en el barrido.
+    /// </summary>
+    private async Task TrackPatientJoinAsync(
+        VirtualRoom room,
+        string participantIdentity,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        if (room.PatientJoinedAt is not null || string.IsNullOrWhiteSpace(participantIdentity))
+        {
+            return;
+        }
+
+        var appointment = await appointments.GetForUpdateAsync(room.AppointmentId, ct);
+        if (appointment is null)
+        {
+            return;
+        }
+
+        var professional = await referenceData.GetProfessionalAsync(appointment.ProfessionalId, ct);
+        if (professional?.UserId is not { } professionalUserId)
+        {
+            return;
+        }
+
+        if (Guid.TryParse(participantIdentity, out var participantUserId)
+            && participantUserId == professionalUserId)
+        {
+            return;
+        }
+
+        room.PatientJoinedAt = now;
     }
 
     private async Task CompleteAppointmentIfInProgressAsync(Guid appointmentId, DateTimeOffset now, CancellationToken ct)

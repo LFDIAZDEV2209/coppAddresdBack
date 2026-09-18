@@ -168,6 +168,10 @@ public sealed class FakeVideoProvider : IVideoProvider
 {
     public bool SignatureValid { get; set; } = true;
     public bool CompleteRoomThrows { get; set; }
+
+    /// <summary>Sala devuelta por <see cref="GetRoomAsync"/> (null = no existe).</summary>
+    public RoomInfo? Room { get; set; }
+
     public int CreateRoomCalls { get; private set; }
     public int CompleteRoomCalls { get; private set; }
 
@@ -187,7 +191,7 @@ public sealed class FakeVideoProvider : IVideoProvider
     }
 
     public Task<RoomInfo?> GetRoomAsync(string providerRoomSidOrName, CancellationToken ct) =>
-        Task.FromResult<RoomInfo?>(null);
+        Task.FromResult(Room);
 
     public Task CompleteRoomAsync(string providerRoomSid, CancellationToken ct)
     {
@@ -507,6 +511,18 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 )
                 .OrderBy(a => a.ScheduledStart)
                 .Take(limit)
+                .ToList()
+        );
+
+    public Task<IReadOnlyList<Appointment>> ListByStatusEndingBeforeAsync(
+        AppointmentStatus status,
+        DateTimeOffset before,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<Appointment>>(
+            Items
+                .Where(a => a.Status == status && a.ScheduledEnd < before)
+                .OrderBy(a => a.ScheduledEnd)
                 .ToList()
         );
 }
