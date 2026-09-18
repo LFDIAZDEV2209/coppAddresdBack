@@ -102,12 +102,10 @@ public class CurrentContext(
             return true;
         }
 
-        // Permiso scoped: introspección con el contexto activo.
+        // Permiso scoped: introspección con el contexto activo. La cadena
+        // siempre incluye Global, así que los roles con scope Global también
+        // autorizan (el Auth matchea ScopeType+ScopeId por entrada).
         var chain = await BuildScopeChainAsync(ct);
-        if (chain.Count <= 1)
-        {
-            return false;
-        }
 
         return await scopedClient.AuthorizeAsync(
             userId, SecurityStamp ?? string.Empty, permissionCode, chain, ct);
