@@ -7,9 +7,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
-/// Barrido de sesiones estancadas: cierra citas InProgress vencidas como
-/// NoShow (el paciente nunca ingresó) o Completed (ingresó), completa la sala
-/// del proveedor best-effort y respeta la gracia de la ventana de sala.
+/// Barrido de citas vencidas: cierra citas InProgress vencidas como NoShow (el
+/// paciente nunca ingresó) o Completed (ingresó), y citas Confirmed que nunca
+/// iniciaron sesión como NoShow. Completa la sala del proveedor best-effort y
+/// respeta la gracia de la ventana de sala.
 /// </summary>
 public class StaleSessionSweeperTests
 {
@@ -123,5 +124,74 @@ public class StaleSessionSweeperTests
         Assert.Equal(AppointmentStatus.NoShow, appointment.Status);
         Assert.Equal(0, _video.CompleteRoomCalls);
         Assert.Equal(VirtualRoomStatus.Active, room.Status);
+    }
+
+    [Fact]
+    public async Task Sweep_CitaConfirmadaSinSesion_CierraComoNoShow()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var appointment = TestData.Appointment(
+            status: AppointmentStatus.Confirmed,
+            start: now.AddHours(-2)
+        );
+        _appointments.Items.Add(appointment);
+
+        var closed = await CreateSweeper().SweepAsync(now);
+
+        Assert.Equal(1, closed);
+        Assert.Equal(AppointmentStatus.NoShow, appointment.Status);
+    }
+
+    [Fact]
+    public async Task Sweep_CitaConfirmadaConSesionPrevia_NoCierra()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var appointment = TestData.Appointment(
+            status: AppointmentStatus.Confirmed,
+            start: now.AddHours(-2)
+        );
+        _appointments.Items.Add(appointment);
+
+        var room = new VirtualRoom
+        {
+            AppointmentId = appointment.Id,
+            ProviderRoomSid = "RM-prev",
+            ProviderRoomName = $"apt-{appointment.Id:N}",
+            Status = VirtualRoomStatus.Ended,
+            ScheduledOpenAt = appointment.ScheduledStart.AddMinutes(-10),
+            ScheduledCloseAt = appointment.ScheduledEnd.AddMinutes(15),
+        };
+        room.Sessions.Add(
+            new TelemedicineSession
+            {
+                AppointmentId = appointment.Id,
+                Status = TelemedicineSessionStatus.Ended,
+                StartedAt = appointment.ScheduledStart,
+                EndedAt = appointment.ScheduledEnd,
+            }
+        );
+        _rooms.Rooms.Add(room);
+
+        var closed = await CreateSweeper().SweepAsync(now);
+
+        Assert.Equal(0, closed);
+        Assert.Equal(AppointmentStatus.Confirmed, appointment.Status);
+    }
+
+    [Fact]
+    public async Task Sweep_CitaConfirmadaDentroDeLaGracia_NoCierra()
+    {
+        var now = DateTimeOffset.UtcNow;
+        // Fin hace 10 min; la gracia por defecto es 15 min.
+        var appointment = TestData.Appointment(
+            status: AppointmentStatus.Confirmed,
+            start: now.AddMinutes(-40)
+        );
+        _appointments.Items.Add(appointment);
+
+        var closed = await CreateSweeper().SweepAsync(now);
+
+        Assert.Equal(0, closed);
+        Assert.Equal(AppointmentStatus.Confirmed, appointment.Status);
     }
 }
