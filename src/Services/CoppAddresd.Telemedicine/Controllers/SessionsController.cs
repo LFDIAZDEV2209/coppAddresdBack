@@ -51,6 +51,13 @@ public class SessionsController(IMediator mediator) : ControllerBase
         => Ok(await mediator.Send(
             new EndSessionCommand(appointmentId, request.EndReason, CurrentUserId(), HasManagePermission()), ct));
 
+    /// <summary>Reabre una consulta completada dentro de la gracia (profesional asignado o supervisor).</summary>
+    [HttpPost("session/reopen")]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AppointmentDto>> Reopen(Guid appointmentId, CancellationToken ct)
+        => Ok(await mediator.Send(new ReopenSessionCommand(appointmentId, CurrentUserId(), HasManagePermission()), ct));
+
     private Guid CurrentUserId()
     {
         var value = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

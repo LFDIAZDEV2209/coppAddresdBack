@@ -273,6 +273,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         }
 
         appointment.Status = AppointmentStatus.Completed;
+        appointment.CompletedAt = now;
         appointment.UpdatedAt = now.UtcDateTime;
         await appointments.UpdateAsync(appointment, ct);
     }

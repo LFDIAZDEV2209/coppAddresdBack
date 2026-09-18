@@ -89,6 +89,7 @@ public sealed class EndSessionCommandHandler(
 
             var oldStatus = appointment.Status;
             appointment.Status = AppointmentStatus.Completed;
+            appointment.CompletedAt = now;
             appointment.UpdatedAt = now.UtcDateTime;
 
             await appointments.UpdateAsync(appointment, ct);

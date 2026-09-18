@@ -42,7 +42,8 @@ public sealed record AppointmentDto(
     string? CancellationReason,
     DateTime? CreatedAt,
     DateTimeOffset? RoomOpensAt = null,
-    DateTimeOffset? RoomClosesAt = null
+    DateTimeOffset? RoomClosesAt = null,
+    DateTimeOffset? CompletedAt = null
 );
 
 /// <summary>Resultado paginado de solicitudes (bandeja administrativa).</summary>

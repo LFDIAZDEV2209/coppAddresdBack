@@ -51,8 +51,9 @@ public sealed class StaleSessionSweeper(
                 ct
             );
 
-            // Todavía dentro de la ventana de sala (fin + gracia): no es estancada.
-            if (now < candidate.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes))
+            // Todavía dentro de la ventana de sala efectiva (considera reaperturas): no es estancada.
+            var (_, roomClose) = SessionSupport.Window(candidate, settings);
+            if (now < roomClose)
             {
                 continue;
             }
@@ -79,6 +80,10 @@ public sealed class StaleSessionSweeper(
                 room?.PatientJoinedAt is not null
                     ? AppointmentStatus.Completed
                     : AppointmentStatus.NoShow;
+            if (appointment.Status == AppointmentStatus.Completed)
+            {
+                appointment.CompletedAt = now;
+            }
             appointment.UpdatedAt = now.UtcDateTime;
             await appointments.UpdateAsync(appointment, ct);
 
@@ -116,8 +121,9 @@ public sealed class StaleSessionSweeper(
                 ct
             );
 
-            // Todavía dentro de la ventana de sala (fin + gracia): no cerrar aún.
-            if (now < candidate.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes))
+            // Todavía dentro de la ventana de sala efectiva (considera reaperturas): no cerrar aún.
+            var (_, roomClose) = SessionSupport.Window(candidate, settings);
+            if (now < roomClose)
             {
                 continue;
             }
