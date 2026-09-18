@@ -40,7 +40,9 @@ public sealed record AppointmentDto(
     AppointmentStatus Status,
     int RescheduleCount,
     string? CancellationReason,
-    DateTime? CreatedAt
+    DateTime? CreatedAt,
+    DateTimeOffset? RoomOpensAt = null,
+    DateTimeOffset? RoomClosesAt = null
 );
 
 /// <summary>Resultado paginado de solicitudes (bandeja administrativa).</summary>
