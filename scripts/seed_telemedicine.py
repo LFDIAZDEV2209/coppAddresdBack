@@ -273,7 +273,7 @@ def create_appointments(
     appointments: list[dict] = []
 
     # Estados por antigüedad: pasadas -> Completed mayoritario; hoy -> mixto; futuras -> Confirmed.
-    def status_for(start: datetime) -> str:
+    def status_for(start: datetime, end: datetime) -> str:
         if start.date() < now.date():
             roll = random.random()
             if roll < 0.75:
@@ -282,9 +282,12 @@ def create_appointments(
                 return "Cancelled"
             return "NoShow"
         if start.date() == now.date():
-            if start < now:
+            if start <= now < end:
                 roll = random.random()
                 return "Completed" if roll < 0.6 else "InProgress"
+            if end <= now:
+                # Ya terminó: mayoría completadas, resto inasistencias.
+                return "Completed" if random.random() < 0.75 else "NoShow"
             return "Confirmed"
         return "Confirmed"
 
@@ -324,7 +327,7 @@ def create_appointments(
                     continue
 
                 patient = patients[(slot_index * 7) % len(patients)]
-                status = status_for(start)
+                status = status_for(start, end)
 
                 # Algunas citas futuras nacen de solicitudes convertidas.
                 request_id = None

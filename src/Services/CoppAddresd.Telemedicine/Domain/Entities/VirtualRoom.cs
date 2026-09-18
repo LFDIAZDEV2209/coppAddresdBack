@@ -31,6 +31,13 @@ public sealed class VirtualRoom
     /// <summary>Fin de la ventana: la sala expira y no se emiten más tokens.</summary>
     public DateTimeOffset ScheduledCloseAt { get; set; }
 
+    /// <summary>
+    /// Primer ingreso del paciente a la sala (identidad del token distinta a la
+    /// del profesional). Null = el paciente nunca entró; el barrido de sesiones
+    /// estancadas lo usa para decidir NoShow vs Completed.
+    /// </summary>
+    public DateTimeOffset? PatientJoinedAt { get; set; }
+
     public int MaxParticipants { get; set; } = 2;
 
     public Guid CreatedBy { get; set; }

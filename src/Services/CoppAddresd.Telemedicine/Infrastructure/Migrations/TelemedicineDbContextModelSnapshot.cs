@@ -792,6 +792,10 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("max_participants");
 
+                    b.Property<DateTimeOffset?>("PatientJoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("patient_joined_at");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(32)

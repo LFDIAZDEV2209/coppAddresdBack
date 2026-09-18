@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Infrastructure.Cache;
@@ -8,6 +9,7 @@ using CoppAddresd.Telemedicine.Infrastructure.Persistence;
 using CoppAddresd.Telemedicine.Infrastructure.Repositories;
 using CoppAddresd.Telemedicine.Infrastructure.Security;
 using CoppAddresd.Telemedicine.Infrastructure.Services;
+using CoppAddresd.Telemedicine.Infrastructure.Sessions;
 using CoppAddresd.Telemedicine.Infrastructure.VideoProvider;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -73,6 +75,11 @@ public static class DependencyInjection
         // Métricas analíticas pre-agregadas en segundo plano (Fase 1 Pre-agregación CQRS)
         services.AddSingleton<ITelemedicineMetricsQueue, TelemedicineMetricsQueue>();
         services.AddHostedService<TelemedicineMetricsProcessorHostedService>();
+
+        // Barrido periódico de sesiones estancadas: cierra citas InProgress cuyo
+        // fin programado ya pasó (más la gracia de la ventana de sala efectiva).
+        services.AddScoped<StaleSessionSweeper>();
+        services.AddHostedService<StaleSessionSweepHostedService>();
 
         // Backfill/reparación de las métricas pre-agregadas (operación admin).
         services.AddScoped<IMetricsBackfillService, MetricsBackfillService>();
