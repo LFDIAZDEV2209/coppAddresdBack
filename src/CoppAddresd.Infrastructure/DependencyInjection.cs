@@ -20,6 +20,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using Twilio.Clients;
 
 namespace CoppAddresd.Infrastructure;
 
@@ -116,6 +117,11 @@ public static class DependencyInjection
         // transacción de XP (AC-42).
         services.AddScoped<INotificationLogRepository, NotificationLogRepository>();
         services.AddScoped<IGamifiedNotificationService, GamifiedNotificationService>();
+
+        // Dedupe persistente de notificaciones internas (F2): índice único en
+        // app.notification_dedupe_keys (el endpoint interno responde skipped si
+        // la dedupeKey ya fue registrada).
+        services.AddScoped<INotificationDedupeRepository, NotificationDedupeRepository>();
 
         // Catálogo de reglas XP (SPEC §14, B5-R): agregado separado de la
         // inscripción; los fakes de IProgramRepository de los tests no se
@@ -233,15 +239,63 @@ public static class DependencyInjection
 
     /// <summary>
     /// Registra la implementación de <see cref="ISmsSender"/> según <c>Sms:Provider</c>
-    /// (SPEC A13). Hoy solo existe la implementación <c>Noop</c> (registra el envío
-    /// simulado, sin proveedor externo); un proveedor real (Twilio Messages, SNS...)
-    /// se enchufa detrás de la misma interfaz cuando se configuren credenciales.
+    /// (SPEC A13): <c>Noop</c> (default, log en desarrollo) o <c>Twilio</c>
+    /// (Twilio Messages, envío real). Contrato fail-soft: con
+    /// <c>Provider=Twilio</c> pero credenciales incompletas se registra el Noop
+    /// (Warning en el primer uso) y el arranque NUNCA falla por SMS.
     /// </summary>
     private static void AddSmsSender(IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<SmsSettings>(configuration.GetSection(SmsSettings.SectionName));
 
-        services.AddScoped<ISmsSender, NoOpSmsSender>();
+        var provider = (configuration["Sms:Provider"] ?? "Noop").Trim();
+        var isTwilio = provider.Equals("Twilio", StringComparison.OrdinalIgnoreCase);
+
+        // Lectura directa por clave (no se materializa SmsSettings): el
+        // registro no depende de credenciales para arrancar.
+        var isConfigured =
+            configuration.GetValue("Sms:IsEnabled", false)
+            && !string.IsNullOrWhiteSpace(configuration["Sms:AccountSid"])
+            && !string.IsNullOrWhiteSpace(configuration["Sms:AuthToken"])
+            && (!string.IsNullOrWhiteSpace(configuration["Sms:FromNumber"])
+                || !string.IsNullOrWhiteSpace(configuration["Sms:MessagingServiceSid"]));
+
+        if (isTwilio && isConfigured)
+        {
+            // Cliente Singleton (thread-safe): autenticación con el Auth Token
+            // de la cuenta, patrón de Twilio Messages (Verify/Video usan API Key).
+            services.AddSingleton<ITwilioRestClient>(_ => new TwilioRestClient(
+                configuration["Sms:AccountSid"]!,
+                configuration["Sms:AuthToken"]!
+            ));
+            services.AddScoped<ISmsSender, TwilioSmsSender>();
+            return;
+        }
+
+        services.AddScoped<ISmsSender>(serviceProvider =>
+        {
+            if (isTwilio)
+            {
+                serviceProvider
+                    .GetRequiredService<ILogger<TwilioSmsSender>>()
+                    .LogWarning(
+                        "Sms:Provider=Twilio sin configuración completa "
+                            + "(Sms:IsEnabled/AccountSid/AuthToken y FromNumber o MessagingServiceSid) "
+                            + "— se usa NoOpSmsSender (los envíos SMS se reportan como disabled)."
+                    );
+            }
+            else if (!provider.Equals("Noop", StringComparison.OrdinalIgnoreCase))
+            {
+                serviceProvider
+                    .GetRequiredService<ILogger<NoOpSmsSender>>()
+                    .LogWarning(
+                        "Sms:Provider desconocido '{Provider}' — se usa NoOpSmsSender (valores soportados: Noop, Twilio).",
+                        provider
+                    );
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpSmsSender>(serviceProvider);
+        });
     }
 
     /// <summary>

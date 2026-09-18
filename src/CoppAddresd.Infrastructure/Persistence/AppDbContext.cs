@@ -166,6 +166,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Program Progress — Notificaciones gamificadas (SPEC §20)
     public DbSet<AppNotification> AppNotifications => Set<AppNotification>();
 
+    // Notificaciones internas (F2): dedupe persistente por dedupeKey
+    public DbSet<NotificationDedupeKey> NotificationDedupeKeys => Set<NotificationDedupeKey>();
+
     // Program Progress — Debilidades del paciente (SPEC §21, "Paso 7c")
     public DbSet<Weakness> Weaknesses => Set<Weakness>();
 
