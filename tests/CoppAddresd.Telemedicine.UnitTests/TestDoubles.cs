@@ -663,6 +663,14 @@ public sealed class FakeRoomRepository : IRoomRepository
         CancellationToken ct = default
     ) => Task.FromResult(Rooms.FirstOrDefault(r => r.ProviderRoomSid == providerRoomSid));
 
+    public Task<IReadOnlyList<VirtualRoom>> ListByAppointmentIdsAsync(
+        IReadOnlyCollection<Guid> appointmentIds,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<VirtualRoom>>(
+            Rooms.Where(r => appointmentIds.Contains(r.AppointmentId)).ToList()
+        );
+
     public Task<VirtualRoom?> GetForUpdateAsync(
         Guid appointmentId,
         CancellationToken ct = default

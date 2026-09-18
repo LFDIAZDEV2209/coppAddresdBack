@@ -17,6 +17,7 @@ public class PatientScopeTests
     private readonly FakeRequestRepository _requests = new();
     private readonly FakeAppointmentRepository _appointments = new();
     private readonly FakeSettingsProvider _settings = new();
+    private readonly FakeRoomRepository _rooms = new();
     private readonly FakeAlertRepository _alerts = new();
 
     public PatientScopeTests()
@@ -220,7 +221,12 @@ public class PatientScopeTests
         _appointments.Items.Add(TestData.Appointment(patientId: TestData.PatientId));
         _appointments.Items.Add(TestData.Appointment(patientId: Guid.NewGuid()));
 
-        var handler = new GetMyAppointmentsQueryHandler(_appointments, _referenceData);
+        var handler = new GetMyAppointmentsQueryHandler(
+            _appointments,
+            _referenceData,
+            _settings,
+            _rooms
+        );
         var result = await handler.Handle(
             new GetMyAppointmentsQuery(
                 TestData.PatientUserId,
@@ -247,7 +253,12 @@ public class PatientScopeTests
             TestData.Appointment(status: AppointmentStatus.Completed, patientId: TestData.PatientId)
         );
 
-        var handler = new GetMyAppointmentsQueryHandler(_appointments, _referenceData);
+        var handler = new GetMyAppointmentsQueryHandler(
+            _appointments,
+            _referenceData,
+            _settings,
+            _rooms
+        );
         var result = await handler.Handle(
             new GetMyAppointmentsQuery(
                 TestData.PatientUserId,
@@ -265,9 +276,102 @@ public class PatientScopeTests
     }
 
     [Fact]
+    public async Task MyAppointments_Paciente_IncluyeVentanaDesdeSettings()
+    {
+        var start = DateTimeOffset.UtcNow.AddHours(5);
+        var appointment = TestData.Appointment(patientId: TestData.PatientId, start: start);
+        _appointments.Items.Add(appointment);
+        _settings.Settings.RoomOpenBeforeMinutes = 5;
+        _settings.Settings.RoomCloseAfterMinutes = 20;
+
+        var handler = new GetMyAppointmentsQueryHandler(
+            _appointments,
+            _referenceData,
+            _settings,
+            _rooms
+        );
+        var result = await handler.Handle(
+            new GetMyAppointmentsQuery(TestData.PatientUserId, null, null, null, 1, 20),
+            CancellationToken.None
+        );
+
+        var dto = Assert.Single(result.Items);
+        Assert.Equal(start.AddMinutes(-5), dto.RoomOpensAt);
+        Assert.Equal(appointment.ScheduledEnd.AddMinutes(20), dto.RoomClosesAt);
+    }
+
+    [Fact]
+    public async Task MyAppointments_CitaReabierta_CorrigeVentanaDesdeReopenedAt()
+    {
+        var start = DateTimeOffset.UtcNow.AddHours(5);
+        var appointment = TestData.Appointment(patientId: TestData.PatientId, start: start);
+        appointment.ReopenedAt = start.AddMinutes(45);
+        _appointments.Items.Add(appointment);
+
+        var handler = new GetMyAppointmentsQueryHandler(
+            _appointments,
+            _referenceData,
+            _settings,
+            _rooms
+        );
+        var result = await handler.Handle(
+            new GetMyAppointmentsQuery(TestData.PatientUserId, null, null, null, 1, 20),
+            CancellationToken.None
+        );
+
+        var dto = Assert.Single(result.Items);
+        // La ventana corre desde la reapertura y cierra con el mayor de los fines.
+        var reopenedEnd = appointment.ReopenedAt.Value.AddMinutes(appointment.DurationMinutes);
+        Assert.Equal(appointment.ReopenedAt.Value.AddMinutes(-10), dto.RoomOpensAt);
+        Assert.Equal(reopenedEnd.AddMinutes(15), dto.RoomClosesAt);
+    }
+
+    [Fact]
+    public async Task MyAppointments_SalaPersistida_PrefiereSuVentana()
+    {
+        var appointment = TestData.Appointment(patientId: TestData.PatientId);
+        _appointments.Items.Add(appointment);
+        var open = appointment.ScheduledStart.AddMinutes(-60);
+        var close = appointment.ScheduledEnd.AddMinutes(120);
+        _rooms.Rooms.Add(
+            new VirtualRoom
+            {
+                AppointmentId = appointment.Id,
+                ProviderRoomSid = "RM-test",
+                ProviderRoomName = $"apt-{appointment.Id:N}",
+                ScheduledOpenAt = open,
+                ScheduledCloseAt = close,
+                CreatedBy = TestData.UserId,
+            }
+        );
+
+        var handler = new GetMyAppointmentsQueryHandler(
+            _appointments,
+            _referenceData,
+            _settings,
+            _rooms
+        );
+        var result = await handler.Handle(
+            new GetMyAppointmentsQuery(TestData.PatientUserId, null, null, null, 1, 20),
+            CancellationToken.None
+        );
+
+        var dto = Assert.Single(result.Items);
+        Assert.Equal(open, dto.RoomOpensAt);
+        Assert.Equal(close, dto.RoomClosesAt);
+        // La sala persistida es la autoridad: no hace falta resolver settings.
+        Assert.Equal(0, _settings.Calls);
+    }
+
+    [Fact]
     public async Task MyAppointments_SinPerfilPaciente_LanzaForbidden()
     {
-        var handler = new GetMyAppointmentsQueryHandler(_appointments, _referenceData);
+        var handler = new GetMyAppointmentsQueryHandler(
+            _appointments,
+            _referenceData,
+            _settings,
+            _rooms
+        );
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             handler.Handle(

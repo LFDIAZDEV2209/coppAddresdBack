@@ -25,7 +25,8 @@ public sealed class GetAppointmentQueryHandler(
 
         // Ventana efectiva de la sala (settings por organización/clínica): el
         // detalle la expone para que la UI decida unirse sin esperar la creación
-        // lazy de la sala. Las listas la dejan en null.
+        // lazy de la sala. Las listas admin la dejan en null; la del paciente
+        // (app móvil) también la trae para el pre-join (GetMyAppointmentsQuery).
         var settings = await settingsProvider.GetSettingsAsync(
             entity.OrganizationId, entity.ClinicId, ct);
 

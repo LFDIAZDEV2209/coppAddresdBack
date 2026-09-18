@@ -25,6 +25,15 @@ public interface IRoomRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// Salas de un conjunto de citas (lectura sin tracking) en una sola consulta:
+    /// evita el N+1 al enriquecer listados con la ventana persistida de la sala.
+    /// </summary>
+    Task<IReadOnlyList<VirtualRoom>> ListByAppointmentIdsAsync(
+        IReadOnlyCollection<Guid> appointmentIds,
+        CancellationToken ct = default
+    );
+
     /// <summary>Sala de una cita TRACKEADA con sus sesiones (para mutaciones del flujo de sala).</summary>
     Task<VirtualRoom?> GetForUpdateAsync(Guid appointmentId, CancellationToken ct = default);
 
