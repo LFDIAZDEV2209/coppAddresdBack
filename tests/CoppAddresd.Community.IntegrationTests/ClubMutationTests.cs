@@ -93,7 +93,9 @@ public sealed class ClubMutationTests(CommunityTestDatabase dbFixture) : IDispos
 
         Assert.Equal(ClubMemberStatus.Activo, member.Status);
         Assert.Equal(ClubMemberRole.Miembro, member.Role);
-        Assert.Single(await db.ClubMembers.Where(m => m.ClubId == club.Id).ToListAsync(CancellationToken.None));
+        // El club ya tenía al admin como miembro: tras unirse hay 2 membresías.
+        Assert.Equal(2, await db.ClubMembers.CountAsync(m => m.ClubId == club.Id, CancellationToken.None));
+        Assert.Single(await db.ClubMembers.Where(m => m.ClubId == club.Id && m.ProfileId == user.Id).ToListAsync(CancellationToken.None));
     }
 
     [Fact]
