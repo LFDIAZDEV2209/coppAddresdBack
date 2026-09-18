@@ -10,6 +10,15 @@ public interface IPermissionService
     Task<IEnumerable<PermissionResponse>> GetRolePermissionsAsync(Guid roleId, CancellationToken ct = default);
     Task<IEnumerable<PermissionResponse>> GetUserPermissionsAsync(Guid userId, CancellationToken ct = default);
     Task<IEnumerable<string>> GetUserAllPermissionCodesAsync(Guid userId, CancellationToken ct = default);
+    /// <summary>
+    /// Codigos efectivos para gating de UI (sesion): directos + roles globales +
+    /// roles con scope (clinica/organizacion/global). Union laxa SIN contexto de
+    /// scope: el enforcement real sigue siendo server-side por request
+    /// (claims JWT estrictos + introspeccion con cadena de scopes). NUNCA usar
+    /// este metodo para emitir claims JWT: un permiso de clinica se volveria
+    /// global en el token (escalada de privilegios).
+    /// </summary>
+    Task<IEnumerable<string>> GetUserEffectivePermissionCodesAsync(Guid userId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> AssignToRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> RemoveFromRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> SetForRoleAsync(Guid roleId, IReadOnlyList<Guid> permissionIds, CancellationToken ct = default);
