@@ -46,4 +46,7 @@ public sealed class ClinicalEncounter
     public Appointment? Appointment { get; set; }
 
     public TelemedicineSession? Session { get; set; }
+
+    /// <summary>Adendas append-only del registro clínico (F4).</summary>
+    public ICollection<EncounterAddendum> Addenda { get; set; } = [];
 }

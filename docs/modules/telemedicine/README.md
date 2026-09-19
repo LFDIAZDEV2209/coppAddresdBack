@@ -17,6 +17,7 @@ Fases implementadas:
 - **Fase 11 — Testing formal**: proyectos `tests/CoppAddresd.Telemedicine.UnitTests` (134 tests: reglas puras de agendamiento/sala/encuentro, materializador de alertas, guard de referencias, mappers, validadores y handlers con fakes en memoria) e `tests/CoppAddresd.Telemedicine.IntegrationTests` (25 tests contra PostgreSQL real en BD aislada `coppaddresd_tele_test_*` — creada, migrada y eliminada por corrida vía `COP_TEST_DB_CONNECTION`): anti doble reserva concurrente (exclusión GiST + índice único parcial), idempotencia del webhook (clave única + rollback), persistencia del agregado, idempotencia de sala/encuentro y fallback de settings.
 - **F3 — Experiencia de llamada (backend)**: capacidad de sala por defecto **3** (validada 2–10) con elevación perezosa de las salas creadas antes de F3 (`UpdateRoomMaxParticipantsAsync`, REST de Twilio, best-effort) en `join-token`/`session/start` y corrección de la reapertura para que la sala nueva herede el settings vigente; **chat clínico persistido** `tele.chat_messages` + `GET/POST /api/v1/appointments/{id}/chat/messages` (REST + polling incremental con cursor, misma autorización que la sala). Migración `AddRoomChatAndCapacity`. Detalle en la sección F3.
 - **Fase 12 — Hardening**: auditoría clínica del encuentro — `tele.clinical_encounters` adjunta el trigger `audit.audit_trigger_function` vía migración condicional (`AttachClinicalEncounterAudit`, 4ª migración de `tele.`), y el actor del JWT + correlation id se propagan a los GUC `audit.*` por `AuditTriggerInterceptor`/`HttpAuditActorContext` (el guardado del encuentro usa transacción explícita corta para que el interceptor dispare). Bugs reales corregidos (descubiertos en el E2E de la fase): idempotencia del proveedor ante "Room exists" de Twilio (409/20429 → recupera la sala existente) y tracking `Added` de sesiones nuevas en el agregado (el fixup de EF las marcaba `Modified` → 409 de concurrencia al iniciar sesión tras un join previo). Detalle en la sección Fase 11-12.
+- **F4 — Clínica y cumplimiento (backend)**: **pre-consulta del paciente** `tele.pre_visit_intakes` (1:1 con la cita, `GET/PUT /api/v1/appointments/{id}/pre-visit-intake`, edición solo con la cita `Confirmed`, autoría del paciente) y **adendas del encuentro** `tele.encounter_addenda` (append-only, `GET/POST .../encounter/addenda`, solo con el encuentro `Completed`); **auditoría del ciclo de vida** con triggers condicionales en `appointments`/`telemedicine_sessions`/`virtual_rooms` (`AttachAppointmentLifecycleAudit`) y transacción explícita en `AppointmentRepository` para atribuir el actor del JWT. Grabación + consentimiento (F4.1–F4.4) **no** se implementan en esta fase (sub-proyecto separado). Migraciones `AddPreVisitIntakeAndAddenda` y `AttachAppointmentLifecycleAudit`. Detalle en la sección F4.
 
 Pendiente: integración con el SDK de video del navegador (Twilio) en la sala virtual (el `join-token` ya se genera y se muestra); alerta `UpcomingAppointment` en la bandeja (los recordatorios push/SMS de F2 ya se disparan por scheduler); `room-ended` sin sesión → NoShow (decisión de negocio aparte); exponer el filtro `clinicId` en la UI admin (el backend ya lo acepta); propagación de actor en el BACKEND (su `HttpAuditActorContext` sigue devolviendo System; el microservicio ya la tiene resuelta vía JWT).
 
@@ -50,6 +51,8 @@ Controllers → MediatR (Application) → Domain
 | `telemedicine_alerts`       | Bandeja (eventos de dominio materializados; canal de entrega desacoplado)                                                                                                                                                                                                                                                             |
 | `notification_dispatch`     | Despachos de notificación F2: dedupe por `(appointment_id, kind)` (único) — un recordatorio nunca se envía dos veces                                                                                                                                                                                                                  |
 | `chat_messages`             | Chat clínico F3: mensaje de texto plano por cita (`sender_user_id`/`sender_role` derivados del JWT), índice `(appointment_id, created_at)` para la lectura incremental por cursor; sin edición/borrado                                                                                                                                 |
+| `pre_visit_intakes`         | Pre-consulta del paciente F4: 1:1 con la cita (único `appointment_id`), motivo obligatorio + síntomas/alergias/medicación opcionales, autoría del paciente (JWT); editable solo con la cita `Confirmed`                                                                                                                               |
+| `encounter_addenda`         | Adendas del encuentro F4: append-only (encuentro, autor + snapshot de nombre, texto 1–2000, fecha), índice `(encounter_id, created_at)`; el registro clínico original no se modifica                                                                                                                                                    |
 | `telemedicine_settings`     | Reglas parametrizadas por organización/clínica (`max_participants` default 3 desde F3, rango 2–10)                                                                                                                                                                                                                                   |
 
 **Estados separados a propósito**: cita ≠ sesión ≠ sala (máquinas de estado independientes).
@@ -659,6 +662,105 @@ proveedor registra las actualizaciones), fallo del proveedor best-effort,
 matriz de autorización del chat (profesional/paciente/supervisor y ajeno),
 guarda de estado, validación de body/límite, orden y cursor keyset, traducción
 EF del cursor. Total de la suite backend: **273**.
+
+## F4 — Clínica y cumplimiento (backend: pre-consulta, addenda y auditoría)
+
+Alcance backend de F4. La **grabación de la consulta y el consentimiento
+versionado** (F4.1–F4.4 del diseño) **no** se implementan en esta fase: son un
+sub-proyecto separado (diseño en `openspec/changes/app-f4-clinical-compliance`).
+
+### Pre-consulta del paciente
+
+```text
+GET  /api/v1/appointments/{id}/pre-visit-intake
+     → 200 PreVisitIntakeDto | 200 sin cuerpo si aún no existe (estado vacío)
+PUT  /api/v1/appointments/{id}/pre-visit-intake
+     { "reason": "…", "symptoms": "…", "allergies": "…", "medications": "…" }
+     → 200 PreVisitIntakeDto (upsert de autoguardado)
+```
+
+- Tabla `tele.pre_visit_intakes` **1:1 con la cita** (índice único
+  `appointment_id`, FK cascade): `reason` obligatorio (500), `symptoms` (4000),
+  `allergies` (2000) y `medications` (2000) opcionales. `patient_id` y
+  `created_by` se derivan de la cita y del JWT, **nunca** del cuerpo.
+- **Autorización participante** (misma que sala/chat): GET para el paciente,
+  el profesional de la cita o un supervisor; PUT **solo el paciente** de la
+  cita (profesional/supervisor → 403; usuario ajeno → 403; cita inexistente →
+  404).
+- **Ciclo de vida**: editable mientras la cita está `Confirmed` (autoguardado
+  upsert, sin estado borrador/enviado; `updated_at` en cada guardado). Con la
+  cita `InProgress` o en estados terminales la escritura responde 409 y la
+  **lectura sigue disponible** para los autorizados.
+- **Validación** FluentValidation (trim; `reason` 1–500; textos opcionales con
+  sus máximos) → 400 con errores. Logging **sin PHI** (ids y longitudes).
+- **Auditoría**: `attach_table_audit` condicional sobre `pre_visit_intakes`
+  (PHI) en la migración y transacción explícita corta en el repositorio para
+  que el trigger reciba el actor del JWT.
+- **Upsert concurrente**: el índice único resuelve la carrera; el perdedor
+  recibe la fila existente TRACKEADA y aplica sus cambios (mismo patrón que el
+  encuentro).
+
+### Adendas del encuentro
+
+```text
+GET  /api/v1/appointments/{id}/encounter/addenda
+     → 200 EncounterAddendumDto[] ordenado por (created_at, id); [] si no hay encuentro
+POST /api/v1/appointments/{id}/encounter/addenda   { "body": "…" }
+     → 201 EncounterAddendumDto (persistido en tele.encounter_addenda)
+```
+
+- Tabla `tele.encounter_addenda` **append-only**: encuentro, autor
+  (`author_user_id` del JWT + `author_name` snapshot del claim de nombre/email,
+  truncado a 200), texto 1–2000 y fecha. **Sin edición, borrado ni límite por
+  encuentro**; el registro clínico original sigue inmutable (`PUT encounter`
+  sobre `Completed` sigue 409).
+- **Autorización** idéntica a la del encuentro (`RequireSessionOwnerAsync`):
+  profesional asignado o supervisor; el paciente → 403; cita inexistente → 404.
+- **Precondición**: el POST exige encuentro existente y `Completed`; en `Draft`
+  o sin encuentro → 409 («la adenda es para registros finalizados»). GET
+  devuelve `[]` si el encuentro no existe (la UI no necesita 404).
+- **Auditoría**: `attach_table_audit` condicional sobre `encounter_addenda`
+  (PHI) en la migración.
+
+### Auditoría del ciclo de vida de la cita
+
+- Migración `AttachAppointmentLifecycleAudit` (condicional e idempotente,
+  mismo patrón de `AttachClinicalEncounterAudit`): adjunta
+  `audit.audit_trigger_function` a `tele.appointments`,
+  `tele.telemedicine_sessions` y `tele.virtual_rooms`. Cubre inicio/fin/
+  reapertura/cancelación/reprogramación/no-show y la creación/cambio de estado
+  de sala y sesión; la transición se lee de `changed_data` de
+  `audit.activity_logs` (**sin doble escritura** de eventos de aplicación).
+- **Actor**: `AuditTriggerInterceptor` propaga el actor del JWT, y
+  `AppointmentRepository.Add/UpdateAsync` abre transacción explícita corta
+  (con `CreateExecutionStrategy`) porque el interceptor solo dispara al iniciar
+  la transacción — un `SaveChanges` de una sentencia dejaba el actor en
+  `SYSTEM`. El barrido de sesiones estancadas y los webhooks no tienen usuario
+  y quedan como `SYSTEM` (correcto y documentado).
+- **No** se auditan por trigger: `chat_messages`, `notification_dispatch`,
+  `telemedicine_webhook_events` ni los historiales de cancelación/
+  reprogramación (clasificación en `docs/modules/activity-log/database.md`).
+- **Sin API de lectura** de `audit.activity_logs` en F4 (decisión abierta;
+  consulta por SQL en el backend).
+
+### Migraciones (generadas, las aplica el padre)
+
+- `AddPreVisitIntakeAndAddenda`: tablas `tele.pre_visit_intakes` y
+  `tele.encounter_addenda` + triggers de auditoría PHI condicionales.
+- `AttachAppointmentLifecycleAudit`: triggers del ciclo de vida de la cita.
+- El microservicio **no** migra al iniciar (ver «Comandos»).
+
+### Tests (F4)
+
+34 tests nuevos en `CoppAddresd.Telemedicine.UnitTests`: matriz de autorización
+del intake (paciente escribe; profesional/supervisor/ajeno 403), edición
+permitida/bloqueada por estado, lectura post-inicio, upsert sin duplicar,
+identidad derivada del JWT y validaciones de longitud; matriz de adendas
+(profesional/supervisor OK; paciente/ajeno 403), precondición `Completed`
+(Draft/sin encuentro → 409), orden `(created_at, id)`, snapshot/truncado del
+autor y validación 1–2000. Total de la suite backend: **310**. La presencia y
+condicionalidad de las migraciones de auditoría **no** se cubre por unit tests
+(requiere PostgreSQL real y schema `audit`): queda para integración/QA manual.
 
 ## Comandos
 

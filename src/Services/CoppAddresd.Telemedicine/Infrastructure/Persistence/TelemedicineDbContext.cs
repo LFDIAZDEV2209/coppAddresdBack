@@ -31,6 +31,12 @@ public sealed class TelemedicineDbContext(DbContextOptions<TelemedicineDbContext
     /// <summary>Mensajes del chat clínico de una consulta (F3).</summary>
     public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
 
+    /// <summary>Pre-consulta reportada por el paciente (F4, 1:1 con la cita).</summary>
+    public DbSet<PreVisitIntake> PreVisitIntakes => Set<PreVisitIntake>();
+
+    /// <summary>Adendas append-only del encuentro clínico (F4).</summary>
+    public DbSet<EncounterAddendum> EncounterAddenda => Set<EncounterAddendum>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Todo el modelo de este servicio vive en el schema tele.

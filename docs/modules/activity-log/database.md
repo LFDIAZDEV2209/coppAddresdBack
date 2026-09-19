@@ -50,7 +50,28 @@
 | AUDIT_OPTIONAL | Tablas de alto volumen donde el coste del índice/insert no compense; decisión documentada | logs de eventos no críticos |
 | AUDIT_EXCLUDED | Tablas de soporte/efímeras, o que contienen secretos que ni así deben persistirse | sesiones, tokens |
 
-Decisión vigente: **ninguna tabla de negocio existe aún**. Al crearlas, la clasificación se decide y se registra aquí + se adjunta el trigger en la migración de la tabla.
+Decisión vigente (2026-09, F4 de Telemedicina): las tablas clínicas y del
+ciclo de vida de `tele.` se clasifican así.
+
+| Tabla | Clase | Notas |
+|---|---|---|
+| `tele.clinical_encounters` | AUDIT_REQUIRED | PHI clínica; trigger en `AttachClinicalEncounterAudit` (Fase 12) |
+| `tele.pre_visit_intakes` | AUDIT_REQUIRED | PHI reportada por el paciente; trigger en `AddPreVisitIntakeAndAddenda` (F4) |
+| `tele.encounter_addenda` | AUDIT_REQUIRED | PHI append-only; trigger en `AddPreVisitIntakeAndAddenda` (F4) |
+| `tele.appointments` | AUDIT_REQUIRED | Ciclo de vida (estado/reprogramación); trigger en `AttachAppointmentLifecycleAudit` (F4) |
+| `tele.telemedicine_sessions` | AUDIT_REQUIRED | Inicio/fin/reapertura de sesión; trigger en `AttachAppointmentLifecycleAudit` (F4) |
+| `tele.virtual_rooms` | AUDIT_REQUIRED | Creación/cambio de estado de sala; trigger en `AttachAppointmentLifecycleAudit` (F4) |
+| `tele.chat_messages` | AUDIT_EXCLUDED | Alto volumen; contenido ya persistido y sin update/delete |
+| `tele.notification_dispatch` | AUDIT_EXCLUDED | Dedupe operativo de recordatorios |
+| `tele.telemedicine_webhook_events` | AUDIT_EXCLUDED | Idempotencia técnica del proveedor |
+| `tele.appointment_cancellations` / `tele.appointment_reschedules` | AUDIT_EXCLUDED | Historial append-only; el efecto ya queda en el diff de `appointments` |
+
+Los triggers de `tele.` son **condicionales e idempotentes**: el schema `audit`
+es del backend y las migraciones del microservicio lo omiten sin error si no
+existe (bases nuevas de tests). Actor: `USER` con el `user_id` del JWT en
+acciones autenticadas (transacción explícita para que el interceptor dispare);
+`SYSTEM` en barrido de sesiones estancadas y webhooks. La retención de
+`activity_logs` sigue como decisión abierta (F4 no implementa purga).
 
 ## Transacciones y concurrencia
 

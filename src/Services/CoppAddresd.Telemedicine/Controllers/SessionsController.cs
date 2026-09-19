@@ -101,6 +101,46 @@ public class SessionsController(IMediator mediator) : ControllerBase
         return CreatedAtAction(nameof(ChatMessages), new { appointmentId }, message);
     }
 
+    /// <summary>
+    /// Pre-consulta del paciente de la cita (F4): mismo alcance participante
+    /// que la sala/chat. Sin fila persistida responde 200 sin cuerpo (la UI
+    /// muestra el estado vacío).
+    /// </summary>
+    [HttpGet("pre-visit-intake")]
+    [ProducesResponseType(typeof(PreVisitIntakeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PreVisitIntakeDto?>> PreVisitIntake(
+        Guid appointmentId,
+        CancellationToken ct)
+        => Ok(await mediator.Send(
+            new GetPreVisitIntakeQuery(appointmentId, CurrentUserId(), HasManagePermission()), ct));
+
+    /// <summary>
+    /// Autoguardado (upsert) de la pre-consulta: solo el paciente de la cita
+    /// (profesional/supervisor → 403) y solo mientras la cita está confirmada
+    /// (después → 409 en escritura; la lectura sigue disponible).
+    /// </summary>
+    [HttpPut("pre-visit-intake")]
+    [ProducesResponseType(typeof(PreVisitIntakeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<PreVisitIntakeDto>> SavePreVisitIntake(
+        Guid appointmentId,
+        [FromBody] SavePreVisitIntakeDto request,
+        CancellationToken ct)
+        => Ok(await mediator.Send(
+            new UpsertPreVisitIntakeCommand(
+                appointmentId,
+                request.Reason,
+                request.Symptoms,
+                request.Allergies,
+                request.Medications,
+                CurrentUserId(),
+                HasManagePermission()), ct));
+
     private Guid CurrentUserId()
     {
         var value = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -114,3 +154,10 @@ public class SessionsController(IMediator mediator) : ControllerBase
 public sealed record EndSessionDto(string? EndReason);
 
 public sealed record SendRoomChatMessageDto(string Body);
+
+/// <summary>Cuerpo del autoguardado de la pre-consulta (F4): motivo + textos opcionales.</summary>
+public sealed record SavePreVisitIntakeDto(
+    string Reason,
+    string? Symptoms,
+    string? Allergies,
+    string? Medications);

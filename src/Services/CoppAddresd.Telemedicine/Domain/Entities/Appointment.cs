@@ -81,4 +81,7 @@ public sealed class Appointment
     public ICollection<TelemedicineSession> Sessions { get; set; } = [];
 
     public ClinicalEncounter? Encounter { get; set; }
+
+    /// <summary>Pre-consulta reportada por el paciente (1:1, F4).</summary>
+    public PreVisitIntake? PreVisitIntake { get; set; }
 }

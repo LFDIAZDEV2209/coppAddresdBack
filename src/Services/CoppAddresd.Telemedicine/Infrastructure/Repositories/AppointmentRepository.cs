@@ -606,7 +606,29 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     {
         try
         {
-            await dbContext.SaveChangesAsync(ct);
+            // Transacción ambiente (p. ej. webhook con ITelemedicineUnitOfWork):
+            // el interceptor ya propagó el actor al iniciarla y EF no permite
+            // anidar transacciones; se guarda dentro de la existente.
+            if (dbContext.Database.CurrentTransaction is not null)
+            {
+                await dbContext.SaveChangesAsync(ct);
+                return;
+            }
+
+            // Transacción explícita corta (patrón del proyecto, obligatorio con
+            // EnableRetryOnFailure): `AuditTriggerInterceptor` solo propaga el
+            // actor del JWT a los GUC `audit.*` al iniciar la transacción. Sin
+            // ella, un SaveChanges de una sola sentencia no abre transacción y
+            // las mutaciones auditadas de cita/sesión/sala quedarían con actor
+            // SYSTEM.
+            var strategy = dbContext.Database.CreateExecutionStrategy();
+
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            });
         }
         catch (DbUpdateConcurrencyException)
         {

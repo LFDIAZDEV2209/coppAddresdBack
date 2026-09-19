@@ -145,6 +145,21 @@ internal static class SessionSupport
     }
 
     /// <summary>
+    /// La pre-consulta del paciente (F4) solo puede escribirse mientras la cita
+    /// está <c>Confirmed</c> (antes de iniciar la sesión; al iniciar, la cita
+    /// pasa a <c>InProgress</c>). En curso o en estados terminales → 409; la
+    /// lectura sigue disponible para los autorizados.
+    /// </summary>
+    public static void EnsureIntakeEditable(AppointmentStatus status)
+    {
+        if (status != AppointmentStatus.Confirmed)
+        {
+            throw new BusinessRuleViolationException(
+                $"La pre-consulta solo puede editarse mientras la cita está confirmada (estado actual: {status}).");
+        }
+    }
+
+    /// <summary>
     /// Valida el rango del máximo de participantes efectivo (2–10). Protege
     /// contra filas de settings corruptas o editadas manualmente: un valor fuera
     /// de rango produciría un error del proveedor (Twilio 53107) o una sala
