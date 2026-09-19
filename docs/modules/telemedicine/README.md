@@ -15,6 +15,7 @@ Fases implementadas:
 - **Fase 8 (adelantada) — Permisos `Telemedicine.*`**: siembra en el Auth Service (`PermissionCodes` + `RoleSeeder`), autorización por claim `permission` en el microservicio (mismo mecanismo que el backend).
 - **Fase 9-10 — Frontend (`coppaddresd-front`)**: módulo `features/telemedicine/*` (types espejo de los DTOs, services del microservicio 5130 y de catálogos del backend 5122, hooks, componentes) + rutas `/telemedicine/*` (profesional: dashboard, agenda, calendario, solicitudes, alertas, detalle de cita con sala virtual y encuentro clínico; admin: dashboard con KPIs, citas, solicitudes, profesionales, sesiones) protegidas con `PermissionGate` (`Telemedicine.AdminView`). Detalle en la sección Fase 9-10.
 - **Fase 11 — Testing formal**: proyectos `tests/CoppAddresd.Telemedicine.UnitTests` (134 tests: reglas puras de agendamiento/sala/encuentro, materializador de alertas, guard de referencias, mappers, validadores y handlers con fakes en memoria) e `tests/CoppAddresd.Telemedicine.IntegrationTests` (25 tests contra PostgreSQL real en BD aislada `coppaddresd_tele_test_*` — creada, migrada y eliminada por corrida vía `COP_TEST_DB_CONNECTION`): anti doble reserva concurrente (exclusión GiST + índice único parcial), idempotencia del webhook (clave única + rollback), persistencia del agregado, idempotencia de sala/encuentro y fallback de settings.
+- **F3 — Experiencia de llamada (backend)**: capacidad de sala por defecto **3** (validada 2–10) con elevación perezosa de las salas creadas antes de F3 (`UpdateRoomMaxParticipantsAsync`, REST de Twilio, best-effort) en `join-token`/`session/start` y corrección de la reapertura para que la sala nueva herede el settings vigente; **chat clínico persistido** `tele.chat_messages` + `GET/POST /api/v1/appointments/{id}/chat/messages` (REST + polling incremental con cursor, misma autorización que la sala). Migración `AddRoomChatAndCapacity`. Detalle en la sección F3.
 - **Fase 12 — Hardening**: auditoría clínica del encuentro — `tele.clinical_encounters` adjunta el trigger `audit.audit_trigger_function` vía migración condicional (`AttachClinicalEncounterAudit`, 4ª migración de `tele.`), y el actor del JWT + correlation id se propagan a los GUC `audit.*` por `AuditTriggerInterceptor`/`HttpAuditActorContext` (el guardado del encuentro usa transacción explícita corta para que el interceptor dispare). Bugs reales corregidos (descubiertos en el E2E de la fase): idempotencia del proveedor ante "Room exists" de Twilio (409/20429 → recupera la sala existente) y tracking `Added` de sesiones nuevas en el agregado (el fixup de EF las marcaba `Modified` → 409 de concurrencia al iniciar sesión tras un join previo). Detalle en la sección Fase 11-12.
 
 Pendiente: integración con el SDK de video del navegador (Twilio) en la sala virtual (el `join-token` ya se genera y se muestra); alerta `UpcomingAppointment` en la bandeja (los recordatorios push/SMS de F2 ya se disparan por scheduler); `room-ended` sin sesión → NoShow (decisión de negocio aparte); exponer el filtro `clinicId` en la UI admin (el backend ya lo acepta); propagación de actor en el BACKEND (su `HttpAuditActorContext` sigue devolviendo System; el microservicio ya la tiene resuelta vía JWT).
@@ -48,7 +49,8 @@ Controllers → MediatR (Application) → Domain
 | `clinical_encounters`       | Encuentro clínico, `clinical_data` jsonb extensible                                                                                                                                                                                                                                                                                   |
 | `telemedicine_alerts`       | Bandeja (eventos de dominio materializados; canal de entrega desacoplado)                                                                                                                                                                                                                                                             |
 | `notification_dispatch`     | Despachos de notificación F2: dedupe por `(appointment_id, kind)` (único) — un recordatorio nunca se envía dos veces                                                                                                                                                                                                                  |
-| `telemedicine_settings`     | Reglas parametrizadas por organización/clínica                                                                                                                                                                                                                                                                                        |
+| `chat_messages`             | Chat clínico F3: mensaje de texto plano por cita (`sender_user_id`/`sender_role` derivados del JWT), índice `(appointment_id, created_at)` para la lectura incremental por cursor; sin edición/borrado                                                                                                                                 |
+| `telemedicine_settings`     | Reglas parametrizadas por organización/clínica (`max_participants` default 3 desde F3, rango 2–10)                                                                                                                                                                                                                                   |
 
 **Estados separados a propósito**: cita ≠ sesión ≠ sala (máquinas de estado independientes).
 
@@ -60,6 +62,7 @@ GetRoomAsync(sidOrName, ct)               // null si no existe (404 mapeado)
 CompleteRoomAsync(sid, ct)                // finaliza sala
 GenerateAccessTokenAsync(AccessTokenRequest, ct)  // JWT identity + room, TTL corto
 GetParticipantsAsync(sid, ct)
+UpdateRoomMaxParticipantsAsync(sid, maxParticipants, ct)  // F3: POST /v1/Rooms/{Sid} (REST del SDK)
 ValidateWebhookSignatureAsync(WebhookValidationRequest, ct)  // X-Twilio-Signature
 ```
 
@@ -137,6 +140,7 @@ La autorización de los 4 primeros se resuelve en el handler a partir del JWT: e
 
 - **Ventana de acceso**: abre `RoomOpenBeforeMinutes` (default 10) antes del inicio y cierra `RoomCloseAfterMinutes` (default 15) después del fin (settings por org/clínica); una cita reabierta extiende la ventana desde `reopened_at` (ver reapertura). `join-token`/`session/start` fuera de la ventana → 409.
 - **Sala lazy e idempotente**: se crea en el primer `join-token`/`start` dentro de la ventana. Nombre determinista `apt-{appointmentId}` → idempotencia por índice único `(provider, provider_room_name)` + `UniqueName` de Twilio (una carrera entre dos join-token devuelve la misma sala).
+- **Capacidad (F3)**: `settings.MaxParticipants` (default 3, rango 2–10) se copia al crear la sala; si la sala ya existe con un límite menor, `join-token`/`session/start` la elevan de forma perezosa (proveedor best-effort + persistencia local) y la reapertura crea la sala nueva con el settings vigente. La autorización de participantes NO cambia: la cita sigue siendo 1:1 (profesional/paciente/supervisor) y el cupo solo protege el ingreso de supervisores.
 - **Sesión**: una activa a la vez por cita (`start` doble → 409, protegido además por el token de concurrencia xmin de la cita). `end` es idempotente: sin sesión activa → no-op 200.
 - **Webhooks**: firma `X-Twilio-Signature` validada (deshabilitada en dev, `Twilio:ValidateWebhookSignature`). Clave de idempotencia `(event_type, room_sid, participant_sid)` en `tele.telemedicine_webhook_events` (índice único): los duplicados concurrentes se serializan y el perdedor recibe `Duplicate` con rollback de sus mutaciones. El procesamiento es atómico (reserva de la clave + mutaciones en una transacción).
   - `room-ended` → sala `Ended`, sesión activa `Ended`, y la cita `InProgress` pasa a `Completed`. Si nunca hubo sesión activa, la cita NO se completa automáticamente (el barrido de sesiones estancadas resuelve esos casos).
@@ -587,6 +591,74 @@ contrato HTTP del emisor): recordatorios por ventana/canal con dedupe,
 revalidación de estado, settings deshabilitados, reintento con backend caído,
 shape del contrato de entrega, hooks de solicitud/cancelación/no-show y elección
 de destinatario según quién cancela. Total de la suite: **224**.
+
+## F3 — Experiencia de llamada (backend: capacidad + chat)
+
+Alcance backend de F3 (P2). Los bloques de reconexión/preflight/pantalla
+compartida y las UIs de chat son de los clientes (ERP/app) y no cambian el
+contrato del microservicio.
+
+### Capacidad de participantes
+
+- **Default 3** (`tele.telemedicine_settings.max_participants`): profesional +
+  paciente + 1 supervisor. Rango validado **2–10**
+  (`SessionSupport.EnsureValidMaxParticipants`, fuera de rango → 409 sin
+  tocar la sala). La autorización de participante no cambia (cita 1:1).
+- **Salas nuevas** (primer join-token, `session/start`, reapertura): Twilio
+  recibe `max_participants = settings.MaxParticipants` y `virtual_rooms` lo
+  persiste. La **reapertura** crea la sala nueva con el settings vigente y
+  actualiza `virtual_rooms.max_participants` (antes quedaba con el valor viejo).
+- **Salas creadas antes de F3** (límite 2): en el siguiente `join-token` o
+  `session/start`, si `room.MaxParticipants < settings.MaxParticipants`, se
+  actualiza la sala `in-progress` en Twilio
+  (`IVideoProvider.UpdateRoomMaxParticipantsAsync` → `POST /v1/Rooms/{Sid}` con
+  el cliente REST del SDK, porque Twilio 7.14.9 no expone `MaxParticipants` en
+  `UpdateRoomOptions`) y se persiste el valor local. Es **best-effort**: si
+  Twilio falla, el join continúa y queda un log Warning.
+- **Sala llena (53105)**: el proveedor traduce el código a
+  `BusinessRuleViolationException` («La sala alcanzó el máximo de
+  participantes», 409) en lugar de un error crudo; los clientes mapean el
+  error homónimo del SDK JS a un copy accionable.
+- La migración `AddRoomChatAndCapacity` fija el default de BD en 3 y hace
+  **backfill** de las filas existentes que valen 2 (respeta valores manuales).
+
+### Chat de la consulta
+
+```text
+GET  /api/v1/appointments/{id}/chat/messages?after={ISO}&afterId={uuid}&limit={1..100}
+     → 200 ChatMessageDto[] ordenado por (created_at, id); default limit 50
+POST /api/v1/appointments/{id}/chat/messages   { "body": "…" }
+     → 201 ChatMessageDto (persistido en tele.chat_messages)
+```
+
+- **Autorización**: misma que la sala (`SessionSupport.RequireParticipantAsync`):
+  profesional/paciente de la cita o supervisor con `Telemedicine.SessionsManage`.
+  Usuario ajeno → 403; cita inexistente → 404. `sender_user_id` y `sender_role`
+  se derivan del JWT, nunca del cuerpo.
+- **Estado**: disponible con la cita **Confirmed, InProgress o Completed** (los
+  participantes pueden esperar en la sala con la cita aún confirmada y se
+  conserva el acceso posterior a la consulta); `Requested` y terminales sin
+  atención (`Cancelled`/`NoShow`) → 409. El historial persiste en BD; no hay
+  purga en v1.
+- **Validación**: `body` con trim, 1–2000 caracteres (400 con errores);
+  `limit` 1–100; `after` ISO inválido lo rechaza el model binding (400).
+- **Polling**: el cliente (ERP/app) usa REST + polling incremental cada ~4 s con
+  el cursor `(after, afterId)`; no hay SignalR/SSE ni push por mensaje en F3.
+- **Sin edición, borrado, adjuntos ni recibos**; el DTO no incluye `senderName`
+  (los clientes resuelven el nombre con la cita/participantes). Logging sin PHI
+  (solo ids, rol y longitud).
+- Migración `AddRoomChatAndCapacity`: tabla `tele.chat_messages` + índice
+  `ix_chat_messages_appointment_id_created_at` (misma migración que la
+  capacidad; **no** se aplica automáticamente al iniciar el microservicio).
+
+### Tests (F3)
+
+49 tests nuevos en `CoppAddresd.Telemedicine.UnitTests`: rango del default de
+capacidad y `NewRoom`, elevación perezosa en join/start/reapertura (el fake del
+proveedor registra las actualizaciones), fallo del proveedor best-effort,
+matriz de autorización del chat (profesional/paciente/supervisor y ajeno),
+guarda de estado, validación de body/límite, orden y cursor keyset, traducción
+EF del cursor. Total de la suite backend: **273**.
 
 ## Comandos
 

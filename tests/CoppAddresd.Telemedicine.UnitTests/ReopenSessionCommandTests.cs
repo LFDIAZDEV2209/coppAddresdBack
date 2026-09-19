@@ -144,4 +144,45 @@ public class ReopenSessionCommandTests
         Assert.Equal(VirtualRoomStatus.Created, room.Status);
         Assert.Null(room.PatientJoinedAt);
     }
+
+    [Fact]
+    public async Task Handle_SalaPreviaConCapacidadVieja_ActualizaCapacidadAlSettings()
+    {
+        var appointment = AddCompleted();
+        _rooms.Rooms.Add(
+            new VirtualRoom
+            {
+                AppointmentId = appointment.Id,
+                ProviderRoomSid = "RMOLD",
+                ProviderRoomName = $"apt-{appointment.Id:N}",
+                Status = VirtualRoomStatus.Ended,
+                MaxParticipants = 2,
+            }
+        );
+        var command = new ReopenSessionCommand(appointment.Id, TestData.UserId, false);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        // La sala nueva del proveedor se crea con el settings vigente (3) y la
+        // fila persistida queda actualizada (bug corregido en F3).
+        var request = Assert.Single(_videoProvider.CreateRoomRequests);
+        Assert.Equal(3, request.MaxParticipants);
+        var room = Assert.Single(_rooms.Rooms);
+        Assert.Equal(3, room.MaxParticipants);
+        Assert.Empty(_videoProvider.RoomMaxParticipantsUpdates);
+    }
+
+    [Fact]
+    public async Task Handle_SettingsFueraDeRango_LanzaViolacionSinCrearSala()
+    {
+        var appointment = AddCompleted();
+        _settings.Settings = TestData.Settings(maxParticipants: 11);
+        var command = new ReopenSessionCommand(appointment.Id, TestData.UserId, false);
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+
+        Assert.Equal(0, _videoProvider.CreateRoomCalls);
+        Assert.Equal(0, appointment.ReopenCount);
+    }
 }

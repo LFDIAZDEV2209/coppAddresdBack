@@ -28,6 +28,9 @@ public sealed class TelemedicineDbContext(DbContextOptions<TelemedicineDbContext
     /// <summary>Despachos de notificación por cita (deduplicación F2).</summary>
     public DbSet<NotificationDispatch> NotificationDispatches => Set<NotificationDispatch>();
 
+    /// <summary>Mensajes del chat clínico de una consulta (F3).</summary>
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Todo el modelo de este servicio vive en el schema tele.

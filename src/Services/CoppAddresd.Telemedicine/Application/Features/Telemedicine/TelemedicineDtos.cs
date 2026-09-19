@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
@@ -83,3 +84,26 @@ public sealed record JoinSessionResultDto(
     DateTimeOffset ExpiresAt,
     VirtualRoomDto Room
 );
+
+/// <summary>
+/// Mensaje del chat de la consulta (F3). El rol del emisor va derivado del JWT
+/// (Professional | Patient | Supervisor); el cuerpo es texto plano.
+/// </summary>
+public sealed record ChatMessageDto(
+    Guid Id,
+    Guid AppointmentId,
+    Guid SenderUserId,
+    string SenderRole,
+    string Body,
+    DateTimeOffset CreatedAt
+)
+{
+    public static ChatMessageDto FromEntity(ChatMessage message) => new(
+        message.Id,
+        message.AppointmentId,
+        message.SenderUserId,
+        message.SenderRole,
+        message.Body,
+        new DateTimeOffset(message.CreatedAt, TimeSpan.Zero)
+    );
+}
