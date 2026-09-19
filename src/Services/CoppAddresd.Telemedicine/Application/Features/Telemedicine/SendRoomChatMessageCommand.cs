@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
@@ -43,7 +44,8 @@ public sealed class SendRoomChatMessageCommandHandler(
     IAppointmentRepository appointments,
     IChatMessageRepository messages,
     IAppointmentReferenceDataService referenceData,
-    ILogger<SendRoomChatMessageCommandHandler> logger)
+    ILogger<SendRoomChatMessageCommandHandler> logger,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<SendRoomChatMessageCommand, ChatMessageDto>
 {
     public async Task<ChatMessageDto> Handle(SendRoomChatMessageCommand request, CancellationToken ct)
@@ -66,6 +68,17 @@ public sealed class SendRoomChatMessageCommandHandler(
                 CreatedAt = DateTime.UtcNow,
             },
             ct);
+
+        // F5: contador de mensajes por rol (sin PHI: solo el rol derivado del JWT).
+        if (metricsQueue is not null)
+        {
+            await metricsQueue.EnqueueAsync(new ChatMessageSentMetricEvent(
+                appointment.Id,
+                appointment.ProfessionalId,
+                appointment.ClinicId,
+                DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime),
+                role.ToString()));
+        }
 
         // Log sin PHI: solo ids, rol y longitud del mensaje, nunca el contenido.
         logger.LogInformation(

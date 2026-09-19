@@ -359,8 +359,10 @@ public class PatientScopeTests
         var dto = Assert.Single(result.Items);
         Assert.Equal(open, dto.RoomOpensAt);
         Assert.Equal(close, dto.RoomClosesAt);
-        // La sala persistida es la autoridad: no hace falta resolver settings.
-        Assert.Equal(0, _settings.Calls);
+        // La sala persistida sigue siendo la autoridad para la ventana; los
+        // settings se resuelven una vez por contexto para exponer la gracia F5.
+        Assert.Equal(1, _settings.Calls);
+        Assert.Equal(_settings.Settings.ReopenGraceMinutes, dto.ReopenGraceMinutes);
     }
 
     [Fact]

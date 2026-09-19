@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Constants;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
@@ -561,6 +562,131 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .Select(a => a.ProfessionalId)
             .Distinct()
             .CountAsync(ct);
+
+    /// <summary>
+    /// Claves EAV de llamada (F5) que participan del fast path del rollup: set
+    /// v1 reconstruible + P2 «solo evento».
+    /// </summary>
+    private static readonly string[] CallMetricKeys =
+    [
+        TelemedicineMetricKeys.RoomsOpened,
+        TelemedicineMetricKeys.SessionsStarted,
+        TelemedicineMetricKeys.SessionsEnded,
+        TelemedicineMetricKeys.SessionDurationSeconds,
+        TelemedicineMetricKeys.Reopens,
+        TelemedicineMetricKeys.ChatMessagesSent,
+        TelemedicineMetricKeys.JoinTokensIssued,
+        TelemedicineMetricKeys.ParticipantConnections,
+    ];
+
+    public async Task<CallMetricsAggregate> GetCallMetricsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    )
+    {
+        var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
+        var toDate = InclusiveEndDate(to);
+        var profId = professionalId ?? Guid.Empty;
+
+        // Fast path: rollup por la fecha de agenda de la cita (día del evento).
+        var rollup = await dbContext
+            .AppointmentDailyMetrics.AsNoTracking()
+            .Where(m =>
+                m.ProfessionalId == profId
+                && m.MetricDate >= fromDate
+                && m.MetricDate <= toDate
+                && CallMetricKeys.Contains(m.MetricKey)
+            )
+            .Select(m => new
+            {
+                m.MetricKey,
+                m.DimensionKey,
+                m.TotalCount,
+            })
+            .ToListAsync(ct);
+
+        if (rollup.Count > 0)
+        {
+            long Sum(string metricKey) =>
+                rollup.Where(m => m.MetricKey == metricKey).Sum(m => m.TotalCount);
+
+            var chatByRole = rollup
+                .Where(m => m.MetricKey == TelemedicineMetricKeys.ChatMessagesSent)
+                .GroupBy(m => m.DimensionKey)
+                .ToDictionary(g => g.Key, g => (int)g.Sum(m => m.TotalCount));
+
+            var connectionsByRole = rollup
+                .Where(m => m.MetricKey == TelemedicineMetricKeys.ParticipantConnections)
+                .GroupBy(m => m.DimensionKey)
+                .ToDictionary(g => g.Key, g => (int)g.Sum(m => m.TotalCount));
+
+            return new CallMetricsAggregate(
+                (int)Sum(TelemedicineMetricKeys.RoomsOpened),
+                (int)Sum(TelemedicineMetricKeys.SessionsStarted),
+                (int)Sum(TelemedicineMetricKeys.SessionsEnded),
+                Sum(TelemedicineMetricKeys.SessionDurationSeconds),
+                (int)Sum(TelemedicineMetricKeys.Reopens),
+                chatByRole,
+                (int)Sum(TelemedicineMetricKeys.JoinTokensIssued),
+                connectionsByRole
+            );
+        }
+
+        // Fallback OLTP: el rollup está vacío o desactualizado. La atribución
+        // es la fecha de agenda de la cita (misma semántica que los eventos).
+        var appointments = dbContext
+            .Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            appointments = appointments.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        var roomsOpened = await dbContext
+            .Rooms.AsNoTracking()
+            .Join(appointments, r => r.AppointmentId, a => a.Id, (_, _) => 1)
+            .CountAsync(ct);
+
+        var sessions = await dbContext
+            .Sessions.AsNoTracking()
+            .Join(
+                appointments,
+                s => s.AppointmentId,
+                a => a.Id,
+                (s, _) => new { s.EndedAt, s.DurationSeconds }
+            )
+            .ToListAsync(ct);
+
+        var endedSessions = sessions.Where(s => s.EndedAt is not null).ToList();
+
+        var reopens = await appointments.SumAsync(a => a.ReopenCount, ct);
+
+        var chatRows = await dbContext
+            .ChatMessages.AsNoTracking()
+            .Join(
+                appointments,
+                m => m.AppointmentId,
+                a => a.Id,
+                (m, _) => new { m.SenderRole }
+            )
+            .GroupBy(m => m.SenderRole)
+            .Select(g => new { Role = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return new CallMetricsAggregate(
+            roomsOpened,
+            sessions.Count,
+            endedSessions.Count,
+            endedSessions.Sum(s => s.DurationSeconds ?? 0),
+            reopens,
+            chatRows.ToDictionary(r => r.Role, r => r.Count),
+            0,
+            new Dictionary<string, int>()
+        );
+    }
 
     public async Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,

@@ -200,6 +200,25 @@ public class SessionSupportTests
             SessionSupport.EnsureValidMaxParticipants(value));
 
     [Theory]
+    [InlineData(5)]
+    [InlineData(60)]
+    [InlineData(1440)]
+    public void EnsureValidReopenGraceMinutes_EnRango_NoLanza(int value)
+        => SessionSupport.EnsureValidReopenGraceMinutes(value);
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(1441)]
+    public void EnsureValidReopenGraceMinutes_FueraDeRango_Lanza(int value)
+        => Assert.Throws<BusinessRuleViolationException>(() =>
+            SessionSupport.EnsureValidReopenGraceMinutes(value));
+
+    [Fact]
+    public void Settings_DefaultReopenGraceMinutes_Es60()
+        => Assert.Equal(60, new TelemedicineSettings().ReopenGraceMinutes);
+
+    [Theory]
     [InlineData(AppointmentStatus.Confirmed)]
     [InlineData(AppointmentStatus.InProgress)]
     [InlineData(AppointmentStatus.Completed)]

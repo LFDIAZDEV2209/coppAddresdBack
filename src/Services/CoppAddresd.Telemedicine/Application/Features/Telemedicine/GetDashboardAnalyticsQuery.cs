@@ -42,8 +42,27 @@ public sealed record DashboardKpisDto(
 );
 
 /// <summary>
+/// Métricas de llamada (F5) del rango: salas, sesiones, duración promedio
+/// (suma ÷ sesiones terminadas; null si no hubo sesiones), reaperturas y chat
+/// por rol. <c>JoinTokensIssued</c>/<c>ParticipantConnectionsByRole</c> son
+/// claves P2 «solo evento»: valen 0 sin filas en el rollup.
+/// </summary>
+public sealed record CallMetricsDto(
+    int RoomsOpened,
+    int SessionsStarted,
+    int SessionsEnded,
+    long? AverageDurationSeconds,
+    int Reopens,
+    int ChatMessagesSent,
+    IReadOnlyDictionary<string, int> ChatMessagesByRole,
+    int JoinTokensIssued,
+    IReadOnlyDictionary<string, int> ParticipantConnectionsByRole
+);
+
+/// <summary>
 /// Payload completo del dashboard de Telemedicina: KPIs, serie temporal, distribución
-/// por estado, distribución horaria, actividad por profesional y próximas citas.
+/// por estado, distribución horaria, actividad por profesional, próximas citas y
+/// métricas de llamada (bloque aditivo F5).
 /// </summary>
 public sealed record DashboardAnalyticsDto(
     DashboardKpisDto Kpis,
@@ -52,7 +71,8 @@ public sealed record DashboardAnalyticsDto(
     IReadOnlyList<HourlyCountDto> HourlyDistribution,
     IReadOnlyList<ProfessionalActivityDto> ProfessionalActivity,
     IReadOnlyList<AppointmentDto> UpcomingAppointments,
-    IReadOnlyList<StateCountDto> States
+    IReadOnlyList<StateCountDto> States,
+    CallMetricsDto Calls
 );
 
 /// <summary>
@@ -224,6 +244,15 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             ct
         );
 
+        // Métricas de llamada (F5): rollup-first con fallback OLTP dentro del
+        // repositorio; una consulta secuencial más (mismo DbContext).
+        var callMetrics = await appointments.GetCallMetricsAsync(
+            request.ProfessionalId,
+            from,
+            to,
+            ct
+        );
+
         var kpis = new DashboardKpisDto(
             total,
             today,
@@ -249,7 +278,21 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             hourlyDistribution,
             activityDtos,
             [], // próximas citas: SIEMPRE en vivo (PHI), ver Handle
-            states
+            states,
+            new CallMetricsDto(
+                callMetrics.RoomsOpened,
+                callMetrics.SessionsStarted,
+                callMetrics.SessionsEnded,
+                // Promedio en lectura: suma EAV ÷ sesiones terminadas (0 → null).
+                callMetrics.SessionsEnded > 0
+                    ? callMetrics.TotalDurationSeconds / callMetrics.SessionsEnded
+                    : null,
+                callMetrics.Reopens,
+                callMetrics.ChatMessagesByRole.Values.Sum(),
+                callMetrics.ChatMessagesByRole,
+                callMetrics.JoinTokensIssued,
+                callMetrics.ParticipantConnectionsByRole
+            )
         );
     }
 

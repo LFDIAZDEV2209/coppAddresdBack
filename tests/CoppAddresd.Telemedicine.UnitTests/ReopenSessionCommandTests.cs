@@ -185,4 +185,95 @@ public class ReopenSessionCommandTests
         Assert.Equal(0, _videoProvider.CreateRoomCalls);
         Assert.Equal(0, appointment.ReopenCount);
     }
+
+    // ── F5: gracia configurable (default 60, rango 5–1440) ────────────────────
+
+    [Fact]
+    public async Task Handle_GraciaConfigurada15_DentroDelLimite_Reabre()
+    {
+        var appointment = AddCompleted(completedAgo: TimeSpan.FromMinutes(10));
+        _settings.Settings.ReopenGraceMinutes = 15;
+        var command = new ReopenSessionCommand(appointment.Id, TestData.UserId, false);
+
+        var dto = await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(AppointmentStatus.InProgress, dto.Status);
+        Assert.Equal(1, appointment.ReopenCount);
+    }
+
+    [Fact]
+    public async Task Handle_GraciaConfigurada15_Fuera_LanzaConValorEfectivoSinEfectos()
+    {
+        var appointment = AddCompleted(completedAgo: TimeSpan.FromMinutes(16));
+        _settings.Settings.ReopenGraceMinutes = 15;
+        var command = new ReopenSessionCommand(appointment.Id, TestData.UserId, false);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+
+        Assert.Contains("15", ex.Message);
+        Assert.Equal(0, appointment.ReopenCount);
+        Assert.Equal(0, _videoProvider.CreateRoomCalls);
+    }
+
+    [Fact]
+    public async Task Handle_GraciaConfigurada120_DentroDelLimite_Reabre()
+    {
+        var appointment = AddCompleted(completedAgo: TimeSpan.FromMinutes(90));
+        _settings.Settings.ReopenGraceMinutes = 120;
+        var command = new ReopenSessionCommand(appointment.Id, TestData.UserId, false);
+
+        var dto = await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(AppointmentStatus.InProgress, dto.Status);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(1441)]
+    public async Task Handle_GraciaFueraDeRango_LanzaViolacionSinEfectos(int grace)
+    {
+        var appointment = AddCompleted();
+        _settings.Settings.ReopenGraceMinutes = grace;
+        var command = new ReopenSessionCommand(appointment.Id, TestData.UserId, false);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+
+        Assert.Contains(grace.ToString(), ex.Message);
+        Assert.Equal(0, appointment.ReopenCount);
+        Assert.Equal(0, _videoProvider.CreateRoomCalls);
+        Assert.Null(appointment.ReopenedAt);
+    }
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(1440)]
+    public async Task Handle_GraciaEnLosLimitesDelRango_Reabre(int grace)
+    {
+        var appointment = AddCompleted(completedAgo: TimeSpan.FromMinutes(1));
+        _settings.Settings.ReopenGraceMinutes = grace;
+        var command = new ReopenSessionCommand(appointment.Id, TestData.UserId, false);
+
+        var dto = await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(AppointmentStatus.InProgress, dto.Status);
+    }
+
+    [Fact]
+    public async Task Handle_SinFilaDeSettings_UsaDefault60()
+    {
+        // TestData.Settings() refleja el default de dominio (60): una cita de
+        // hace 45 min reabre y una de hace 61 min no.
+        var within = AddCompleted(completedAgo: TimeSpan.FromMinutes(45));
+        var dto = await _handler.Handle(
+            new ReopenSessionCommand(within.Id, TestData.UserId, false), CancellationToken.None);
+        Assert.Equal(AppointmentStatus.InProgress, dto.Status);
+
+        var outside = AddCompleted(completedAgo: TimeSpan.FromMinutes(61));
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(
+                new ReopenSessionCommand(outside.Id, TestData.UserId, false), CancellationToken.None));
+    }
 }

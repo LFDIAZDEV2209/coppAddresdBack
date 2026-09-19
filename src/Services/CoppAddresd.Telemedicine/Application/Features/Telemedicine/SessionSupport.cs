@@ -33,6 +33,12 @@ internal static class SessionSupport
     /// <summary>Máximo de participantes concurrentes soportado por el producto (Twilio group: 50).</summary>
     public const int MaxRoomMaxParticipants = 10;
 
+    /// <summary>Mínimo de la gracia de reapertura configurable (minutos).</summary>
+    public const int MinReopenGraceMinutes = 5;
+
+    /// <summary>Máximo de la gracia de reapertura configurable (minutos; 24 h).</summary>
+    public const int MaxReopenGraceMinutes = 1440;
+
     /// <summary>
     /// Autoriza el acceso a la sala (join-token / ver sala): el profesional de la
     /// cita, el paciente de la cita (resueltos por usuario del JWT) o un
@@ -171,6 +177,21 @@ internal static class SessionSupport
         {
             throw new BusinessRuleViolationException(
                 $"La capacidad de la sala debe estar entre {MinRoomMaxParticipants} y {MaxRoomMaxParticipants} participantes (valor efectivo: {maxParticipants}).");
+        }
+    }
+
+    /// <summary>
+    /// Valida el rango de la gracia de reapertura configurable (5–1440 min,
+    /// default 60). Protege contra filas de settings corruptas o editadas
+    /// manualmente: un valor fuera de rango no debe habilitar reaperturas
+    /// arbitrarias (muy largo) ni bloquear la operación (negativo).
+    /// </summary>
+    public static void EnsureValidReopenGraceMinutes(int reopenGraceMinutes)
+    {
+        if (reopenGraceMinutes is < MinReopenGraceMinutes or > MaxReopenGraceMinutes)
+        {
+            throw new BusinessRuleViolationException(
+                $"La gracia de reapertura debe estar entre {MinReopenGraceMinutes} y {MaxReopenGraceMinutes} minutos (valor efectivo: {reopenGraceMinutes}).");
         }
     }
 

@@ -185,6 +185,21 @@ public interface IAppointmentRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// Métricas de llamada del rango (F5: salas, sesiones, duración sumada,
+    /// reaperturas y chat por rol), atribuidas por fecha de agenda de la cita.
+    /// Rollup-first: si <c>tele.appointment_daily_metrics</c> no tiene filas de
+    /// estas claves en el rango, cae a conteos vivos sobre
+    /// <c>tele.virtual_rooms</c>/<c>tele.telemedicine_sessions</c>/
+    /// <c>tele.chat_messages</c>; las claves «solo evento» (P2) valen 0.
+    /// </summary>
+    Task<CallMetricsAggregate> GetCallMetricsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    );
+
     /// <summary>Próximas citas desde <paramref name="from"/> (futuras, ordenadas por inicio).</summary>
     Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,

@@ -31,6 +31,13 @@ public sealed class TelemedicineSettings
     /// <summary>Minutos después del fin de la cita en que la sala deja de aceptar participantes.</summary>
     public int RoomCloseAfterMinutes { get; set; } = 15;
 
+    /// <summary>
+    /// Minutos de gracia tras completar la consulta en que el profesional o un
+    /// supervisor pueden reabrirla (F5). Default 60 (comportamiento previo);
+    /// rango válido 5–1440 (validado en la aplicación, fuera de rango → 409).
+    /// </summary>
+    public int ReopenGraceMinutes { get; set; } = 60;
+
     /// <summary>TTL del token de acceso a la sala (segundos).</summary>
     public int AccessTokenTtlSeconds { get; set; } = 900;
 
