@@ -2,13 +2,15 @@ using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
 /// Caso de uso de inicio de sesión (StartSessionCommandHandler): autorización
 /// del profesional/supervisor, estado de la cita, ventana, una sesión activa a
-/// la vez y transición Confirmed → InProgress con creación de sala.
+/// la vez, elevación perezosa de capacidad (F3) y transición
+/// Confirmed → InProgress con creación de sala.
 /// </summary>
 public class StartSessionHandlerTests
 {
@@ -21,7 +23,8 @@ public class StartSessionHandlerTests
     public StartSessionHandlerTests()
     {
         _handler = new StartSessionCommandHandler(
-            _appointments, _videoProvider, _referenceData, _settings, TestOptions.Create());
+            _appointments, _videoProvider, _referenceData, _settings,
+            TestOptions.Create(), NullLogger<StartSessionCommandHandler>.Instance);
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
         _referenceData.UserToProfessional[TestData.UserId] = TestData.ProfessionalId;
     }
@@ -106,5 +109,60 @@ public class StartSessionHandlerTests
         var dto = await _handler.Handle(command, CancellationToken.None);
 
         Assert.Equal(AppointmentStatus.InProgress, dto.Status);
+    }
+
+    [Fact]
+    public async Task Handle_SalaExistenteCapacidadMenor_ElevaEnProveedorYPersiste()
+    {
+        var appointment = AddConfirmed();
+        appointment.Room = new VirtualRoom
+        {
+            Id = Guid.NewGuid(),
+            AppointmentId = appointment.Id,
+            ProviderRoomSid = "RM-vieja",
+            ProviderRoomName = $"apt-{appointment.Id:N}",
+            MaxParticipants = 2,
+        };
+        var command = new StartSessionCommand(appointment.Id, TestData.UserId, false);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(0, _videoProvider.CreateRoomCalls);
+        var update = Assert.Single(_videoProvider.RoomMaxParticipantsUpdates);
+        Assert.Equal(("RM-vieja", 3), update);
+        Assert.Equal(3, appointment.Room.MaxParticipants);
+    }
+
+    [Fact]
+    public async Task Handle_SalaExistenteCapacidadSuficiente_NoActualizaProveedor()
+    {
+        var appointment = AddConfirmed();
+        appointment.Room = new VirtualRoom
+        {
+            Id = Guid.NewGuid(),
+            AppointmentId = appointment.Id,
+            ProviderRoomSid = "RM-actual",
+            ProviderRoomName = $"apt-{appointment.Id:N}",
+            MaxParticipants = 3,
+        };
+
+        await _handler.Handle(
+            new StartSessionCommand(appointment.Id, TestData.UserId, false), CancellationToken.None);
+
+        Assert.Empty(_videoProvider.RoomMaxParticipantsUpdates);
+    }
+
+    [Fact]
+    public async Task Handle_SettingsFueraDeRango_LanzaViolacionSinCrearSala()
+    {
+        var appointment = AddConfirmed();
+        _settings.Settings = TestData.Settings(maxParticipants: 11);
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(
+                new StartSessionCommand(appointment.Id, TestData.UserId, false), CancellationToken.None));
+
+        Assert.Equal(0, _videoProvider.CreateRoomCalls);
+        Assert.Null(appointment.Room);
     }
 }

@@ -1,8 +1,10 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.ReferenceData;
+using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
@@ -25,6 +27,12 @@ internal enum SessionParticipant
 /// </summary>
 internal static class SessionSupport
 {
+    /// <summary>Mínimo de participantes concurrentes de una sala (profesional + paciente).</summary>
+    public const int MinRoomMaxParticipants = 2;
+
+    /// <summary>Máximo de participantes concurrentes soportado por el producto (Twilio group: 50).</summary>
+    public const int MaxRoomMaxParticipants = 10;
+
     /// <summary>
     /// Autoriza el acceso a la sala (join-token / ver sala): el profesional de la
     /// cita, el paciente de la cita (resueltos por usuario del JWT) o un
@@ -117,6 +125,77 @@ internal static class SessionSupport
             throw new BusinessRuleViolationException(
                 $"La cita no puede abrir su sala en el estado actual ({status}).");
         }
+    }
+
+    /// <summary>
+    /// El chat de la consulta está disponible con la cita confirmada, en curso o
+    /// completada (F3): el paciente puede esperar en la sala con la cita aún
+    /// confirmada y el acceso posterior a la consulta se conserva. Solo los
+    /// estados sin atención (Requested/Cancelled/NoShow) responden 409.
+    /// </summary>
+    public static void EnsureChatAllowed(AppointmentStatus status)
+    {
+        if (status is not (AppointmentStatus.Confirmed
+            or AppointmentStatus.InProgress
+            or AppointmentStatus.Completed))
+        {
+            throw new BusinessRuleViolationException(
+                $"El chat no está disponible en el estado actual de la cita ({status}).");
+        }
+    }
+
+    /// <summary>
+    /// Valida el rango del máximo de participantes efectivo (2–10). Protege
+    /// contra filas de settings corruptas o editadas manualmente: un valor fuera
+    /// de rango produciría un error del proveedor (Twilio 53107) o una sala
+    /// inutilizable.
+    /// </summary>
+    public static void EnsureValidMaxParticipants(int maxParticipants)
+    {
+        if (maxParticipants is < MinRoomMaxParticipants or > MaxRoomMaxParticipants)
+        {
+            throw new BusinessRuleViolationException(
+                $"La capacidad de la sala debe estar entre {MinRoomMaxParticipants} y {MaxRoomMaxParticipants} participantes (valor efectivo: {maxParticipants}).");
+        }
+    }
+
+    /// <summary>
+    /// Eleva la capacidad de una sala ya creada cuando el settings efectivo la
+    /// superó: actualiza la sala del proveedor (best-effort, solo si sigue
+    /// admitiéndolo) y devuelve el nuevo límite para persistirlo. La
+    /// persistencia local la decide el llamador (join actualiza la sala; start
+    /// la persiste con el agregado de la cita). Un fallo del proveedor NUNCA
+    /// interrumpe el join: se loguea como warning y la regla de negocio sigue
+    /// vigente en la próxima reapertura/sala nueva.
+    /// </summary>
+    public static async Task<bool> ElevateRoomCapacityIfNeededAsync(
+        IVideoProvider videoProvider,
+        VirtualRoom room,
+        int effectiveMaxParticipants,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (room.MaxParticipants >= effectiveMaxParticipants)
+        {
+            return false;
+        }
+
+        try
+        {
+            await videoProvider.UpdateRoomMaxParticipantsAsync(
+                room.ProviderRoomSid, effectiveMaxParticipants, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                ex,
+                "No se pudo elevar la capacidad de la sala {RoomSid} a {MaxParticipants}; la actualización es best-effort y el flujo continúa.",
+                room.ProviderRoomSid, effectiveMaxParticipants);
+        }
+
+        room.MaxParticipants = effectiveMaxParticipants;
+        room.UpdatedAt = DateTime.UtcNow;
+        return true;
     }
 
     /// <summary>Valida que <paramref name="now"/> esté dentro de la ventana de acceso.</summary>

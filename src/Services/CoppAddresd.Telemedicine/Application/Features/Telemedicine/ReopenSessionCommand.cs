@@ -74,6 +74,7 @@ public sealed class ReopenSessionCommandHandler(
 
         var settings = await settingsProvider.GetSettingsAsync(
             appointment.OrganizationId, appointment.ClinicId, ct);
+        SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
 
         var oldStatus = appointment.Status;
         appointment.ReopenCount++;
@@ -111,6 +112,9 @@ public sealed class ReopenSessionCommandHandler(
             room.PatientJoinedAt = null;
             room.ScheduledOpenAt = open;
             room.ScheduledCloseAt = close;
+            // F3: la sala nueva del proveedor se creó con el settings vigente; la
+            // fila persistida debe reflejarlo (antes quedaba con el valor viejo).
+            room.MaxParticipants = settings.MaxParticipants;
             room.UpdatedAt = now.UtcDateTime;
             await rooms.UpdateAsync(room, ct);
         }

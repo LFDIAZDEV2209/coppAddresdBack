@@ -2,13 +2,14 @@ using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
 /// Caso de uso de join-token (JoinSessionCommandHandler): autorización del
-/// participante, estado y ventana, creación perezosa e idempotente de la sala y
-/// generación del token de acceso.
+/// participante, estado y ventana, creación perezosa e idempotente de la sala,
+/// elevación perezosa de capacidad (F3) y generación del token de acceso.
 /// </summary>
 public class JoinSessionHandlerTests
 {
@@ -22,7 +23,23 @@ public class JoinSessionHandlerTests
     public JoinSessionHandlerTests()
     {
         _handler = new JoinSessionCommandHandler(
-            _appointments, _rooms, _videoProvider, _referenceData, _settings, TestOptions.Create());
+            _appointments, _rooms, _videoProvider, _referenceData, _settings,
+            TestOptions.Create(), NullLogger<JoinSessionCommandHandler>.Instance);
+    }
+
+    private VirtualRoom AddExistingRoom(Appointment appointment, int maxParticipants)
+    {
+        var room = new VirtualRoom
+        {
+            Id = Guid.NewGuid(),
+            AppointmentId = appointment.Id,
+            Provider = "twilio",
+            ProviderRoomName = $"apt-{appointment.Id:N}",
+            ProviderRoomSid = "RM-existente",
+            MaxParticipants = maxParticipants,
+        };
+        _rooms.Rooms.Add(room);
+        return room;
     }
 
     private Appointment AddConfirmed(DateTimeOffset? start = null)
@@ -117,5 +134,86 @@ public class JoinSessionHandlerTests
         var command = new JoinSessionCommand(Guid.NewGuid(), TestData.UserId, false);
 
         await Assert.ThrowsAsync<NotFoundException>(() => _handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Handle_SalaExistenteCapacidadMenor_ElevaEnProveedorYPersiste()
+    {
+        var appointment = AddConfirmed();
+        _referenceData.Professionals[appointment.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
+        _referenceData.UserToProfessional[TestData.UserId] = appointment.ProfessionalId;
+        var room = AddExistingRoom(appointment, maxParticipants: 2);
+
+        var result = await _handler.Handle(
+            new JoinSessionCommand(appointment.Id, TestData.UserId, false), CancellationToken.None);
+
+        Assert.Equal(3, _settings.Settings.MaxParticipants);
+        Assert.Equal(0, _videoProvider.CreateRoomCalls);
+        var update = Assert.Single(_videoProvider.RoomMaxParticipantsUpdates);
+        Assert.Equal(("RM-existente", 3), update);
+        Assert.Equal(3, room.MaxParticipants);
+        Assert.Equal(room.Id, result.Room.Id);
+    }
+
+    [Fact]
+    public async Task Handle_SalaExistenteCapacidadIgual_NoActualizaProveedor()
+    {
+        var appointment = AddConfirmed();
+        _referenceData.Professionals[appointment.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
+        _referenceData.UserToProfessional[TestData.UserId] = appointment.ProfessionalId;
+        var room = AddExistingRoom(appointment, maxParticipants: 3);
+
+        await _handler.Handle(
+            new JoinSessionCommand(appointment.Id, TestData.UserId, false), CancellationToken.None);
+
+        Assert.Empty(_videoProvider.RoomMaxParticipantsUpdates);
+        Assert.Equal(3, room.MaxParticipants);
+    }
+
+    [Fact]
+    public async Task Handle_SalaExistenteCapacidadMayor_NoBajaLaCapacidad()
+    {
+        var appointment = AddConfirmed();
+        _referenceData.Professionals[appointment.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
+        _referenceData.UserToProfessional[TestData.UserId] = appointment.ProfessionalId;
+        var room = AddExistingRoom(appointment, maxParticipants: 5);
+
+        await _handler.Handle(
+            new JoinSessionCommand(appointment.Id, TestData.UserId, false), CancellationToken.None);
+
+        Assert.Empty(_videoProvider.RoomMaxParticipantsUpdates);
+        Assert.Equal(5, room.MaxParticipants);
+    }
+
+    [Fact]
+    public async Task Handle_ProveedorFallaAlElevar_ContinuaYQuedaCapacidadLocal()
+    {
+        var appointment = AddConfirmed();
+        _referenceData.Professionals[appointment.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
+        _referenceData.UserToProfessional[TestData.UserId] = appointment.ProfessionalId;
+        var room = AddExistingRoom(appointment, maxParticipants: 2);
+        _videoProvider.UpdateRoomMaxParticipantsThrows = true;
+
+        var result = await _handler.Handle(
+            new JoinSessionCommand(appointment.Id, TestData.UserId, false), CancellationToken.None);
+
+        Assert.Equal("fake-access-token", result.Token);
+        Assert.Equal(3, room.MaxParticipants);
+    }
+
+    [Fact]
+    public async Task Handle_SettingsFueraDeRango_LanzaViolacionSinCrearSala()
+    {
+        var appointment = AddConfirmed();
+        _referenceData.Professionals[appointment.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
+        _referenceData.UserToProfessional[TestData.UserId] = appointment.ProfessionalId;
+        _settings.Settings = TestData.Settings(maxParticipants: 11);
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(new JoinSessionCommand(appointment.Id, TestData.UserId, false), CancellationToken.None));
+
+        Assert.Equal(0, _videoProvider.CreateRoomCalls);
+        Assert.Empty(_rooms.Rooms);
+        Assert.Empty(_videoProvider.RoomMaxParticipantsUpdates);
     }
 }

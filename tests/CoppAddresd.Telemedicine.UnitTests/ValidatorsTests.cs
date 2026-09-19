@@ -229,4 +229,66 @@ public class ValidatorsTests
 
         Assert.True(validator.Validate(command).IsValid);
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void SendRoomChatMessage_BodyVacio_Invalido(string body)
+    {
+        var validator = new SendRoomChatMessageCommandValidator();
+        var command = new SendRoomChatMessageCommand(Guid.NewGuid(), body, TestData.UserId, false);
+
+        var result = validator.Validate(command);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == "Body");
+    }
+
+    [Fact]
+    public void SendRoomChatMessage_BodyDemasiadoLargo_Invalido()
+    {
+        var validator = new SendRoomChatMessageCommandValidator();
+        var command = new SendRoomChatMessageCommand(
+            Guid.NewGuid(), new string('x', 2001), TestData.UserId, false);
+
+        Assert.False(validator.Validate(command).IsValid);
+    }
+
+    [Fact]
+    public void SendRoomChatMessage_BodyEnElLimite_EsValido()
+    {
+        var validator = new SendRoomChatMessageCommandValidator();
+        var command = new SendRoomChatMessageCommand(
+            Guid.NewGuid(), new string('x', 2000), TestData.UserId, false);
+
+        Assert.True(validator.Validate(command).IsValid);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(101)]
+    public void GetRoomChatMessages_LimiteFueraDeRango_Invalido(int limit)
+    {
+        var validator = new GetRoomChatMessagesQueryValidator();
+        var query = new GetRoomChatMessagesQuery(
+            Guid.NewGuid(), TestData.UserId, false, Limit: limit);
+
+        var result = validator.Validate(query);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName == "Limit");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(50)]
+    [InlineData(100)]
+    public void GetRoomChatMessages_LimiteValido_EsValido(int limit)
+    {
+        var validator = new GetRoomChatMessagesQueryValidator();
+        var query = new GetRoomChatMessagesQuery(
+            Guid.NewGuid(), TestData.UserId, false, Limit: limit);
+
+        Assert.True(validator.Validate(query).IsValid);
+    }
 }

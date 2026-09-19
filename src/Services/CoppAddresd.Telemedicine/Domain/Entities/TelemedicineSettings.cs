@@ -34,7 +34,13 @@ public sealed class TelemedicineSettings
     /// <summary>TTL del token de acceso a la sala (segundos).</summary>
     public int AccessTokenTtlSeconds { get; set; } = 900;
 
-    public int MaxParticipants { get; set; } = 2;
+    /// <summary>
+    /// Máximo de participantes concurrentes en la sala (F3). Default 3:
+    /// profesional + paciente + 1 supervisor. La cita sigue siendo 1:1 (solo
+    /// profesional/paciente/supervisor pueden unirse); este cupo protege el
+    /// ingreso de supervisores. Rango válido 2–10 (validado en la aplicación).
+    /// </summary>
+    public int MaxParticipants { get; set; } = 3;
 
     /// <summary>
     /// Interruptor maestro de notificaciones push/SMS (F2). En <c>false</c> ni el

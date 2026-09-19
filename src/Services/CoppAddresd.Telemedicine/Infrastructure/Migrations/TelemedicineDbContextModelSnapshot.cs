@@ -294,6 +294,46 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.ToTable("appointment_reschedules", "tele");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("SenderRole")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("sender_role");
+
+                    b.Property<Guid>("SenderUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sender_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_chat_messages");
+
+                    b.HasIndex("AppointmentId", "CreatedAt")
+                        .HasDatabaseName("ix_chat_messages_appointment_id_created_at");
+
+                    b.ToTable("chat_messages", "tele");
+                });
+
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ClinicalEncounter", b =>
                 {
                     b.Property<Guid>("Id")
@@ -732,7 +772,9 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnName("max_advance_booking_days");
 
                     b.Property<int>("MaxParticipants")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
+                        .HasDefaultValue(3)
                         .HasColumnName("max_participants");
 
                     b.Property<int>("MaxReschedules")

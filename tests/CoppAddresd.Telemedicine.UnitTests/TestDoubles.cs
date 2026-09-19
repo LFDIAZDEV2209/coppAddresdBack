@@ -56,7 +56,8 @@ public static class TestData
         Guid? clinic = null,
         int minAdvanceHours = 2,
         int maxAdvanceDays = 30,
-        int maxReschedules = 2
+        int maxReschedules = 2,
+        int maxParticipants = 3
     ) =>
         new()
         {
@@ -69,7 +70,7 @@ public static class TestData
             RoomOpenBeforeMinutes = 10,
             RoomCloseAfterMinutes = 15,
             AccessTokenTtlSeconds = 900,
-            MaxParticipants = 2,
+            MaxParticipants = maxParticipants,
         };
 
     public static Appointment Appointment(
@@ -169,15 +170,25 @@ public sealed class FakeVideoProvider : IVideoProvider
     public bool SignatureValid { get; set; } = true;
     public bool CompleteRoomThrows { get; set; }
 
+    /// <summary>Si es true, <see cref="UpdateRoomMaxParticipantsAsync"/> lanza (proveedor caído).</summary>
+    public bool UpdateRoomMaxParticipantsThrows { get; set; }
+
     /// <summary>Sala devuelta por <see cref="GetRoomAsync"/> (null = no existe).</summary>
     public RoomInfo? Room { get; set; }
 
     public int CreateRoomCalls { get; private set; }
     public int CompleteRoomCalls { get; private set; }
 
+    /// <summary>Peticiones de creación recibidas (F3: valida la capacidad enviada).</summary>
+    public List<RoomRequest> CreateRoomRequests { get; } = [];
+
+    /// <summary>Actualizaciones de capacidad registradas: (RoomSid, MaxParticipants).</summary>
+    public List<(string RoomSid, int MaxParticipants)> RoomMaxParticipantsUpdates { get; } = [];
+
     public Task<RoomInfo> CreateRoomAsync(RoomRequest request, CancellationToken ct)
     {
         CreateRoomCalls++;
+        CreateRoomRequests.Add(request);
         return Task.FromResult(
             new RoomInfo(
                 $"RM{CreateRoomCalls}",
@@ -188,6 +199,21 @@ public sealed class FakeVideoProvider : IVideoProvider
                 null
             )
         );
+    }
+
+    public Task UpdateRoomMaxParticipantsAsync(
+        string providerRoomSid,
+        int maxParticipants,
+        CancellationToken ct
+    )
+    {
+        if (UpdateRoomMaxParticipantsThrows)
+        {
+            throw new InvalidOperationException("Proveedor no disponible.");
+        }
+
+        RoomMaxParticipantsUpdates.Add((providerRoomSid, maxParticipants));
+        return Task.CompletedTask;
     }
 
     public Task<RoomInfo?> GetRoomAsync(string providerRoomSidOrName, CancellationToken ct) =>
@@ -938,6 +964,46 @@ public sealed class FakeEncounterRepository : IEncounterRepository
 
     public Task UpdateAsync(ClinicalEncounter encounter, CancellationToken ct = default) =>
         Task.CompletedTask;
+}
+
+/// <summary>
+/// Repositorio de chat en memoria (mismo contrato keyset que la implementación
+/// EF: orden (created_at, id) y cursor after/afterId).
+/// </summary>
+public sealed class FakeChatMessageRepository : IChatMessageRepository
+{
+    public List<ChatMessage> Items { get; } = [];
+
+    public Task<IReadOnlyList<ChatMessage>> ListAfterAsync(
+        Guid appointmentId,
+        DateTimeOffset? after,
+        Guid? afterId,
+        int limit,
+        CancellationToken ct = default
+    )
+    {
+        var query = Items.Where(m => m.AppointmentId == appointmentId);
+
+        if (after is { } cursor)
+        {
+            var cursorUtc = cursor.UtcDateTime;
+            query = afterId is { } cursorId
+                ? query.Where(m =>
+                    m.CreatedAt > cursorUtc
+                    || (m.CreatedAt == cursorUtc && m.Id.CompareTo(cursorId) > 0))
+                : query.Where(m => m.CreatedAt > cursorUtc);
+        }
+
+        return Task.FromResult<IReadOnlyList<ChatMessage>>(
+            query.OrderBy(m => m.CreatedAt).ThenBy(m => m.Id).Take(limit).ToList()
+        );
+    }
+
+    public Task<ChatMessage> AddAsync(ChatMessage message, CancellationToken ct = default)
+    {
+        Items.Add(message);
+        return Task.FromResult(message);
+    }
 }
 
 /// <summary>Opciones del microservicio (WebhookUrl) para los handlers.</summary>

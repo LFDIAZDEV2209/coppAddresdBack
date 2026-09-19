@@ -6,6 +6,7 @@ using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
@@ -36,7 +37,8 @@ public sealed class StartSessionCommandHandler(
     IVideoProvider videoProvider,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IOptions<TelemedicineOptions> options)
+    IOptions<TelemedicineOptions> options,
+    ILogger<StartSessionCommandHandler> logger)
     : IRequestHandler<StartSessionCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(StartSessionCommand request, CancellationToken ct)
@@ -50,6 +52,8 @@ public sealed class StartSessionCommandHandler(
         SessionSupport.EnsureCanStartOrJoin(appointment.Status);
 
         var settings = await settingsProvider.GetSettingsAsync(appointment.OrganizationId, appointment.ClinicId, ct);
+        SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
+
         var now = DateTimeOffset.UtcNow;
         SessionSupport.EnsureWithinWindow(appointment, settings, now);
 
@@ -76,6 +80,14 @@ public sealed class StartSessionCommandHandler(
                 appointment, settings, providerRoom.ProviderRoomName, providerRoom.ProviderRoomSid, request.UserId);
 
             appointment.Room = room;
+        }
+        else
+        {
+            // Salas creadas antes de F3 (límite < settings): elevar de forma
+            // perezosa. La sala cargada del agregado queda Modified y se persiste
+            // con la cita en el UpdateAsync de más abajo.
+            await SessionSupport.ElevateRoomCapacityIfNeededAsync(
+                videoProvider, room, settings.MaxParticipants, logger, ct);
         }
 
         var session = new TelemedicineSession
