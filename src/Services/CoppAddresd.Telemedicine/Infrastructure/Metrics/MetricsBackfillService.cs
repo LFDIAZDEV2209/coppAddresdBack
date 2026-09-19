@@ -40,11 +40,13 @@ public sealed class MetricsBackfillService(
     private const string BaseCte = """
         WITH base AS (
             SELECT
+                a.id AS appointment_id,
                 (a.scheduled_start AT TIME ZONE 'UTC')::date AS metric_date,
                 a.professional_id AS professional_id,
                 a.clinic_id AS clinic_id,
                 a.patient_id AS patient_id,
                 a.status::text AS status,
+                a.reopen_count AS reopen_count,
                 'Hour_' || TO_CHAR(a.scheduled_start AT TIME ZONE 'UTC', 'HH24') AS hour_dim
             FROM tele.appointments AS a
             WHERE (a.scheduled_start AT TIME ZONE 'UTC')::date BETWEEN @p0 AND @p1
@@ -152,9 +154,16 @@ public sealed class MetricsBackfillService(
 
     /// <summary>
     /// Agrega a la granularidad exacta de la PK
-    /// (día, profesional, clave, dimensión) las tres claves
-    /// (<c>daily_total</c>, <c>status_count</c>, <c>hourly_count</c>) más el
-    /// espejo global, y las sobrescribe (recálculo autoritativo).
+    /// (día, profesional, clave, dimensión) las claves de citas
+    /// (<c>daily_total</c>, <c>status_count</c>, <c>hourly_count</c>) y las
+    /// claves reconstruibles de llamada de F5 (<c>rooms_opened</c>,
+    /// <c>sessions_started</c>, <c>sessions_ended</c>,
+    /// <c>session_duration_seconds</c>, <c>reopens</c>,
+    /// <c>chat_messages_sent</c>) más el espejo global, y las sobrescribe
+    /// (recálculo autoritativo). La fecha de agenda es la de la cita
+    /// (<c>scheduled_start</c> UTC), igual que en los eventos del processor, no
+    /// la fecha real de la llamada. Las claves P2 (<c>join_tokens_issued</c>,
+    /// <c>participant_connections</c>) son «solo evento»: no se reconstruyen.
     /// La clínica NO forma parte de la PK: se conserva solo como dato
     /// informativo (MAX). Agrupar por clínica generaría dos filas con la misma
     /// PK cuando un profesional atiende en dos clínicas el mismo día y el
@@ -184,6 +193,61 @@ public sealed class MetricsBackfillService(
                 hour_dim AS dimension_key,
                 COUNT(*) AS total
             FROM base GROUP BY 1, 2, 5
+            UNION ALL
+            SELECT b.metric_date, b.professional_id,
+                MAX(b.clinic_id::text)::uuid AS clinic_id,
+                '{TelemedicineMetricKeys.RoomsOpened}' AS metric_key,
+                '{TelemedicineMetricKeys.GeneralDimension}' AS dimension_key,
+                COUNT(DISTINCT b.appointment_id) AS total
+            FROM base b
+            JOIN tele.virtual_rooms r ON r.appointment_id = b.appointment_id
+            GROUP BY 1, 2
+            UNION ALL
+            SELECT b.metric_date, b.professional_id,
+                MAX(b.clinic_id::text)::uuid AS clinic_id,
+                '{TelemedicineMetricKeys.SessionsStarted}' AS metric_key,
+                '{TelemedicineMetricKeys.GeneralDimension}' AS dimension_key,
+                COUNT(*) AS total
+            FROM base b
+            JOIN tele.telemedicine_sessions s ON s.appointment_id = b.appointment_id
+            GROUP BY 1, 2
+            UNION ALL
+            SELECT b.metric_date, b.professional_id,
+                MAX(b.clinic_id::text)::uuid AS clinic_id,
+                '{TelemedicineMetricKeys.SessionsEnded}' AS metric_key,
+                '{TelemedicineMetricKeys.GeneralDimension}' AS dimension_key,
+                COUNT(*) FILTER (WHERE s.ended_at IS NOT NULL) AS total
+            FROM base b
+            JOIN tele.telemedicine_sessions s ON s.appointment_id = b.appointment_id
+            GROUP BY 1, 2
+            HAVING COUNT(*) FILTER (WHERE s.ended_at IS NOT NULL) > 0
+            UNION ALL
+            SELECT b.metric_date, b.professional_id,
+                MAX(b.clinic_id::text)::uuid AS clinic_id,
+                '{TelemedicineMetricKeys.SessionDurationSeconds}' AS metric_key,
+                '{TelemedicineMetricKeys.GeneralDimension}' AS dimension_key,
+                COALESCE(SUM(s.duration_seconds) FILTER (WHERE s.ended_at IS NOT NULL), 0) AS total
+            FROM base b
+            JOIN tele.telemedicine_sessions s ON s.appointment_id = b.appointment_id
+            GROUP BY 1, 2
+            HAVING COALESCE(SUM(s.duration_seconds) FILTER (WHERE s.ended_at IS NOT NULL), 0) > 0
+            UNION ALL
+            SELECT metric_date, professional_id,
+                MAX(clinic_id::text)::uuid AS clinic_id,
+                '{TelemedicineMetricKeys.Reopens}' AS metric_key,
+                '{TelemedicineMetricKeys.GeneralDimension}' AS dimension_key,
+                SUM(reopen_count) AS total
+            FROM base GROUP BY 1, 2
+            HAVING SUM(reopen_count) > 0
+            UNION ALL
+            SELECT b.metric_date, b.professional_id,
+                MAX(b.clinic_id::text)::uuid AS clinic_id,
+                '{TelemedicineMetricKeys.ChatMessagesSent}' AS metric_key,
+                m.sender_role AS dimension_key,
+                COUNT(*) AS total
+            FROM base b
+            JOIN tele.chat_messages m ON m.appointment_id = b.appointment_id
+            GROUP BY 1, 2, 5
             ),
             scoped AS (
                 SELECT metric_date, professional_id, clinic_id, metric_key, dimension_key, total FROM agg

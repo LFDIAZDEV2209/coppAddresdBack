@@ -257,6 +257,68 @@ public class GetDashboardAnalyticsQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_BloqueCalls_ExponeAgregadosYPromedioEnLectura()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _appointments.CallMetrics = new CallMetricsAggregate(
+            RoomsOpened: 4,
+            SessionsStarted: 3,
+            SessionsEnded: 2,
+            TotalDurationSeconds: 300,
+            Reopens: 1,
+            ChatMessagesByRole: new Dictionary<string, int>
+            {
+                ["Professional"] = 2,
+                ["Patient"] = 5,
+            },
+            JoinTokensIssued: 0,
+            ParticipantConnectionsByRole: new Dictionary<string, int>()
+        );
+
+        var handler = BuildHandler();
+        var result = await handler.Handle(
+            new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now),
+            CancellationToken.None
+        );
+
+        Assert.Equal(4, result.Calls.RoomsOpened);
+        Assert.Equal(3, result.Calls.SessionsStarted);
+        Assert.Equal(2, result.Calls.SessionsEnded);
+        // Promedio calculado en lectura: suma ÷ sesiones terminadas.
+        Assert.Equal(150, result.Calls.AverageDurationSeconds);
+        Assert.Equal(1, result.Calls.Reopens);
+        Assert.Equal(7, result.Calls.ChatMessagesSent);
+        Assert.Equal(5, result.Calls.ChatMessagesByRole["Patient"]);
+        Assert.Equal(0, result.Calls.JoinTokensIssued);
+        Assert.Empty(result.Calls.ParticipantConnectionsByRole);
+    }
+
+    [Fact]
+    public async Task Handle_BloqueCalls_SinSesionesTerminadas_PromedioNull()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _appointments.CallMetrics = new CallMetricsAggregate(
+            0,
+            0,
+            0,
+            0,
+            0,
+            new Dictionary<string, int>(),
+            0,
+            new Dictionary<string, int>()
+        );
+
+        var handler = BuildHandler();
+        var result = await handler.Handle(
+            new GetDashboardAnalyticsQuery(null, now.AddDays(-30), now),
+            CancellationToken.None
+        );
+
+        Assert.Null(result.Calls.AverageDurationSeconds);
+        Assert.Equal(0, result.Calls.ChatMessagesSent);
+    }
+
+    [Fact]
     public async Task Handle_RepetidoUsaCacheParaAgregadosPeroProximasCitasSiempreEnVivo()
     {
         var now = DateTimeOffset.UtcNow;

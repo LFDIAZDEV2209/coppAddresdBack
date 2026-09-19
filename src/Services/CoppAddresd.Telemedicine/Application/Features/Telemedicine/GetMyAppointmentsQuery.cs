@@ -70,9 +70,11 @@ public sealed class GetMyAppointmentsQueryHandler(
         );
         var roomByAppointmentId = persistedRooms.ToDictionary(r => r.AppointmentId);
 
+        // Los settings se resuelven una vez por contexto (org/clínica) para toda
+        // la página: la ventana se calcula solo si no hay sala persistida y la
+        // gracia de reapertura (F5) se expone siempre (contrato homogéneo).
         var settingsByContext = new Dictionary<(Guid Org, Guid? Clinic), TelemedicineSettings>();
         foreach (var context in items
-            .Where(a => !roomByAppointmentId.ContainsKey(a.Id))
             .Select(a => (Org: a.OrganizationId, Clinic: a.ClinicId))
             .Distinct())
         {
@@ -88,20 +90,25 @@ public sealed class GetMyAppointmentsQueryHandler(
                 dtos,
                 (entity, dto) =>
                 {
+                    var settings = settingsByContext[(entity.OrganizationId, entity.ClinicId)];
+
                     if (roomByAppointmentId.TryGetValue(entity.Id, out var room))
                     {
                         return dto with
                         {
                             RoomOpensAt = room.ScheduledOpenAt,
                             RoomClosesAt = room.ScheduledCloseAt,
+                            ReopenGraceMinutes = settings.ReopenGraceMinutes,
                         };
                     }
 
-                    var (open, close) = SessionSupport.Window(
-                        entity,
-                        settingsByContext[(entity.OrganizationId, entity.ClinicId)]
-                    );
-                    return dto with { RoomOpensAt = open, RoomClosesAt = close };
+                    var (open, close) = SessionSupport.Window(entity, settings);
+                    return dto with
+                    {
+                        RoomOpensAt = open,
+                        RoomClosesAt = close,
+                        ReopenGraceMinutes = settings.ReopenGraceMinutes,
+                    };
                 }
             )
             .ToList();

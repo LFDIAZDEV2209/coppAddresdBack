@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
@@ -22,6 +23,7 @@ public class StaleSessionSweeperTests
     private readonly FakeVideoProvider _video = new();
     private readonly FakeReferenceDataService _referenceData = new();
     private readonly FakeTelemedicineNotifier _notifier = new();
+    private readonly FakeMetricsQueue _metrics = new();
 
     private StaleSessionSweeper CreateSweeper() =>
         new(
@@ -31,7 +33,8 @@ public class StaleSessionSweeperTests
             _video,
             _referenceData,
             _notifier,
-            NullLogger<StaleSessionSweeper>.Instance
+            NullLogger<StaleSessionSweeper>.Instance,
+            _metrics
         );
 
     private (Appointment Appointment, VirtualRoom Room, TelemedicineSession Session) ArrangeStale(
@@ -242,5 +245,68 @@ public class StaleSessionSweeperTests
         await CreateSweeper().SweepAsync(now);
 
         Assert.Empty(_notifier.Sent);
+    }
+
+    // ── F5: deriva corregida — el barrido emite al pipeline CQRS ─────────────
+
+    [Fact]
+    public async Task Sweep_InProgressSinIngreso_EmiteNoShowYSessionEndedUnaVez()
+    {
+        var (appointment, _, _) = ArrangeStale();
+
+        await CreateSweeper().SweepAsync(DateTimeOffset.UtcNow);
+
+        Assert.Equal(2, _metrics.Events.Count);
+        var status = Assert.IsType<AppointmentStatusChangedMetricEvent>(_metrics.Events[0]);
+        Assert.Equal(AppointmentStatus.InProgress, status.OldStatus);
+        Assert.Equal(AppointmentStatus.NoShow, status.NewStatus);
+        Assert.Equal(DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime), status.ScheduledDate);
+
+        var ended = Assert.IsType<SessionEndedMetricEvent>(_metrics.Events[1]);
+        Assert.NotNull(ended.DurationSeconds);
+    }
+
+    [Fact]
+    public async Task Sweep_InProgressConIngreso_EmiteCompletedYSessionEnded()
+    {
+        ArrangeStale(patientJoined: true);
+
+        await CreateSweeper().SweepAsync(DateTimeOffset.UtcNow);
+
+        Assert.Equal(2, _metrics.Events.Count);
+        var status = Assert.IsType<AppointmentStatusChangedMetricEvent>(_metrics.Events[0]);
+        Assert.Equal(AppointmentStatus.InProgress, status.OldStatus);
+        Assert.Equal(AppointmentStatus.Completed, status.NewStatus);
+    }
+
+    [Fact]
+    public async Task Sweep_ConfirmadaSinSesion_EmiteConfirmadaANoShow()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var appointment = TestData.Appointment(
+            status: AppointmentStatus.Confirmed,
+            start: now.AddHours(-2)
+        );
+        _appointments.Items.Add(appointment);
+
+        await CreateSweeper().SweepAsync(now);
+
+        var status = Assert.IsType<AppointmentStatusChangedMetricEvent>(Assert.Single(_metrics.Events));
+        Assert.Equal(AppointmentStatus.Confirmed, status.OldStatus);
+        Assert.Equal(AppointmentStatus.NoShow, status.NewStatus);
+    }
+
+    [Fact]
+    public async Task Sweep_DentroDeLaGracia_NoEmiteMetricas()
+    {
+        var now = DateTimeOffset.UtcNow;
+        _appointments.Items.Add(TestData.Appointment(
+            status: AppointmentStatus.InProgress,
+            start: now.AddMinutes(-40)
+        ));
+
+        await CreateSweeper().SweepAsync(now);
+
+        Assert.Empty(_metrics.Events);
     }
 }

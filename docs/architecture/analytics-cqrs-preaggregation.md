@@ -57,11 +57,17 @@ All rollup tables follow schema isolation rules, partitioned by date and tenant/
   - `adherence_score_avg` across active cohorts.
 
 ### 2.2. Telemedicine & Appointments Metrics (`tele.appointment_daily_metrics`)
-- **Entity**: `AppointmentDailyMetric`
-- **Primary Key**: `(metric_date, clinic_id, professional_id, status)`
+- **Entity**: `AppointmentDailyMetric` (EAV)
+- **Primary Key**: `(metric_date, professional_id, metric_key, dimension_key)` — espejo global con `professional_id = Guid.Empty`; `clinic_id` es informativa (no PK).
 - **Tracked Metrics**:
-  - `scheduled`, `in_progress`, `completed`, `cancelled`, `no_show` volume counts.
-  - Video room connection metrics and consultation duration averages.
+  - Citas: `daily_total`, `status_count` (dimensión = estado) y
+    `hourly_count` (dimensión `Hour_HH` UTC).
+  - Llamada (F5): `rooms_opened`, `sessions_started`, `sessions_ended`,
+    `session_duration_seconds` (suma; promedio en lectura = suma ÷ terminadas),
+    `reopens` (derivada de `Completed→InProgress`) y `chat_messages_sent` por rol
+    (`Professional`/`Patient`/`Supervisor`).
+  - P2 **solo evento** (no reconstruibles por backfill): `join_tokens_issued` y
+    `participant_connections`.
 
 ### 2.3. Patient Directory & General Clinical Metrics (`app.patient_daily_metrics`)
 - **Entity**: `PatientDailyMetric`
@@ -150,9 +156,9 @@ DO UPDATE SET total_count = EXCLUDED.total_count, last_updated_at = NOW();
 | Servicio | Mecanismo | Cobertura |
 |---|---|---|
 | API principal | `MetricsBackfillSeeder.RunBackfillAsync` al iniciar + `POST /api/v1/dashboard/maintenance/reconcile-metrics` | Patients, HealthTests (día + rollup geo), **Biometría**, Inventory, ProgramProgress y Telemedicine (bloque condicional si existen las tablas `tele.*`) |
-| Telemedicine | `MetricsBackfillService` + `POST /api/v1/telemedicine/admin/analytics/backfill` (soporta `dryRun`) | `tele.appointment_daily_metrics` + `tele.professional_daily_stats` |
+| Telemedicine | `MetricsBackfillService` + `POST /api/v1/telemedicine/admin/analytics/backfill` (soporta `dryRun`) | `tele.appointment_daily_metrics` (citas + claves de llamada F5 reconstruibles) + `tele.professional_daily_stats`; P2 `join_tokens_issued`/`participant_connections` quedan **solo evento** |
 | Community | `CommunityMetricsBackfillHostedService` al iniciar + `POST /api/v1/community/maintenance/reconcile-metrics` (header `X-Internal-Key`, soporta `?dryRun=true`) | Rebuild autoritativo de las 5 claves de `community.community_daily_metrics` (`DELETE` + re-`INSERT`, porque likes/reposts/hourly tienen decrementos en vivo) |
 
-**Reglas del backfill**: el recálculo es autoritativo (`DO UPDATE SET total_count = EXCLUDED.total_count`) — nunca se suma a los contadores del processor; ejecutar en tráfico bajo y, si hubo escritura concurrente, re-ejecutar una vez para converger. El rollup es descartable: todo se reconstruye desde el OLTP (las únicas claves no reconstruibles son las marcadas "solo evento" en `docs/modules/program-progress/analytics.md` §6).
+**Reglas del backfill**: el recálculo es autoritativo (`DO UPDATE SET total_count = EXCLUDED.total_count`) — nunca se suma a los contadores del processor; ejecutar en tráfico bajo y, si hubo escritura concurrente, re-ejecutar una vez para converger. El rollup es descartable: todo se reconstruye desde el OLTP (las únicas claves no reconstruibles son las marcadas "solo evento" en `docs/modules/program-progress/analytics.md` §6 y en `docs/modules/telemedicine/analytics.md` (P2: `join_tokens_issued`, `participant_connections`)).
 
 **Limitación conocida (Fase 1)**: la cola es `System.Threading.Channels` en memoria por réplica — los eventos en vuelo durante un crash/reinicio se pierden y, con varias réplicas, cada una ve solo sus eventos. Mitigación actual: backfill idempotente al iniciar + endpoints de reconciliación. Escala horizontal exacta requeriría un bus durable (Redis Streams/SQS) — Fase 2.

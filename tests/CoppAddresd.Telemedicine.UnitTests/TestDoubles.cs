@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Configuration;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.ReferenceData;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
@@ -57,7 +58,8 @@ public static class TestData
         int minAdvanceHours = 2,
         int maxAdvanceDays = 30,
         int maxReschedules = 2,
-        int maxParticipants = 3
+        int maxParticipants = 3,
+        int reopenGraceMinutes = 60
     ) =>
         new()
         {
@@ -71,6 +73,7 @@ public static class TestData
             RoomCloseAfterMinutes = 15,
             AccessTokenTtlSeconds = 900,
             MaxParticipants = maxParticipants,
+            ReopenGraceMinutes = reopenGraceMinutes,
         };
 
     public static Appointment Appointment(
@@ -98,6 +101,25 @@ public static class TestData
             RescheduleCount = rescheduleCount,
             CreatedBy = UserId,
         };
+}
+
+/// <summary>
+/// Cola de métricas de prueba: registra en memoria los eventos encolados por
+/// los handlers (F5) para poder validar tipo y payload sin processor ni BD.
+/// </summary>
+public sealed class FakeMetricsQueue : ITelemedicineMetricsQueue
+{
+    public List<ITelemedicineMetricEvent> Events { get; } = [];
+
+    public ValueTask EnqueueAsync(ITelemedicineMetricEvent metricEvent, CancellationToken ct = default)
+    {
+        Events.Add(metricEvent);
+        return ValueTask.CompletedTask;
+    }
+
+    // Los tests de emisores solo encolan; el consumo lo cubre el processor.
+    public IAsyncEnumerable<ITelemedicineMetricEvent> ReadAllAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException();
 }
 
 /// <summary>Datos de referencia del ERP en memoria (sustituye al AppointmentReferenceDataService).</summary>
@@ -522,6 +544,25 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .Distinct()
                 .Count()
         );
+
+    /// <summary>Agregado de métricas de llamada devuelto por el fake (configurable por test).</summary>
+    public CallMetricsAggregate CallMetrics { get; set; } = new(
+        0,
+        0,
+        0,
+        0,
+        0,
+        new Dictionary<string, int>(),
+        0,
+        new Dictionary<string, int>()
+    );
+
+    public Task<CallMetricsAggregate> GetCallMetricsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) => Task.FromResult(CallMetrics);
 
     public Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,

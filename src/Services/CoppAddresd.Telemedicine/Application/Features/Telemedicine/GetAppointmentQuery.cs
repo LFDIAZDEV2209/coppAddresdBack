@@ -35,6 +35,9 @@ public sealed class GetAppointmentQueryHandler(
             RoomOpensAt = entity.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
             RoomClosesAt = entity.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes),
             CompletedAt = entity.CompletedAt,
+            // F5: el detalle expone la gracia efectiva (útil en Completed) para
+            // que el ERP calcule "Reabrir consulta" sin hardcodear 60.
+            ReopenGraceMinutes = settings.ReopenGraceMinutes,
         };
     }
 }

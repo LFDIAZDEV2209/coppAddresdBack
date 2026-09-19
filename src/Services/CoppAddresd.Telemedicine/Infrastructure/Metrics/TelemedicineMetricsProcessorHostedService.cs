@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Constants;
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Enums;
@@ -39,6 +40,14 @@ public sealed class TelemedicineMetricsProcessorHostedService(
 
                     case AppointmentStatusChangedMetricEvent statusEvent:
                         await ProcessStatusChangedAsync(dbContext, statusEvent, stoppingToken);
+                        break;
+
+                    // Contadores de llamada (F5): rooms/sessions/duration/chat.
+                    case RoomOpenedMetricEvent:
+                    case SessionStartedMetricEvent:
+                    case SessionEndedMetricEvent:
+                    case ChatMessageSentMetricEvent:
+                        await ProcessMappedCountersAsync(dbContext, metricEvent, stoppingToken);
                         break;
                 }
             }
@@ -124,6 +133,21 @@ public sealed class TelemedicineMetricsProcessorHostedService(
             [e.ScheduledDate, GlobalId, (object?)e.ClinicId ?? DBNull.Value, newDim, e.ProfessionalId, oldDim],
             ct);
 
+        // 1b. Reapertura (F5): Completed → InProgress se reutiliza del mismo
+        // evento, sin evento nuevo. Una reapertura NO vuelve a contar la sala.
+        if (IsReopen(e.OldStatus, e.NewStatus))
+        {
+            await ProcessCounterAsync(
+                dbContext,
+                e.ProfessionalId,
+                e.ClinicId,
+                e.ScheduledDate,
+                TelemedicineMetricKeys.Reopens,
+                TelemedicineMetricKeys.GeneralDimension,
+                1,
+                ct);
+        }
+
         // 2. Si es Completed, Cancelled o NoShow, actualizar tabla de stats del profesional
         var completedInc = e.NewStatus == AppointmentStatus.Completed ? 1 : 0;
         var cancelledInc = e.NewStatus == AppointmentStatus.Cancelled ? 1 : 0;
@@ -147,5 +171,86 @@ public sealed class TelemedicineMetricsProcessorHostedService(
                 [e.ProfessionalId, e.ScheduledDate, (object?)e.ClinicId ?? DBNull.Value, completedInc, cancelledInc, noShowInc],
                 ct);
         }
+    }
+
+    /// <summary>
+    /// Mapea un evento de llamada (F5) a los contadores EAV que le
+    /// corresponden: clave, dimensión e incremento. <c>SessionEnded</c> genera
+    /// dos: <c>sessions_ended</c> (+1) y <c>session_duration_seconds</c>
+    /// (+duración, solo si hay duración positiva). Expuesto interno para poder
+    /// probar el contrato de claves/dimensiones sin base de datos.
+    /// </summary>
+    internal static IReadOnlyList<(string MetricKey, string DimensionKey, long Increment)> MapCounters(
+        ITelemedicineMetricEvent metricEvent) =>
+        metricEvent switch
+        {
+            RoomOpenedMetricEvent => [(TelemedicineMetricKeys.RoomsOpened, TelemedicineMetricKeys.GeneralDimension, 1L)],
+            SessionStartedMetricEvent => [(TelemedicineMetricKeys.SessionsStarted, TelemedicineMetricKeys.GeneralDimension, 1L)],
+            SessionEndedMetricEvent ended when ended.DurationSeconds is > 0 => [
+                (TelemedicineMetricKeys.SessionsEnded, TelemedicineMetricKeys.GeneralDimension, 1L),
+                (TelemedicineMetricKeys.SessionDurationSeconds, TelemedicineMetricKeys.GeneralDimension, ended.DurationSeconds.Value),
+            ],
+            SessionEndedMetricEvent => [(TelemedicineMetricKeys.SessionsEnded, TelemedicineMetricKeys.GeneralDimension, 1L)],
+            ChatMessageSentMetricEvent chat => [(TelemedicineMetricKeys.ChatMessagesSent, chat.Role, 1L)],
+            _ => [],
+        };
+
+    /// <summary>
+    /// Reapertura de consulta: la transición <c>Completed → InProgress</c> del
+    /// evento de estado existente. Expuesto interno para las pruebas.
+    /// </summary>
+    internal static bool IsReopen(AppointmentStatus oldStatus, AppointmentStatus newStatus) =>
+        oldStatus == AppointmentStatus.Completed && newStatus == AppointmentStatus.InProgress;
+
+    private static async Task ProcessMappedCountersAsync(
+        TelemedicineDbContext dbContext,
+        ITelemedicineMetricEvent metricEvent,
+        CancellationToken ct)
+    {
+        var (professionalId, clinicId, scheduledDate) = metricEvent switch
+        {
+            RoomOpenedMetricEvent e => (e.ProfessionalId, e.ClinicId, e.ScheduledDate),
+            SessionStartedMetricEvent e => (e.ProfessionalId, e.ClinicId, e.ScheduledDate),
+            SessionEndedMetricEvent e => (e.ProfessionalId, e.ClinicId, e.ScheduledDate),
+            ChatMessageSentMetricEvent e => (e.ProfessionalId, e.ClinicId, e.ScheduledDate),
+            _ => throw new ArgumentOutOfRangeException(nameof(metricEvent), metricEvent, "Evento de contador no soportado."),
+        };
+
+        foreach (var (metricKey, dimensionKey, increment) in MapCounters(metricEvent))
+        {
+            await ProcessCounterAsync(
+                dbContext, professionalId, clinicId, scheduledDate, metricKey, dimensionKey, increment, ct);
+        }
+    }
+
+    /// <summary>
+    /// Upsert doble (profesional + espejo global <c>Guid.Empty</c>) del patrón
+    /// del processor para contadores EAV genéricos.
+    /// </summary>
+    private static async Task ProcessCounterAsync(
+        TelemedicineDbContext dbContext,
+        Guid professionalId,
+        Guid? clinicId,
+        DateOnly scheduledDate,
+        string metricKey,
+        string dimensionKey,
+        long increment,
+        CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO tele.appointment_daily_metrics (metric_date, professional_id, clinic_id, metric_key, dimension_key, total_count, last_updated_at)
+            VALUES
+                (@p0, @p1, @p2, @p3, @p4, @p5, NOW()),
+                (@p0, @p6, @p2, @p3, @p4, @p5, NOW())
+            ON CONFLICT (metric_date, professional_id, metric_key, dimension_key)
+            DO UPDATE SET
+                total_count = tele.appointment_daily_metrics.total_count + @p5,
+                last_updated_at = NOW();
+            """;
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            sql,
+            [scheduledDate, GlobalId, (object?)clinicId ?? DBNull.Value, metricKey, dimensionKey, increment, professionalId],
+            ct);
     }
 }

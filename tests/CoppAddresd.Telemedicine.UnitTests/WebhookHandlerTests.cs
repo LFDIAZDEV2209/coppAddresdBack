@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,13 +19,14 @@ public class WebhookHandlerTests
     private readonly FakeReferenceDataService _referenceData = new();
     private readonly FakeAlertRepository _alerts = new();
     private readonly FakeUnitOfWork _unitOfWork = new();
+    private readonly FakeMetricsQueue _metrics = new();
     private readonly ProcessTwilioWebhookCommandHandler _handler;
 
     public WebhookHandlerTests()
     {
         _handler = new ProcessTwilioWebhookCommandHandler(
             _videoProvider, _rooms, _appointments, _referenceData, _alerts, _unitOfWork,
-            NullLogger<ProcessTwilioWebhookCommandHandler>.Instance);
+            NullLogger<ProcessTwilioWebhookCommandHandler>.Instance, _metrics);
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
         _referenceData.Patients[TestData.PatientId] = TestData.Patient();
     }
@@ -211,5 +213,60 @@ public class WebhookHandlerTests
 
         Assert.Equal(WebhookProcessOutcome.Processed, result.Outcome);
         Assert.Empty(_alerts.Items);
+    }
+
+    // ── F5: deriva corregida — el webhook emite tras el commit y solo una vez ─
+
+    [Fact]
+    public async Task Handle_RoomEnded_EmiteCambioDeEstadoYSessionEndedTrasElCommit()
+    {
+        AddRoomWithActiveSession();
+
+        var result = await _handler.Handle(Command("room-ended", "RM123"), CancellationToken.None);
+
+        Assert.Equal(WebhookProcessOutcome.Processed, result.Outcome);
+        // La emisión ocurre después de ExecuteInTransactionAsync (una llamada ya
+        // completada), no dentro: el duplicado con rollback no la alcanza.
+        Assert.Equal(2, _metrics.Events.Count);
+        var status = Assert.IsType<AppointmentStatusChangedMetricEvent>(_metrics.Events[0]);
+        Assert.Equal(AppointmentStatus.InProgress, status.OldStatus);
+        Assert.Equal(AppointmentStatus.Completed, status.NewStatus);
+        var ended = Assert.IsType<SessionEndedMetricEvent>(_metrics.Events[1]);
+        Assert.NotNull(ended.DurationSeconds);
+    }
+
+    [Fact]
+    public async Task Handle_RoomEndedDuplicado_NoEmiteDosVeces()
+    {
+        AddRoomWithActiveSession();
+        var command = Command("room-ended", "RM123");
+
+        await _handler.Handle(command, CancellationToken.None);
+        var second = await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(WebhookProcessOutcome.Duplicate, second.Outcome);
+        // Sigue habiendo exactamente 2 eventos del primer procesamiento.
+        Assert.Equal(2, _metrics.Events.Count);
+    }
+
+    [Fact]
+    public async Task Handle_RoomEndedSinSesionIniciada_NoEmiteMetricas()
+    {
+        // Cita Confirmada: la sala termina pero la cita no cambia de estado.
+        var appointment = TestData.Appointment(status: AppointmentStatus.Confirmed);
+        _appointments.Items.Add(appointment);
+        _rooms.Rooms.Add(new VirtualRoom
+        {
+            Id = Guid.NewGuid(),
+            AppointmentId = appointment.Id,
+            Provider = "twilio",
+            ProviderRoomName = $"apt-{appointment.Id:N}",
+            ProviderRoomSid = "RM123",
+        });
+
+        var result = await _handler.Handle(Command("room-ended", "RM123"), CancellationToken.None);
+
+        Assert.Equal(WebhookProcessOutcome.Processed, result.Outcome);
+        Assert.Empty(_metrics.Events);
     }
 }

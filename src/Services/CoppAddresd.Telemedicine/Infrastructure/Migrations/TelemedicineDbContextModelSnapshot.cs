@@ -901,6 +901,12 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("reminder_second_hours_before");
 
+                    b.Property<int>("ReopenGraceMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(60)
+                        .HasColumnName("reopen_grace_minutes");
+
                     b.Property<int>("RoomCloseAfterMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("room_close_after_minutes");

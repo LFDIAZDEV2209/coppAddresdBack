@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
@@ -22,7 +23,8 @@ public sealed class StaleSessionSweeper(
     IVideoProvider videoProvider,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineNotifier notifier,
-    ILogger<StaleSessionSweeper> logger)
+    ILogger<StaleSessionSweeper> logger,
+    ITelemedicineMetricsQueue? metricsQueue = null)
 {
     /// <summary>Cierra las citas vencidas y devuelve cuántas cerró.</summary>
     public async Task<int> SweepAsync(DateTimeOffset now, CancellationToken ct = default)
@@ -67,14 +69,32 @@ public sealed class StaleSessionSweeper(
             }
 
             var room = await rooms.GetForUpdateAsync(appointment.Id, ct);
+            long? endedDuration = null;
+            var sessionEndedNow = false;
             if (room is not null && room.Status != VirtualRoomStatus.Ended)
             {
+                // ¿Había una sesión activa? EndActiveSession no devuelve la
+                // sesión, así que se detecta antes para decidir el evento.
+                sessionEndedNow = room.Sessions.Any(
+                    s => s.Status == TelemedicineSessionStatus.Active);
+
                 await CompleteProviderRoomAsync(room, ct);
                 SessionSupport.EndActiveSession(room, endReason: "stale-sweep", endedBy: null, now);
                 room.Status = VirtualRoomStatus.Ended;
                 room.UpdatedAt = now.UtcDateTime;
                 await rooms.UpdateAsync(room, ct);
+
+                if (sessionEndedNow)
+                {
+                    endedDuration = room.Sessions
+                        .Where(s => s.Status == TelemedicineSessionStatus.Ended)
+                        .OrderByDescending(s => s.EndedAt)
+                        .FirstOrDefault()
+                        ?.DurationSeconds;
+                }
             }
+
+            var oldStatus = appointment.Status;
 
             // Sin ingreso del paciente la cita se cierra como NoShow; con ingreso,
             // como Completed (el webhook de room-ended ya pudo haberla completado).
@@ -88,6 +108,31 @@ public sealed class StaleSessionSweeper(
             }
             appointment.UpdatedAt = now.UtcDateTime;
             await appointments.UpdateAsync(appointment, ct);
+
+            // F5 (deriva corregida): el cierre automático emite al pipeline, no
+            // solo al backfill. InProgress → Completed/NoShow.
+            if (metricsQueue is not null)
+            {
+                var scheduledDate = DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime);
+
+                await metricsQueue.EnqueueAsync(new AppointmentStatusChangedMetricEvent(
+                    appointment.Id,
+                    appointment.ProfessionalId,
+                    appointment.ClinicId,
+                    scheduledDate,
+                    oldStatus,
+                    appointment.Status));
+
+                if (sessionEndedNow)
+                {
+                    await metricsQueue.EnqueueAsync(new SessionEndedMetricEvent(
+                        appointment.Id,
+                        appointment.ProfessionalId,
+                        appointment.ClinicId,
+                        scheduledDate,
+                        endedDuration));
+                }
+            }
 
             // F2: aviso informativo al paciente que no ingresó (push + SMS).
             if (appointment.Status == AppointmentStatus.NoShow)
@@ -160,6 +205,18 @@ public sealed class StaleSessionSweeper(
             appointment.Status = AppointmentStatus.NoShow;
             appointment.UpdatedAt = now.UtcDateTime;
             await appointments.UpdateAsync(appointment, ct);
+
+            // F5 (deriva corregida): Confirmed → NoShow también entra al pipeline.
+            if (metricsQueue is not null)
+            {
+                await metricsQueue.EnqueueAsync(new AppointmentStatusChangedMetricEvent(
+                    appointment.Id,
+                    appointment.ProfessionalId,
+                    appointment.ClinicId,
+                    DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime),
+                    AppointmentStatus.Confirmed,
+                    AppointmentStatus.NoShow));
+            }
 
             // F2: aviso informativo al paciente que no ingresó (push + SMS).
             await NotifyNoShowAsync(appointment, settings, ct);

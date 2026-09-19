@@ -2,6 +2,7 @@ using CoppAddresd.Telemedicine.Application.Configuration;
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
+using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
@@ -12,11 +13,11 @@ using Microsoft.Extensions.Options;
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
 /// <summary>
-/// Reabre una consulta completada dentro de la gracia de
-/// <see cref="ReopenSessionCommandHandler.ReopenGraceMinutes"/>: el profesional
-/// asignado o un supervisor con permiso pueden volver a la sala. La sala del
-/// proveedor anterior quedó completada (irreversible), así que se crea una sala
-/// nueva y la ventana de acceso corre desde la reapertura.
+/// Reabre una consulta completada dentro de la gracia configurable
+/// (<see cref="TelemedicineSettings.ReopenGraceMinutes"/>, default 60): el
+/// profesional asignado o un supervisor con permiso pueden volver a la sala.
+/// La sala del proveedor anterior quedó completada (irreversible), así que se
+/// crea una sala nueva y la ventana de acceso corre desde la reapertura.
 /// </summary>
 public sealed record ReopenSessionCommand(
     Guid AppointmentId,
@@ -43,9 +44,6 @@ public sealed class ReopenSessionCommandHandler(
     ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<ReopenSessionCommand, AppointmentDto>
 {
-    /// <summary>Minutos de gracia tras completar la cita en que se puede reabrir.</summary>
-    public const int ReopenGraceMinutes = 60;
-
     public async Task<AppointmentDto> Handle(ReopenSessionCommand request, CancellationToken ct)
     {
         var appointment = await appointments.GetForUpdateAsync(request.AppointmentId, ct)
@@ -60,21 +58,24 @@ public sealed class ReopenSessionCommandHandler(
                 $"Solo las citas completadas pueden reabrirse (estado actual: {appointment.Status}).");
         }
 
+        // F5: la gracia es un parámetro del settings efectivo (default 60). Se
+        // carga ANTES del check y se valida el rango 5–1440 (409 si no cumple).
+        var settings = await settingsProvider.GetSettingsAsync(
+            appointment.OrganizationId, appointment.ClinicId, ct);
+        SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
+        SessionSupport.EnsureValidReopenGraceMinutes(settings.ReopenGraceMinutes);
+
         var now = DateTimeOffset.UtcNow;
         var completedAt = appointment.CompletedAt
             ?? (appointment.UpdatedAt is { } updatedAt
                 ? new DateTimeOffset(updatedAt, TimeSpan.Zero)
                 : appointment.ScheduledEnd);
 
-        if (now - completedAt > TimeSpan.FromMinutes(ReopenGraceMinutes))
+        if (now - completedAt > TimeSpan.FromMinutes(settings.ReopenGraceMinutes))
         {
             throw new BusinessRuleViolationException(
-                $"La ventana para reabrir la consulta expiró ({ReopenGraceMinutes} minutos desde la finalización).");
+                $"La ventana para reabrir la consulta expiró ({settings.ReopenGraceMinutes} minutos desde la finalización).");
         }
-
-        var settings = await settingsProvider.GetSettingsAsync(
-            appointment.OrganizationId, appointment.ClinicId, ct);
-        SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
 
         var oldStatus = appointment.Status;
         appointment.ReopenCount++;

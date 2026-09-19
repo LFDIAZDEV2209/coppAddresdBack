@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Configuration;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
@@ -39,7 +40,8 @@ public sealed class JoinSessionCommandHandler(
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
     IOptions<TelemedicineOptions> options,
-    ILogger<JoinSessionCommandHandler> logger)
+    ILogger<JoinSessionCommandHandler> logger,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<JoinSessionCommand, JoinSessionResultDto>
 {
     public async Task<JoinSessionResultDto> Handle(JoinSessionCommand request, CancellationToken ct)
@@ -77,6 +79,16 @@ public sealed class JoinSessionCommandHandler(
                 appointment, settings, providerRoom.ProviderRoomName, providerRoom.ProviderRoomSid, request.UserId);
 
             room = await rooms.AddAsync(room, ct);
+
+            // F5: primera apertura de la sala (la reapertura no cuenta salas).
+            if (metricsQueue is not null)
+            {
+                await metricsQueue.EnqueueAsync(new RoomOpenedMetricEvent(
+                    appointment.Id,
+                    appointment.ProfessionalId,
+                    appointment.ClinicId,
+                    DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime)));
+            }
         }
         else if (await SessionSupport.ElevateRoomCapacityIfNeededAsync(
             videoProvider, room, settings.MaxParticipants, logger, ct))
