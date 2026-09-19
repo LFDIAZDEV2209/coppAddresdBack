@@ -107,3 +107,58 @@ public sealed record ChatMessageDto(
         new DateTimeOffset(message.CreatedAt, TimeSpan.Zero)
     );
 }
+
+/// <summary>
+/// Pre-consulta del paciente (F4): motivo obligatorio y textos opcionales.
+/// <c>patientId</c>/<c>createdBy</c> salen de la cita y del JWT, nunca del
+/// cuerpo de la petición.
+/// </summary>
+public sealed record PreVisitIntakeDto(
+    Guid Id,
+    Guid AppointmentId,
+    Guid PatientId,
+    string Reason,
+    string? Symptoms,
+    string? Allergies,
+    string? Medications,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt
+)
+{
+    public static PreVisitIntakeDto FromEntity(PreVisitIntake intake) => new(
+        intake.Id,
+        intake.AppointmentId,
+        intake.PatientId,
+        intake.Reason,
+        intake.Symptoms,
+        intake.Allergies,
+        intake.Medications,
+        new DateTimeOffset(intake.CreatedAt, TimeSpan.Zero),
+        intake.UpdatedAt is { } updatedAt
+            ? new DateTimeOffset(updatedAt, TimeSpan.Zero)
+            : null
+    );
+}
+
+/// <summary>
+/// Adenda de un encuentro completado (F4, append-only). <c>authorName</c> es un
+/// snapshot legible del autor al momento de firmar.
+/// </summary>
+public sealed record EncounterAddendumDto(
+    Guid Id,
+    Guid EncounterId,
+    Guid AuthorUserId,
+    string? AuthorName,
+    string Body,
+    DateTimeOffset CreatedAt
+)
+{
+    public static EncounterAddendumDto FromEntity(EncounterAddendum addendum) => new(
+        addendum.Id,
+        addendum.EncounterId,
+        addendum.AuthorUserId,
+        addendum.AuthorName,
+        addendum.Body,
+        new DateTimeOffset(addendum.CreatedAt, TimeSpan.Zero)
+    );
+}

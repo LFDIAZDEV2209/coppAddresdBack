@@ -74,6 +74,8 @@ public static class DependencyInjection
         services.AddScoped<ITelemedicineUnitOfWork, TelemedicineUnitOfWork>();
         services.AddScoped<INotificationDispatchRepository, NotificationDispatchRepository>();
         services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
+        services.AddScoped<IPreVisitIntakeRepository, PreVisitIntakeRepository>();
+        services.AddScoped<IEncounterAddendumRepository, EncounterAddendumRepository>();
 
         // Métricas analíticas pre-agregadas en segundo plano (Fase 1 Pre-agregación CQRS)
         services.AddSingleton<ITelemedicineMetricsQueue, TelemedicineMetricsQueue>();

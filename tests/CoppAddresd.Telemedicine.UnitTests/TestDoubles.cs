@@ -1006,6 +1006,67 @@ public sealed class FakeChatMessageRepository : IChatMessageRepository
     }
 }
 
+/// <summary>
+/// Repositorio de pre-consultas en memoria (mismo contrato 1:1 que la
+/// implementación EF: la creación devuelve la existente si ya hay fila).
+/// </summary>
+public sealed class FakePreVisitIntakeRepository : IPreVisitIntakeRepository
+{
+    public List<PreVisitIntake> Items { get; } = [];
+
+    public Task<PreVisitIntake?> GetByAppointmentIdAsync(
+        Guid appointmentId,
+        CancellationToken ct = default
+    ) => Task.FromResult(Items.FirstOrDefault(i => i.AppointmentId == appointmentId));
+
+    public Task<PreVisitIntake?> GetForUpdateByAppointmentIdAsync(
+        Guid appointmentId,
+        CancellationToken ct = default
+    ) => Task.FromResult(Items.FirstOrDefault(i => i.AppointmentId == appointmentId));
+
+    public Task<PreVisitIntake> AddAsync(PreVisitIntake intake, CancellationToken ct = default)
+    {
+        var existing = Items.FirstOrDefault(i => i.AppointmentId == intake.AppointmentId);
+        if (existing is not null)
+        {
+            return Task.FromResult(existing);
+        }
+
+        Items.Add(intake);
+        return Task.FromResult(intake);
+    }
+
+    public Task UpdateAsync(PreVisitIntake intake, CancellationToken ct = default) =>
+        Task.CompletedTask;
+}
+
+/// <summary>Repositorio de adendas en memoria (append-only, orden cronológico estable).</summary>
+public sealed class FakeEncounterAddendumRepository : IEncounterAddendumRepository
+{
+    public List<EncounterAddendum> Items { get; } = [];
+
+    public Task<IReadOnlyList<EncounterAddendum>> ListByEncounterAsync(
+        Guid encounterId,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<EncounterAddendum>>(
+            Items
+                .Where(a => a.EncounterId == encounterId)
+                .OrderBy(a => a.CreatedAt)
+                .ThenBy(a => a.Id)
+                .ToList()
+        );
+
+    public Task<EncounterAddendum> AddAsync(
+        EncounterAddendum addendum,
+        CancellationToken ct = default
+    )
+    {
+        Items.Add(addendum);
+        return Task.FromResult(addendum);
+    }
+}
+
 /// <summary>Opciones del microservicio (WebhookUrl) para los handlers.</summary>
 public static class TestOptions
 {
