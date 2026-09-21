@@ -41,7 +41,18 @@ public class MeController : ControllerBase
             return NotFound(new { message = "Usuario no encontrado" });
         }
 
-        var permissions = await _permissionService.GetUserAllPermissionCodesAsync(userId, ct);
+        // Permisos efectivos (incluye roles con scope) para gating de UI.
+        // El enforcement real es server-side por request; aqui solo se decide
+        // que mostrar en el menu. Los roles con scope se agregan a la lista de
+        // roles para que hasRole() tambien los vea.
+        var permissions = await _permissionService.GetUserEffectivePermissionCodesAsync(userId, ct);
+        var scopedRoleNames = (user.ScopedRoles ?? [])
+            .Select(r => r.RoleName)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var roles = user.Roles
+            .Concat(scopedRoleNames)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         return Ok(
             new CurrentUserResponse(
@@ -49,7 +60,7 @@ public class MeController : ControllerBase
                 user.Email,
                 user.FirstName,
                 user.LastName,
-                user.Roles,
+                roles,
                 permissions.ToArray()
             )
         );

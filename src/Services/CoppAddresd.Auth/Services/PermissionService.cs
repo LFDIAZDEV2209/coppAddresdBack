@@ -455,4 +455,31 @@ public class PermissionService : IPermissionService
 
         return directPermissions.Concat(rolePermissions).Distinct();
     }
+
+    /// <summary>
+    /// Union de <see cref="GetUserAllPermissionCodesAsync"/> mas los permisos de
+    /// los roles con scope (ScopedRoleAssignments -> RolePermissions), en TODOS
+    /// los scopes. Solo para gating de UI (endpoint <c>/api/auth/me</c>): el
+    /// scope se sigue evaluando por request en el backend. No emitir en JWT.
+    /// </summary>
+    public async Task<IEnumerable<string>> GetUserEffectivePermissionCodesAsync(
+        Guid userId,
+        CancellationToken ct = default
+    )
+    {
+        var strict = await GetUserAllPermissionCodesAsync(userId, ct);
+
+        var scoped = await _dbContext
+            .ScopedRoleAssignments.Where(a => a.UserId == userId)
+            .Join(
+                _dbContext.RolePermissions,
+                a => a.RoleId,
+                rp => rp.RoleId,
+                (a, rp) => rp.PermissionId
+            )
+            .Join(_dbContext.Permissions, permissionId => permissionId, p => p.Id, (_, p) => p.Code)
+            .ToListAsync(ct);
+
+        return strict.Concat(scoped).Distinct();
+    }
 }

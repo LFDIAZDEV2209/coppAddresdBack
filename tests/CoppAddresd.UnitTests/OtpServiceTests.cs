@@ -584,6 +584,9 @@ public sealed class OtpServiceTests
         public Task<IEnumerable<string>> GetUserAllPermissionCodesAsync(Guid userId, CancellationToken ct = default)
             => Task.FromResult(Enumerable.Empty<string>());
 
+        public Task<IEnumerable<string>> GetUserEffectivePermissionCodesAsync(Guid userId, CancellationToken ct = default)
+            => Task.FromResult(Enumerable.Empty<string>());
+
         public Task<(bool Success, string? Error)> AssignToRoleAsync(Guid roleId, Guid permissionId, CancellationToken ct = default)
             => Task.FromResult((false, (string?)"no implementado"));
 
