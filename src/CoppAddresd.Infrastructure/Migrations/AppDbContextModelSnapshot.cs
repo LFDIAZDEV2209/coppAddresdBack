@@ -4933,8 +4933,8 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("email");
 
                     b.Property<string>("EmergencyContact")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
                         .HasColumnName("emergency_contact");
 
                     b.Property<Guid?>("EthnicityId")

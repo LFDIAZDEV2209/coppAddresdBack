@@ -42,8 +42,8 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
-    /// Resuelve el usuario por correo (staff/ERP) o por número de identificación
-    /// (pacientes, app móvil) viajando por <c>app.patient_profiles</c>.
+    /// Resuelve el usuario por correo (staff/ERP) o por nÃºmero de identificaciÃ³n
+    /// (pacientes, app mÃ³vil) viajando por <c>app.patient_profiles</c>.
     /// </summary>
     private async Task<ApplicationUser?> ResolveUserAsync(LoginRequest request, CancellationToken ct)
     {
@@ -104,9 +104,9 @@ public class AuthService : IAuthService
             return null;
         }
 
-        // La aplicación del login determina el `aud` del token. El acceso se
-        // resuelve explícitamente por UserApplication: roles y permisos no
-        // determinan a qué aplicaciones puede entrar el usuario.
+        // La aplicaciÃ³n del login determina el `aud` del token. El acceso se
+        // resuelve explÃ­citamente por UserApplication: roles y permisos no
+        // determinan a quÃ© aplicaciones puede entrar el usuario.
         var application = await _dbContext.Applications
             .AsNoTracking()
             .FirstOrDefaultAsync(a => a.Code == request.Application, ct);
@@ -131,7 +131,7 @@ public class AuthService : IAuthService
 
         var roles = await _userManager.GetRolesAsync(user);
         // Permisos actuales (directos + via rol) al momento del login: se emiten
-        // como claims en el access token para que la autorización no consulte BD.
+        // como claims en el access token para que la autorizaciÃ³n no consulte BD.
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(user.Id, ct);
         var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions, access.SessionVersion);
         var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct, access.SessionVersion);
@@ -171,7 +171,7 @@ public class AuthService : IAuthService
             return null;
         }
 
-        // El refresh conserva la aplicación con la que se emitió el token
+        // El refresh conserva la aplicaciÃ³n con la que se emitiÃ³ el token
         // original: el nuevo access token mantiene el mismo `aud`.
         if (storedToken.Application is null || !storedToken.Application.IsActive)
         {
@@ -184,13 +184,13 @@ public class AuthService : IAuthService
         if (access is null || access.IsSuspended || access.SessionVersion != storedToken.ApplicationSessionVersion)
             return null;
 
-        // Reclamación ATÓMICA del token: un solo UPDATE condicional revoca el
-        // token SI y SOLO SI aún no fue usado (REQ-REFRESH-01). Dos solicitudes
+        // ReclamaciÃ³n ATÃ“MICA del token: un solo UPDATE condicional revoca el
+        // token SI y SOLO SI aÃºn no fue usado (REQ-REFRESH-01). Dos solicitudes
         // concurrentes con el mismo token compiten por este UPDATE: solo una
         // gana (affected == 1); la perdedora (affected == 0) ve que el token ya
         // fue reclamado y se rechaza SIN emitir una nueva familia. Antes era un
-        // check-then-act (IsActive leído antes de escribir) que permitía minting
-        // múltiple ante replay concurrente de un token robado.
+        // check-then-act (IsActive leÃ­do antes de escribir) que permitÃ­a minting
+        // mÃºltiple ante replay concurrente de un token robado.
         var claimed = await _dbContext.RefreshTokens
             .Where(rt => rt.Token == refreshToken && rt.RevokedAt == null)
             .ExecuteUpdateAsync(
@@ -206,8 +206,8 @@ public class AuthService : IAuthService
         }
 
         // Espejo del tracker: el UPDATE batch no toca la entidad tracked; sin
-        // esto, SaveChangesAsync reescribiría RevokedAt = null y revertiría la
-        // reclamación. El valor escrito coincide con el del batch (idempotente).
+        // esto, SaveChangesAsync reescribirÃ­a RevokedAt = null y revertirÃ­a la
+        // reclamaciÃ³n. El valor escrito coincide con el del batch (idempotente).
         storedToken.RevokedAt = DateTime.UtcNow;
 
         var newRefreshToken = await _tokenService.GenerateRefreshTokenAsync(
@@ -218,7 +218,7 @@ public class AuthService : IAuthService
         await _dbContext.SaveChangesAsync(ct);
 
         var roles = await _userManager.GetRolesAsync(storedToken.User);
-        // Re-cálculo de permisos en cada refresh: el nuevo access token refleja
+        // Re-cÃ¡lculo de permisos en cada refresh: el nuevo access token refleja
         // el estado ACTUAL (no copia claims del token anterior).
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(storedToken.UserId, ct);
         var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles, storedToken.Application.Code, permissions, access.SessionVersion);
@@ -265,6 +265,41 @@ public class AuthService : IAuthService
         return true;
     }
 
+
+    /// <summary>
+    /// Define la PRIMERA contraseña de una cuenta OTP (solo si aún no tiene
+    /// una). Para pacientes provisionados por verify-otp desde la APP móvil.
+    /// </summary>
+    public async Task<(bool Success, string? Error)> SetFirstPasswordAsync(
+        Guid userId,
+        ChangePasswordRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return (false, "Usuario no encontrado");
+        }
+
+        if (await _userManager.HasPasswordAsync(user))
+        {
+            return (false, "Tu cuenta ya tiene una contraseña establecida");
+        }
+
+        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+        var result = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
+        if (!result.Succeeded)
+        {
+            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+            _logger.LogWarning("First password set failed for user {UserId}: {Errors}", userId, errors);
+            return (false, errors);
+        }
+
+        await _userManager.UpdateSecurityStampAsync(user);
+        _logger.LogInformation("First password set for user {UserId}", userId);
+        return (true, null);
+    }
+
     public async Task<(bool Success, string? Error)> ChangePasswordAsync(
         Guid userId,
         ChangePasswordRequest request,
@@ -303,8 +338,8 @@ public class AuthService : IAuthService
     }
 
     /// <summary>
-    /// Fila de proyección para la consulta raw que resuelve el <c>user_id</c>
-    /// vinculado a un número de documento en <c>app.patient_profiles</c>. El
+    /// Fila de proyecciÃ³n para la consulta raw que resuelve el <c>user_id</c>
+    /// vinculado a un nÃºmero de documento en <c>app.patient_profiles</c>. El
     /// mapeo de columna se hace por nombre mediante el alias <c>AS "UserId"</c>.
     /// </summary>
     private sealed record PatientUserIdRow

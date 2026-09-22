@@ -1,5 +1,6 @@
 using CoppAddresd.Api.Context;
 using CoppAddresd.Application.Features.HealthTests;
+using CoppAddresd.Application.Features.HealthTests.Assignments;
 using CoppAddresd.Application.Features.HealthTests.Catalog;
 using CoppAddresd.Application.Features.HealthTests.Execution;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
@@ -54,6 +55,24 @@ public class HealthTestsMeController(
                         or HealthTestAssignmentStatus.completed
             )
             .ToList();
+
+        // Lazy fallback (decisión FASE 2: ERP + lazy): si el paciente NO tiene
+        // ninguna asignación visible, se auto-asigna la batería inicial
+        // (idempotente: no duplica si ya hay pendiente/in-progress).
+        if (visible.Count == 0)
+        {
+            await mediator.Send(new AutoAssignInitialBatteryCommand(patientId.Value), ct);
+            assignments = await repository.ListAssignmentsByPatientAsync(patientId.Value, ct);
+            visible = assignments
+                .Where(a =>
+                    a.Status
+                        is HealthTestAssignmentStatus.pending
+                            or HealthTestAssignmentStatus.in_progress
+                            or HealthTestAssignmentStatus.completed
+                )
+                .ToList();
+        }
+
         return Ok(visible.Select(HealthTestAssignmentDto.FromEntity).ToList());
     }
 
