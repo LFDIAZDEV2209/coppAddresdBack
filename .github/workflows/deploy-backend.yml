@@ -147,14 +147,16 @@ jobs:
             auth)
               echo "dockerfile=src/Services/CoppAddresd.Auth/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-auth" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
-              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              # Email transaccional (invitaciones): SMTP M365. La contraseña vive
+              # en el secret cooppadresd/smtp-password (Email__SmtpPassword).
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__SmtpUsername\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__From\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"},{\"name\":\"Email__SmtpUseSsl\",\"value\":\"true\"},{\"name\":\"Email__FrontendUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[{\"name\":\"Email__SmtpPassword\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/smtp-password-XjggyI\"}]" >> "$GITHUB_OUTPUT"
               ;;
             api)
               echo "dockerfile=src/CoppAddresd.Api/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-api" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"}]" >> "$GITHUB_OUTPUT"
-              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__UserName\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromAddress\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"},{\"name\":\"Email__Password\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/smtp-password-XjggyI\"}]" >> "$GITHUB_OUTPUT"
               ;;
             telemedicine)
               echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
