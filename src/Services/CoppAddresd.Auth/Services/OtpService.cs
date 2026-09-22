@@ -68,7 +68,8 @@ public class OtpService : IOtpService
         IHttpContextAccessor httpContextAccessor,
         IOptions<JwtSettings> jwtSettings,
         IHostEnvironment environment,
-        ILogger<OtpService> logger)
+        ILogger<OtpService> logger
+    )
     {
         _patientLookup = patientLookup;
         _userManager = userManager;
@@ -85,7 +86,8 @@ public class OtpService : IOtpService
 
     public async Task<IdLookupResponse?> LookupByIdAsync(
         IdLookupRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var patient = await _patientLookup.FindByDocumentNumberAsync(request.DocumentNumber, ct);
         if (patient is null)
@@ -99,12 +101,14 @@ public class OtpService : IOtpService
             patient.FirstName,
             patient.LastName,
             patient.DocumentNumber,
-            BuildContacts(patient));
+            BuildContacts(patient)
+        );
     }
 
     public async Task<(bool Success, string? Error, SendOtpResponse? Result)> SendOtpAsync(
         SendOtpRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var patient = await _patientLookup.FindByDocumentNumberAsync(request.DocumentNumber, ct);
         if (patient is null)
@@ -116,8 +120,11 @@ public class OtpService : IOtpService
         var (channel, target) = ResolveContact(patient, request.ContactId);
         if (channel.Length == 0 || target is null)
         {
-            _logger.LogWarning("OTP send: contact {ContactId} not available for document {Document}",
-                request.ContactId, patient.DocumentNumber);
+            _logger.LogWarning(
+                "OTP send: contact {ContactId} not available for document {Document}",
+                request.ContactId,
+                patient.DocumentNumber
+            );
             return (false, "Ese método de contacto no está disponible", null);
         }
 
@@ -136,11 +143,15 @@ public class OtpService : IOtpService
             {
                 _logger.LogWarning(
                     "OTP send blocked (Reason={Reason}) for document {Document} from ip {Ip}",
-                    guard.Reason, MaskDocument(patient.DocumentNumber), clientIp);
+                    guard.Reason,
+                    MaskDocument(patient.DocumentNumber),
+                    clientIp
+                );
                 throw new OtpProtectionException(
                     guard.Reason!.Value,
                     "Demasiadas peticiones. Intenta más tarde.",
-                    guard.RetryAfterSeconds);
+                    guard.RetryAfterSeconds
+                );
             }
 
             await _twilioOtpService.SendAsync(target, ct);
@@ -153,12 +164,14 @@ public class OtpService : IOtpService
             // pendientes del documento: únicamente el último OTP emitido (de
             // cualquier canal) es válido, evitando que un código de correo
             // previo secuestre la verificación por teléfono.
-            await _dbContext.OtpCodes
-                .Where(o => o.DocumentNumber == patient.DocumentNumber && o.UsedAt == null)
+            await _dbContext
+                .OtpCodes.Where(o => o.DocumentNumber == patient.DocumentNumber && o.UsedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(o => o.UsedAt, DateTime.UtcNow), ct);
 
-            _logger.LogInformation("OTP phone verification requested for document {Document}",
-                patient.DocumentNumber);
+            _logger.LogInformation(
+                "OTP phone verification requested for document {Document}",
+                patient.DocumentNumber
+            );
 
             return (true, null, new SendOtpResponse(OtpLifetimeSeconds));
         }
@@ -167,26 +180,30 @@ public class OtpService : IOtpService
         // auth.otp_codes (sin cambios en esta fase).
         // Invalida códigos pendientes previos del mismo documento+canal: solo
         // el último OTP emitido es válido (evita códigos huérfanos reusables).
-        await _dbContext.OtpCodes
-            .Where(o => o.DocumentNumber == patient.DocumentNumber
-                        && o.Channel == channel
-                        && o.UsedAt == null)
+        await _dbContext
+            .OtpCodes.Where(o =>
+                o.DocumentNumber == patient.DocumentNumber
+                && o.Channel == channel
+                && o.UsedAt == null
+            )
             .ExecuteUpdateAsync(s => s.SetProperty(o => o.UsedAt, DateTime.UtcNow), ct);
 
         var code = GenerateOtp();
         var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
-        _dbContext.OtpCodes.Add(new OtpCode
-        {
-            Id = Guid.NewGuid(),
-            DocumentNumber = patient.DocumentNumber,
-            Channel = channel,
-            Target = target,
-            CodeHash = HashCode(salt, code),
-            Salt = salt,
-            ExpiresAt = DateTime.UtcNow.AddSeconds(OtpLifetimeSeconds),
-            CreatedAt = DateTime.UtcNow
-        });
+        _dbContext.OtpCodes.Add(
+            new OtpCode
+            {
+                Id = Guid.NewGuid(),
+                DocumentNumber = patient.DocumentNumber,
+                Channel = channel,
+                Target = target,
+                CodeHash = HashCode(salt, code),
+                Salt = salt,
+                ExpiresAt = DateTime.UtcNow.AddSeconds(OtpLifetimeSeconds),
+                CreatedAt = DateTime.UtcNow,
+            }
+        );
         await _dbContext.SaveChangesAsync(ct);
 
         // "Envío" del código. En desarrollo se devuelve en la respuesta para
@@ -196,14 +213,18 @@ public class OtpService : IOtpService
 
         _logger.LogInformation(
             "OTP issued for document {Document} via {Channel} (expires in {Seconds}s)",
-            patient.DocumentNumber, channel, OtpLifetimeSeconds);
+            patient.DocumentNumber,
+            channel,
+            OtpLifetimeSeconds
+        );
 
         return (true, null, new SendOtpResponse(OtpLifetimeSeconds, devCode));
     }
 
     public async Task<TokenResult?> VerifyOtpAsync(
         VerifyOtpRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var patient = await _patientLookup.FindByDocumentNumberAsync(request.DocumentNumber, ct);
         if (patient is null)
@@ -215,10 +236,12 @@ public class OtpService : IOtpService
         // Canal PHONE → Twilio Verify: no persiste nada en auth.otp_codes, por
         // lo que la existencia de un código EMAIL pendiente es el discriminador
         // de canal (toda fila pendiente de este documento solo puede ser EMAIL).
-        var otp = await _dbContext.OtpCodes
-            .Where(o => o.DocumentNumber == patient.DocumentNumber
-                        && o.Channel == ChannelEmail
-                        && o.UsedAt == null)
+        var otp = await _dbContext
+            .OtpCodes.Where(o =>
+                o.DocumentNumber == patient.DocumentNumber
+                && o.Channel == ChannelEmail
+                && o.UsedAt == null
+            )
             .OrderByDescending(o => o.CreatedAt)
             .FirstOrDefaultAsync(ct);
 
@@ -227,13 +250,19 @@ public class OtpService : IOtpService
             // Flujo EMAIL local sin cambios: expiración, intentos y hash local.
             if (otp.IsExpired)
             {
-                _logger.LogWarning("OTP verify: code expired for document {Document}", patient.DocumentNumber);
+                _logger.LogWarning(
+                    "OTP verify: code expired for document {Document}",
+                    patient.DocumentNumber
+                );
                 return null;
             }
 
             if (otp.Attempts >= MaxAttempts)
             {
-                _logger.LogWarning("OTP verify: too many attempts for document {Document}", patient.DocumentNumber);
+                _logger.LogWarning(
+                    "OTP verify: too many attempts for document {Document}",
+                    patient.DocumentNumber
+                );
                 return null;
             }
 
@@ -242,8 +271,11 @@ public class OtpService : IOtpService
             {
                 otp.Attempts += 1;
                 await _dbContext.SaveChangesAsync(ct);
-                _logger.LogWarning("OTP verify: invalid code for document {Document} (attempt {Attempts})",
-                    patient.DocumentNumber, otp.Attempts);
+                _logger.LogWarning(
+                    "OTP verify: invalid code for document {Document} (attempt {Attempts})",
+                    patient.DocumentNumber,
+                    otp.Attempts
+                );
                 return null;
             }
 
@@ -259,8 +291,10 @@ public class OtpService : IOtpService
             var phone = ResolveContact(patient, ContactPhone);
             if (phone.Channel.Length == 0 || phone.Target is null)
             {
-                _logger.LogWarning("OTP verify: phone not available for document {Document}",
-                    patient.DocumentNumber);
+                _logger.LogWarning(
+                    "OTP verify: phone not available for document {Document}",
+                    patient.DocumentNumber
+                );
                 return null;
             }
 
@@ -273,11 +307,15 @@ public class OtpService : IOtpService
             {
                 _logger.LogWarning(
                     "OTP verify blocked (Reason={Reason}) for phone {Phone} from ip {Ip}",
-                    guard.Reason, MaskE164Phone(phone.Target), clientIp);
+                    guard.Reason,
+                    MaskE164Phone(phone.Target),
+                    clientIp
+                );
                 throw new OtpProtectionException(
                     guard.Reason!.Value,
                     "Demasiadas peticiones. Intenta más tarde.",
-                    guard.RetryAfterSeconds);
+                    guard.RetryAfterSeconds
+                );
             }
 
             var check = await _twilioOtpService.CheckAsync(phone.Target, request.Otp, ct);
@@ -287,14 +325,18 @@ public class OtpService : IOtpService
                 // El intento que alcanza el máximo de fallos activa el lockout
                 // aquí; la siguiente comprobación (CheckCanVerify) lo detecta.
                 _otpProtection.RegisterVerifyFailed(clientIp, phone.Target);
-                _logger.LogWarning("OTP phone verification rejected for document {Document}",
-                    patient.DocumentNumber);
+                _logger.LogWarning(
+                    "OTP phone verification rejected for document {Document}",
+                    patient.DocumentNumber
+                );
                 return null;
             }
 
             _otpProtection.RegisterVerifySucceeded(clientIp, phone.Target);
-            _logger.LogInformation("OTP phone verification approved for document {Document}",
-                patient.DocumentNumber);
+            _logger.LogInformation(
+                "OTP phone verification approved for document {Document}",
+                patient.DocumentNumber
+            );
         }
 
         // Aprovisionamiento: usuario + vínculo con el perfil + acceso a la app.
@@ -302,13 +344,19 @@ public class OtpService : IOtpService
         var application = await EnsureApplicationAccessAsync(user.Id, request.Application, ct);
         if (application is null)
         {
-            _logger.LogWarning("OTP verify: application {Application} not available for user {UserId}",
-                request.Application, user.Id);
+            _logger.LogWarning(
+                "OTP verify: application {Application} not available for user {UserId}",
+                request.Application,
+                user.Id
+            );
             return null;
         }
 
-        _logger.LogInformation("User {UserId} verified OTP and logged in to application {Application}",
-            user.Id, application.Code);
+        _logger.LogInformation(
+            "User {UserId} verified OTP and logged in to application {Application}",
+            user.Id,
+            application.Code
+        );
 
         return await IssueTokensAsync(user, application, ct);
     }
@@ -319,33 +367,48 @@ public class OtpService : IOtpService
 
         if (!string.IsNullOrWhiteSpace(patient.Email))
         {
-            contacts.Add(new ContactMethodResponse(ContactEmail, "Email", MaskEmail(patient.Email)));
+            contacts.Add(
+                new ContactMethodResponse(ContactEmail, "Email", MaskEmail(patient.Email))
+            );
         }
 
         if (!string.IsNullOrWhiteSpace(patient.PhoneNumber))
         {
-            contacts.Add(new ContactMethodResponse(ContactPhone, "Phone", MaskPhone(patient.PhoneCountryCode, patient.PhoneNumber)));
+            contacts.Add(
+                new ContactMethodResponse(
+                    ContactPhone,
+                    "Phone",
+                    MaskPhone(patient.PhoneCountryCode, patient.PhoneNumber)
+                )
+            );
         }
 
         return contacts;
     }
 
-    private static (string Channel, string? Target) ResolveContact(PatientLookupResult patient, string contactId)
+    private static (string Channel, string? Target) ResolveContact(
+        PatientLookupResult patient,
+        string contactId
+    )
     {
         return contactId.Trim().ToLowerInvariant() switch
         {
-            ContactEmail when !string.IsNullOrWhiteSpace(patient.Email) =>
-                (ChannelEmail, patient.Email),
+            ContactEmail when !string.IsNullOrWhiteSpace(patient.Email) => (
+                ChannelEmail,
+                patient.Email
+            ),
 
-            ContactPhone when !string.IsNullOrWhiteSpace(patient.PhoneNumber) =>
-                (ChannelPhone, FormatPhone(patient.PhoneCountryCode, patient.PhoneNumber)),
+            ContactPhone when !string.IsNullOrWhiteSpace(patient.PhoneNumber) => (
+                ChannelPhone,
+                FormatPhone(patient.PhoneCountryCode, patient.PhoneNumber)
+            ),
 
-            _ => (string.Empty, null)
+            _ => (string.Empty, null),
         };
     }
 
-    private static bool IsPhoneChannel(string channel)
-        => string.Equals(channel, ChannelPhone, StringComparison.OrdinalIgnoreCase);
+    private static bool IsPhoneChannel(string channel) =>
+        string.Equals(channel, ChannelPhone, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Dirección IP del cliente desde <see cref="IHttpContextAccessor"/>: misma
@@ -372,7 +435,9 @@ public class OtpService : IOtpService
             return new string('*', documentNumber.Length);
         }
 
-        return documentNumber[..2] + new string('*', documentNumber.Length - 4) + documentNumber[^2..];
+        return documentNumber[..2]
+            + new string('*', documentNumber.Length - 4)
+            + documentNumber[^2..];
     }
 
     /// <summary>Enmascara un teléfono E.164 para logs: conserva el '+' y los últimos 4 dígitos.</summary>
@@ -450,7 +515,8 @@ public class OtpService : IOtpService
     {
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(a),
-            Encoding.UTF8.GetBytes(b));
+            Encoding.UTF8.GetBytes(b)
+        );
     }
 
     private static string GenerateRandomPassword()
@@ -477,7 +543,8 @@ public class OtpService : IOtpService
 
     private async Task<ApplicationUser> FindOrCreateUserAsync(
         PatientLookupResult patient,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         // Ya vinculado a un usuario de Identity: usarlo directamente.
         if (patient.UserId is Guid existingUserId)
@@ -515,14 +582,18 @@ public class OtpService : IOtpService
             FirstName = patient.FirstName,
             LastName = patient.LastName,
             IsActive = true,
-            EmailConfirmed = true
+            EmailConfirmed = true,
         };
 
-        var result = await _userManager.CreateAsync(user, GenerateRandomPassword());
+        var result = await _userManager.CreateAsync(user);
         if (!result.Succeeded)
         {
             var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogError("OTP verify: provisioning failed for patient {PatientId}: {Errors}", patient.Id, errors);
+            _logger.LogError(
+                "OTP verify: provisioning failed for patient {PatientId}: {Errors}",
+                patient.Id,
+                errors
+            );
             throw new InvalidOperationException("No se pudo crear la cuenta del paciente");
         }
 
@@ -533,10 +604,11 @@ public class OtpService : IOtpService
     private async Task<Application?> EnsureApplicationAccessAsync(
         Guid userId,
         string applicationCode,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var application = await _dbContext.Applications
-            .AsNoTracking()
+        var application = await _dbContext
+            .Applications.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Code == applicationCode, ct);
 
         if (application is null || !application.IsActive)
@@ -544,23 +616,32 @@ public class OtpService : IOtpService
             return null;
         }
 
-        var access = await _dbContext.UserApplications
-            .AsNoTracking()
-            .SingleOrDefaultAsync(ua => ua.UserId == userId && ua.ApplicationId == application.Id, ct);
+        var access = await _dbContext
+            .UserApplications.AsNoTracking()
+            .SingleOrDefaultAsync(
+                ua => ua.UserId == userId && ua.ApplicationId == application.Id,
+                ct
+            );
 
-        if (access?.IsSuspended == true) return null;
+        if (access?.IsSuspended == true)
+            return null;
 
         if (access is null)
         {
-            _dbContext.UserApplications.Add(new UserApplication
-            {
-                UserId = userId,
-                ApplicationId = application.Id,
-                CreatedAt = DateTime.UtcNow
-            });
+            _dbContext.UserApplications.Add(
+                new UserApplication
+                {
+                    UserId = userId,
+                    ApplicationId = application.Id,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
             await _dbContext.SaveChangesAsync(ct);
-            _logger.LogInformation("Application {Application} access granted to user {UserId}",
-                application.Code, userId);
+            _logger.LogInformation(
+                "Application {Application} access granted to user {UserId}",
+                application.Code,
+                userId
+            );
         }
 
         return application;
@@ -582,21 +663,38 @@ public class OtpService : IOtpService
     private async Task<TokenResult?> IssueTokensAsync(
         ApplicationUser user,
         Application application,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var access = await _dbContext.UserApplications.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.UserId == user.Id && x.ApplicationId == application.Id, ct);
+        var access = await _dbContext
+            .UserApplications.AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.UserId == user.Id && x.ApplicationId == application.Id,
+                ct
+            );
         if (access is null || access.IsSuspended)
             return null;
         var roles = await _userManager.GetRolesAsync(user);
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(user.Id, ct);
-        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions, access.SessionVersion);
-        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct, access.SessionVersion);
+        var accessToken = _tokenService.GenerateAccessToken(
+            user,
+            roles,
+            application.Code,
+            permissions,
+            access.SessionVersion
+        );
+        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(
+            user.Id,
+            application.Id,
+            ct,
+            access.SessionVersion
+        );
 
         return new TokenResult(
             AccessToken: accessToken,
             RefreshToken: refreshToken,
             TokenType: "Bearer",
-            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60);
+            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60
+        );
     }
 }

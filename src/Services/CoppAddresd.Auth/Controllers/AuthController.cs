@@ -36,7 +36,7 @@ public class AuthController : ControllerBase
 
         if (result is null)
         {
-            return Unauthorized(new { message = "Credenciales inválidas" });
+            return Unauthorized(new { message = "Credenciales invÃ¡lidas" });
         }
 
         SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
@@ -48,9 +48,9 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Primer inicio de sesión por número de identificación: devuelve los
-    /// correos y teléfonos asociados al ID (enmascarados) para que el usuario
-    /// elija por dónde recibe el código OTP.
+    /// Primer inicio de sesiÃ³n por nÃºmero de identificaciÃ³n: devuelve los
+    /// correos y telÃ©fonos asociados al ID (enmascarados) para que el usuario
+    /// elija por dÃ³nde recibe el cÃ³digo OTP.
     /// </summary>
     [HttpPost("id-lookup")]
     public async Task<ActionResult<IdLookupResponse>> IdLookup(
@@ -61,14 +61,14 @@ public class AuthController : ControllerBase
 
         if (result is null)
         {
-            return NotFound(new { message = "El número de identificación no está registrado" });
+            return NotFound(new { message = "El nÃºmero de identificaciÃ³n no estÃ¡ registrado" });
         }
 
         return Ok(result);
     }
 
     /// <summary>
-    /// Envía el código OTP al método de contacto elegido. En desarrollo la
+    /// EnvÃ­a el cÃ³digo OTP al mÃ©todo de contacto elegido. En desarrollo la
     /// respuesta incluye <c>devCode</c> para pruebas end-to-end.
     /// </summary>
     [HttpPost("send-otp")]
@@ -87,9 +87,9 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
-    /// Verifica el OTP y completa el primer inicio de sesión: aprovisiona la
+    /// Verifica el OTP y completa el primer inicio de sesiÃ³n: aprovisiona la
     /// cuenta (si no existe), la vincula al perfil del paciente, otorga acceso
-    /// a la aplicación y emite los tokens de sesión (refresh en cookie HttpOnly).
+    /// a la aplicaciÃ³n y emite los tokens de sesiÃ³n (refresh en cookie HttpOnly).
     /// </summary>
     [HttpPost("verify-otp")]
     public async Task<ActionResult<LoginResponse>> VerifyOtp(
@@ -100,7 +100,7 @@ public class AuthController : ControllerBase
 
         if (result is null)
         {
-            return Unauthorized(new { message = "Código inválido o expirado" });
+            return Unauthorized(new { message = "CÃ³digo invÃ¡lido o expirado" });
         }
 
         SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
@@ -121,11 +121,11 @@ public class AuthController : ControllerBase
 
         if (string.IsNullOrWhiteSpace(refreshToken))
         {
-            // Sin cookie: visitante que nunca tuvo sesión. Se informa al
-            // cliente para que NO muestre el banner de "sesión expirada".
+            // Sin cookie: visitante que nunca tuvo sesiÃ³n. Se informa al
+            // cliente para que NO muestre el banner de "sesiÃ³n expirada".
             Response.Headers["X-Refresh-Status"] = "missing";
             ClearRefreshTokenCookie();
-            return Unauthorized(new { message = "Refresh token inválido o expirado" });
+            return Unauthorized(new { message = "Refresh token invÃ¡lido o expirado" });
         }
 
         var result = await _authService.RefreshAsync(refreshToken, ct);
@@ -133,10 +133,10 @@ public class AuthController : ControllerBase
         if (result is null)
         {
             // Cookie corrupta, expirada o revocada: se limpia para que el
-            // cliente se recupere sin intervención manual del usuario.
+            // cliente se recupere sin intervenciÃ³n manual del usuario.
             Response.Headers["X-Refresh-Status"] = "invalid";
             ClearRefreshTokenCookie();
-            return Unauthorized(new { message = "Refresh token inválido o expirado" });
+            return Unauthorized(new { message = "Refresh token invÃ¡lido o expirado" });
         }
 
         SetRefreshTokenCookie(result.RefreshToken, rememberMe: true);
@@ -165,9 +165,38 @@ public class AuthController : ControllerBase
 
         ClearRefreshTokenCookie();
 
-        return Ok(new { message = "Sesión cerrada correctamente" });
+        return Ok(new { message = "SesiÃ³n cerrada correctamente" });
     }
 
+
+    /// <summary>
+    /// Define la primera contrasena de una cuenta OTP (APP movil). Falla si la
+    /// cuenta ya tiene contrasena: en ese caso usar change-password.
+    /// </summary>
+    [HttpPost("set-first-password")]
+    [Authorize]
+    public async Task<IActionResult> SetFirstPassword(
+        [FromBody] SetFirstPasswordRequest request,
+        CancellationToken ct)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim is null || !Guid.TryParse(userIdClaim.Value, out var userId))
+        {
+            return Unauthorized(new { message = "Token invalido" });
+        }
+
+        var (success, error) = await _authService.SetFirstPasswordAsync(userId, new ChangePasswordRequest
+        {
+            NewPassword = request.NewPassword
+        }, ct);
+
+        if (!success)
+        {
+            return BadRequest(new { message = error });
+        }
+
+        return Ok(new { message = "Contrasena establecida" });
+    }
     [HttpPost("change-password")]
     [Authorize]
     public async Task<IActionResult> ChangePassword(
@@ -177,7 +206,7 @@ public class AuthController : ControllerBase
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
         if (userIdClaim is null || !Guid.TryParse(userIdClaim.Value, out var userId))
         {
-            return Unauthorized(new { message = "Token inválido" });
+            return Unauthorized(new { message = "Token invÃ¡lido" });
         }
 
         var (success, error) = await _authService.ChangePasswordAsync(userId, request, ct);
@@ -189,7 +218,7 @@ public class AuthController : ControllerBase
 
         ClearRefreshTokenCookie();
 
-        return Ok(new { message = "Contraseña cambiada correctamente. Debe iniciar sesión nuevamente." });
+        return Ok(new { message = "ContraseÃ±a cambiada correctamente. Debe iniciar sesiÃ³n nuevamente." });
     }
 
     private void SetRefreshTokenCookie(string refreshToken, bool rememberMe)
@@ -213,11 +242,11 @@ public class AuthController : ControllerBase
         {
             HttpOnly = true,
             // En desarrollo (http://localhost) los navegadores aceptan cookies
-            // Secure solo en contextos seguros; LAN/dev usan http. En producción
+            // Secure solo en contextos seguros; LAN/dev usan http. En producciÃ³n
             // el servicio se expone siempre por HTTPS.
             Secure = !_environment.IsDevelopment(),
-            // En producción el frontend y la API viven en orígenes distintos
-            // (frontend → API Gateway), por lo que la cookie de refresh se envía
+            // En producciÃ³n el frontend y la API viven en orÃ­genes distintos
+            // (frontend â†’ API Gateway), por lo que la cookie de refresh se envÃ­a
             // en requests cross-site: SameSite=None es obligatorio. Lax en dev
             // (mismo sitio localhost) evita el aviso del navegador.
             SameSite = _environment.IsDevelopment() ? SameSiteMode.Lax : SameSiteMode.None,
@@ -227,3 +256,5 @@ public class AuthController : ControllerBase
         };
     }
 }
+/// <summary>Solicita la primera contrasena de una cuenta OTP.</summary>
+public sealed record SetFirstPasswordRequest(string NewPassword);

@@ -1,4 +1,5 @@
 using CoppAddresd.Api.Context;
+using CoppAddresd.Application.Features.HealthTests.Assignments;
 using CoppAddresd.Application.Features.Patients;
 using CoppAddresd.Application.Interfaces;
 using MediatR;
@@ -211,6 +212,10 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         );
 
         var patient = await mediator.Send(command, ct);
+
+        // Batería inicial automática al crear el paciente (ERP + lazy fallback).
+        await mediator.Send(new AutoAssignInitialBatteryCommand(patient.Id, context.UserId), ct);
+
         return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
     }
 
@@ -235,6 +240,22 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
         );
 
         var result = await mediator.Send(command, ct);
+
+        // Asignación automática de la batería inicial (9 tests ANTARES) para
+        // cada paciente creado (decisión FASE 2: ERP + lazy fallback). El
+        // command es idempotente (no duplica si ya tiene la batería pendiente).
+        foreach (
+            var row in result.Results.Where(r =>
+                r.Success && r.PatientId is { } pid && pid != Guid.Empty
+            )
+        )
+        {
+            await mediator.Send(
+                new AutoAssignInitialBatteryCommand(row.PatientId!.Value, context.UserId),
+                ct
+            );
+        }
+
         return Ok(result);
     }
 
