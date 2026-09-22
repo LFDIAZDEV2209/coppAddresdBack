@@ -215,9 +215,6 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
 
         // Batería inicial automática al crear el paciente (ERP + lazy fallback).
         await mediator.Send(new AutoAssignInitialBatteryCommand(patient.Id, context.UserId), ct);
-        // Histórico de mediciones de 12 meses (FASE 3, decisión Grill: todo
-        // paciente nuevo) para que Historia/Home tengan datos desde el día 1.
-        await mediator.Send(new SeedMeasurementHistoryCommand(patient.Id), ct);
 
         return CreatedAtAction(nameof(GetById), new { id = patient.Id }, patient);
     }
@@ -257,7 +254,6 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
                 new AutoAssignInitialBatteryCommand(row.PatientId!.Value, context.UserId),
                 ct
             );
-            await mediator.Send(new SeedMeasurementHistoryCommand(row.PatientId!.Value), ct);
         }
 
         return Ok(result);
