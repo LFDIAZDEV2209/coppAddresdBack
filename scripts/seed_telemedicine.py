@@ -98,13 +98,18 @@ def main() -> None:
         professionals = load_professionals(conn)
         patients = load_patients(conn)
 
-        print(f"Profesionales: {len(professionals)} | Pacientes disponibles: {len(patients)}")
+        print(
+            f"Profesionales: {len(professionals)} | Pacientes disponibles: {len(patients)}"
+        )
         if not professionals or not patients:
-            raise SystemExit("Sin profesionales o pacientes reales; no se puede sembrar.")
+            raise SystemExit(
+                "Sin profesionales o pacientes reales; no se puede sembrar."
+            )
 
         wipe_seed(conn, professionals)
         requests = create_requests(conn, professionals, patients)
         appointments = create_appointments(conn, professionals, patients, requests)
+        appointments += ensure_demo_future_appointments(conn, professionals, patients)
         create_rooms_sessions_encounters(conn, appointments, professionals)
         create_alerts(conn, professionals, appointments)
 
@@ -146,18 +151,32 @@ def load_professionals(conn: psycopg.Connection) -> list[dict]:
 
 
 def load_patients(conn: psycopg.Connection, limit: int = 120) -> list[dict]:
-    """Muestra determinista de pacientes reales (nombre completo para las citas)."""
-    rows = conn.execute(
+    """Muestra determinista de pacientes reales (nombre completo para las citas).
+
+    Los pacientes demo de la APP móvil (77777777 / 55551234) van SIEMPRE: el
+    móvil valida sus citas con ellos y el muestreo por md5 podía excluirlos
+    ("Sin citas" en el dispositivo). El resto sigue siendo determinista.
+    """
+    pinned = conn.execute(
         """
-        SELECT id, first_name, last_name
+        SELECT id, first_name, last_name, document_number
         FROM app.patient_profiles
+        WHERE document_number IN ('77777777', '55551234')
+        """
+    ).fetchall()
+    sample = conn.execute(
+        """
+        SELECT id, first_name, last_name, document_number
+        FROM app.patient_profiles
+        WHERE document_number NOT IN ('77777777', '55551234')
         ORDER BY md5(id::text)
         LIMIT %s
         """,
-        (limit,),
+        (limit - len(pinned),),
     ).fetchall()
+    rows = pinned + sample
     return [
-        {"id": row[0], "name": f"{row[1]} {row[2]}".strip()}
+        {"id": row[0], "name": f"{row[1]} {row[2]}".strip(), "document_number": row[3]}
         for row in rows
     ]
 
@@ -180,10 +199,12 @@ def wipe_seed(conn: psycopg.Connection, professionals: list[dict]) -> None:
             )
         # Encuentros y sesiones primero (FKs), después el resto por cascada lógica.
         conn.execute(
-            "DELETE FROM tele.clinical_encounters WHERE created_by = %s", (SEED_USER_ID,)
+            "DELETE FROM tele.clinical_encounters WHERE created_by = %s",
+            (SEED_USER_ID,),
         )
         conn.execute(
-            "DELETE FROM tele.telemedicine_sessions WHERE created_by = %s", (SEED_USER_ID,)
+            "DELETE FROM tele.telemedicine_sessions WHERE created_by = %s",
+            (SEED_USER_ID,),
         )
         conn.execute(
             "DELETE FROM tele.virtual_rooms WHERE created_by = %s", (SEED_USER_ID,)
@@ -222,7 +243,9 @@ def create_requests(
         status = ["Pending", "Pending", "Pending", "Approved", "Rejected", "Cancelled"][
             i % 6
         ]
-        preferred = now + timedelta(days=random.randint(2, 12), hours=random.randint(8, 17))
+        preferred = now + timedelta(
+            days=random.randint(2, 12), hours=random.randint(8, 17)
+        )
 
         req_id = uuid.uuid4()
         conn.execute(
@@ -302,10 +325,15 @@ def create_appointments(
             # 2-4 citas por día hábil (determinista por el seed para repetibilidad).
             per_day = random.randint(2, 4)
             for _ in range(per_day):
-                duration = 30 if professional["specialty_id"] == SPECIALTY_OBESITY else 45
+                duration = (
+                    30 if professional["specialty_id"] == SPECIALTY_OBESITY else 45
+                )
                 start = datetime(
-                    day.year, day.month, day.day,
-                    hour=8 + (slot_index % 9), minute=(slot_index * 7) % 60,
+                    day.year,
+                    day.month,
+                    day.day,
+                    hour=8 + (slot_index % 9),
+                    minute=(slot_index * 7) % 60,
                     tzinfo=timezone.utc,
                 )
                 slot_index += 1
@@ -333,8 +361,12 @@ def create_appointments(
                 request_id = None
                 if status == "Confirmed" and start > now + timedelta(days=1):
                     converted = next(
-                        (r for r in requests if r["status"] == "Pending"
-                         and r["professional_id"] == professional["id"]),
+                        (
+                            r
+                            for r in requests
+                            if r["status"] == "Pending"
+                            and r["professional_id"] == professional["id"]
+                        ),
                         None,
                     )
                     if converted and random.random() < 0.5:
@@ -358,16 +390,31 @@ def create_appointments(
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        appointment_id, request_id, patient["id"], professional["id"],
-                        professional["specialty_id"], SEED_ORG, SEED_CLINIC, SEED_LOCATION,
-                        start, end, duration, status, 0,
-                        None, None, None,
-                        SEED_USER_ID, now - timedelta(days=random.randint(1, 30)),
+                        appointment_id,
+                        request_id,
+                        patient["id"],
+                        professional["id"],
+                        professional["specialty_id"],
+                        SEED_ORG,
+                        SEED_CLINIC,
+                        SEED_LOCATION,
+                        start,
+                        end,
+                        duration,
+                        status,
+                        0,
+                        None,
+                        None,
+                        None,
+                        SEED_USER_ID,
+                        now - timedelta(days=random.randint(1, 30)),
                     ),
                 )
 
                 if status == "Cancelled":
-                    cancelled_by = ["Patient", "Professional", "Admin"][random.randint(0, 2)]
+                    cancelled_by = ["Patient", "Professional", "Admin"][
+                        random.randint(0, 2)
+                    ]
                     cancellation_reason = "Cancelado por el seed de pruebas"
                     cancelled_at = start - timedelta(hours=random.randint(2, 48))
                     conn.execute(
@@ -379,7 +426,12 @@ def create_appointments(
                             cancelled_at = %s
                         WHERE id = %s
                         """,
-                        (cancellation_reason, cancelled_by, cancelled_at, appointment_id),
+                        (
+                            cancellation_reason,
+                            cancelled_by,
+                            cancelled_at,
+                            appointment_id,
+                        ),
                     )
                     conn.execute(
                         """
@@ -389,8 +441,12 @@ def create_appointments(
                         VALUES (%s, %s, %s, %s, %s, %s)
                         """,
                         (
-                            uuid.uuid4(), appointment_id, cancelled_by,
-                            SEED_USER_ID, cancellation_reason, cancelled_at,
+                            uuid.uuid4(),
+                            appointment_id,
+                            cancelled_by,
+                            SEED_USER_ID,
+                            cancellation_reason,
+                            cancelled_at,
                         ),
                     )
 
@@ -412,9 +468,14 @@ def create_appointments(
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
-                            uuid.uuid4(), appointment_id, "Professional", SEED_USER_ID,
-                            start - timedelta(hours=2), start,
-                            "Reprogramación por ajuste de agenda", now,
+                            uuid.uuid4(),
+                            appointment_id,
+                            "Professional",
+                            SEED_USER_ID,
+                            start - timedelta(hours=2),
+                            start,
+                            "Reprogramación por ajuste de agenda",
+                            now,
                         ),
                     )
                 appointments.append(
@@ -434,6 +495,103 @@ def create_appointments(
     return appointments
 
 
+def ensure_demo_future_appointments(
+    conn: psycopg.Connection,
+    professionals: list[dict],
+    patients: list[dict],
+) -> list[dict]:
+    """Garantiza citas FUTURAS (Confirmed) para los pacientes demo de la APP.
+
+    La distribución determinista por slot puede dejar a los pacientes demo con
+    historial 100% pasado: el móvil muestra "No hay más citas" en Siguientes y
+    la prueba en dispositivo queda vacía. Crea 2-3 confirmadas a futuro por
+    demo, respetando el anti doble reserva y el wipe idempotente del seed.
+    """
+    now = datetime.now(timezone.utc)
+    demo_docs = ("77777777", "55551234")
+    demo = [p for p in patients if p.get("document_number") in demo_docs]
+    created: list[dict] = []
+
+    for patient in demo:
+        # Busca huecos libres recorriendo días hábiles + horas hábiles (8-16h,
+        # dentro de los horarios sembrados por seed_professional_schedules) y
+        # profesionales de forma rotativa, hasta armar 3 confirmadas a futuro.
+        objetivo, hechos = 3, 0
+        for offset_dias in range(1, 15):
+            if hechos >= objetivo:
+                break
+            day = now + timedelta(days=offset_dias)
+            if day.weekday() >= 5:
+                continue
+            for hora in range(8, 17):
+                if hechos >= objetivo:
+                    break
+                professional = professionals[
+                    (hechos + offset_dias + hora) % len(professionals)
+                ]
+                duration = (
+                    30 if professional["specialty_id"] == SPECIALTY_OBESITY else 45
+                )
+                start = datetime(
+                    day.year, day.month, day.day, hora, 0, tzinfo=timezone.utc
+                )
+                end = start + timedelta(minutes=duration)
+
+                conflict = conn.execute(
+                    """
+                    SELECT 1 FROM tele.appointments
+                    WHERE professional_id = %s
+                      AND status = ANY(%s)
+                      AND scheduled_start < %s AND scheduled_end > %s
+                    LIMIT 1
+                    """,
+                    (professional["id"], list(STATUS_ACTIVE), end, start),
+                ).fetchone()
+                if conflict:
+                    continue
+
+                appointment_id = uuid.uuid4()
+                conn.execute(
+                    """
+                    INSERT INTO tele.appointments
+                        (id, request_id, patient_id, professional_id, specialty_id,
+                         organization_id, clinic_id, location_id,
+                         scheduled_start, scheduled_end, duration_minutes, status,
+                         reschedule_count, cancellation_reason, cancelled_by,
+                         cancelled_at, created_by, created_at)
+                    VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Confirmed', 0, NULL, NULL, NULL, %s, now())
+                    """,
+                    (
+                        appointment_id,
+                        patient["id"],
+                        professional["id"],
+                        professional["specialty_id"],
+                        SEED_ORG,
+                        SEED_CLINIC,
+                        SEED_LOCATION,
+                        start,
+                        end,
+                        duration,
+                        SEED_USER_ID,
+                    ),
+                )
+                created.append(
+                    {
+                        "id": appointment_id,
+                        "patient_id": patient["id"],
+                        "patient_name": patient["name"],
+                        "professional_id": professional["id"],
+                        "specialty_id": professional["specialty_id"],
+                        "start": start,
+                        "end": end,
+                        "duration": duration,
+                        "status": "Confirmed",
+                    }
+                )
+                hechos += 1
+    return created
+
+
 def create_rooms_sessions_encounters(
     conn: psycopg.Connection,
     appointments: list[dict],
@@ -443,7 +601,9 @@ def create_rooms_sessions_encounters(
     user_by_professional = {p["id"]: p["user_id"] for p in professionals}
 
     for appointment in appointments:
-        if appointment["status"] == "Completed" and appointment["start"] > datetime.now(timezone.utc) - timedelta(days=10):
+        if appointment["status"] == "Completed" and appointment["start"] > datetime.now(
+            timezone.utc
+        ) - timedelta(days=10):
             room_id = uuid.uuid4()
             conn.execute(
                 """
@@ -454,16 +614,20 @@ def create_rooms_sessions_encounters(
                 VALUES (%s, %s, 'Twilio', %s, %s, 'Ended', %s, %s, 2, %s, %s)
                 """,
                 (
-                    room_id, appointment["id"],
+                    room_id,
+                    appointment["id"],
                     f"RM{str(appointment['id'])[:8].upper()}",
                     f"apt-{appointment['id']}",
                     appointment["start"] - timedelta(minutes=10),
                     appointment["end"] + timedelta(minutes=15),
-                    SEED_USER_ID, appointment["start"] - timedelta(days=1),
+                    SEED_USER_ID,
+                    appointment["start"] - timedelta(days=1),
                 ),
             )
             session_id = uuid.uuid4()
-            duration_seconds = int((appointment["end"] - appointment["start"]).total_seconds()) - random.randint(180, 600)
+            duration_seconds = int(
+                (appointment["end"] - appointment["start"]).total_seconds()
+            ) - random.randint(180, 600)
             conn.execute(
                 """
                 INSERT INTO tele.telemedicine_sessions
@@ -472,10 +636,15 @@ def create_rooms_sessions_encounters(
                 VALUES (%s, %s, %s, 'Ended', %s, %s, %s, %s, 'Completed', %s, %s)
                 """,
                 (
-                    session_id, appointment["id"], room_id,
-                    appointment["start"], appointment["start"] + timedelta(seconds=duration_seconds),
-                    duration_seconds, user_by_professional.get(appointment["professional_id"]),
-                    SEED_USER_ID, appointment["start"] - timedelta(days=1),
+                    session_id,
+                    appointment["id"],
+                    room_id,
+                    appointment["start"],
+                    appointment["start"] + timedelta(seconds=duration_seconds),
+                    duration_seconds,
+                    user_by_professional.get(appointment["professional_id"]),
+                    SEED_USER_ID,
+                    appointment["start"] - timedelta(days=1),
                 ),
             )
             conn.execute(
@@ -486,14 +655,18 @@ def create_rooms_sessions_encounters(
                 VALUES (%s, %s, %s, %s, %s, %s, 'Completed', %s, %s, %s, %s)
                 """,
                 (
-                    uuid.uuid4(), appointment["id"], session_id,
-                    appointment["patient_id"], appointment["professional_id"],
+                    uuid.uuid4(),
+                    appointment["id"],
+                    session_id,
+                    appointment["patient_id"],
+                    appointment["professional_id"],
                     appointment["start"],
                     psycopg.types.json.Jsonb(
                         ENCOUNTER_NOTES[random.randint(0, len(ENCOUNTER_NOTES) - 1)]
                     ),
                     "Registro del encuentro (seed de pruebas)",
-                    SEED_USER_ID, appointment["start"] - timedelta(days=1),
+                    SEED_USER_ID,
+                    appointment["start"] - timedelta(days=1),
                 ),
             )
 
@@ -508,12 +681,14 @@ def create_rooms_sessions_encounters(
                 VALUES (%s, %s, 'Twilio', %s, %s, 'Active', %s, %s, 2, %s, %s)
                 """,
                 (
-                    room_id, appointment["id"],
+                    room_id,
+                    appointment["id"],
                     f"RM{str(appointment['id'])[:8].upper()}",
                     f"apt-{appointment['id']}",
                     appointment["start"] - timedelta(minutes=10),
                     appointment["end"] + timedelta(minutes=15),
-                    SEED_USER_ID, appointment["start"] - timedelta(hours=2),
+                    SEED_USER_ID,
+                    appointment["start"] - timedelta(hours=2),
                 ),
             )
             conn.execute(
@@ -524,8 +699,11 @@ def create_rooms_sessions_encounters(
                 VALUES (%s, %s, %s, 'Active', %s, NULL, NULL, NULL, NULL, %s, %s)
                 """,
                 (
-                    uuid.uuid4(), appointment["id"], room_id,
-                    appointment["start"], SEED_USER_ID,
+                    uuid.uuid4(),
+                    appointment["id"],
+                    room_id,
+                    appointment["start"],
+                    SEED_USER_ID,
                     appointment["start"] - timedelta(minutes=15),
                 ),
             )
@@ -541,7 +719,9 @@ def create_alerts(
     my_appointments = {p["id"]: [] for p in professionals}
 
     for appointment in appointments:
-        my_appointments.setdefault(appointment["professional_id"], []).append(appointment)
+        my_appointments.setdefault(appointment["professional_id"], []).append(
+            appointment
+        )
 
     for professional in professionals:
         theirs = my_appointments.get(professional["id"], [])
@@ -561,9 +741,11 @@ def create_alerts(
                         'Cita próxima', %s, %s, NULL, %s)
                 """,
                 (
-                    uuid.uuid4(), professional["user_id"],
+                    uuid.uuid4(),
+                    professional["user_id"],
                     f"Cita programada para {appointment['start'].strftime('%d/%m %H:%M')}",
-                    appointment["id"], now - timedelta(hours=1),
+                    appointment["id"],
+                    now - timedelta(hours=1),
                 ),
             )
 
@@ -578,9 +760,11 @@ def create_alerts(
                         'Cita confirmada', %s, %s, %s, %s)
                 """,
                 (
-                    uuid.uuid4(), professional["user_id"],
+                    uuid.uuid4(),
+                    professional["user_id"],
                     f"Se confirmó la cita del {appointment['start'].strftime('%d/%m %H:%M')}",
-                    appointment["id"], now - timedelta(days=1),
+                    appointment["id"],
+                    now - timedelta(days=1),
                     now - timedelta(hours=20),
                 ),
             )
@@ -596,9 +780,11 @@ def create_alerts(
                         'Sesión finalizada', %s, %s, NULL, %s)
                 """,
                 (
-                    uuid.uuid4(), professional["user_id"],
+                    uuid.uuid4(),
+                    professional["user_id"],
                     f"La sesión del {appointment['start'].strftime('%d/%m')} finalizó correctamente",
-                    appointment["id"], appointment["start"] + timedelta(hours=1),
+                    appointment["id"],
+                    appointment["start"] + timedelta(hours=1),
                 ),
             )
 
@@ -614,9 +800,11 @@ def create_alerts(
                         'Paciente en sala', %s, %s, NULL, %s)
                 """,
                 (
-                    uuid.uuid4(), professional["user_id"],
+                    uuid.uuid4(),
+                    professional["user_id"],
                     "El paciente ya está en la sala virtual",
-                    active_today[0]["id"], now - timedelta(minutes=5),
+                    active_today[0]["id"],
+                    now - timedelta(minutes=5),
                 ),
             )
         else:
@@ -631,9 +819,11 @@ def create_alerts(
                             'Paciente no se presentó', %s, %s, NULL, %s)
                     """,
                     (
-                        uuid.uuid4(), professional["user_id"],
+                        uuid.uuid4(),
+                        professional["user_id"],
                         "El paciente no ingresó a la sala",
-                        no_shows[-1]["id"], no_shows[-1]["start"] + timedelta(minutes=30),
+                        no_shows[-1]["id"],
+                        no_shows[-1]["start"] + timedelta(minutes=30),
                     ),
                 )
 
@@ -649,9 +839,11 @@ def create_alerts(
                         'Cita cancelada', %s, %s, NULL, %s)
                 """,
                 (
-                    uuid.uuid4(), professional["user_id"],
+                    uuid.uuid4(),
+                    professional["user_id"],
                     "Un paciente canceló su cita",
-                    cancelled[-1]["id"], now - timedelta(hours=3),
+                    cancelled[-1]["id"],
+                    now - timedelta(hours=3),
                 ),
             )
 
