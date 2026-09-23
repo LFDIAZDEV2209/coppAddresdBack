@@ -5,6 +5,7 @@ using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
@@ -54,7 +55,9 @@ public sealed class CreateTelemedicineRequestCommandHandler(
     IRequestRepository requests,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IAlertRepository alerts
+    IAlertRepository alerts,
+    ITelemedicineNotifier? notifier = null,
+    ILogger<CreateTelemedicineRequestCommandHandler>? logger = null
 ) : IRequestHandler<CreateTelemedicineRequestCommand, TelemedicineRequestDto>
 {
     public async Task<TelemedicineRequestDto> Handle(
@@ -176,6 +179,24 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             )
             {
                 await alerts.AddRangeAsync([alert], ct);
+            }
+
+            // F2: push al profesional elegido (best-effort: no rompe la creación).
+            if (targetProfessional?.UserId is { } professionalUserId)
+            {
+                await NotificationSupport.TrySendAsync(
+                    notifier,
+                    logger,
+                    new TelemedicineNotification(
+                        professionalUserId,
+                        $"Nueva solicitud de {patient.FullName}",
+                        $"{patient.FullName} solicitó una cita de {specialty.Name}.",
+                        [TelemedicineNotificationChannel.Push],
+                        NotificationSupport.Data(requestId: entity.Id, screen: "requests"),
+                        $"request:{entity.Id:N}:new"
+                    ),
+                    ct
+                );
             }
         }
 

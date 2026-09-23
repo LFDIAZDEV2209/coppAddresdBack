@@ -17,6 +17,13 @@ public class AiServiceSettings
     public string SyncAgentConfigEndpoint => "/internal/agents/sync-config";
     public string IngestDocumentEndpoint => "/internal/agents/ingest";
 
+    /// <summary>
+    /// Endpoint interno del descriptor de grafo de un agente (nodos, aristas y
+    /// config efectiva) para la visualización de flujos del playground.
+    /// `{0}` = id del tipo de agente.
+    /// </summary>
+    public string AgentGraphEndpointFormat { get; set; } = "/internal/agents/{0}/graph";
+
     /// <summary>Endpoint interno de generación de planes de alimentación/rutinas (AI Service).</summary>
     public string PlanGenerateEndpoint { get; set; } = "/internal/wellness/generate-plan";
 

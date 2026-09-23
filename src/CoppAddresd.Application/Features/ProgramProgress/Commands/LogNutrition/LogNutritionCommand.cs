@@ -55,7 +55,7 @@ public sealed class LogNutritionCommandValidator : AbstractValidator<LogNutritio
         // Intake enriquecido opcional (SPEC nutrition-intake-adherence): los
         // rangos 0–5000 los valida NutritionIntakePayloadValidator; un intake
         // null (shape anterior) sigue siendo válido.
-        RuleFor(x => x.Intake)
+        RuleFor(x => x.Intake!)
             .SetValidator(new NutritionIntakePayloadValidator())
             .When(x => x.Intake is not null);
     }

@@ -56,10 +56,10 @@ public class PermissionPolicyProviderTests
         => new(Options.Create(new AuthorizationOptions()));
 
     [Fact]
-    public void GetPolicy_CodigoConocido_CreaRequerimientoDePermiso()
+    public async Task GetPolicy_CodigoConocido_CreaRequerimientoDePermiso()
     {
         var provider = CreateProvider();
-        var policy = provider.GetPolicyAsync(PermissionCodes.EmployeesView).Result;
+        var policy = await provider.GetPolicyAsync(PermissionCodes.EmployeesView);
 
         Assert.NotNull(policy);
         Assert.Single(policy!.Requirements);
@@ -67,10 +67,10 @@ public class PermissionPolicyProviderTests
     }
 
     [Fact]
-    public void GetPolicy_CodigoDesconocido_DelegaAlFallback()
+    public async Task GetPolicy_CodigoDesconocido_DelegaAlFallback()
     {
         var provider = CreateProvider();
-        var policy = provider.GetPolicyAsync("NoExiste").Result;
+        var policy = await provider.GetPolicyAsync("NoExiste");
         Assert.Null(policy);
     }
 }

@@ -74,6 +74,17 @@ public interface IVideoProvider
     /// <summary>Completa/finaliza una sala (desconecta participantes).</summary>
     Task CompleteRoomAsync(string providerRoomSid, CancellationToken ct);
 
+    /// <summary>
+    /// Actualiza el máximo de participantes concurrentes de una sala ya creada
+    /// (F3). Se usa para elevar salas antiguas al settings vigente. Best-effort
+    /// en el llamador: algunos proveedores solo admiten el cambio con la sala en
+    /// curso y rechazan salas completadas.
+    /// </summary>
+    Task UpdateRoomMaxParticipantsAsync(
+        string providerRoomSid,
+        int maxParticipants,
+        CancellationToken ct);
+
     /// <summary>Genera un token de acceso de corta vida para un participante.</summary>
     Task<string> GenerateAccessTokenAsync(AccessTokenRequest request, CancellationToken ct);
 

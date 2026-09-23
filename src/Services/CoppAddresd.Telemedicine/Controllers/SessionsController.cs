@@ -51,6 +51,96 @@ public class SessionsController(IMediator mediator) : ControllerBase
         => Ok(await mediator.Send(
             new EndSessionCommand(appointmentId, request.EndReason, CurrentUserId(), HasManagePermission()), ct));
 
+    /// <summary>Reabre una consulta completada dentro de la gracia (profesional asignado o supervisor).</summary>
+    [HttpPost("session/reopen")]
+    [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<AppointmentDto>> Reopen(Guid appointmentId, CancellationToken ct)
+        => Ok(await mediator.Send(new ReopenSessionCommand(appointmentId, CurrentUserId(), HasManagePermission()), ct));
+
+    /// <summary>
+    /// Mensajes del chat de la consulta (F3) ordenados por (created_at, id), con
+    /// cursor incremental <c>after</c> (ISO) + <c>afterId</c> para el polling.
+    /// Misma autorización de participante/supervisor que la sala.
+    /// </summary>
+    [HttpGet("chat/messages")]
+    [ProducesResponseType(typeof(IReadOnlyList<ChatMessageDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<IReadOnlyList<ChatMessageDto>>> ChatMessages(
+        Guid appointmentId,
+        [FromQuery] DateTimeOffset? after = null,
+        [FromQuery] Guid? afterId = null,
+        [FromQuery] int limit = GetRoomChatMessagesQuery.DefaultLimit,
+        CancellationToken ct = default)
+        => Ok(await mediator.Send(
+            new GetRoomChatMessagesQuery(
+                appointmentId, CurrentUserId(), HasManagePermission(), after, afterId, limit), ct));
+
+    /// <summary>
+    /// Envía un mensaje al chat de la consulta (F3). El emisor y su rol se
+    /// derivan del JWT; solo con la cita confirmada, en curso o completada.
+    /// </summary>
+    [HttpPost("chat/messages")]
+    [ProducesResponseType(typeof(ChatMessageDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<ChatMessageDto>> SendChatMessage(
+        Guid appointmentId,
+        [FromBody] SendRoomChatMessageDto request,
+        CancellationToken ct)
+    {
+        var message = await mediator.Send(
+            new SendRoomChatMessageCommand(
+                appointmentId, request.Body, CurrentUserId(), HasManagePermission()), ct);
+
+        return CreatedAtAction(nameof(ChatMessages), new { appointmentId }, message);
+    }
+
+    /// <summary>
+    /// Pre-consulta del paciente de la cita (F4): mismo alcance participante
+    /// que la sala/chat. Sin fila persistida responde 200 sin cuerpo (la UI
+    /// muestra el estado vacío).
+    /// </summary>
+    [HttpGet("pre-visit-intake")]
+    [ProducesResponseType(typeof(PreVisitIntakeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PreVisitIntakeDto?>> PreVisitIntake(
+        Guid appointmentId,
+        CancellationToken ct)
+        => Ok(await mediator.Send(
+            new GetPreVisitIntakeQuery(appointmentId, CurrentUserId(), HasManagePermission()), ct));
+
+    /// <summary>
+    /// Autoguardado (upsert) de la pre-consulta: solo el paciente de la cita
+    /// (profesional/supervisor → 403) y solo mientras la cita está confirmada
+    /// (después → 409 en escritura; la lectura sigue disponible).
+    /// </summary>
+    [HttpPut("pre-visit-intake")]
+    [ProducesResponseType(typeof(PreVisitIntakeDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<PreVisitIntakeDto>> SavePreVisitIntake(
+        Guid appointmentId,
+        [FromBody] SavePreVisitIntakeDto request,
+        CancellationToken ct)
+        => Ok(await mediator.Send(
+            new UpsertPreVisitIntakeCommand(
+                appointmentId,
+                request.Reason,
+                request.Symptoms,
+                request.Allergies,
+                request.Medications,
+                CurrentUserId(),
+                HasManagePermission()), ct));
+
     private Guid CurrentUserId()
     {
         var value = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -62,3 +152,12 @@ public class SessionsController(IMediator mediator) : ControllerBase
 }
 
 public sealed record EndSessionDto(string? EndReason);
+
+public sealed record SendRoomChatMessageDto(string Body);
+
+/// <summary>Cuerpo del autoguardado de la pre-consulta (F4): motivo + textos opcionales.</summary>
+public sealed record SavePreVisitIntakeDto(
+    string Reason,
+    string? Symptoms,
+    string? Allergies,
+    string? Medications);

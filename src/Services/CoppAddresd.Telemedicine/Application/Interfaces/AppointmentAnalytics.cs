@@ -18,3 +18,20 @@ public sealed record ProfessionalAppointmentActivity(
     int Completed,
     int Cancelled,
     int UniquePatients);
+
+/// <summary>
+/// Agregado de métricas de llamada (F5) para el dashboard: salas, sesiones
+/// (con la suma de duración para calcular el promedio en lectura), reaperturas
+/// y chat por rol. Las claves P2 (<c>join_tokens_issued</c>,
+/// <c>participant_connections</c>) son «solo evento»: sin filas en el rollup
+/// valen 0.
+/// </summary>
+public sealed record CallMetricsAggregate(
+    int RoomsOpened,
+    int SessionsStarted,
+    int SessionsEnded,
+    long TotalDurationSeconds,
+    int Reopens,
+    IReadOnlyDictionary<string, int> ChatMessagesByRole,
+    int JoinTokensIssued,
+    IReadOnlyDictionary<string, int> ParticipantConnectionsByRole);

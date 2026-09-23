@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 
@@ -59,16 +60,22 @@ public class AvatarPostgresTests
             INSERT INTO auth."UserPreferences" ("UserId","Lang","AccentColor","UpdatedAt") VALUES (@a,'en','#123456',now());
             """,connection,tx)) { seed.Parameters.AddWithValue("a",a);seed.Parameters.AddWithValue("b",b);await seed.ExecuteNonQueryAsync(); }
         var key = new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(32));
-        using var server = new TestServer(new WebHostBuilder().ConfigureServices(services => {
-            services.AddControllers().AddApplicationPart(typeof(AvatarConfigurationController).Assembly);
-            services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => {
-                options.TokenValidationParameters=new() { ValidateIssuer=false,ValidateAudience=false,IssuerSigningKey=key,ValidateLifetime=true };
-            });
-            services.AddAuthorization();
-            services.AddScoped(_ => {var db=new AuthDbContext(new DbContextOptionsBuilder<AuthDbContext>().UseNpgsql(connection).Options);db.Database.UseTransaction(tx);return db;});
-            services.AddScoped<IAvatarPreferenceStore,AvatarPreferenceStore>();services.AddScoped<AvatarConfigurationUseCases>();
-        }).Configure(app => {app.UseRouting();app.UseAuthentication();app.UseAuthorization();app.UseEndpoints(e=>e.MapControllers());}));
-        using var client = server.CreateClient();
+        using var host = await new HostBuilder()
+            .ConfigureWebHost(webBuilder => {
+                webBuilder.UseTestServer();
+                webBuilder.ConfigureServices(services => {
+                    services.AddControllers().AddApplicationPart(typeof(AvatarConfigurationController).Assembly);
+                    services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options => {
+                        options.TokenValidationParameters=new() { ValidateIssuer=false,ValidateAudience=false,IssuerSigningKey=key,ValidateLifetime=true };
+                    });
+                    services.AddAuthorization();
+                    services.AddScoped(_ => {var db=new AuthDbContext(new DbContextOptionsBuilder<AuthDbContext>().UseNpgsql(connection).Options);db.Database.UseTransaction(tx);return db;});
+                    services.AddScoped<IAvatarPreferenceStore,AvatarPreferenceStore>();services.AddScoped<AvatarConfigurationUseCases>();
+                });
+                webBuilder.Configure(app => {app.UseRouting();app.UseAuthentication();app.UseAuthorization();app.UseEndpoints(e=>e.MapControllers());});
+            })
+            .StartAsync();
+        using var client = host.GetTestServer().CreateClient();
         const string url="/api/auth/me/avatar";
         Assert.Equal(HttpStatusCode.Unauthorized,(await client.GetAsync(url)).StatusCode);
         string Token(Guid id) => new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(claims:[new Claim(ClaimTypes.NameIdentifier,id.ToString())],expires:DateTime.UtcNow.AddMinutes(5),signingCredentials:new(key,SecurityAlgorithms.HmacSha256)));

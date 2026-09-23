@@ -3,8 +3,10 @@ using CoppAddresd.Telemedicine.Domain.Exceptions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Collections.Specialized;
+using System.Globalization;
 using Twilio;
 using Twilio.Exceptions;
+using Twilio.Http;
 using Twilio.Jwt.AccessToken;
 using Twilio.Rest.Video.V1;
 using Twilio.Rest.Video.V1.Room;
@@ -59,7 +61,14 @@ public sealed class TwilioVideoProvider(
                 request.RoomName, ex.Status, ex.Code);
 
             var existing = await GetRoomAsync(request.RoomName, ct);
-            return existing ?? throw ex;
+            if (existing is null)
+            {
+                // La sala no se pudo recuperar: propaga el error original
+                // preservando el stack trace (CA2200).
+                throw;
+            }
+
+            return existing;
         }
     }
 
@@ -98,6 +107,45 @@ public sealed class TwilioVideoProvider(
             pathSid: providerRoomSid);
 
         logger.LogInformation("Room Twilio completada: {RoomSid}", providerRoomSid);
+    }
+
+    /// <summary>Código Twilio de «Room contains too many Participants» (sala llena).</summary>
+    private const int RoomFullErrorCode = 53105;
+
+    public async Task UpdateRoomMaxParticipantsAsync(
+        string providerRoomSid,
+        int maxParticipants,
+        CancellationToken ct)
+    {
+        EnsureConfigured();
+        InitClient();
+
+        // El SDK fijado (Twilio 7.14.9) no expone MaxParticipants en
+        // UpdateRoomOptions: se usa el cliente REST del propio SDK (mismas
+        // credenciales) contra POST /v1/Rooms/{Sid}. Twilio solo permite el
+        // cambio en salas in-progress; una sala completada responde error y el
+        // llamador decide (best-effort).
+        var request = new Request(
+            Twilio.Http.HttpMethod.Post,
+            $"https://video.twilio.com/v1/Rooms/{providerRoomSid}");
+        request.AddPostParam(
+            "MaxParticipants", maxParticipants.ToString(CultureInfo.InvariantCulture));
+
+        try
+        {
+            await TwilioClient.GetRestClient().RequestAsync(request);
+
+            logger.LogInformation(
+                "Capacidad de la sala Twilio {RoomSid} actualizada a {MaxParticipants} participantes.",
+                providerRoomSid, maxParticipants);
+        }
+        catch (ApiException ex) when (ex.Code == RoomFullErrorCode)
+        {
+            // 53105 se traduce a una regla de negocio clara (409 «sala completa»)
+            // en lugar de un error crudo del proveedor.
+            throw new BusinessRuleViolationException(
+                "La sala alcanzó el máximo de participantes.");
+        }
     }
 
     public Task<string> GenerateAccessTokenAsync(AccessTokenRequest request, CancellationToken ct)

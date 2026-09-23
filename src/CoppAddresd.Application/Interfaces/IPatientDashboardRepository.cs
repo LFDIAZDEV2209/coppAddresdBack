@@ -26,16 +26,25 @@ public interface IPatientDashboardRepository
     );
 
     /// <summary>
-    /// Página del tablero clínico con búsqueda y filtros de riesgo, alertas y
-    /// seguimiento. Devuelve las filas y el total para la paginación.
+    /// Página del tablero clínico con búsqueda y filtros de riesgo, alertas,
+    /// seguimiento, estado del paciente, aseguradora y estado geográfico.
+    /// Devuelve las filas, el total para la paginación y el resumen por buckets
+    /// (este último sin los filtros clínicos, para las tarjetas del tab).
     /// </summary>
-    Task<(IReadOnlyList<ClinicalBoardItemDto> Items, int Total)> GetClinicalBoardAsync(
+    Task<(
+        IReadOnlyList<ClinicalBoardItemDto> Items,
+        int Total,
+        ClinicalBoardSummaryDto Summary
+    )> GetClinicalBoardAsync(
         int page,
         int pageSize,
         string? search,
         string? risk,
         bool? hasAlerts,
         string? followUp,
+        string? status,
+        Guid? insurerId,
+        string? stateCode,
         Guid? clinicId,
         Guid? professionalId,
         DateTime nowUtc,

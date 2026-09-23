@@ -28,13 +28,51 @@ public sealed class TelemedicineSettings
     /// <summary>Minutos antes del inicio en que la sala acepta participantes.</summary>
     public int RoomOpenBeforeMinutes { get; set; } = 10;
 
-    /// <summary>Minutos después del inicio en que la sala deja de aceptar participantes.</summary>
+    /// <summary>Minutos después del fin de la cita en que la sala deja de aceptar participantes.</summary>
     public int RoomCloseAfterMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// Minutos de gracia tras completar la consulta en que el profesional o un
+    /// supervisor pueden reabrirla (F5). Default 60 (comportamiento previo);
+    /// rango válido 5–1440 (validado en la aplicación, fuera de rango → 409).
+    /// </summary>
+    public int ReopenGraceMinutes { get; set; } = 60;
 
     /// <summary>TTL del token de acceso a la sala (segundos).</summary>
     public int AccessTokenTtlSeconds { get; set; } = 900;
 
-    public int MaxParticipants { get; set; } = 2;
+    /// <summary>
+    /// Máximo de participantes concurrentes en la sala (F3). Default 3:
+    /// profesional + paciente + 1 supervisor. La cita sigue siendo 1:1 (solo
+    /// profesional/paciente/supervisor pueden unirse); este cupo protege el
+    /// ingreso de supervisores. Rango válido 2–10 (validado en la aplicación).
+    /// </summary>
+    public int MaxParticipants { get; set; } = 3;
+
+    /// <summary>
+    /// Interruptor maestro de notificaciones push/SMS (F2). En <c>false</c> ni el
+    /// barrido de recordatorios ni los hooks de eventos envían notificaciones
+    /// para esta organización/clínica.
+    /// </summary>
+    public bool NotificationsEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Horas de anticipación del primer recordatorio de cita (push al paciente).
+    /// 0 o negativo = deshabilitado. Default 24.
+    /// </summary>
+    public int ReminderFirstHoursBefore { get; set; } = 24;
+
+    /// <summary>
+    /// Horas de anticipación del segundo recordatorio (push al paciente y push
+    /// al profesional). 0 o negativo = deshabilitado. Default 1.
+    /// </summary>
+    public int ReminderSecondHoursBefore { get; set; } = 1;
+
+    /// <summary>
+    /// Horas de anticipación con las que el recordatorio del paciente incluye
+    /// SMS (además del push). Default 1 (coincide con el segundo recordatorio).
+    /// </summary>
+    public int SmsReminderHoursBefore { get; set; } = 1;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

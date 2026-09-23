@@ -173,3 +173,17 @@ public sealed class GetAgentExecutionQueryHandler(IAgentExecutionsQueryService s
         return await service.GetAsync(request.ExecutionId, ct);
     }
 }
+
+// --- Grafo del agente (visualización de flujos) ---
+
+/// <summary>Descriptor del grafo de un agente (nodos/aristas + config efectiva).</summary>
+public record GetAgentGraphQuery(string AgentTypeId) : IRequest<AgentGraphDto?>;
+
+public sealed class GetAgentGraphQueryHandler(IAgentExecutionsQueryService service)
+    : IRequestHandler<GetAgentGraphQuery, AgentGraphDto?>
+{
+    public async Task<AgentGraphDto?> Handle(GetAgentGraphQuery request, CancellationToken ct)
+    {
+        return await service.GetGraphAsync(request.AgentTypeId, ct);
+    }
+}

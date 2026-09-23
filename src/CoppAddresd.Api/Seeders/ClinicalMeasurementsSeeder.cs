@@ -92,6 +92,18 @@ public sealed class ClinicalMeasurementsSeeder(
         // vital-signs-tracking: rango de referencia clínica para SpO2 (pendiente
         // de validación del comité; no altera las reglas de debilidad/seguridad).
         new("o2_saturation", null, null, null, 94m, 100m, "pct", 0),
+        // FASE 3 (app-fase-3-catalogos-seeds): bandas de referencia adulto general
+        // para las 7 métricas que quedaban sin rango — el API las usa como banda
+        // de referencia en metrics-history (MetricsHistoryRepository) y la APP las
+        // muestra en Historia/Home. Valores de demo para adulto general; el
+        // ajuste fino por género/edad llega cuando el comité lo defina.
+        new("weight", null, null, null, 45m, 160m, "kg", 0),
+        new("height", null, null, null, 140m, 210m, "cm", 0),
+        new("waist", null, null, null, 45m, 150m, "cm", 0),
+        new("hip", null, null, null, 70m, 150m, "cm", 0),
+        new("wrist", null, null, null, 12m, 20m, "cm", 0),
+        new("body_fat", null, null, null, 5m, 45m, "pct", 0),
+        new("temperature_c", null, null, null, 35.5m, 37.5m, "celsius", 0),
     ];
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

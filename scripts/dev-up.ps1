@@ -71,14 +71,25 @@ function Start-DevProcess {
   )
   $log = Join-Path $logs ($Name + '.log')
   $err = Join-Path $logs ($Name + '.err')
-  # Se lanza vía cmd.exe con "<NUL" para desacoplar stdin de la consola interactiva
+  # Se lanza cmd.exe con "<NUL" para desacoplar stdin de la consola interactiva
   # (equivalente a nohup en dev-up.sh). Sin esto, Vite (antares) detecta stdin TTY,
   # activa sus atajos de teclado y consume la entrada del shell.
+  # La redirección a archivo va DENTRO de cmd (> log 2> err), no con
+  # -RedirectStandardOutput: ese parámetro fuerza UseShellExecute=false y el
+  # hijo queda ADJUNTO a la consola del usuario; al terminar el script la
+  # ventana sigue "viva" pero sin prompt (no se puede escribir) hasta matarla.
+  # Con CreateNoWindow cada servicio recibe su propia consola oculta y queda
+  # desacoplado: cerrar esta ventana no afecta a los servicios.
   $exe = if ($FilePath -match '\s') { '"{0}"' -f $FilePath } else { $FilePath }
   $argLine = ($Arguments | ForEach-Object { if ($_ -match '\s') { '"{0}"' -f $_ } else { $_ } }) -join ' '
-  $cmdLine = '"{0} {1} <NUL"' -f $exe, $argLine
-  $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList ('/d /s /c ' + $cmdLine) -WorkingDirectory $WorkingDirectory `
-    -RedirectStandardOutput $log -RedirectStandardError $err -WindowStyle Hidden -PassThru
+  $cmdLine = '"{0} {1} > "{2}" 2> "{3}" <NUL"' -f $exe, $argLine, $log, $err
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $env:ComSpec
+  $psi.Arguments = '/d /s /c ' + $cmdLine
+  $psi.WorkingDirectory = $WorkingDirectory
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $proc = [System.Diagnostics.Process]::Start($psi)
   $proc.Id | Out-File (Join-Path $logs ($Name + '.pid'))
   return $proc
 }
@@ -341,6 +352,7 @@ if ($failed) {
 
 Draw-Banner "ALL SERVICES RUNNING" 'Green'
 Write-Host "  Stop with: .\scripts\dev-down.ps1" -ForegroundColor Gray
+Write-Host "  Esta ventana puede cerrarse: los servicios corren desacoplados en segundo plano." -ForegroundColor Gray
 Write-Host "  Logs in: $logs" -ForegroundColor Gray
 Write-Host "  View logs: .\scripts\dev-logs.ps1 <service> [-Follow] [-Err]" -ForegroundColor Gray
 Write-Host "  Services: auth, community, gateway, telemedicine, api, ai, postgres, front, antares, foodai" -ForegroundColor Gray

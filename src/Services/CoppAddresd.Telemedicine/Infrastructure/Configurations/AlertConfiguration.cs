@@ -36,6 +36,15 @@ public sealed class SettingsConfiguration : IEntityTypeConfiguration<Telemedicin
 
         builder.HasKey(x => x.Id);
 
+        // F3: default de BD 3 (profesional + paciente + 1 supervisor). La
+        // migración AddRoomChatAndCapacity lo aplica y hace backfill de las
+        // filas existentes que quedaron en 2.
+        builder.Property(x => x.MaxParticipants).HasDefaultValue(3);
+
+        // F5: gracia de reapertura configurable (default de BD 60, compatible
+        // con la constante previa). Rango 5–1440 validado en la aplicación.
+        builder.Property(x => x.ReopenGraceMinutes).HasDefaultValue(60);
+
         // Una sola fila de configuración por organización o por clínica.
         builder.HasIndex(x => new { x.OrganizationId, x.ClinicId }).IsUnique();
     }

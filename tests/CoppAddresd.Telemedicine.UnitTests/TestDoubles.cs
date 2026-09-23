@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Configuration;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.ReferenceData;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
@@ -42,8 +43,8 @@ public static class TestData
             [Clinic]
         );
 
-    public static PatientRefDto Patient(Guid? id = null, string? stateCode = null) =>
-        new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId, stateCode);
+    public static PatientRefDto Patient(Guid? id = null, string? stateCode = null, Guid? userId = null) =>
+        new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId, stateCode, userId);
 
     public static SpecialtyRefDto Specialty(Guid? id = null) =>
         new(id ?? SpecialtyId, "MED-GEN", "Medicina General", "General");
@@ -56,7 +57,9 @@ public static class TestData
         Guid? clinic = null,
         int minAdvanceHours = 2,
         int maxAdvanceDays = 30,
-        int maxReschedules = 2
+        int maxReschedules = 2,
+        int maxParticipants = 3,
+        int reopenGraceMinutes = 60
     ) =>
         new()
         {
@@ -69,7 +72,8 @@ public static class TestData
             RoomOpenBeforeMinutes = 10,
             RoomCloseAfterMinutes = 15,
             AccessTokenTtlSeconds = 900,
-            MaxParticipants = 2,
+            MaxParticipants = maxParticipants,
+            ReopenGraceMinutes = reopenGraceMinutes,
         };
 
     public static Appointment Appointment(
@@ -97,6 +101,25 @@ public static class TestData
             RescheduleCount = rescheduleCount,
             CreatedBy = UserId,
         };
+}
+
+/// <summary>
+/// Cola de métricas de prueba: registra en memoria los eventos encolados por
+/// los handlers (F5) para poder validar tipo y payload sin processor ni BD.
+/// </summary>
+public sealed class FakeMetricsQueue : ITelemedicineMetricsQueue
+{
+    public List<ITelemedicineMetricEvent> Events { get; } = [];
+
+    public ValueTask EnqueueAsync(ITelemedicineMetricEvent metricEvent, CancellationToken ct = default)
+    {
+        Events.Add(metricEvent);
+        return ValueTask.CompletedTask;
+    }
+
+    // Los tests de emisores solo encolan; el consumo lo cubre el processor.
+    public IAsyncEnumerable<ITelemedicineMetricEvent> ReadAllAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException();
 }
 
 /// <summary>Datos de referencia del ERP en memoria (sustituye al AppointmentReferenceDataService).</summary>
@@ -168,12 +191,26 @@ public sealed class FakeVideoProvider : IVideoProvider
 {
     public bool SignatureValid { get; set; } = true;
     public bool CompleteRoomThrows { get; set; }
+
+    /// <summary>Si es true, <see cref="UpdateRoomMaxParticipantsAsync"/> lanza (proveedor caído).</summary>
+    public bool UpdateRoomMaxParticipantsThrows { get; set; }
+
+    /// <summary>Sala devuelta por <see cref="GetRoomAsync"/> (null = no existe).</summary>
+    public RoomInfo? Room { get; set; }
+
     public int CreateRoomCalls { get; private set; }
     public int CompleteRoomCalls { get; private set; }
+
+    /// <summary>Peticiones de creación recibidas (F3: valida la capacidad enviada).</summary>
+    public List<RoomRequest> CreateRoomRequests { get; } = [];
+
+    /// <summary>Actualizaciones de capacidad registradas: (RoomSid, MaxParticipants).</summary>
+    public List<(string RoomSid, int MaxParticipants)> RoomMaxParticipantsUpdates { get; } = [];
 
     public Task<RoomInfo> CreateRoomAsync(RoomRequest request, CancellationToken ct)
     {
         CreateRoomCalls++;
+        CreateRoomRequests.Add(request);
         return Task.FromResult(
             new RoomInfo(
                 $"RM{CreateRoomCalls}",
@@ -186,8 +223,23 @@ public sealed class FakeVideoProvider : IVideoProvider
         );
     }
 
+    public Task UpdateRoomMaxParticipantsAsync(
+        string providerRoomSid,
+        int maxParticipants,
+        CancellationToken ct
+    )
+    {
+        if (UpdateRoomMaxParticipantsThrows)
+        {
+            throw new InvalidOperationException("Proveedor no disponible.");
+        }
+
+        RoomMaxParticipantsUpdates.Add((providerRoomSid, maxParticipants));
+        return Task.CompletedTask;
+    }
+
     public Task<RoomInfo?> GetRoomAsync(string providerRoomSidOrName, CancellationToken ct) =>
-        Task.FromResult<RoomInfo?>(null);
+        Task.FromResult(Room);
 
     public Task CompleteRoomAsync(string providerRoomSid, CancellationToken ct)
     {
@@ -493,6 +545,25 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .Count()
         );
 
+    /// <summary>Agregado de métricas de llamada devuelto por el fake (configurable por test).</summary>
+    public CallMetricsAggregate CallMetrics { get; set; } = new(
+        0,
+        0,
+        0,
+        0,
+        0,
+        new Dictionary<string, int>(),
+        0,
+        new Dictionary<string, int>()
+    );
+
+    public Task<CallMetricsAggregate> GetCallMetricsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) => Task.FromResult(CallMetrics);
+
     public Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,
         DateTimeOffset from,
@@ -507,6 +578,33 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 )
                 .OrderBy(a => a.ScheduledStart)
                 .Take(limit)
+                .ToList()
+        );
+
+    public Task<IReadOnlyList<Appointment>> ListByStatusEndingBeforeAsync(
+        AppointmentStatus status,
+        DateTimeOffset before,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<Appointment>>(
+            Items
+                .Where(a => a.Status == status && a.ScheduledEnd < before)
+                .OrderBy(a => a.ScheduledEnd)
+                .ToList()
+        );
+
+    public Task<IReadOnlyList<Appointment>> ListByStatusStartingBetweenAsync(
+        AppointmentStatus status,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<Appointment>>(
+            Items
+                .Where(a =>
+                    a.Status == status && a.ScheduledStart >= from && a.ScheduledStart < to
+                )
+                .OrderBy(a => a.ScheduledStart)
                 .ToList()
         );
 }
@@ -646,6 +744,14 @@ public sealed class FakeRoomRepository : IRoomRepository
         bool includeSessions = false,
         CancellationToken ct = default
     ) => Task.FromResult(Rooms.FirstOrDefault(r => r.ProviderRoomSid == providerRoomSid));
+
+    public Task<IReadOnlyList<VirtualRoom>> ListByAppointmentIdsAsync(
+        IReadOnlyCollection<Guid> appointmentIds,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<VirtualRoom>>(
+            Rooms.Where(r => appointmentIds.Contains(r.AppointmentId)).ToList()
+        );
 
     public Task<VirtualRoom?> GetForUpdateAsync(
         Guid appointmentId,
@@ -826,6 +932,50 @@ public sealed class FakeAlertRepository : IAlertRepository
     }
 }
 
+/// <summary>
+/// Notificador de prueba: registra los envíos en memoria. Configurable para
+/// simular el backend caído (<see cref="Accepted"/> = false).
+/// </summary>
+public sealed class FakeTelemedicineNotifier : ITelemedicineNotifier
+{
+    public List<TelemedicineNotification> Sent { get; } = [];
+
+    /// <summary>Respuesta del backend simulado (true = 2xx aceptado).</summary>
+    public bool Accepted { get; set; } = true;
+
+    public Task<bool> SendAsync(
+        TelemedicineNotification notification,
+        CancellationToken ct = default
+    )
+    {
+        Sent.Add(notification);
+        return Task.FromResult(Accepted);
+    }
+}
+
+/// <summary>Repositorio de despachos en memoria (dedupe por cita + tipo).</summary>
+public sealed class FakeNotificationDispatchRepository : INotificationDispatchRepository
+{
+    public List<NotificationDispatch> Items { get; } = [];
+
+    public Task<bool> ExistsAsync(
+        Guid appointmentId,
+        NotificationDispatchKind kind,
+        CancellationToken ct = default
+    ) => Task.FromResult(Items.Any(d => d.AppointmentId == appointmentId && d.Kind == kind));
+
+    public Task<bool> TryAddAsync(NotificationDispatch dispatch, CancellationToken ct = default)
+    {
+        if (Items.Any(d => d.AppointmentId == dispatch.AppointmentId && d.Kind == dispatch.Kind))
+        {
+            return Task.FromResult(false);
+        }
+
+        Items.Add(dispatch);
+        return Task.FromResult(true);
+    }
+}
+
 /// <summary>Repositorio de encuentros en memoria (idempotente por cita).</summary>
 public sealed class FakeEncounterRepository : IEncounterRepository
 {
@@ -855,6 +1005,107 @@ public sealed class FakeEncounterRepository : IEncounterRepository
 
     public Task UpdateAsync(ClinicalEncounter encounter, CancellationToken ct = default) =>
         Task.CompletedTask;
+}
+
+/// <summary>
+/// Repositorio de chat en memoria (mismo contrato keyset que la implementación
+/// EF: orden (created_at, id) y cursor after/afterId).
+/// </summary>
+public sealed class FakeChatMessageRepository : IChatMessageRepository
+{
+    public List<ChatMessage> Items { get; } = [];
+
+    public Task<IReadOnlyList<ChatMessage>> ListAfterAsync(
+        Guid appointmentId,
+        DateTimeOffset? after,
+        Guid? afterId,
+        int limit,
+        CancellationToken ct = default
+    )
+    {
+        var query = Items.Where(m => m.AppointmentId == appointmentId);
+
+        if (after is { } cursor)
+        {
+            var cursorUtc = cursor.UtcDateTime;
+            query = afterId is { } cursorId
+                ? query.Where(m =>
+                    m.CreatedAt > cursorUtc
+                    || (m.CreatedAt == cursorUtc && m.Id.CompareTo(cursorId) > 0))
+                : query.Where(m => m.CreatedAt > cursorUtc);
+        }
+
+        return Task.FromResult<IReadOnlyList<ChatMessage>>(
+            query.OrderBy(m => m.CreatedAt).ThenBy(m => m.Id).Take(limit).ToList()
+        );
+    }
+
+    public Task<ChatMessage> AddAsync(ChatMessage message, CancellationToken ct = default)
+    {
+        Items.Add(message);
+        return Task.FromResult(message);
+    }
+}
+
+/// <summary>
+/// Repositorio de pre-consultas en memoria (mismo contrato 1:1 que la
+/// implementación EF: la creación devuelve la existente si ya hay fila).
+/// </summary>
+public sealed class FakePreVisitIntakeRepository : IPreVisitIntakeRepository
+{
+    public List<PreVisitIntake> Items { get; } = [];
+
+    public Task<PreVisitIntake?> GetByAppointmentIdAsync(
+        Guid appointmentId,
+        CancellationToken ct = default
+    ) => Task.FromResult(Items.FirstOrDefault(i => i.AppointmentId == appointmentId));
+
+    public Task<PreVisitIntake?> GetForUpdateByAppointmentIdAsync(
+        Guid appointmentId,
+        CancellationToken ct = default
+    ) => Task.FromResult(Items.FirstOrDefault(i => i.AppointmentId == appointmentId));
+
+    public Task<PreVisitIntake> AddAsync(PreVisitIntake intake, CancellationToken ct = default)
+    {
+        var existing = Items.FirstOrDefault(i => i.AppointmentId == intake.AppointmentId);
+        if (existing is not null)
+        {
+            return Task.FromResult(existing);
+        }
+
+        Items.Add(intake);
+        return Task.FromResult(intake);
+    }
+
+    public Task UpdateAsync(PreVisitIntake intake, CancellationToken ct = default) =>
+        Task.CompletedTask;
+}
+
+/// <summary>Repositorio de adendas en memoria (append-only, orden cronológico estable).</summary>
+public sealed class FakeEncounterAddendumRepository : IEncounterAddendumRepository
+{
+    public List<EncounterAddendum> Items { get; } = [];
+
+    public Task<IReadOnlyList<EncounterAddendum>> ListByEncounterAsync(
+        Guid encounterId,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<EncounterAddendum>>(
+            Items
+                .Where(a => a.EncounterId == encounterId)
+                .OrderBy(a => a.CreatedAt)
+                .ThenBy(a => a.Id)
+                .ToList()
+        );
+
+    public Task<EncounterAddendum> AddAsync(
+        EncounterAddendum addendum,
+        CancellationToken ct = default
+    )
+    {
+        Items.Add(addendum);
+        return Task.FromResult(addendum);
+    }
 }
 
 /// <summary>Opciones del microservicio (WebhookUrl) para los handlers.</summary>

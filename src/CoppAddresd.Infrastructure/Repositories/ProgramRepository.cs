@@ -2791,7 +2791,7 @@ public sealed class ProgramRepository(
     )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        var result = await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
@@ -2844,6 +2844,10 @@ public sealed class ProgramRepository(
                 throw;
             }
         });
+
+        // La inscripción inexistente devuelve null (el controller responde sin contenido);
+        // aquí se cierra el contrato no nulo del método.
+        return result!;
     }
 
     private void AddDayTemplates(
@@ -7958,9 +7962,9 @@ public sealed class ProgramRepository(
         string? routineDetailText = null;
         string? planDetailText = null;
 
-        if (programContentResolver is not null)
+        if (_programContentResolver is not null)
         {
-            var contentResolution = await programContentResolver.ResolveAsync(
+            var contentResolution = await _programContentResolver.ResolveAsync(
                 enrollment.PatientId,
                 week.WeekStartDateLocal,
                 ct

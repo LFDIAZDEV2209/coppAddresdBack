@@ -112,15 +112,23 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
             body.ClassifierVersion ?? "none",
             body.InferenceTimeMs ?? 0,
             (body.Foods ?? []).Select(f => new DetectedFoodDto(
-                f.Name,
+                RequireValue(f.Name),
                 f.Confidence,
                 new BoundingBoxDto(f.BoundingBox?.X ?? 0, f.BoundingBox?.Y ?? 0, f.BoundingBox?.Width ?? 0, f.BoundingBox?.Height ?? 0),
                 f.Segmentation is null
                     ? null
-                    : new SegmentationDto(f.Segmentation.Mask, f.Segmentation.AreaPixels),
+                    : new SegmentationDto(
+                        RequireValue(f.Segmentation.Mask),
+                        f.Segmentation.AreaPixels),
                 f.Portion is null
                     ? null
-                    : new PortionDto(f.Portion.PortionSize, f.Portion.EstimatedGrams, f.Portion.MinGrams, f.Portion.MaxGrams, f.Portion.Confidence, f.Portion.Method)))
+                    : new PortionDto(
+                        RequireValue(f.Portion.PortionSize),
+                        f.Portion.EstimatedGrams,
+                        f.Portion.MinGrams,
+                        f.Portion.MaxGrams,
+                        f.Portion.Confidence,
+                        RequireValue(f.Portion.Method))))
             .ToList());
         }
         catch (JsonException ex)
@@ -129,6 +137,9 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
             throw new FoodAiException(502, "Respuesta inválida del Food AI Service.");
         }
     }
+
+    private static string RequireValue(string? value) =>
+        value ?? throw new FoodAiException(502, "Respuesta inválida del Food AI Service.");
 
     private sealed class FoodAiAnalyzeResponseJson
     {

@@ -59,7 +59,10 @@ public sealed class ListPatientsQueryHandler(IPatientRepository repository)
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
         var search = string.IsNullOrWhiteSpace(request.Search) ? null : request.Search.Trim();
-        var sortBy = PatientSortFields.All.Contains(request.SortBy) ? request.SortBy : null;
+        var sortBy = request.SortBy is { } requestedSortBy
+            && PatientSortFields.All.Contains(requestedSortBy)
+            ? requestedSortBy
+            : null;
         var sortDir = string.Equals(request.SortDir, "asc", StringComparison.OrdinalIgnoreCase)
             ? "asc"
             : "desc";

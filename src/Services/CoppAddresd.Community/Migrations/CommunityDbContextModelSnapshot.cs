@@ -534,7 +534,41 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("comment_reports", "community");
                 });
 
-modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
+            modelBuilder.Entity("CoppAddresd.Community.Entities.CommunityDailyMetric", b =>
+                {
+                    b.Property<DateOnly>("MetricDate")
+                        .HasColumnType("date")
+                        .HasColumnName("metric_date");
+
+                    b.Property<string>("MetricKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("metric_key");
+
+                    b.Property<string>("DimensionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("dimension_key");
+
+                    b.Property<DateTime>("LastUpdatedAt")
+                        .HasColumnType("timestamp without time zone")
+                        .HasColumnName("last_updated_at");
+
+                    b.Property<long>("TotalCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("total_count");
+
+                    b.HasKey("MetricDate", "MetricKey", "DimensionKey");
+
+                    b.HasIndex("MetricKey", "DimensionKey", "MetricDate")
+                        .HasDatabaseName("ix_community_daily_metrics_key_dim_date");
+
+                    b.ToTable("community_daily_metrics", "community");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -572,40 +606,6 @@ modelBuilder.Entity("CoppAddresd.Community.Entities.EventAttendance", b =>
                         .HasDatabaseName("ix_event_attendances_event_id_profile_id");
 
                     b.ToTable("event_attendances", "community");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Community.Entities.CommunityDailyMetric", b =>
-                {
-                    b.Property<DateOnly>("MetricDate")
-                        .HasColumnType("date")
-                        .HasColumnName("metric_date");
-
-                    b.Property<string>("MetricKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("metric_key");
-
-                    b.Property<string>("DimensionKey")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)")
-                        .HasColumnName("dimension_key");
-
-                    b.Property<DateTime>("LastUpdatedAt")
-                        .HasColumnType("timestamp without time zone")
-                        .HasColumnName("last_updated_at");
-
-                    b.Property<long>("TotalCount")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasDefaultValue(0L)
-                        .HasColumnName("total_count");
-
-                    b.HasKey("MetricDate", "MetricKey", "DimensionKey");
-
-                    b.HasIndex("MetricKey", "DimensionKey", "MetricDate")
-                        .HasDatabaseName("ix_community_daily_metrics_key_dim_date");
-
-                    b.ToTable("community_daily_metrics", "community");
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.FeedEvent", b =>

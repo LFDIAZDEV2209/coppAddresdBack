@@ -15,9 +15,12 @@ Fases implementadas:
 - **Fase 8 (adelantada) — Permisos `Telemedicine.*`**: siembra en el Auth Service (`PermissionCodes` + `RoleSeeder`), autorización por claim `permission` en el microservicio (mismo mecanismo que el backend).
 - **Fase 9-10 — Frontend (`coppaddresd-front`)**: módulo `features/telemedicine/*` (types espejo de los DTOs, services del microservicio 5130 y de catálogos del backend 5122, hooks, componentes) + rutas `/telemedicine/*` (profesional: dashboard, agenda, calendario, solicitudes, alertas, detalle de cita con sala virtual y encuentro clínico; admin: dashboard con KPIs, citas, solicitudes, profesionales, sesiones) protegidas con `PermissionGate` (`Telemedicine.AdminView`). Detalle en la sección Fase 9-10.
 - **Fase 11 — Testing formal**: proyectos `tests/CoppAddresd.Telemedicine.UnitTests` (134 tests: reglas puras de agendamiento/sala/encuentro, materializador de alertas, guard de referencias, mappers, validadores y handlers con fakes en memoria) e `tests/CoppAddresd.Telemedicine.IntegrationTests` (25 tests contra PostgreSQL real en BD aislada `coppaddresd_tele_test_*` — creada, migrada y eliminada por corrida vía `COP_TEST_DB_CONNECTION`): anti doble reserva concurrente (exclusión GiST + índice único parcial), idempotencia del webhook (clave única + rollback), persistencia del agregado, idempotencia de sala/encuentro y fallback de settings.
+- **F3 — Experiencia de llamada (backend)**: capacidad de sala por defecto **3** (validada 2–10) con elevación perezosa de las salas creadas antes de F3 (`UpdateRoomMaxParticipantsAsync`, REST de Twilio, best-effort) en `join-token`/`session/start` y corrección de la reapertura para que la sala nueva herede el settings vigente; **chat clínico persistido** `tele.chat_messages` + `GET/POST /api/v1/appointments/{id}/chat/messages` (REST + polling incremental con cursor, misma autorización que la sala). Migración `AddRoomChatAndCapacity`. Detalle en la sección F3.
 - **Fase 12 — Hardening**: auditoría clínica del encuentro — `tele.clinical_encounters` adjunta el trigger `audit.audit_trigger_function` vía migración condicional (`AttachClinicalEncounterAudit`, 4ª migración de `tele.`), y el actor del JWT + correlation id se propagan a los GUC `audit.*` por `AuditTriggerInterceptor`/`HttpAuditActorContext` (el guardado del encuentro usa transacción explícita corta para que el interceptor dispare). Bugs reales corregidos (descubiertos en el E2E de la fase): idempotencia del proveedor ante "Room exists" de Twilio (409/20429 → recupera la sala existente) y tracking `Added` de sesiones nuevas en el agregado (el fixup de EF las marcaba `Modified` → 409 de concurrencia al iniciar sesión tras un join previo). Detalle en la sección Fase 11-12.
+- **F4 — Clínica y cumplimiento (backend)**: **pre-consulta del paciente** `tele.pre_visit_intakes` (1:1 con la cita, `GET/PUT /api/v1/appointments/{id}/pre-visit-intake`, edición solo con la cita `Confirmed`, autoría del paciente) y **adendas del encuentro** `tele.encounter_addenda` (append-only, `GET/POST .../encounter/addenda`, solo con el encuentro `Completed`); **auditoría del ciclo de vida** con triggers condicionales en `appointments`/`telemedicine_sessions`/`virtual_rooms` (`AttachAppointmentLifecycleAudit`) y transacción explícita en `AppointmentRepository` para atribuir el actor del JWT. Grabación + consentimiento (F4.1–F4.4) **no** se implementan en esta fase (sub-proyecto separado). Migraciones `AddPreVisitIntakeAndAddenda` y `AttachAppointmentLifecycleAudit`. Detalle en la sección F4.
+- **F5 — Operación y calidad (backend)**: **métricas de llamada** en la pre-agregación CQRS (`rooms_opened`, `sessions_started`, `sessions_ended`, `session_duration_seconds`, `reopens`, `chat_messages_sent` por rol) como claves nuevas de la tabla EAV `tele.appointment_daily_metrics` (**sin migración de esquema**), **gracia de reapertura configurable** `telemedicine_settings.reopen_grace_minutes` (default 60, rango 5–1440, migración `AddReopenGraceMinutes`), bloque aditivo `calls` en los endpoints de analytics existentes y **corrección de la deriva** del barrido/webhook (ahora emiten al pipeline). Detalle en la sección F5.
 
-Pendiente: integración con el SDK de video del navegador (Twilio) en la sala virtual (el `join-token` ya se genera y se muestra); alertas al PACIENTE (requieren `PatientRefDto.UserId` + app móvil); alerta `UpcomingAppointment` (scheduler); `room-ended` sin sesión → NoShow (decisión de negocio aparte); exponer el filtro `clinicId` en la UI admin (el backend ya lo acepta); propagación de actor en el BACKEND (su `HttpAuditActorContext` sigue devolviendo System; el microservicio ya la tiene resuelta vía JWT).
+Pendiente: integración con el SDK de video del navegador (Twilio) en la sala virtual (el `join-token` ya se genera y se muestra); alerta `UpcomingAppointment` en la bandeja (los recordatorios push/SMS de F2 ya se disparan por scheduler); `room-ended` sin sesión → NoShow (decisión de negocio aparte); exponer el filtro `clinicId` en la UI admin (el backend ya lo acepta); propagación de actor en el BACKEND (su `HttpAuditActorContext` sigue devolviendo System; el microservicio ya la tiene resuelta vía JWT).
 
 ## Arquitectura
 
@@ -47,7 +50,11 @@ Controllers → MediatR (Application) → Domain
 | `telemedicine_sessions`     | Sesión de video (estado independiente de la cita y de la sala)                                                                                                                                                                                                                                                                        |
 | `clinical_encounters`       | Encuentro clínico, `clinical_data` jsonb extensible                                                                                                                                                                                                                                                                                   |
 | `telemedicine_alerts`       | Bandeja (eventos de dominio materializados; canal de entrega desacoplado)                                                                                                                                                                                                                                                             |
-| `telemedicine_settings`     | Reglas parametrizadas por organización/clínica                                                                                                                                                                                                                                                                                        |
+| `notification_dispatch`     | Despachos de notificación F2: dedupe por `(appointment_id, kind)` (único) — un recordatorio nunca se envía dos veces                                                                                                                                                                                                                  |
+| `chat_messages`             | Chat clínico F3: mensaje de texto plano por cita (`sender_user_id`/`sender_role` derivados del JWT), índice `(appointment_id, created_at)` para la lectura incremental por cursor; sin edición/borrado                                                                                                                                 |
+| `pre_visit_intakes`         | Pre-consulta del paciente F4: 1:1 con la cita (único `appointment_id`), motivo obligatorio + síntomas/alergias/medicación opcionales, autoría del paciente (JWT); editable solo con la cita `Confirmed`                                                                                                                               |
+| `encounter_addenda`         | Adendas del encuentro F4: append-only (encuentro, autor + snapshot de nombre, texto 1–2000, fecha), índice `(encounter_id, created_at)`; el registro clínico original no se modifica                                                                                                                                                    |
+| `telemedicine_settings`     | Reglas parametrizadas por organización/clínica (`max_participants` default 3 desde F3, rango 2–10; `reopen_grace_minutes` default 60 desde F5, rango 5–1440)                                                                                                                                                                        |
 
 **Estados separados a propósito**: cita ≠ sesión ≠ sala (máquinas de estado independientes).
 
@@ -59,6 +66,7 @@ GetRoomAsync(sidOrName, ct)               // null si no existe (404 mapeado)
 CompleteRoomAsync(sid, ct)                // finaliza sala
 GenerateAccessTokenAsync(AccessTokenRequest, ct)  // JWT identity + room, TTL corto
 GetParticipantsAsync(sid, ct)
+UpdateRoomMaxParticipantsAsync(sid, maxParticipants, ct)  // F3: POST /v1/Rooms/{Sid} (REST del SDK)
 ValidateWebhookSignatureAsync(WebhookValidationRequest, ct)  // X-Twilio-Signature
 ```
 
@@ -134,13 +142,17 @@ La autorización de los 4 primeros se resuelve en el handler a partir del JWT: e
 
 ### Reglas de negocio
 
-- **Ventana de acceso**: abre `RoomOpenBeforeMinutes` (default 10) antes del inicio y cierra `RoomCloseAfterMinutes` (default 15) después (settings por org/clínica). `join-token`/`session/start` fuera de la ventana → 409.
+- **Ventana de acceso**: abre `RoomOpenBeforeMinutes` (default 10) antes del inicio y cierra `RoomCloseAfterMinutes` (default 15) después del fin (settings por org/clínica); una cita reabierta extiende la ventana desde `reopened_at` (ver reapertura). `join-token`/`session/start` fuera de la ventana → 409.
 - **Sala lazy e idempotente**: se crea en el primer `join-token`/`start` dentro de la ventana. Nombre determinista `apt-{appointmentId}` → idempotencia por índice único `(provider, provider_room_name)` + `UniqueName` de Twilio (una carrera entre dos join-token devuelve la misma sala).
+- **Capacidad (F3)**: `settings.MaxParticipants` (default 3, rango 2–10) se copia al crear la sala; si la sala ya existe con un límite menor, `join-token`/`session/start` la elevan de forma perezosa (proveedor best-effort + persistencia local) y la reapertura crea la sala nueva con el settings vigente. La autorización de participantes NO cambia: la cita sigue siendo 1:1 (profesional/paciente/supervisor) y el cupo solo protege el ingreso de supervisores.
 - **Sesión**: una activa a la vez por cita (`start` doble → 409, protegido además por el token de concurrencia xmin de la cita). `end` es idempotente: sin sesión activa → no-op 200.
 - **Webhooks**: firma `X-Twilio-Signature` validada (deshabilitada en dev, `Twilio:ValidateWebhookSignature`). Clave de idempotencia `(event_type, room_sid, participant_sid)` en `tele.telemedicine_webhook_events` (índice único): los duplicados concurrentes se serializan y el perdedor recibe `Duplicate` con rollback de sus mutaciones. El procesamiento es atómico (reserva de la clave + mutaciones en una transacción).
-  - `room-ended` → sala `Ended`, sesión activa `Ended`, y la cita `InProgress` pasa a `Completed`. Si nunca hubo sesión activa, la cita NO se completa automáticamente (NoShow es una decisión de negocio aparte, fase futura/admin).
-  - `participant-connected` → sala `Active` (si estaba Created/Waiting) + timestamp del evento en la sesión. `participant-disconnected` → solo timestamp.
+  - `room-ended` → sala `Ended`, sesión activa `Ended`, y la cita `InProgress` pasa a `Completed`. Si nunca hubo sesión activa, la cita NO se completa automáticamente (el barrido de sesiones estancadas resuelve esos casos).
+  - `participant-connected` → sala `Active` (si estaba Created/Waiting) + timestamp del evento en la sesión. Si la identidad del participante es distinta a la del profesional, marca `tele.virtual_rooms.patient_joined_at` (primera vez): insumo del barrido para distinguir NoShow de Completed. `participant-disconnected` → solo timestamp.
+- **Barrido de citas vencidas**: `StaleSessionSweepHostedService` (cada 5 min, delay inicial 1 min) cierra citas vencidas más la gracia de `RoomCloseAfterMinutes` efectiva (settings por org/clínica): `InProgress` → `NoShow` si el paciente nunca ingresó (`patient_joined_at` null), `Completed` si ingresó; `Confirmed` sin sesión iniciada → `NoShow`. La sala del proveedor se completa best-effort y la sesión activa se cierra con `end_reason = stale-sweep`.
+- **Ventana en el detalle**: `GET /appointments/{id}` incluye `RoomOpensAt`/`RoomClosesAt` calculados con los settings efectivos; `GET /appointments/mine` (app móvil del paciente) también los expone para el pre-join — sala persistida si ya existe; si no, `SessionSupport.Window` (reapertura incluida). Las listas admin/ERP los omiten — la UI decide el estado de la sala sin esperar la creación lazy.
 - **Completar la sala en Twilio es best-effort** en `session/end`: si Twilio no responde, la sesión/cita se finalizan igual (la sala termina sola o vía webhook).
+- **Reapertura (gracia configurable, F5)**: `POST /api/v1/appointments/{id}/session/reopen` reabre una cita `Completed` dentro de la gracia efectiva `settings.ReopenGraceMinutes` (default 60) desde `completed_at`, por el profesional asignado o un supervisor con `Appointments.SessionsManage` (pacientes: sin acceso). El settings se carga **antes** del check y se valida el rango 5–1440 (`SessionSupport.EnsureValidReopenGraceMinutes`; fuera de rango → 409 sin efectos). Efectos: la cita vuelve a `InProgress` (`reopened_at`, `reopen_count++`), se crea una sala nueva en el proveedor `apt-{id}-r{n}` (completar una sala Twilio es irreversible) y la ventana efectiva abre `reopened_at − RoomOpenBeforeMinutes` y cierra `max(ScheduledEnd, reopened_at + duración) + RoomCloseAfterMinutes`; el barrido de citas vencidas usa esa misma ventana. Un encuentro clínico completado sigue inmutable.
 
 ### Identidad (backend)
 
@@ -319,9 +331,11 @@ endpoints por-Id ya existían desde Fase 3):
   `professionalId`) sin adivinar ids. Accesible a cualquier usuario autenticado.
 - **Analytics del dashboard** (`GetDashboardAnalyticsQuery`): payload completo
   para las gráficas del dashboard — KPIs, serie temporal diaria, distribución
-  por estado y por hora, actividad por profesional, próximas citas y conteo por
+  por estado y por hora, actividad por profesional, próximas citas, conteo por
   estado USA del paciente (`States`, vía `StateCode` de la referencia ERP con
-  dedup + caché). Sin
+  dedup + caché) y el bloque aditivo **`Calls`** de F5 (salas, sesiones,
+  `AverageDurationSeconds` = suma ÷ terminadas, reaperturas, chat por rol y
+  claves P2 en 0; rollup-first con fallback a conteos vivos). Sin
   migración: solo agrupaciones de lectura (proyección ligera + agrupación en
   memoria, porque Npgsql no traduce `DateTimeOffset.Date`/enums-string en
   GroupBy; rango acotado del dashboard). Consultas **secuenciales**: EF Core no
@@ -507,6 +521,324 @@ exactos), una solicitud Converted → una sola cita (`request_id` único).
 - Auditoría SOLO del encuentro clínico en esta fase (PHI); extender a cita/sesión
   si el dominio lo exige (mismo mecanismo).
 - El actor del BACKEND sigue sin propagarse (pendiente transversal del proyecto).
+
+## F2 — Recordatorios y notificaciones (schedule + entrega desacoplada)
+
+F2 separa responsabilidades: **Telemedicina es dueña de la agenda y de los
+eventos** (decide a quién, qué y cuándo notificar); **el backend es dueño de la
+entrega** (push/SMS). Contrato interno (mismo `Backend:BaseUrl` +
+`X-Internal-Key` que los datos de referencia):
+
+```text
+POST {Backend:BaseUrl}/api/v1/internal/telemedicine/notifications
+{ "userId", "title", "body", "channels": ["Push","Sms"],
+  "data": { "appointmentId", "screen" }, "dedupeKey" }
+→ 200 con estado por canal
+```
+
+El emisor es `ITelemedicineNotifier` (HttpClient resiliente, `TelemedicineNotifier`,
+misma config `Backend` que `AppointmentReferenceDataService`). Es **best-effort**:
+un fallo/timeout se registra y nunca rompe el flujo de negocio (patrón de las
+alertas del webhook).
+
+### Recordatorios (scheduler)
+
+`AppointmentReminderSweepHostedService` (cada **10 min**, delay inicial **1 min**,
+patrón `StaleSessionSweepHostedService`) ejecuta `AppointmentReminderSweeper`
+sobre las citas `Confirmed` de las próximas 24 h:
+
+| Banda (settings)                                              | Destinatario | Canales                                              | Kind                     |
+| ------------------------------------------------------------- | ------------ | ---------------------------------------------------- | ------------------------ |
+| `(ReminderSecondHoursBefore, ReminderFirstHoursBefore]` (24 h) | Paciente     | Push                                                 | `Reminder24h`            |
+| `(0, ReminderSecondHoursBefore]` (1 h)                        | Paciente     | Push + SMS (`≤ SmsReminderHoursBefore`)              | `Reminder1h`             |
+| `(0, ReminderSecondHoursBefore]` (1 h)                        | Profesional  | Push                                                 | `ProfessionalReminder1h` |
+
+- Solo se envía mientras la cita siga `Confirmed` (revalidación inmediata al
+  envío): `Cancelled/Completed/NoShow` se omiten y `InProgress` no recibe
+  recordatorios. Una cita que ya entró a la banda corta no recibe además el
+  aviso de 24 h.
+- **Dedupe en `tele.notification_dispatch`** (`appointment_id`, `kind`,
+  `sent_at`; único `(appointment_id, kind)`): si el backend acepta el envío se
+  registra la fila; si lo rechaza NO se registra y el tick siguiente reintenta.
+  La carrera entre réplicas la resuelve el índice único (el perdedor no reenvía).
+- Sin usuario de Auth del destinatario (`PatientRefDto.UserId` /
+  `ProfessionalRefDto.UserId`) se omite el envío (log Debug). La referencia de
+  paciente expone `userId` cuando el backend lo provee (trabajo paralelo del
+  dueño de delivery).
+
+### Hooks de eventos (best-effort)
+
+| Evento                                        | Destinatario                                                                  | Mensaje                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
+| `CreateTelemedicineRequestCommand`            | Profesional elegido                                                           | "Nueva solicitud de {paciente}" (push) |
+| `CancelAppointmentCommand`                    | Profesional cancela → paciente; paciente cancela → profesional; admin/sistema → paciente | "Cita cancelada" + motivo (push) |
+| `StaleSessionSweeper` (cierre por `NoShow`)   | Paciente                                                                      | "No asististe a tu cita…" (push + SMS) |
+
+### Settings (`tele.telemedicine_settings`)
+
+| Columna                        | Default | Efecto                                                        |
+| ------------------------------ | ------- | ------------------------------------------------------------- |
+| `NotificationsEnabled`         | `true`  | Interruptor maestro de notificaciones (barridos y hooks)      |
+| `ReminderFirstHoursBefore`     | `24`    | Anticipación del primer recordatorio (paciente, push); 0 = off |
+| `ReminderSecondHoursBefore`    | `1`     | Anticipación del segundo recordatorio (paciente push+SMS y profesional push); 0 = off |
+| `SmsReminderHoursBefore`       | `1`     | Ventana en la que el recordatorio del paciente incluye SMS     |
+
+### Datos
+
+Migración `AddTelemedicineNotifications`: columnas de settings (defaults BD
+`true`/`24`/`1`/`1` para que las filas existentes queden con recordatorios
+activos) + tabla `tele.notification_dispatch` con índice único
+`(appointment_id, kind)`.
+
+### Tests (F2)
+
+18 tests nuevos en `CoppAddresd.Telemedicine.UnitTests` (notificador fake +
+contrato HTTP del emisor): recordatorios por ventana/canal con dedupe,
+revalidación de estado, settings deshabilitados, reintento con backend caído,
+shape del contrato de entrega, hooks de solicitud/cancelación/no-show y elección
+de destinatario según quién cancela. Total de la suite: **224**.
+
+## F3 — Experiencia de llamada (backend: capacidad + chat)
+
+Alcance backend de F3 (P2). Los bloques de reconexión/preflight/pantalla
+compartida y las UIs de chat son de los clientes (ERP/app) y no cambian el
+contrato del microservicio.
+
+### Capacidad de participantes
+
+- **Default 3** (`tele.telemedicine_settings.max_participants`): profesional +
+  paciente + 1 supervisor. Rango validado **2–10**
+  (`SessionSupport.EnsureValidMaxParticipants`, fuera de rango → 409 sin
+  tocar la sala). La autorización de participante no cambia (cita 1:1).
+- **Salas nuevas** (primer join-token, `session/start`, reapertura): Twilio
+  recibe `max_participants = settings.MaxParticipants` y `virtual_rooms` lo
+  persiste. La **reapertura** crea la sala nueva con el settings vigente y
+  actualiza `virtual_rooms.max_participants` (antes quedaba con el valor viejo).
+- **Salas creadas antes de F3** (límite 2): en el siguiente `join-token` o
+  `session/start`, si `room.MaxParticipants < settings.MaxParticipants`, se
+  actualiza la sala `in-progress` en Twilio
+  (`IVideoProvider.UpdateRoomMaxParticipantsAsync` → `POST /v1/Rooms/{Sid}` con
+  el cliente REST del SDK, porque Twilio 7.14.9 no expone `MaxParticipants` en
+  `UpdateRoomOptions`) y se persiste el valor local. Es **best-effort**: si
+  Twilio falla, el join continúa y queda un log Warning.
+- **Sala llena (53105)**: el proveedor traduce el código a
+  `BusinessRuleViolationException` («La sala alcanzó el máximo de
+  participantes», 409) en lugar de un error crudo; los clientes mapean el
+  error homónimo del SDK JS a un copy accionable.
+- La migración `AddRoomChatAndCapacity` fija el default de BD en 3 y hace
+  **backfill** de las filas existentes que valen 2 (respeta valores manuales).
+
+### Chat de la consulta
+
+```text
+GET  /api/v1/appointments/{id}/chat/messages?after={ISO}&afterId={uuid}&limit={1..100}
+     → 200 ChatMessageDto[] ordenado por (created_at, id); default limit 50
+POST /api/v1/appointments/{id}/chat/messages   { "body": "…" }
+     → 201 ChatMessageDto (persistido en tele.chat_messages)
+```
+
+- **Autorización**: misma que la sala (`SessionSupport.RequireParticipantAsync`):
+  profesional/paciente de la cita o supervisor con `Telemedicine.SessionsManage`.
+  Usuario ajeno → 403; cita inexistente → 404. `sender_user_id` y `sender_role`
+  se derivan del JWT, nunca del cuerpo.
+- **Estado**: disponible con la cita **Confirmed, InProgress o Completed** (los
+  participantes pueden esperar en la sala con la cita aún confirmada y se
+  conserva el acceso posterior a la consulta); `Requested` y terminales sin
+  atención (`Cancelled`/`NoShow`) → 409. El historial persiste en BD; no hay
+  purga en v1.
+- **Validación**: `body` con trim, 1–2000 caracteres (400 con errores);
+  `limit` 1–100; `after` ISO inválido lo rechaza el model binding (400).
+- **Polling**: el cliente (ERP/app) usa REST + polling incremental cada ~4 s con
+  el cursor `(after, afterId)`; no hay SignalR/SSE ni push por mensaje en F3.
+- **Sin edición, borrado, adjuntos ni recibos**; el DTO no incluye `senderName`
+  (los clientes resuelven el nombre con la cita/participantes). Logging sin PHI
+  (solo ids, rol y longitud).
+- Migración `AddRoomChatAndCapacity`: tabla `tele.chat_messages` + índice
+  `ix_chat_messages_appointment_id_created_at` (misma migración que la
+  capacidad; **no** se aplica automáticamente al iniciar el microservicio).
+
+### Tests (F3)
+
+49 tests nuevos en `CoppAddresd.Telemedicine.UnitTests`: rango del default de
+capacidad y `NewRoom`, elevación perezosa en join/start/reapertura (el fake del
+proveedor registra las actualizaciones), fallo del proveedor best-effort,
+matriz de autorización del chat (profesional/paciente/supervisor y ajeno),
+guarda de estado, validación de body/límite, orden y cursor keyset, traducción
+EF del cursor. Total de la suite backend: **273**.
+
+## F4 — Clínica y cumplimiento (backend: pre-consulta, addenda y auditoría)
+
+Alcance backend de F4. La **grabación de la consulta y el consentimiento
+versionado** (F4.1–F4.4 del diseño) **no** se implementan en esta fase: son un
+sub-proyecto separado (diseño en `openspec/changes/app-f4-clinical-compliance`).
+
+### Pre-consulta del paciente
+
+```text
+GET  /api/v1/appointments/{id}/pre-visit-intake
+     → 200 PreVisitIntakeDto | 200 sin cuerpo si aún no existe (estado vacío)
+PUT  /api/v1/appointments/{id}/pre-visit-intake
+     { "reason": "…", "symptoms": "…", "allergies": "…", "medications": "…" }
+     → 200 PreVisitIntakeDto (upsert de autoguardado)
+```
+
+- Tabla `tele.pre_visit_intakes` **1:1 con la cita** (índice único
+  `appointment_id`, FK cascade): `reason` obligatorio (500), `symptoms` (4000),
+  `allergies` (2000) y `medications` (2000) opcionales. `patient_id` y
+  `created_by` se derivan de la cita y del JWT, **nunca** del cuerpo.
+- **Autorización participante** (misma que sala/chat): GET para el paciente,
+  el profesional de la cita o un supervisor; PUT **solo el paciente** de la
+  cita (profesional/supervisor → 403; usuario ajeno → 403; cita inexistente →
+  404).
+- **Ciclo de vida**: editable mientras la cita está `Confirmed` (autoguardado
+  upsert, sin estado borrador/enviado; `updated_at` en cada guardado). Con la
+  cita `InProgress` o en estados terminales la escritura responde 409 y la
+  **lectura sigue disponible** para los autorizados.
+- **Validación** FluentValidation (trim; `reason` 1–500; textos opcionales con
+  sus máximos) → 400 con errores. Logging **sin PHI** (ids y longitudes).
+- **Auditoría**: `attach_table_audit` condicional sobre `pre_visit_intakes`
+  (PHI) en la migración y transacción explícita corta en el repositorio para
+  que el trigger reciba el actor del JWT.
+- **Upsert concurrente**: el índice único resuelve la carrera; el perdedor
+  recibe la fila existente TRACKEADA y aplica sus cambios (mismo patrón que el
+  encuentro).
+
+### Adendas del encuentro
+
+```text
+GET  /api/v1/appointments/{id}/encounter/addenda
+     → 200 EncounterAddendumDto[] ordenado por (created_at, id); [] si no hay encuentro
+POST /api/v1/appointments/{id}/encounter/addenda   { "body": "…" }
+     → 201 EncounterAddendumDto (persistido en tele.encounter_addenda)
+```
+
+- Tabla `tele.encounter_addenda` **append-only**: encuentro, autor
+  (`author_user_id` del JWT + `author_name` snapshot del claim de nombre/email,
+  truncado a 200), texto 1–2000 y fecha. **Sin edición, borrado ni límite por
+  encuentro**; el registro clínico original sigue inmutable (`PUT encounter`
+  sobre `Completed` sigue 409).
+- **Autorización** idéntica a la del encuentro (`RequireSessionOwnerAsync`):
+  profesional asignado o supervisor; el paciente → 403; cita inexistente → 404.
+- **Precondición**: el POST exige encuentro existente y `Completed`; en `Draft`
+  o sin encuentro → 409 («la adenda es para registros finalizados»). GET
+  devuelve `[]` si el encuentro no existe (la UI no necesita 404).
+- **Auditoría**: `attach_table_audit` condicional sobre `encounter_addenda`
+  (PHI) en la migración.
+
+### Auditoría del ciclo de vida de la cita
+
+- Migración `AttachAppointmentLifecycleAudit` (condicional e idempotente,
+  mismo patrón de `AttachClinicalEncounterAudit`): adjunta
+  `audit.audit_trigger_function` a `tele.appointments`,
+  `tele.telemedicine_sessions` y `tele.virtual_rooms`. Cubre inicio/fin/
+  reapertura/cancelación/reprogramación/no-show y la creación/cambio de estado
+  de sala y sesión; la transición se lee de `changed_data` de
+  `audit.activity_logs` (**sin doble escritura** de eventos de aplicación).
+- **Actor**: `AuditTriggerInterceptor` propaga el actor del JWT, y
+  `AppointmentRepository.Add/UpdateAsync` abre transacción explícita corta
+  (con `CreateExecutionStrategy`) porque el interceptor solo dispara al iniciar
+  la transacción — un `SaveChanges` de una sentencia dejaba el actor en
+  `SYSTEM`. El barrido de sesiones estancadas y los webhooks no tienen usuario
+  y quedan como `SYSTEM` (correcto y documentado).
+- **No** se auditan por trigger: `chat_messages`, `notification_dispatch`,
+  `telemedicine_webhook_events` ni los historiales de cancelación/
+  reprogramación (clasificación en `docs/modules/activity-log/database.md`).
+- **Sin API de lectura** de `audit.activity_logs` en F4 (decisión abierta;
+  consulta por SQL en el backend).
+
+### Migraciones (generadas, las aplica el padre)
+
+- `AddPreVisitIntakeAndAddenda`: tablas `tele.pre_visit_intakes` y
+  `tele.encounter_addenda` + triggers de auditoría PHI condicionales.
+- `AttachAppointmentLifecycleAudit`: triggers del ciclo de vida de la cita.
+- El microservicio **no** migra al iniciar (ver «Comandos»).
+
+### Tests (F4)
+
+34 tests nuevos en `CoppAddresd.Telemedicine.UnitTests`: matriz de autorización
+del intake (paciente escribe; profesional/supervisor/ajeno 403), edición
+permitida/bloqueada por estado, lectura post-inicio, upsert sin duplicar,
+identidad derivada del JWT y validaciones de longitud; matriz de adendas
+(profesional/supervisor OK; paciente/ajeno 403), precondición `Completed`
+(Draft/sin encuentro → 409), orden `(created_at, id)`, snapshot/truncado del
+autor y validación 1–2000. Total de la suite backend al cerrar F4: **310**
+(F5 la lleva a 355 unit + 41 de integración — ver sección F5). La presencia y
+condicionalidad de las migraciones de auditoría **no** se cubre por unit tests
+(requiere PostgreSQL real y schema `audit`): queda para integración/QA manual.
+
+## F5 — Operación y calidad (métricas de llamada + gracia configurable)
+
+### Métricas de llamada (pipeline CQRS, sin migración de esquema)
+
+Nuevas claves EAV en `tele.appointment_daily_metrics` (contrato compartido
+processor/backfill/lector en `Application/Constants/TelemedicineMetricKeys.cs`):
+
+| Clave | Dimensión | Incremento | Emisor |
+|---|---|---|---|
+| `rooms_opened` | `general` | +1 | primera apertura de sala en `join-token`/`session/start` (la reapertura NO la cuenta) |
+| `sessions_started` | `general` | +1 | `session/start` |
+| `sessions_ended` | `general` | +1 | fin manual, webhook `room-ended` o barrido |
+| `session_duration_seconds` | `general` | +duración | ídem (base del promedio: suma ÷ `sessions_ended`; 0 → null) |
+| `reopens` | `general` | +1 | transición `Completed → InProgress` derivada del `AppointmentStatusChangedMetricEvent` existente (sin evento nuevo) |
+| `chat_messages_sent` | `Professional｜Patient｜Supervisor` | +1 | `SendRoomChatMessageCommand` con el rol del JWT |
+
+- **Eventos**: `RoomOpenedMetricEvent`, `SessionStartedMetricEvent`,
+  `SessionEndedMetricEvent` (con `DurationSeconds`), `ChatMessageSentMetricEvent`
+  (rol derivado del JWT, nunca del cuerpo; sin PHI en logs). Se encolan al final
+  de cada handler con el patrón `ITelemedicineMetricsQueue? metricsQueue = null`
+  (param opcional al final del constructor primario).
+- **Processor** (`TelemedicineMetricsProcessorHostedService`): casos nuevos en el
+  `switch`; contadores con upsert doble (profesional + espejo global
+  `Guid.Empty`) y `session_duration_seconds` sumando el incremento en lugar de
+  +1. El mapeo evento→clave/dimensión es testeable (`MapCounters`); `reopens`
+  se deriva dentro de `ProcessStatusChangedAsync` (`IsReopen`).
+- **Deriva corregida (bug operativo)**: el barrido (`StaleSessionSweeper`) y el
+  webhook (`ProcessTwilioWebhookCommand`) ahora emiten
+  `AppointmentStatusChangedMetricEvent` (InProgress→NoShow/Completed y
+  Confirmed→NoShow) y `SessionEndedMetricEvent`, de modo que `status_count` y
+  las claves de llamada no se descuadran sin backfill. El webhook emite
+  **después del commit** (un duplicado con rollback no cuenta) y el barrido una
+  sola vez por cita cerrada.
+- **Backfill** (`MetricsBackfillService`): reconstruye las claves nuevas desde
+  `tele.virtual_rooms`, `tele.telemedicine_sessions`, `tele.chat_messages` y
+  `tele.appointments.reopen_count`, con la **fecha de agenda** de la cita
+  (misma semántica que los eventos). Las claves P2 `join_tokens_issued` y
+  `participant_connections` no se emiten en v1 y no son reconstruibles (el
+  lector las expone en 0/empty).
+- **Lectura**: `IAppointmentRepository.GetCallMetricsAsync` (rollup-first con
+  fallback a conteos vivos) alimenta el bloque `Calls` de
+  `DashboardAnalyticsDto`. Los endpoints existentes
+  (`GET /api/v1/telemedicine/admin/analytics` y `/me/analytics`) no cambian de
+  ruta ni de permisos.
+
+### Gracia de reapertura configurable
+
+- `TelemedicineSettings.ReopenGraceMinutes` (default de dominio **60**;
+  `AlertConfiguration` fija el default de BD 60) + migración
+  **`AddReopenGraceMinutes`** (`tele.telemedicine_settings.reopen_grace_minutes`,
+  `integer NOT NULL DEFAULT 60`; las filas existentes toman el default sin
+  backfill).
+- `SessionSupport.EnsureValidReopenGraceMinutes` valida 5–1440
+  (`BusinessRuleViolationException` → 409). `ReopenSessionCommand` carga el
+  settings **antes** del check y usa el valor efectivo (también en el mensaje de
+  error).
+- `AppointmentDto.ReopenGraceMinutes` (campo trailing opcional) se enriquece en
+  `GetAppointmentQuery` (detalle ERP) y `GetMyAppointmentsQuery` (app móvil);
+  las listas admin lo dejan null. El ERP calcula el botón «Reabrir consulta» con
+  el valor del DTO (fail-closed si viene null).
+
+### Datos y tests (F5)
+
+- Migración `AddReopenGraceMinutes` (8.ª de `tele.`): columna
+  `reopen_grace_minutes` con default 60. El microservicio **no** migra al
+  iniciar (ver «Comandos»).
+- Unit `CoppAddresd.Telemedicine.UnitTests`: **355** (45 nuevos: emisores con
+  cola fake, mapeo de claves/dimensiones del processor, deriva del
+  barrido/webhook, rango de gracia y comando con valor configurado, exposición
+  del DTO y bloque `Calls`).
+- Integración `CoppAddresd.Telemedicine.IntegrationTests`: **41** (3 nuevos:
+  backfill de las claves de llamada con espejo global y lectura rollup-first /
+  fallback vivo), corridos contra PostgreSQL real con `COP_TEST_DB_CONNECTION`.
 
 ## Comandos
 

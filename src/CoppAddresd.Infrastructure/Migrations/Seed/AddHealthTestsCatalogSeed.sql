@@ -1,4 +1,4 @@
--- Seed del módulo Tests de Salud: batería inicial ANTARES.
+-- Seed del módulo Tests de Salud: batería inicial Copp Adresd.
 -- Contenido fiel a ANTARES_Tests_Perfil_Salud (1).html (9 tests, 44 preguntas).
 -- Idempotente (ON CONFLICT DO NOTHING sobre claves únicas).
 -- Generado por scripts/generate_health_tests_seed.py — editar el script, no este SQL.
@@ -13,7 +13,7 @@ SELECT * FROM (VALUES
     ('cd48e94c-c326-5312-8040-f44d2f4001d4'::uuid, 'iac-adresd', 'Adherencia · IAC', 'Tu motivación real determina cómo te acompañamos.', 'adherencia', 6, true, now()),
     ('b322c457-2853-5baf-a66f-0e255c7c725e'::uuid, 'orp', 'Riesgo cardiometabólico ORP', 'Información clínica confidencial — solo la ve tu equipo médico.', 'clinico', 7, true, now()),
     ('da092b10-061e-59e6-ad36-abb6bc71643e'::uuid, 'ers', 'Estrés relacional · ERS', 'El estrés en casa o en el trabajo es la barrera #1 de la adherencia.', 'psicologico', 8, true, now()),
-    ('caa212ce-0b3e-5c5f-a5bb-8c796166e1c7'::uuid, 'bateria-antares', 'Propósito · ANTARES', 'Las respuestas más importantes del programa. Sé completamente honesto/a.', 'integral', 9, true, now())
+    ('caa212ce-0b3e-5c5f-a5bb-8c796166e1c7'::uuid, 'bateria-antares', 'Propósito · Copp Adresd', 'Las respuestas más importantes del programa. Sé completamente honesto/a.', 'integral', 9, true, now())
 ) AS t(id, code, name, description, category, sort_order, is_active, created_at)
 ON CONFLICT (code) DO NOTHING;
 
@@ -1096,7 +1096,7 @@ FROM app.health_test_questions q WHERE q.code = 'prop_meta' AND q.is_active = tr
 ON CONFLICT DO NOTHING;
 
 INSERT INTO app.health_test_questions (id, version_id, code, section, text, type, scoring_direction, sort_order, is_active, hint, unit, min_value, max_value, default_value, min_label, max_label)
-SELECT '5284d3e6-e1cf-5b15-8787-a38e138dbd1a'::uuid, v.id, 'prop_nota', 'Nota personal · Para tu equipo médico', 'Cuéntanos con tus propias palabras: ¿qué te trajo al programa ANTARES?', 'open', 'positive', 4, true, 'El Dr. Godoy Cruz leerá esto personalmente. Sé tan honesto/a como puedas.', NULL, NULL, NULL, NULL, NULL, NULL
+SELECT '5284d3e6-e1cf-5b15-8787-a38e138dbd1a'::uuid, v.id, 'prop_nota', 'Nota personal · Para tu equipo médico', 'Cuéntanos con tus propias palabras: ¿qué te trajo al programa Copp Adresd?', 'open', 'positive', 4, true, 'El Dr. Godoy Cruz leerá esto personalmente. Sé tan honesto/a como puedas.', NULL, NULL, NULL, NULL, NULL, NULL
 FROM app.health_test_versions v JOIN app.health_test_instruments i ON i.id = v.instrument_id
 WHERE i.code = 'bateria-antares' AND v.version_number = 1 AND v.is_current = true
 ON CONFLICT (version_id, code) DO NOTHING;
@@ -1249,7 +1249,7 @@ WHERE i.code = 'bateria-antares' AND v.version_number = 1 AND v.is_current = tru
 ON CONFLICT DO NOTHING;
 
 INSERT INTO app.health_test_batteries (id, code, name, description, auto_assign_on_patient_create, is_active, created_at)
-VALUES ('0d0198a4-ade2-50af-a6d4-e5fe29096d41'::uuid, 'bateria-inicial', 'Batería de evaluación inicial ANTARES', 'Evaluación inicial del programa (9 tests del onboarding)', true, true, now())
+VALUES ('0d0198a4-ade2-50af-a6d4-e5fe29096d41'::uuid, 'bateria-inicial', 'Batería de evaluación inicial Copp Adresd', 'Evaluación inicial del programa (9 tests del onboarding)', true, true, now())
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO app.health_test_battery_items (id, battery_id, instrument_id, version_id, sort_order, is_required, frequency_days)

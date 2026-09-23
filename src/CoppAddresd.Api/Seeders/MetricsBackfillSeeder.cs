@@ -254,6 +254,21 @@ public sealed class MetricsBackfillSeeder(
             logger.LogWarning(ex, "Aviso reconciliando app.program_daily_metrics.");
         }
 
+        // 4b. Métricas de Biometría clínica (app.biometria_daily_metrics).
+        // Recomputo set-based (imc_distribution, grasa_distribution,
+        // glucosa_distribution y community_avg imc/grasa/glucosa) desde
+        // app.clinical_measurements; las claves solo de evento ("Sin dato",
+        // city_patient_count) quedan intactas.
+        try
+        {
+            totalOperations += await BiometriaRollupSql.RecomputeAllAsync(db, ct);
+            logger.LogInformation("Reconciliación de métricas de biometría completada.");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Aviso reconciliando app.biometria_daily_metrics.");
+        }
+
         // 5. Métricas de Telemedicina y Citas (tele.appointment_daily_metrics) si el schema existe
         try
         {

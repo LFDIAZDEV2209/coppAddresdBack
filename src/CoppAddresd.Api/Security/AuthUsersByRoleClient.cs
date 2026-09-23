@@ -1,8 +1,6 @@
 using System.Text.Json;
-using CoppAddresd.Api.Configuration;
 using CoppAddresd.Application.Interfaces;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Api.Security;
 
@@ -14,7 +12,6 @@ namespace CoppAddresd.Api.Security;
 /// </summary>
 public class AuthUsersByRoleClient(
     HttpClient httpClient,
-    IOptions<AuthServiceSettings> settings,
     IMemoryCache cache,
     ILogger<AuthUsersByRoleClient> logger
 ) : IAuthUsersByRoleClient

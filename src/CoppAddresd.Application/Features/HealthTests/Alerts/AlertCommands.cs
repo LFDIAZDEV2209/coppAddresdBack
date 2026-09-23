@@ -45,7 +45,7 @@ public sealed class ListAlertsQueryHandler(IHealthTestRepository repository)
     }
 }
 
-// --- Transition alert (review / resolve / close) ---
+// --- Transition alert (review / resolve / close / reopen) ---
 
 public record TransitionAlertCommand(
     Guid AlertId,
@@ -87,6 +87,14 @@ public sealed class TransitionAlertCommandHandler(
                 alert.Status = HealthTestAlertStatus.closed;
                 alert.ResolvedBy = request.ActorId;
                 alert.ResolvedAt = alert.ResolvedAt ?? now;
+                break;
+            // Reapertura: vuelve a active y limpia la trazabilidad de revisión.
+            case HealthTestAlertStatus.active:
+                alert.Status = HealthTestAlertStatus.active;
+                alert.ReviewedBy = null;
+                alert.ReviewedAt = null;
+                alert.ResolvedBy = null;
+                alert.ResolvedAt = null;
                 break;
             default:
                 throw new InvalidOperationException(

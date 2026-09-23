@@ -23,7 +23,7 @@ jobs:
       test_projects: ${{ steps.detect.outputs.test_projects }}
       migrate: ${{ steps.detect.outputs.migrate }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -102,8 +102,8 @@ jobs:
       matrix:
         project: ${{ fromJson(needs.detect.outputs.test_projects) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
@@ -124,10 +124,10 @@ jobs:
       matrix:
         service: ${{ fromJson(needs.detect.outputs.services) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::933629770820:role/cooppadresd-gha-backend
           aws-region: ${{ env.AWS_REGION }}
@@ -137,7 +137,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Setup Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Determinar Dockerfile y ECR por servicio
         id: svc
@@ -147,25 +147,29 @@ jobs:
             auth)
               echo "dockerfile=src/Services/CoppAddresd.Auth/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-auth" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
-              echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              # Email transaccional (invitaciones): SMTP M365. La contraseña vive
+              # en el secret cooppadresd/smtp-password (Email__SmtpPassword).
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__SmtpUsername\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__From\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"},{\"name\":\"Email__SmtpUseSsl\",\"value\":\"true\"},{\"name\":\"Email__FrontendUrl\",\"value\":\"https://erp.coppadresd.com\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[{\"name\":\"Email__SmtpPassword\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/smtp-password-XjggyI\"}]" >> "$GITHUB_OUTPUT"
               ;;
             api)
               echo "dockerfile=src/CoppAddresd.Api/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-api" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"}]" >> "$GITHUB_OUTPUT"
-              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__UserName\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromAddress\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"},{\"name\":\"Email__Password\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/smtp-password-XjggyI\"}]" >> "$GITHUB_OUTPUT"
               ;;
             telemedicine)
               echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-telemedicine" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"}]" >> "$GITHUB_OUTPUT"
+              # AuthService__BaseUrl: validación de sesiones ERP (ErpSessionValidation); sin ella todo token ERP responde 500.
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"AuthService__BaseUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
               ;;
             community)
               echo "dockerfile=src/Services/CoppAddresd.Community/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-community" >> "$GITHUB_OUTPUT"
-              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
+              # AuthService__BaseUrl: validación de sesiones ERP (ErpSessionValidation); sin ella todo token ERP responde 500 (dashboard ERP de comunidad roto).
+              echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"},{\"name\":\"AuthService__BaseUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               # Community firma URLs locales igual que la API: sin la clave HMAC el contenedor revienta al arrancar.
               echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
               ;;
@@ -177,7 +181,7 @@ jobs:
       # push:false + docker push clasico: buildx resolviendo el tag exige
       # ecr:BatchGetImage y el rol GHA no lo tiene; el push clasico si funciona.
       - name: Build imagen (${{ github.sha }})
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ steps.svc.outputs.dockerfile }}
@@ -327,7 +331,7 @@ jobs:
         service: ${{ fromJson(needs.detect.outputs.migrate) }}
     steps:
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::933629770820:role/cooppadresd-gha-backend
           aws-region: ${{ env.AWS_REGION }}

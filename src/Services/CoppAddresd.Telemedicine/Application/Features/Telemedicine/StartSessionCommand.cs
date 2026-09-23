@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Configuration;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
@@ -6,6 +7,7 @@ using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
@@ -36,7 +38,9 @@ public sealed class StartSessionCommandHandler(
     IVideoProvider videoProvider,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IOptions<TelemedicineOptions> options)
+    IOptions<TelemedicineOptions> options,
+    ILogger<StartSessionCommandHandler> logger,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<StartSessionCommand, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(StartSessionCommand request, CancellationToken ct)
@@ -50,6 +54,8 @@ public sealed class StartSessionCommandHandler(
         SessionSupport.EnsureCanStartOrJoin(appointment.Status);
 
         var settings = await settingsProvider.GetSettingsAsync(appointment.OrganizationId, appointment.ClinicId, ct);
+        SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
+
         var now = DateTimeOffset.UtcNow;
         SessionSupport.EnsureWithinWindow(appointment, settings, now);
 
@@ -59,6 +65,7 @@ public sealed class StartSessionCommandHandler(
         }
 
         var room = appointment.Room;
+        var roomCreated = false;
         if (room is null)
         {
             var providerRoomName = SessionSupport.ProviderRoomName(appointment.Id);
@@ -76,6 +83,15 @@ public sealed class StartSessionCommandHandler(
                 appointment, settings, providerRoom.ProviderRoomName, providerRoom.ProviderRoomSid, request.UserId);
 
             appointment.Room = room;
+            roomCreated = true;
+        }
+        else
+        {
+            // Salas creadas antes de F3 (límite < settings): elevar de forma
+            // perezosa. La sala cargada del agregado queda Modified y se persiste
+            // con la cita en el UpdateAsync de más abajo.
+            await SessionSupport.ElevateRoomCapacityIfNeededAsync(
+                videoProvider, room, settings.MaxParticipants, logger, ct);
         }
 
         var session = new TelemedicineSession
@@ -92,6 +108,22 @@ public sealed class StartSessionCommandHandler(
         appointment.UpdatedAt = now.UtcDateTime;
 
         await appointments.UpdateAsync(appointment, ct);
+
+        // F5: métricas de llamada en segundo plano (después del commit de la
+        // transacción del repositorio, nunca antes).
+        if (metricsQueue is not null)
+        {
+            var scheduledDate = DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime);
+
+            if (roomCreated)
+            {
+                await metricsQueue.EnqueueAsync(new RoomOpenedMetricEvent(
+                    appointment.Id, appointment.ProfessionalId, appointment.ClinicId, scheduledDate));
+            }
+
+            await metricsQueue.EnqueueAsync(new SessionStartedMetricEvent(
+                appointment.Id, appointment.ProfessionalId, appointment.ClinicId, scheduledDate));
+        }
 
         var dto = await AppointmentMapper.BuildDtosAsync([appointment], referenceData, ct);
         return dto[0];

@@ -60,6 +60,52 @@ public class EncountersController(IMediator mediator) : ControllerBase
                 CurrentUserId(),
                 HasManagePermission()), ct));
 
+    /// <summary>
+    /// Adendas del encuentro (F4): lista cronológica por <c>(created_at, id)</c>.
+    /// Arreglo vacío si el encuentro aún no existe (la UI no necesita 404).
+    /// Misma autorización que el encuentro (profesional/supervisor; paciente no).
+    /// </summary>
+    [HttpGet("addenda")]
+    [ProducesResponseType(typeof(IReadOnlyList<EncounterAddendumDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<EncounterAddendumDto>>> GetAddenda(
+        Guid appointmentId,
+        CancellationToken ct)
+        => Ok(await mediator.Send(
+            new GetEncounterAddendaQuery(appointmentId, CurrentUserId(), HasManagePermission()), ct));
+
+    /// <summary>
+    /// Agrega una adenda a un encuentro completado (F4, append-only): el
+    /// registro original no se modifica. En borrador o sin encuentro → 409.
+    /// El autor y el nombre snapshot salen del JWT.
+    /// </summary>
+    [HttpPost("addenda")]
+    [ProducesResponseType(typeof(EncounterAddendumDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<EncounterAddendumDto>> AddAddendum(
+        Guid appointmentId,
+        [FromBody] AddEncounterAddendumDto request,
+        CancellationToken ct)
+    {
+        // Snapshot legible del autor desde el JWT (nombre o, si no, email).
+        var authorName = User.FindFirst(ClaimTypes.Name)?.Value
+            ?? User.FindFirst(ClaimTypes.Email)?.Value;
+
+        var addendum = await mediator.Send(
+            new AddEncounterAddendumCommand(
+                appointmentId,
+                request.Body,
+                authorName,
+                CurrentUserId(),
+                HasManagePermission()), ct);
+
+        return CreatedAtAction(nameof(GetAddenda), new { appointmentId }, addendum);
+    }
+
     private Guid CurrentUserId()
     {
         var value = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -73,3 +119,6 @@ public class EncountersController(IMediator mediator) : ControllerBase
 public sealed record SaveClinicalEncounterDto(
     ClinicalDataDto? ClinicalData,
     string? Notes);
+
+/// <summary>Cuerpo de la adenda del encuentro (F4): texto plano 1–2000.</summary>
+public sealed record AddEncounterAddendumDto(string Body);

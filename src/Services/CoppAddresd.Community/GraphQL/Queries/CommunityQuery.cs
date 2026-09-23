@@ -33,13 +33,13 @@ var profile = await db.Profiles
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Profile)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Profile)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Likes)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Likes)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.UserId == userId, ct);
         if (profile is not null) return profile;
 
@@ -50,7 +50,7 @@ var profile = await db.Profiles
         {
             Id = Guid.NewGuid(),
             UserId = userId.Value,
-            DisplayName = DisplayNameFromClaims(http) ?? "Miembro ANTARES",
+            DisplayName = DisplayNameFromClaims(http) ?? "Miembro Copp Adresd",
             Status = ProfileStatus.Active,
             CreatedAt = DateTime.UtcNow,
         };
@@ -75,13 +75,13 @@ var profile = await db.Profiles
             .Include(p => p.Posts.Where(x => x.DeletedAt == null).OrderByDescending(x => x.CreatedAt))
                 .ThenInclude(x => x.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Profile)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Profile)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Likes)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Likes)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Reposts.OrderByDescending(r => r.CreatedAt))
-                .ThenInclude(r => r.Post).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
+                .ThenInclude(r => r.Post!).ThenInclude(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
             .FirstOrDefaultAsync(p => p.Id == id, ct);
         return profile;
     }
@@ -116,7 +116,7 @@ var profile = await db.Profiles
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Reposts)
-            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
+            .Include(p => p.Poll!).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Likes)
@@ -133,7 +133,7 @@ var profile = await db.Profiles
         // siguiendo el mismo patrón de búsqueda de perfiles en Profiles(...).
         if (!string.IsNullOrWhiteSpace(author))
             query = query.Where(p => EF.Functions.ILike(
-                EF.Functions.Unaccent(p.Profile.DisplayName),
+                EF.Functions.Unaccent(p.Profile!.DisplayName),
                 EF.Functions.Unaccent($"%{author}%")));
 
         // Filtro por texto del cuerpo: coincidencia parcial e insensible a acentos.
@@ -177,7 +177,7 @@ var profile = await db.Profiles
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Reposts)
-            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
+            .Include(p => p.Poll!).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .ThenInclude(c => c.Replies)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
@@ -386,7 +386,7 @@ var profile = await db.Profiles
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Reposts)
-            .Include(p => p.Poll).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
+            .Include(p => p.Poll!).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
             .Include(p => p.Comments)
             .Include(p => p.Comments).ThenInclude(c => c.Profile)
             .Include(p => p.Comments).ThenInclude(c => c.Likes)

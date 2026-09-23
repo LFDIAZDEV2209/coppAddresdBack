@@ -141,21 +141,19 @@ public sealed class BiometriaMetricsProcessorHostedService(
         {
             return fat switch
             {
-                < 6m => "Esencial",
-                <= 13m => "Atleta",
-                <= 17m => "Fitness",
-                <= 24m => "Aceptable",
-                _ => "Alto"
+                <= 18m => "Óptimo",
+                <= 24m => "Normal",
+                <= 29m => "Alto",
+                _ => "Obesidad"
             };
         }
 
         return fat switch
         {
-            < 14m => "Esencial",
-            <= 20m => "Atleta",
-            <= 24m => "Fitness",
-            <= 31m => "Aceptable",
-            _ => "Alto"
+            <= 23m => "Óptimo",
+            <= 31m => "Normal",
+            <= 37m => "Alto",
+            _ => "Obesidad"
         };
     }
 }

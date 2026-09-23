@@ -85,6 +85,37 @@ public sealed class AgentExecutionsQueryService(
         }
     }
 
+    public async Task<AgentGraphDto?> GetGraphAsync(string agentTypeId, CancellationToken ct = default)
+    {
+        var endpoint = string.Format(
+            settings.Value.AgentGraphEndpointFormat,
+            Uri.EscapeDataString(agentTypeId));
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            AddInternalKeyHeader(request);
+            using var response = await httpClient.SendAsync(request, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                return null;
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Descriptor de grafo rechazado: {Status} {Body}",
+                    response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+                return null;
+            }
+
+            var payload = await response.Content.ReadFromJsonAsync<AgentGraphJson>(JsonOpts, ct);
+            return payload is null ? null : ToGraph(payload);
+        }
+        catch (Exception exc) when (exc is HttpRequestException or TaskCanceledException)
+        {
+            logger.LogWarning(exc, "No se pudo consultar el descriptor de grafo del agente {AgentTypeId}",
+                agentTypeId);
+            return null;
+        }
+    }
+
     /// <summary>Autentica el canal interno backend → AI Service (X-Internal-Key).</summary>
     private void AddInternalKeyHeader(HttpRequestMessage request)
     {
@@ -138,6 +169,30 @@ public sealed class AgentExecutionsQueryService(
         (j.Experiences ?? []).Select(x => new AgentExperienceLiteDto(
             x.Trigger, x.Response, x.Outcome, x.Recurrence, x.Rating)).ToList());
 
+    private static AgentGraphDto ToGraph(AgentGraphJson j) => new(
+        j.AgentTypeId,
+        j.Source,
+        j.VersionId,
+        (j.Nodes ?? []).Select(n => new AgentGraphNodeDto(
+            n.Id, n.Label, n.Kind, n.Description, n.Meta)).ToList(),
+        (j.Edges ?? []).Select(e => new AgentGraphEdgeDto(
+            e.Source, e.Target, e.Kind, e.Label)).ToList(),
+        new AgentGraphConfigDto(
+            j.Config.Provider,
+            j.Config.Model,
+            j.Config.Temperature,
+            j.Config.MaxTokens,
+            j.Config.Tools ?? [],
+            new AgentGraphRagDto(
+                j.Config.Rag.Enabled,
+                j.Config.Rag.KnowledgeBaseCount,
+                j.Config.Rag.TopK),
+            new AgentGraphMemoryDto(
+                j.Config.Memory.Enabled,
+                j.Config.Memory.Categories ?? []),
+            j.Config.MaxToolCalls,
+            j.Config.RecursionLimit));
+
     // --- Contratos JSON del AI Service (snake_case) ---
 
     private sealed class ExecutionsPageJson
@@ -189,5 +244,58 @@ public sealed class AgentExecutionsQueryService(
         public string? Outcome { get; set; }
         public int Recurrence { get; set; }
         public double? Rating { get; set; }
+    }
+
+    private sealed class AgentGraphJson
+    {
+        public string AgentTypeId { get; set; } = default!;
+        public string Source { get; set; } = "base";
+        public string? VersionId { get; set; }
+        public List<AgentGraphNodeJson>? Nodes { get; set; }
+        public List<AgentGraphEdgeJson>? Edges { get; set; }
+        public AgentGraphConfigJson Config { get; set; } = new();
+    }
+
+    private sealed class AgentGraphNodeJson
+    {
+        public string Id { get; set; } = default!;
+        public string Label { get; set; } = default!;
+        public string Kind { get; set; } = default!;
+        public string? Description { get; set; }
+        public IReadOnlyDictionary<string, object>? Meta { get; set; }
+    }
+
+    private sealed class AgentGraphEdgeJson
+    {
+        public string Source { get; set; } = default!;
+        public string Target { get; set; } = default!;
+        public string Kind { get; set; } = "flow";
+        public string? Label { get; set; }
+    }
+
+    private sealed class AgentGraphConfigJson
+    {
+        public string? Provider { get; set; }
+        public string? Model { get; set; }
+        public double? Temperature { get; set; }
+        public int? MaxTokens { get; set; }
+        public List<string>? Tools { get; set; }
+        public AgentGraphRagJson Rag { get; set; } = new();
+        public AgentGraphMemoryJson Memory { get; set; } = new();
+        public int MaxToolCalls { get; set; } = 8;
+        public int RecursionLimit { get; set; } = 25;
+    }
+
+    private sealed class AgentGraphRagJson
+    {
+        public bool Enabled { get; set; }
+        public int KnowledgeBaseCount { get; set; }
+        public int TopK { get; set; } = 5;
+    }
+
+    private sealed class AgentGraphMemoryJson
+    {
+        public bool Enabled { get; set; }
+        public List<string>? Categories { get; set; }
     }
 }

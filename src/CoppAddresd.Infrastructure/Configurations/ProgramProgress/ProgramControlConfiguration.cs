@@ -18,7 +18,13 @@ public sealed class ProgramControlConfiguration : IEntityTypeConfiguration<Progr
 {
     public void Configure(EntityTypeBuilder<ProgramControl> builder)
     {
-        builder.ToTable("program_controls", "app");
+        builder.ToTable("program_controls", "app", t =>
+        {
+            // CHECK de closed_reason: solo los dos motivos de cierre sin examen.
+            t.HasCheckConstraint(
+                "CK_program_controls_closed_reason",
+                "\"closed_reason\" IN ('declined', 'no_upload_timeout')");
+        });
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
@@ -86,11 +92,6 @@ public sealed class ProgramControlConfiguration : IEntityTypeConfiguration<Progr
 
         builder.HasIndex(x => x.Status)
             .HasDatabaseName("ix_program_controls_status");
-
-        // CHECK de closed_reason: solo los dos motivos de cierre sin examen.
-        builder.HasCheckConstraint(
-            "CK_program_controls_closed_reason",
-            "\"closed_reason\" IN ('declined', 'no_upload_timeout')");
 
         // Relationships
         builder.HasOne(x => x.Enrollment)

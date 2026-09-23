@@ -57,6 +57,8 @@ public sealed class MemoryCacheService(
             await SetAsync(key, value, ttl, ct);
         }
 
-        return value;
+        // La factory puede devolver null (p. ej. recurso no encontrado): el
+        // miss no se cachea y el contrato Task<T> propaga ese null tal cual.
+        return value!;
     }
 }

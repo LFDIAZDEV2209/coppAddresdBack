@@ -631,7 +631,7 @@ public sealed class ClubMutation
             Type = effectiveType,
             ClubVisibility = input.Visibility ?? ClubPostVisibility.Publico,
             ClubStatus = scheduled ? ClubPostStatus.Programado : ClubPostStatus.Publicado,
-            ScheduledFor = scheduled ? input.ScheduledFor.Value : null,
+            ScheduledFor = scheduled ? input.ScheduledFor!.Value : null,
             Pinned = input.Pinned ?? false,
             Featured = input.Featured ?? false,
             CreatedAt = DateTime.UtcNow,
@@ -793,7 +793,7 @@ public sealed class ClubMutation
     {
         var profile = await RequireMyProfileAsync(db, http, ct);
         var post = await db.Posts
-            .Include(p => p.Poll).ThenInclude(poll => poll.Options)
+            .Include(p => p.Poll!).ThenInclude(poll => poll.Options)
             .FirstOrDefaultAsync(p => p.Id == postId && p.ClubId != null, ct)
             ?? throw new GraphQLException("No se encontró la publicación.");
         if (post.Poll is null)
@@ -897,6 +897,7 @@ public sealed class ClubMutation
                 existing.Status = EventAttendanceStatus.Confirmado;
                 existing.CreatedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync(ct);
+                await db.Entry(@event).ReloadAsync(ct);
                 return existing;
             }
             return existing;
@@ -933,6 +934,9 @@ public sealed class ClubMutation
         }
 
         await db.SaveChangesAsync(ct);
+        // ExecuteUpdateAsync no actualiza el tracker: recargar para que lecturas
+        // posteriores en el mismo DbContext vean los contadores reales.
+        await db.Entry(@event).ReloadAsync(ct);
         return attendance;
     }
 
@@ -1101,7 +1105,7 @@ public sealed class ClubMutation
         var commentReport = await db.CommentReports.FirstOrDefaultAsync(r => r.Id == reportId, ct);
         if (commentReport is not null)
         {
-            var commentClub = await db.Comments.Where(c => c.Id == commentReport.CommentId).Select(c => c.Post.ClubId).FirstOrDefaultAsync(ct);
+            var commentClub = await db.Comments.Where(c => c.Id == commentReport.CommentId).Select(c => c.Post!.ClubId).FirstOrDefaultAsync(ct);
             if (commentClub != clubId)
                 throw new GraphQLException("El reporte no pertenece a este club.");
             db.CommentReports.Remove(commentReport);
@@ -1147,7 +1151,7 @@ public sealed class ClubMutation
         // Auto-provisión (mismo patrón que la query Me): cualquier usuario
         // autenticado obtiene su perfil de comunidad al primer uso.
         var displayName = http.HttpContext?.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
-            ?? "Miembro ANTARES";
+            ?? "Miembro Copp Adresd";
         var created = new Profile
         {
             Id = Guid.NewGuid(),

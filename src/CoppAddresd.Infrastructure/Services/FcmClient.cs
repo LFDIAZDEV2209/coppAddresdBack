@@ -15,6 +15,11 @@ namespace CoppAddresd.Infrastructure.Services;
 /// OAuth2 firmando un JWT (RS256) con el service account y hace POST a
 /// <c>/v1/projects/{projectId}/messages:send</c>.
 ///
+/// Soporta cualquier tipo de token FCM con el mismo endpoint: móviles
+/// (android/ios) y <c>web</c> (FCM web push del ERP). FCM aplica solo el bloque
+/// de plataforma del token; los bloques que no corresponden se ignoran, por eso
+/// el payload común (<c>notification</c> + <c>data</c>) llega a todos.
+///
 /// Degradado por diseño: si <c>Fcm:Enabled</c> es false o faltan credenciales,
 /// devuelve <see cref="FcmSendStatus.Disabled"/> sin lanzar (el endpoint nunca
 /// cae por FCM no configurado). Los tokens obsoletos (UNREGISTERED /

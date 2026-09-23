@@ -129,7 +129,7 @@ def main():
         (
             "bateria-adherencia",
             "Adherencia y propósito",
-            "Motivación y barreras: IAC + ANTARES + temperamento.",
+            "Motivación y barreras: IAC + Copp Adresd + temperamento.",
             ["iac-adresd", "bateria-antares", "temperamento"],
         ),
     ]

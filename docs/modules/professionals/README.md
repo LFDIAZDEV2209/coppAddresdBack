@@ -25,7 +25,7 @@ La lectura remota añade latencia y dependencia de Auth (timeout cinco segundos)
 - Auth: `20260913184501_AddErpApplicationSuspension`, columnas aditivas y journal. Auth auto-migra al arrancar.
 - API: `20260913184538_AddEmployeeErpAccessVersion`, columna aditiva `erp.employees.erp_access_version` con cero inicial.
 - SQL revisado y ambas migraciones aplicadas al PostgreSQL local. La BD local estaba atrasada: EF aplicó también migraciones previas de dev pendientes.
-- Configurar **AuthService__BaseUrl** en API, Telemedicina y Community con la URL interna real de Auth, y conservar la clave interna API/Auth. En desarrollo se usó `http://localhost:5123`; no usar localhost para contenedores separados.
+- **AuthService__BaseUrl** debe existir en API, Telemedicina y Community con la URL interna real de Auth, y conservarse la clave interna API/Auth. **Resuelto**: el pipeline (`deploy-backend.yml`) ya la inyecta para Telemedicina y Community con la URL del ALB (`http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com`); la API ya la tenía en su task definition. Sin ella, todo token ERP respondía 500 (`Falta AuthService:BaseUrl...`). En desarrollo cada appsettings local (gitignoreado) usa `http://localhost:5123`; no usar localhost para contenedores separados.
 - Orden recomendado: esquema Auth/API, Auth actualizado, consumidores actualizados, frontend. El pipeline existente migra API después del rollout: coordinar la migración antes de habilitar el toggle para evitar una ventana con columna ausente. No se ejecutó despliegue remoto.
 - El detector de servicios ahora incluye `src/Shared/`, para recompilar consumidores cuando cambia el validador enlazado.
 

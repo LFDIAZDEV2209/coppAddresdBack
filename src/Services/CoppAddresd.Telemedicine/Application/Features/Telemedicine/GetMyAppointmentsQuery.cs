@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
+using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using MediatR;
@@ -22,7 +23,9 @@ public sealed record GetMyAppointmentsQuery(
 
 public sealed class GetMyAppointmentsQueryHandler(
     IAppointmentRepository appointments,
-    IAppointmentReferenceDataService referenceData
+    IAppointmentReferenceDataService referenceData,
+    ITelemedicineSettingsProvider settingsProvider,
+    IRoomRepository rooms
 ) : IRequestHandler<GetMyAppointmentsQuery, PaginatedAdminAppointmentsResult>
 {
     public async Task<PaginatedAdminAppointmentsResult> Handle(
@@ -55,8 +58,63 @@ public sealed class GetMyAppointmentsQueryHandler(
         );
 
         var dtos = await AppointmentMapper.BuildDtosAsync(items, referenceData, ct);
+
+        // Pre-join de la app móvil: el listado del paciente expone la ventana
+        // efectiva de la sala (el detalle ya la trae; las listas admin la
+        // omiten). Si la sala ya existe, su ventana persistida es la autoridad;
+        // si no, se calcula con los settings efectivos y la reapertura
+        // (SessionSupport.Window).
+        var persistedRooms = await rooms.ListByAppointmentIdsAsync(
+            items.Select(a => a.Id).ToList(),
+            ct
+        );
+        var roomByAppointmentId = persistedRooms.ToDictionary(r => r.AppointmentId);
+
+        // Los settings se resuelven una vez por contexto (org/clínica) para toda
+        // la página: la ventana se calcula solo si no hay sala persistida y la
+        // gracia de reapertura (F5) se expone siempre (contrato homogéneo).
+        var settingsByContext = new Dictionary<(Guid Org, Guid? Clinic), TelemedicineSettings>();
+        foreach (var context in items
+            .Select(a => (Org: a.OrganizationId, Clinic: a.ClinicId))
+            .Distinct())
+        {
+            settingsByContext[context] = await settingsProvider.GetSettingsAsync(
+                context.Org,
+                context.Clinic,
+                ct
+            );
+        }
+
+        var enriched = items
+            .Zip(
+                dtos,
+                (entity, dto) =>
+                {
+                    var settings = settingsByContext[(entity.OrganizationId, entity.ClinicId)];
+
+                    if (roomByAppointmentId.TryGetValue(entity.Id, out var room))
+                    {
+                        return dto with
+                        {
+                            RoomOpensAt = room.ScheduledOpenAt,
+                            RoomClosesAt = room.ScheduledCloseAt,
+                            ReopenGraceMinutes = settings.ReopenGraceMinutes,
+                        };
+                    }
+
+                    var (open, close) = SessionSupport.Window(entity, settings);
+                    return dto with
+                    {
+                        RoomOpensAt = open,
+                        RoomClosesAt = close,
+                        ReopenGraceMinutes = settings.ReopenGraceMinutes,
+                    };
+                }
+            )
+            .ToList();
+
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
 
-        return new PaginatedAdminAppointmentsResult(dtos, total, page, pageSize, totalPages);
+        return new PaginatedAdminAppointmentsResult(enriched, total, page, pageSize, totalPages);
     }
 }

@@ -16,7 +16,11 @@ public sealed class DeviceToken
     /// <summary>Token del dispositivo para FCM (string opaco, sin PHI).</summary>
     public string Token { get; set; } = default!;
 
-    /// <summary>Plataforma del dispositivo ("android" | "ios").</summary>
+    /// <summary>
+    /// Plataforma del dispositivo (<c>android</c> | <c>ios</c> | <c>web</c>).
+    /// <c>web</c> es el token FCM de los clientes web (ERP): FCM API v1
+    /// entrega con el mismo payload y solo aplica el bloque de su plataforma.
+    /// </summary>
     public string Platform { get; set; } = default!;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

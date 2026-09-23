@@ -105,7 +105,9 @@ public sealed class ProgramController(
 ) : ControllerBase
 {
     private const string DefaultTemplateCodeKey = "Program:DefaultTemplate:Code";
-    private const string DefaultTemplateCodeFallback = "default-83w";
+
+    // Programa inicial y principal de todos los pacientes: 83 días (12 semanas).
+    private const string DefaultTemplateCodeFallback = "program-coppaddresd-83-days";
 
     // ===================== PACIENTE: snapshot =====================
 

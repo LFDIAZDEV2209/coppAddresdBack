@@ -185,11 +185,51 @@ public interface IAppointmentRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// Métricas de llamada del rango (F5: salas, sesiones, duración sumada,
+    /// reaperturas y chat por rol), atribuidas por fecha de agenda de la cita.
+    /// Rollup-first: si <c>tele.appointment_daily_metrics</c> no tiene filas de
+    /// estas claves en el rango, cae a conteos vivos sobre
+    /// <c>tele.virtual_rooms</c>/<c>tele.telemedicine_sessions</c>/
+    /// <c>tele.chat_messages</c>; las claves «solo evento» (P2) valen 0.
+    /// </summary>
+    Task<CallMetricsAggregate> GetCallMetricsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    );
+
     /// <summary>Próximas citas desde <paramref name="from"/> (futuras, ordenadas por inicio).</summary>
     Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,
         DateTimeOffset from,
         int limit,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Citas en <paramref name="status"/> cuyo fin programado es anterior a
+    /// <paramref name="before"/>, ordenadas por fin (lectura sin tracking).
+    /// Base del barrido de sesiones estancadas: la gracia efectiva por cita
+    /// (settings de la organización/clínica) se aplica en el barrido.
+    /// </summary>
+    Task<IReadOnlyList<Appointment>> ListByStatusEndingBeforeAsync(
+        AppointmentStatus status,
+        DateTimeOffset before,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Citas en <paramref name="status"/> cuyo inicio cae en <c>[from, to)</c>,
+    /// ordenadas por inicio (lectura sin tracking). Base del barrido de
+    /// recordatorios: las ventanas efectivas por organización/clínica se
+    /// aplican sobre las candidatas en el barrido.
+    /// </summary>
+    Task<IReadOnlyList<Appointment>> ListByStatusStartingBetweenAsync(
+        AppointmentStatus status,
+        DateTimeOffset from,
+        DateTimeOffset to,
         CancellationToken ct = default
     );
 }

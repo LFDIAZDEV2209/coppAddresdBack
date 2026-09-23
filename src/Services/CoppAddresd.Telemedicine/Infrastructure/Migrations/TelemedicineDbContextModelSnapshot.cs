@@ -48,6 +48,10 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("clinic_id");
 
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -80,6 +84,14 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.Property<Guid>("ProfessionalId")
                         .HasColumnType("uuid")
                         .HasColumnName("professional_id");
+
+                    b.Property<int>("ReopenCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("reopen_count");
+
+                    b.Property<DateTimeOffset?>("ReopenedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reopened_at");
 
                     b.Property<Guid?>("RequestId")
                         .HasColumnType("uuid")
@@ -282,6 +294,46 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.ToTable("appointment_reschedules", "tele");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("SenderRole")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("sender_role");
+
+                    b.Property<Guid>("SenderUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sender_user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_chat_messages");
+
+                    b.HasIndex("AppointmentId", "CreatedAt")
+                        .HasDatabaseName("ix_chat_messages_appointment_id_created_at");
+
+                    b.ToTable("chat_messages", "tele");
+                });
+
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ClinicalEncounter", b =>
                 {
                     b.Property<Guid>("Id")
@@ -364,6 +416,137 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasDatabaseName("ix_clinical_encounters_session_id");
 
                     b.ToTable("clinical_encounters", "tele");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.EncounterAddendum", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AuthorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("author_name");
+
+                    b.Property<Guid>("AuthorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_user_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("EncounterId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("encounter_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_encounter_addenda");
+
+                    b.HasIndex("EncounterId", "CreatedAt")
+                        .HasDatabaseName("ix_encounter_addenda_encounter_id_created_at");
+
+                    b.ToTable("encounter_addenda", "tele");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.NotificationDispatch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_notification_dispatch");
+
+                    b.HasIndex("AppointmentId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("ix_notification_dispatch_appointment_id_kind");
+
+                    b.ToTable("notification_dispatch", "tele");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.PreVisitIntake", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Allergies")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("allergies");
+
+                    b.Property<Guid>("AppointmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("appointment_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Medications")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("medications");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Symptoms")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("symptoms");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_pre_visit_intakes");
+
+                    b.HasIndex("AppointmentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_pre_visit_intakes_appointment_id");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_pre_visit_intakes_patient_id");
+
+                    b.ToTable("pre_visit_intakes", "tele");
                 });
 
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ProfessionalDailyStat", b =>
@@ -689,7 +872,9 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnName("max_advance_booking_days");
 
                     b.Property<int>("MaxParticipants")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
+                        .HasDefaultValue(3)
                         .HasColumnName("max_participants");
 
                     b.Property<int>("MaxReschedules")
@@ -700,9 +885,27 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("min_advance_booking_hours");
 
+                    b.Property<bool>("NotificationsEnabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("notifications_enabled");
+
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid")
                         .HasColumnName("organization_id");
+
+                    b.Property<int>("ReminderFirstHoursBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("reminder_first_hours_before");
+
+                    b.Property<int>("ReminderSecondHoursBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("reminder_second_hours_before");
+
+                    b.Property<int>("ReopenGraceMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(60)
+                        .HasColumnName("reopen_grace_minutes");
 
                     b.Property<int>("RoomCloseAfterMinutes")
                         .HasColumnType("integer")
@@ -711,6 +914,10 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.Property<int>("RoomOpenBeforeMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("room_open_before_minutes");
+
+                    b.Property<int>("SmsReminderHoursBefore")
+                        .HasColumnType("integer")
+                        .HasColumnName("sms_reminder_hours_before");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -791,6 +998,10 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.Property<int>("MaxParticipants")
                         .HasColumnType("integer")
                         .HasColumnName("max_participants");
+
+                    b.Property<DateTimeOffset?>("PatientJoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("patient_joined_at");
 
                     b.Property<string>("Provider")
                         .IsRequired()
@@ -900,6 +1111,30 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
                     b.Navigation("Session");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.EncounterAddendum", b =>
+                {
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.ClinicalEncounter", "Encounter")
+                        .WithMany("Addenda")
+                        .HasForeignKey("EncounterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_encounter_addenda_encounters_encounter_id");
+
+                    b.Navigation("Encounter");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.PreVisitIntake", b =>
+                {
+                    b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.Appointment", "Appointment")
+                        .WithOne("PreVisitIntake")
+                        .HasForeignKey("CoppAddresd.Telemedicine.Domain.Entities.PreVisitIntake", "AppointmentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_pre_visit_intakes_appointments_appointment_id");
+
+                    b.Navigation("Appointment");
+                });
+
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineSession", b =>
                 {
                     b.HasOne("CoppAddresd.Telemedicine.Domain.Entities.Appointment", "Appointment")
@@ -939,11 +1174,18 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Migrations
 
                     b.Navigation("Encounter");
 
+                    b.Navigation("PreVisitIntake");
+
                     b.Navigation("Reschedules");
 
                     b.Navigation("Room");
 
                     b.Navigation("Sessions");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.ClinicalEncounter", b =>
+                {
+                    b.Navigation("Addenda");
                 });
 
             modelBuilder.Entity("CoppAddresd.Telemedicine.Domain.Entities.TelemedicineRequest", b =>

@@ -105,6 +105,14 @@ builder.Services.AddHealthChecks();
 // El enqueue en las mutaciones no bloquea la request: el writer del Channel retorna
 // prácticamente de inmediato y el HostedService drena la cola en segundo plano.
 builder.Services.AddSingleton<ICommunityMetricsQueue, CommunityMetricsQueue>();
+
+// Reconciliación del rollup al arrancar (idempotente, autoritativa): recupera los
+// eventos perdidos por reinicios/cambios de instancia (la cola es en memoria).
+// Se registra ANTES del procesador para reconstruir desde el OLTP antes de drenar
+// eventos nuevos; si falla, se loguea y el arranque continúa.
+builder.Services.AddScoped<ICommunityMetricsBackfillService, CommunityMetricsBackfillService>();
+builder.Services.AddHostedService<CommunityMetricsBackfillHostedService>();
+
 builder.Services.AddHostedService<CommunityMetricsProcessorHostedService>();
 
 var app = builder.Build();
@@ -147,5 +155,8 @@ app.MapPostStorageEndpoints();
 // Endpoint interno ERP → Community (X-Internal-Key) para entregar mensajes
 // directos del perfil de sistema (notificaciones de alertas de tests de salud).
 app.MapInternalMessageEndpoints();
+
+// Mantenimiento interno (X-Internal-Key): reconciliación del rollup de métricas.
+app.MapMaintenanceEndpoints();
 
 app.Run();

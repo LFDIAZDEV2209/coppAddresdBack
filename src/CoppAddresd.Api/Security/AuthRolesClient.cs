@@ -1,8 +1,6 @@
 using System.Net;
 using System.Text.Json;
-using CoppAddresd.Api.Configuration;
 using CoppAddresd.Application.Interfaces;
-using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Api.Security;
 
@@ -13,7 +11,6 @@ namespace CoppAddresd.Api.Security;
 /// </summary>
 public class AuthRolesClient(
     HttpClient httpClient,
-    IOptions<AuthServiceSettings> settings,
     ILogger<AuthRolesClient> logger) : IAuthRolesClient
 {
     public async Task<AuthRoleLookupResult?> GetRoleByNameAsync(string name, CancellationToken ct = default)

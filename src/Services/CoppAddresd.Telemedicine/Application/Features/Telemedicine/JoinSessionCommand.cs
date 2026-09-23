@@ -1,10 +1,12 @@
 using CoppAddresd.Telemedicine.Application.Configuration;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
@@ -37,7 +39,9 @@ public sealed class JoinSessionCommandHandler(
     IVideoProvider videoProvider,
     IAppointmentReferenceDataService referenceData,
     ITelemedicineSettingsProvider settingsProvider,
-    IOptions<TelemedicineOptions> options)
+    IOptions<TelemedicineOptions> options,
+    ILogger<JoinSessionCommandHandler> logger,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<JoinSessionCommand, JoinSessionResultDto>
 {
     public async Task<JoinSessionResultDto> Handle(JoinSessionCommand request, CancellationToken ct)
@@ -51,10 +55,13 @@ public sealed class JoinSessionCommandHandler(
         SessionSupport.EnsureCanStartOrJoin(appointment.Status);
 
         var settings = await settingsProvider.GetSettingsAsync(appointment.OrganizationId, appointment.ClinicId, ct);
+        SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
+
         var now = DateTimeOffset.UtcNow;
         SessionSupport.EnsureWithinWindow(appointment, settings, now);
 
-        var room = await rooms.GetByAppointmentIdAsync(appointment.Id, includeSessions: true, ct);
+        // La sala se carga TRACKEADA: la elevación de capacidad (F3) muta la fila.
+        var room = await rooms.GetForUpdateAsync(appointment.Id, ct);
         if (room is null)
         {
             var providerRoomName = SessionSupport.ProviderRoomName(appointment.Id);
@@ -72,6 +79,23 @@ public sealed class JoinSessionCommandHandler(
                 appointment, settings, providerRoom.ProviderRoomName, providerRoom.ProviderRoomSid, request.UserId);
 
             room = await rooms.AddAsync(room, ct);
+
+            // F5: primera apertura de la sala (la reapertura no cuenta salas).
+            if (metricsQueue is not null)
+            {
+                await metricsQueue.EnqueueAsync(new RoomOpenedMetricEvent(
+                    appointment.Id,
+                    appointment.ProfessionalId,
+                    appointment.ClinicId,
+                    DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime)));
+            }
+        }
+        else if (await SessionSupport.ElevateRoomCapacityIfNeededAsync(
+            videoProvider, room, settings.MaxParticipants, logger, ct))
+        {
+            // Salas creadas antes de F3 (límite 2): se elevan al settings vigente
+            // de forma perezosa; el proveedor ya se actualizó best-effort.
+            await rooms.UpdateAsync(room, ct);
         }
 
         var token = await videoProvider.GenerateAccessTokenAsync(new AccessTokenRequest(

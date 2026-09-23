@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
+using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 
@@ -92,7 +93,7 @@ public class SessionSupportTests
         var (open, close) = SessionSupport.Window(appointment, settings);
 
         Assert.Equal(appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes), open);
-        Assert.Equal(appointment.ScheduledStart.AddMinutes(settings.RoomCloseAfterMinutes), close);
+        Assert.Equal(appointment.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes), close);
     }
 
     [Theory]
@@ -168,4 +169,67 @@ public class SessionSupportTests
         Assert.Equal(settings.MaxParticipants, room.MaxParticipants);
         Assert.Equal(TestData.UserId, room.CreatedBy);
     }
+
+    [Fact]
+    public void Settings_DefaultMaxParticipants_Es3()
+        => Assert.Equal(3, new TelemedicineSettings().MaxParticipants);
+
+    [Fact]
+    public void NewRoom_SettingsPorDefecto_AsignaCapacidad3()
+    {
+        var room = SessionSupport.NewRoom(
+            TestData.Appointment(), new TelemedicineSettings(), "apt-x", "RM123", TestData.UserId);
+
+        Assert.Equal(3, room.MaxParticipants);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(10)]
+    public void EnsureValidMaxParticipants_EnRango_NoLanza(int value)
+        => SessionSupport.EnsureValidMaxParticipants(value);
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(11)]
+    [InlineData(50)]
+    public void EnsureValidMaxParticipants_FueraDeRango_Lanza(int value)
+        => Assert.Throws<BusinessRuleViolationException>(() =>
+            SessionSupport.EnsureValidMaxParticipants(value));
+
+    [Theory]
+    [InlineData(5)]
+    [InlineData(60)]
+    [InlineData(1440)]
+    public void EnsureValidReopenGraceMinutes_EnRango_NoLanza(int value)
+        => SessionSupport.EnsureValidReopenGraceMinutes(value);
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(1441)]
+    public void EnsureValidReopenGraceMinutes_FueraDeRango_Lanza(int value)
+        => Assert.Throws<BusinessRuleViolationException>(() =>
+            SessionSupport.EnsureValidReopenGraceMinutes(value));
+
+    [Fact]
+    public void Settings_DefaultReopenGraceMinutes_Es60()
+        => Assert.Equal(60, new TelemedicineSettings().ReopenGraceMinutes);
+
+    [Theory]
+    [InlineData(AppointmentStatus.Confirmed)]
+    [InlineData(AppointmentStatus.InProgress)]
+    [InlineData(AppointmentStatus.Completed)]
+    public void EnsureChatAllowed_EstadosValidos_NoLanza(AppointmentStatus status)
+        => SessionSupport.EnsureChatAllowed(status);
+
+    [Theory]
+    [InlineData(AppointmentStatus.Requested)]
+    [InlineData(AppointmentStatus.Cancelled)]
+    [InlineData(AppointmentStatus.NoShow)]
+    public void EnsureChatAllowed_EstadosInvalidos_Lanza(AppointmentStatus status)
+        => Assert.Throws<BusinessRuleViolationException>(() =>
+            SessionSupport.EnsureChatAllowed(status));
 }

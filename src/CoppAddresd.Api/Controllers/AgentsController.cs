@@ -17,9 +17,9 @@ public class AgentsController(IMediator mediator) : ControllerBase
     private const string PermissionClaimType = "permission";
     private const string AgentsViewPermission = "Agents.View";
 
-    /// <summary>El monitoreo de ejecuciones expone inputs/outputs y user_id de
-    /// todos los usuarios: requiere el permiso administrativo `Agents.View`.</summary>
-    private bool IsExecutionAdmin => User.HasClaim(PermissionClaimType, AgentsViewPermission);
+    /// <summary>El monitoreo de ejecuciones y el descriptor de grafo exponen
+    /// datos administrativos: requieren el permiso `Agents.View`.</summary>
+    private bool HasAgentsViewPermission => User.HasClaim(PermissionClaimType, AgentsViewPermission);
 
     // --- Tipos ---
 
@@ -269,7 +269,7 @@ public class AgentsController(IMediator mediator) : ControllerBase
         [FromQuery] int offset = 0,
         CancellationToken ct = default)
     {
-        if (!IsExecutionAdmin)
+        if (!HasAgentsViewPermission)
             return Forbid();
 
         var result = await mediator.Send(new ListAgentExecutionsQuery(
@@ -283,12 +283,29 @@ public class AgentsController(IMediator mediator) : ControllerBase
         string executionId,
         CancellationToken ct)
     {
-        if (!IsExecutionAdmin)
+        if (!HasAgentsViewPermission)
             return Forbid();
 
         var result = await mediator.Send(new GetAgentExecutionQuery(executionId), ct);
         if (result is null)
             return NotFound(new { message = "Ejecución no encontrada" });
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Descriptor del grafo del agente (nodos, aristas y configuración
+    /// efectiva) para la visualización de flujos del playground.
+    /// </summary>
+    [HttpGet("{id:guid}/graph")]
+    public async Task<ActionResult<AgentGraphDto>> GetAgentGraph(Guid id, CancellationToken ct)
+    {
+        if (!HasAgentsViewPermission)
+            return Forbid();
+
+        var result = await mediator.Send(new GetAgentGraphQuery(id.ToString()), ct);
+        if (result is null)
+            return NotFound(new { message = "Grafo no disponible para el agente" });
 
         return Ok(result);
     }

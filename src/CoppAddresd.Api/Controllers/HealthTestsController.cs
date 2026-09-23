@@ -493,6 +493,17 @@ public class HealthTestsController(
         return result is null ? NotFound(new { message = "Alerta no encontrada" }) : Ok(result);
     }
 
+    [HttpPost("alerts/{id:guid}/reopen")]
+    [RequirePermission(PermissionCodes.HealthTestsReview)]
+    public async Task<ActionResult<HealthTestAlertDto>> ReopenAlert(Guid id, CancellationToken ct)
+    {
+        var result = await mediator.Send(
+            new TransitionAlertCommand(id, HealthTestAlertStatus.active, context.UserId),
+            ct
+        );
+        return result is null ? NotFound(new { message = "Alerta no encontrada" }) : Ok(result);
+    }
+
     [HttpPost("comments")]
     [RequirePermission(PermissionCodes.HealthTestsReview)]
     public async Task<ActionResult<Guid>> AddComment(
@@ -558,6 +569,41 @@ public class HealthTestsController(
         return result is null
             ? Conflict(new { message = "Código de plantilla inválido o ya existente" })
             : Ok(result);
+    }
+
+    /// <summary>Renderiza una plantilla con los datos reales de una alerta (sin enviar nada).</summary>
+    [HttpGet("notification-templates/{id:guid}/preview")]
+    [RequirePermission(PermissionCodes.HealthTestsNotify)]
+    public async Task<ActionResult<NotificationTemplatePreviewDto>> PreviewNotificationTemplate(
+        Guid id,
+        CancellationToken ct,
+        [FromQuery] Guid? alertId = null,
+        [FromQuery] string? channel = null,
+        [FromQuery] string? bodyOverride = null,
+        [FromQuery] string? language = null
+    )
+    {
+        if (!TryParseChannel(channel, out var parsedChannel, out var error))
+        {
+            return BadRequest(new { message = error });
+        }
+
+        if (!TryParseLanguage(language, out var parsedLanguage, out var languageError))
+        {
+            return BadRequest(new { message = languageError });
+        }
+
+        var result = await mediator.Send(
+            new PreviewNotificationTemplateQuery(
+                id,
+                alertId,
+                parsedChannel,
+                bodyOverride,
+                parsedLanguage
+            ),
+            ct
+        );
+        return result is null ? NotFound(new { message = "Plantilla no encontrada" }) : Ok(result);
     }
 
     /// <summary>Actualiza una plantilla de notificación (genera versión si cambia el contenido).</summary>
@@ -710,6 +756,7 @@ public class HealthTestsController(
         [FromQuery] string? status = null,
         [FromQuery] DateTime? from = null,
         [FromQuery] DateTime? to = null,
+        [FromQuery] string? search = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default
@@ -745,6 +792,7 @@ public class HealthTestsController(
                     parsedStatus,
                     from,
                     to,
+                    search,
                     page,
                     pageSize
                 ),
@@ -870,6 +918,31 @@ public class HealthTestsController(
         }
 
         channel = parsed;
+        return true;
+    }
+
+    /// <summary>Idioma de la notificación (vacío = español).</summary>
+    private static bool TryParseLanguage(
+        string? value,
+        out NotificationLanguage language,
+        out string? error
+    )
+    {
+        language = NotificationLanguage.es;
+        error = null;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (!Enum.TryParse<NotificationLanguage>(value, true, out var parsed))
+        {
+            error = "Idioma inválido";
+            return false;
+        }
+
+        language = parsed;
         return true;
     }
 }

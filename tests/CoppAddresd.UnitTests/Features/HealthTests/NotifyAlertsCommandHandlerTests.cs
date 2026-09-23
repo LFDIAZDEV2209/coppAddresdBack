@@ -15,14 +15,14 @@ public sealed class NotifyAlertsCommandHandlerTests
     {
         var patient = BuildPatient();
         var alert = BuildAlert(patient.Id);
-        var (handler, notifRepo, _, sms, _) = BuildHandler([alert], patient);
+        var (handler, notifRepo, sms, _) = BuildHandler([alert], patient);
 
         var result = await handler.Handle(
             new NotifyAlertsCommand(
                 new NotifyAlertsRequest(
                     [alert.Id],
                     [NotificationChannel.sms],
-                    BodyOverride: "Hola {paciente}",
+                    BodyOverride: "Hola [paciente]",
                     Preview: true
                 )
             ),
@@ -43,7 +43,7 @@ public sealed class NotifyAlertsCommandHandlerTests
     {
         var patient = BuildPatient(phone: null);
         var alert = BuildAlert(patient.Id);
-        var (handler, _, _, sms, _) = BuildHandler([alert], patient);
+        var (handler, _, sms, _) = BuildHandler([alert], patient);
 
         var result = await handler.Handle(
             new NotifyAlertsCommand(new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms])),
@@ -62,7 +62,7 @@ public sealed class NotifyAlertsCommandHandlerTests
     {
         var patient = BuildPatient(hasCommunityAccount: false);
         var alert = BuildAlert(patient.Id);
-        var (handler, _, _, _, community) = BuildHandler([alert], patient);
+        var (handler, _, _, community) = BuildHandler([alert], patient);
 
         var result = await handler.Handle(
             new NotifyAlertsCommand(new NotifyAlertsRequest([alert.Id], [NotificationChannel.community])),
@@ -80,7 +80,7 @@ public sealed class NotifyAlertsCommandHandlerTests
     {
         var patient = BuildPatient();
         var alert = BuildAlert(patient.Id);
-        var (handler, notifRepo, _, sms, _) = BuildHandler([alert], patient);
+        var (handler, notifRepo, sms, _) = BuildHandler([alert], patient);
         sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new SmsSendResult(true, "msg-1", null));
 
@@ -108,7 +108,7 @@ public sealed class NotifyAlertsCommandHandlerTests
     {
         var patient = BuildPatient();
         var alert = BuildAlert(patient.Id);
-        var (handler, notifRepo, _, sms, _) = BuildHandler([alert], patient);
+        var (handler, notifRepo, sms, _) = BuildHandler([alert], patient);
         sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new SmsSendResult(false, null, "proveedor caído"));
 
@@ -135,14 +135,14 @@ public sealed class NotifyAlertsCommandHandlerTests
     {
         var patient = BuildPatient();
         var alert = BuildAlert(patient.Id);
-        var template = BuildTemplate(NotificationChannel.sms, "PLANTILLA {valor}");
-        var (handler, _, _, sms, _) = BuildHandler([alert], patient, [template]);
+        var template = BuildTemplate(NotificationChannel.sms, "PLANTILLA [valor]");
+        var (handler, _, sms, _) = BuildHandler([alert], patient, [template]);
         sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new SmsSendResult(true, "msg-2", null));
 
         var result = await handler.Handle(
             new NotifyAlertsCommand(
-                new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], BodyOverride: "OVERRIDE {paciente}")
+                new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], BodyOverride: "OVERRIDE [paciente]")
             ),
             CancellationToken.None
         );
@@ -156,8 +156,8 @@ public sealed class NotifyAlertsCommandHandlerTests
         var patient = BuildPatient();
         var alert = BuildAlert(patient.Id);
         var generic = BuildTemplate(NotificationChannel.sms, "GENERICA");
-        var match = BuildTemplate(NotificationChannel.sms, "MATCH {valor}", indicator: "ORP");
-        var (handler, _, _, _, _) = BuildHandler([alert], patient, [generic, match]);
+        var match = BuildTemplate(NotificationChannel.sms, "MATCH [valor]", indicator: "ORP");
+        var (handler, _, _, _) = BuildHandler([alert], patient, [generic, match]);
 
         var result = await handler.Handle(
             new NotifyAlertsCommand(new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], Preview: true)),
@@ -167,10 +167,96 @@ public sealed class NotifyAlertsCommandHandlerTests
         Assert.Equal("MATCH 4.2", Assert.Single(result.Items).RenderedBody);
     }
 
+    [Fact]
+    public async Task Envio_en_ingles_usa_la_traduccion_de_la_plantilla()
+    {
+        var patient = BuildPatient();
+        var alert = BuildAlert(patient.Id);
+        var template = BuildTemplate(
+            NotificationChannel.sms,
+            "Hola [paciente], tu [indicador] fue [valor]",
+            bodyEn: "Hi [paciente], your [indicador] was [valor]"
+        );
+        var (handler, _, sms, _) = BuildHandler([alert], patient, [template]);
+        sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new SmsSendResult(true, "msg-en", null));
+
+        var result = await handler.Handle(
+            new NotifyAlertsCommand(
+                new NotifyAlertsRequest(
+                    [alert.Id],
+                    [NotificationChannel.sms],
+                    Language: NotificationLanguage.en
+                )
+            ),
+            CancellationToken.None
+        );
+
+        var item = Assert.Single(result.Items);
+        Assert.Equal("Hi Ana Pérez, your ORP was 4.2", item.RenderedBody);
+        Assert.Equal(NotificationLanguage.en, item.Language);
+    }
+
+    [Fact]
+    public async Task Envio_en_ingles_cae_al_espanol_si_falta_traduccion()
+    {
+        var patient = BuildPatient();
+        var alert = BuildAlert(patient.Id);
+        var template = BuildTemplate(NotificationChannel.sms, "Hola [paciente]");
+        var (handler, _, _, _) = BuildHandler([alert], patient, [template]);
+
+        var result = await handler.Handle(
+            new NotifyAlertsCommand(
+                new NotifyAlertsRequest(
+                    [alert.Id],
+                    [NotificationChannel.sms],
+                    Language: NotificationLanguage.en,
+                    Preview: true
+                )
+            ),
+            CancellationToken.None
+        );
+
+        Assert.Equal("Hola Ana Pérez", Assert.Single(result.Items).RenderedBody);
+    }
+
+    [Fact]
+    public async Task El_log_de_entrega_registra_el_idioma_enviado()
+    {
+        var patient = BuildPatient();
+        var alert = BuildAlert(patient.Id);
+        var template = BuildTemplate(
+            NotificationChannel.sms,
+            "Hola [paciente]",
+            bodyEn: "Hi [paciente]"
+        );
+        var (handler, notifRepo, sms, _) = BuildHandler([alert], patient, [template]);
+        sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new SmsSendResult(true, "msg-3", null));
+
+        await handler.Handle(
+            new NotifyAlertsCommand(
+                new NotifyAlertsRequest(
+                    [alert.Id],
+                    [NotificationChannel.sms],
+                    Language: NotificationLanguage.en
+                )
+            ),
+            CancellationToken.None
+        );
+
+        await notifRepo.Received(1)
+            .AddNotificationsAsync(
+                Arg.Is<IReadOnlyList<HealthTestNotification>>(list =>
+                    list.Count == 1 && list[0].Language == NotificationLanguage.en
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private static (
         NotifyAlertsCommandHandler Handler,
         IHealthTestNotificationRepository NotificationRepository,
-        IHealthTestRepository HealthTestRepository,
         ISmsSender SmsSender,
         ICommunityMessageSender CommunitySender
     ) BuildHandler(
@@ -179,7 +265,6 @@ public sealed class NotifyAlertsCommandHandlerTests
         IReadOnlyList<HealthTestNotificationTemplate>? templates = null
     )
     {
-        var healthTestRepository = Substitute.For<IHealthTestRepository>();
         var notificationRepository = Substitute.For<IHealthTestNotificationRepository>();
 
         notificationRepository
@@ -205,7 +290,6 @@ public sealed class NotifyAlertsCommandHandlerTests
         communitySender.Provider.Returns("community");
 
         var handler = new NotifyAlertsCommandHandler(
-            healthTestRepository,
             notificationRepository,
             new HealthTestTemplateRenderer(),
             smsSender,
@@ -213,7 +297,7 @@ public sealed class NotifyAlertsCommandHandlerTests
             NullLogger<NotifyAlertsCommandHandler>.Instance
         );
 
-        return (handler, notificationRepository, healthTestRepository, smsSender, communitySender);
+        return (handler, notificationRepository, smsSender, communitySender);
     }
 
     private static PatientProfile BuildPatient(
@@ -254,15 +338,18 @@ public sealed class NotifyAlertsCommandHandlerTests
         NotificationChannel channel,
         string body,
         string? indicator = null,
-        HealthTestSeverity? severity = null
+        HealthTestSeverity? severity = null,
+        string? bodyEn = null
     ) =>
         new()
         {
             Id = Guid.NewGuid(),
             Code = $"T{Guid.NewGuid():N}"[..8].ToUpperInvariant(),
-            Name = "Plantilla de prueba",
+            NameEs = "Plantilla de prueba",
+            NameEn = "Test template",
             Channel = channel,
-            BodyTemplate = body,
+            BodyTemplateEs = body,
+            BodyTemplateEn = bodyEn,
             IndicatorCode = indicator,
             Severity = severity,
             IsActive = true,

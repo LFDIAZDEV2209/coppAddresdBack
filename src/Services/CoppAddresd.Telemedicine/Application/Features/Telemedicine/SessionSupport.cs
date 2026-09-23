@@ -1,8 +1,10 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.ReferenceData;
+using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
+using Microsoft.Extensions.Logging;
 
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
@@ -25,6 +27,18 @@ internal enum SessionParticipant
 /// </summary>
 internal static class SessionSupport
 {
+    /// <summary>Mínimo de participantes concurrentes de una sala (profesional + paciente).</summary>
+    public const int MinRoomMaxParticipants = 2;
+
+    /// <summary>Máximo de participantes concurrentes soportado por el producto (Twilio group: 50).</summary>
+    public const int MaxRoomMaxParticipants = 10;
+
+    /// <summary>Mínimo de la gracia de reapertura configurable (minutos).</summary>
+    public const int MinReopenGraceMinutes = 5;
+
+    /// <summary>Máximo de la gracia de reapertura configurable (minutos; 24 h).</summary>
+    public const int MaxReopenGraceMinutes = 1440;
+
     /// <summary>
     /// Autoriza el acceso a la sala (join-token / ver sala): el profesional de la
     /// cita, el paciente de la cita (resueltos por usuario del JWT) o un
@@ -88,13 +102,26 @@ internal static class SessionSupport
     /// <summary>
     /// Ventana de acceso a la sala, desde la configuración efectiva de la
     /// organización/clínica: abre <c>RoomOpenBeforeMinutes</c> antes del inicio y
-    /// cierra <c>RoomCloseAfterMinutes</c> después.
+    /// cierra <c>RoomCloseAfterMinutes</c> después del fin de la cita. Si la cita
+    /// fue reabierta, el ciclo nuevo corre desde <c>ReopenedAt</c> y el cierre
+    /// usa el mayor de los fines (programado o reapertura + duración).
     /// </summary>
     public static (DateTimeOffset Open, DateTimeOffset Close) Window(
         Appointment appointment,
         TelemedicineSettings settings)
-        => (appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
-            appointment.ScheduledStart.AddMinutes(settings.RoomCloseAfterMinutes));
+    {
+        if (appointment.ReopenedAt is { } reopenedAt)
+        {
+            var reopenedEnd = reopenedAt.AddMinutes(appointment.DurationMinutes);
+            var end = reopenedEnd > appointment.ScheduledEnd ? reopenedEnd : appointment.ScheduledEnd;
+
+            return (reopenedAt.AddMinutes(-settings.RoomOpenBeforeMinutes),
+                end.AddMinutes(settings.RoomCloseAfterMinutes));
+        }
+
+        return (appointment.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
+            appointment.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes));
+    }
 
     /// <summary>La cita debe estar en un estado que admita sala/sesión (confirmada o en curso).</summary>
     public static void EnsureCanStartOrJoin(AppointmentStatus status)
@@ -104,6 +131,107 @@ internal static class SessionSupport
             throw new BusinessRuleViolationException(
                 $"La cita no puede abrir su sala en el estado actual ({status}).");
         }
+    }
+
+    /// <summary>
+    /// El chat de la consulta está disponible con la cita confirmada, en curso o
+    /// completada (F3): el paciente puede esperar en la sala con la cita aún
+    /// confirmada y el acceso posterior a la consulta se conserva. Solo los
+    /// estados sin atención (Requested/Cancelled/NoShow) responden 409.
+    /// </summary>
+    public static void EnsureChatAllowed(AppointmentStatus status)
+    {
+        if (status is not (AppointmentStatus.Confirmed
+            or AppointmentStatus.InProgress
+            or AppointmentStatus.Completed))
+        {
+            throw new BusinessRuleViolationException(
+                $"El chat no está disponible en el estado actual de la cita ({status}).");
+        }
+    }
+
+    /// <summary>
+    /// La pre-consulta del paciente (F4) solo puede escribirse mientras la cita
+    /// está <c>Confirmed</c> (antes de iniciar la sesión; al iniciar, la cita
+    /// pasa a <c>InProgress</c>). En curso o en estados terminales → 409; la
+    /// lectura sigue disponible para los autorizados.
+    /// </summary>
+    public static void EnsureIntakeEditable(AppointmentStatus status)
+    {
+        if (status != AppointmentStatus.Confirmed)
+        {
+            throw new BusinessRuleViolationException(
+                $"La pre-consulta solo puede editarse mientras la cita está confirmada (estado actual: {status}).");
+        }
+    }
+
+    /// <summary>
+    /// Valida el rango del máximo de participantes efectivo (2–10). Protege
+    /// contra filas de settings corruptas o editadas manualmente: un valor fuera
+    /// de rango produciría un error del proveedor (Twilio 53107) o una sala
+    /// inutilizable.
+    /// </summary>
+    public static void EnsureValidMaxParticipants(int maxParticipants)
+    {
+        if (maxParticipants is < MinRoomMaxParticipants or > MaxRoomMaxParticipants)
+        {
+            throw new BusinessRuleViolationException(
+                $"La capacidad de la sala debe estar entre {MinRoomMaxParticipants} y {MaxRoomMaxParticipants} participantes (valor efectivo: {maxParticipants}).");
+        }
+    }
+
+    /// <summary>
+    /// Valida el rango de la gracia de reapertura configurable (5–1440 min,
+    /// default 60). Protege contra filas de settings corruptas o editadas
+    /// manualmente: un valor fuera de rango no debe habilitar reaperturas
+    /// arbitrarias (muy largo) ni bloquear la operación (negativo).
+    /// </summary>
+    public static void EnsureValidReopenGraceMinutes(int reopenGraceMinutes)
+    {
+        if (reopenGraceMinutes is < MinReopenGraceMinutes or > MaxReopenGraceMinutes)
+        {
+            throw new BusinessRuleViolationException(
+                $"La gracia de reapertura debe estar entre {MinReopenGraceMinutes} y {MaxReopenGraceMinutes} minutos (valor efectivo: {reopenGraceMinutes}).");
+        }
+    }
+
+    /// <summary>
+    /// Eleva la capacidad de una sala ya creada cuando el settings efectivo la
+    /// superó: actualiza la sala del proveedor (best-effort, solo si sigue
+    /// admitiéndolo) y devuelve el nuevo límite para persistirlo. La
+    /// persistencia local la decide el llamador (join actualiza la sala; start
+    /// la persiste con el agregado de la cita). Un fallo del proveedor NUNCA
+    /// interrumpe el join: se loguea como warning y la regla de negocio sigue
+    /// vigente en la próxima reapertura/sala nueva.
+    /// </summary>
+    public static async Task<bool> ElevateRoomCapacityIfNeededAsync(
+        IVideoProvider videoProvider,
+        VirtualRoom room,
+        int effectiveMaxParticipants,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (room.MaxParticipants >= effectiveMaxParticipants)
+        {
+            return false;
+        }
+
+        try
+        {
+            await videoProvider.UpdateRoomMaxParticipantsAsync(
+                room.ProviderRoomSid, effectiveMaxParticipants, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                ex,
+                "No se pudo elevar la capacidad de la sala {RoomSid} a {MaxParticipants}; la actualización es best-effort y el flujo continúa.",
+                room.ProviderRoomSid, effectiveMaxParticipants);
+        }
+
+        room.MaxParticipants = effectiveMaxParticipants;
+        room.UpdatedAt = DateTime.UtcNow;
+        return true;
     }
 
     /// <summary>Valida que <paramref name="now"/> esté dentro de la ventana de acceso.</summary>
@@ -130,6 +258,46 @@ internal static class SessionSupport
     /// <summary>Nombre determinista de la sala en el proveedor (base de la idempotencia).</summary>
     public static string ProviderRoomName(Guid appointmentId)
         => $"apt-{appointmentId:N}";
+
+    /// <summary>
+    /// Nombre de la sala del ciclo actual: la cita original usa el nombre base y
+    /// cada reapertura un sufijo propio (el proveedor no permite reusar salas
+    /// completadas).
+    /// </summary>
+    public static string ProviderRoomName(Guid appointmentId, int reopenCount)
+        => reopenCount <= 0
+            ? ProviderRoomName(appointmentId)
+            : $"apt-{appointmentId:N}-r{reopenCount}";
+
+    /// <summary>
+    /// Cierra la sesión activa más reciente de la sala (si existe): la marca
+    /// como terminada, calcula la duración y registra motivo/autor. La usan el
+    /// webhook del proveedor y el barrido de sesiones estancadas.
+    /// </summary>
+    public static void EndActiveSession(
+        VirtualRoom room,
+        string endReason,
+        Guid? endedBy,
+        DateTimeOffset now)
+    {
+        var active = room.Sessions
+            .Where(s => s.Status == TelemedicineSessionStatus.Active)
+            .OrderByDescending(s => s.StartedAt)
+            .FirstOrDefault();
+
+        if (active is null)
+        {
+            return;
+        }
+
+        active.Status = TelemedicineSessionStatus.Ended;
+        active.EndedAt = now;
+        active.DurationSeconds = active.StartedAt is { } startedAt
+            ? (long)Math.Max(0, (now - startedAt).TotalSeconds)
+            : null;
+        active.EndedBy = endedBy;
+        active.EndReason = endReason;
+    }
 
     /// <summary>Instancia la sala de dominio para una cita (sin persistir).</summary>
     public static VirtualRoom NewRoom(

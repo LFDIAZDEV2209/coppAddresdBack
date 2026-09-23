@@ -18,7 +18,6 @@ public record NotifyAlertsCommand(NotifyAlertsRequest Request, Guid? ActorId = n
     : IRequest<NotifyAlertsResultDto>;
 
 public sealed class NotifyAlertsCommandHandler(
-    IHealthTestRepository healthTestRepository,
     IHealthTestNotificationRepository notificationRepository,
     IHealthTestTemplateRenderer renderer,
     ISmsSender smsSender,
@@ -70,8 +69,14 @@ public sealed class NotifyAlertsCommandHandler(
             foreach (var channel in channels)
             {
                 var template = explicitTemplate ?? PickTemplate(candidates, channel, alert, patient);
-                var context = BuildContext(alert, patient);
-                var body = ResolveBody(request.BodyOverride, template, alert, context);
+                var context = BuildContext(alert, patient, request.Language);
+                var body = ResolveBody(
+                    request.BodyOverride,
+                    template,
+                    alert,
+                    context,
+                    request.Language
+                );
                 var recipient = ResolveRecipient(channel, patient);
 
                 if (!recipient.IsReachable)
@@ -82,6 +87,7 @@ public sealed class NotifyAlertsCommandHandler(
                             patient?.Id,
                             PatientName(patient),
                             channel,
+                            request.Language,
                             NotificationStatus.skipped,
                             recipient.SkipReason,
                             body,
@@ -99,6 +105,7 @@ public sealed class NotifyAlertsCommandHandler(
                             patient?.Id,
                             PatientName(patient),
                             channel,
+                            request.Language,
                             NotificationStatus.queued,
                             null,
                             body,
@@ -123,6 +130,7 @@ public sealed class NotifyAlertsCommandHandler(
                     AlertId = alert.Id,
                     PatientId = patient?.Id,
                     Channel = channel,
+                    Language = request.Language,
                     TemplateId = template?.Id,
                     Recipient = recipient.Value,
                     RenderedBody = body,
@@ -142,6 +150,7 @@ public sealed class NotifyAlertsCommandHandler(
                         patient?.Id,
                         PatientName(patient),
                         channel,
+                        request.Language,
                         status,
                         error,
                         body,
@@ -189,6 +198,7 @@ public sealed class NotifyAlertsCommandHandler(
                 patient?.UserId,
                 body,
                 actorId,
+                PatientName(patient),
                 ct
             );
             if (community.Success)
@@ -299,7 +309,8 @@ public sealed class NotifyAlertsCommandHandler(
         string? bodyOverride,
         HealthTestNotificationTemplate? template,
         HealthTestAlert alert,
-        HealthTestNotificationRenderContext context
+        HealthTestNotificationRenderContext context,
+        NotificationLanguage language
     )
     {
         if (!string.IsNullOrWhiteSpace(bodyOverride))
@@ -309,7 +320,7 @@ public sealed class NotifyAlertsCommandHandler(
 
         if (template is not null)
         {
-            return renderer.Render(template.BodyTemplate, context);
+            return renderer.Render(TemplateBody(template, language), context);
         }
 
         if (!string.IsNullOrWhiteSpace(alert.Rule?.MessageTemplate))
@@ -320,9 +331,26 @@ public sealed class NotifyAlertsCommandHandler(
         return !string.IsNullOrWhiteSpace(alert.Body) ? alert.Body! : alert.Title;
     }
 
+    /// <summary>
+    /// Cuerpo de la plantilla para el idioma pedido. Si falta la traducción al
+    /// inglés se usa el español (la UI avisa de la traducción pendiente).
+    /// </summary>
+    internal static string TemplateBody(
+        HealthTestNotificationTemplate template,
+        NotificationLanguage language
+    ) =>
+        language == NotificationLanguage.en
+            ? (
+                string.IsNullOrWhiteSpace(template.BodyTemplateEn)
+                    ? template.BodyTemplateEs
+                    : template.BodyTemplateEn!
+            )
+            : template.BodyTemplateEs;
+
     private static HealthTestNotificationRenderContext BuildContext(
         HealthTestAlert alert,
-        PatientProfile? patient
+        PatientProfile? patient,
+        NotificationLanguage language = NotificationLanguage.es
     ) =>
         new(
             PatientName(patient) ?? "Paciente",
@@ -334,7 +362,8 @@ public sealed class NotifyAlertsCommandHandler(
             alert.Severity,
             null,
             null,
-            alert.CreatedAt
+            alert.CreatedAt,
+            language
         );
 
     private static string? PatientName(PatientProfile? patient) =>
@@ -343,34 +372,7 @@ public sealed class NotifyAlertsCommandHandler(
     private static (bool IsReachable, string Value, string? SkipReason) ResolveRecipient(
         NotificationChannel channel,
         PatientProfile? patient
-    )
-    {
-        if (patient is null)
-        {
-            return (false, string.Empty, "La alerta no tiene paciente asociado.");
-        }
-
-        if (channel == NotificationChannel.sms)
-        {
-            if (string.IsNullOrWhiteSpace(patient.PhoneNumber))
-            {
-                return (false, string.Empty, "El paciente no tiene teléfono registrado.");
-            }
-
-            var dial = string.IsNullOrWhiteSpace(patient.PhoneCountryCode)
-                ? string.Empty
-                : $"+{patient.PhoneCountryCode!.TrimStart('+')}";
-            return (true, $"{dial}{patient.PhoneNumber}", null);
-        }
-
-        // community
-        if (patient.UserId is null || patient.UserId == Guid.Empty)
-        {
-            return (false, string.Empty, "El paciente no tiene cuenta en la app.");
-        }
-
-        return (true, patient.UserId.Value.ToString(), null);
-    }
+    ) => NotificationPreviewSupport.ResolveRecipient(channel, patient);
 }
 
 /// <summary>
@@ -424,9 +426,13 @@ public sealed class SendTestNotificationCommandHandler(
             template.Severity,
             null,
             null,
-            DateTime.UtcNow
+            DateTime.UtcNow,
+            request.Language
         );
-        var body = renderer.Render(request.BodyOverride ?? template.BodyTemplate, context);
+        var body = renderer.Render(
+            request.BodyOverride ?? NotifyAlertsCommandHandler.TemplateBody(template, request.Language),
+            context
+        );
 
         string recipient;
         if (request.Channel == NotificationChannel.sms)
@@ -461,6 +467,9 @@ public sealed class SendTestNotificationCommandHandler(
                     patient?.UserId,
                     body,
                     command.ActorId,
+                    patient is null
+                        ? null
+                        : $"{patient.FirstName} {patient.LastName}".Trim(),
                     ct
                 );
                 status = result.Success
@@ -489,6 +498,7 @@ public sealed class SendTestNotificationCommandHandler(
             AlertId = null,
             PatientId = patient?.Id,
             Channel = request.Channel,
+            Language = request.Language,
             TemplateId = template.Id,
             Recipient = recipient,
             RenderedBody = body,
@@ -507,6 +517,7 @@ public sealed class SendTestNotificationCommandHandler(
             patient?.Id,
             patient is null ? null : $"{patient.FirstName} {patient.LastName}".Trim(),
             request.Channel,
+            request.Language,
             status,
             error,
             body,

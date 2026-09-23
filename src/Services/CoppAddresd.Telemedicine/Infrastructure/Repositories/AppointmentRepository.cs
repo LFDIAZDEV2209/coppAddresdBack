@@ -1,3 +1,4 @@
+using CoppAddresd.Telemedicine.Application.Constants;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Domain.Entities;
 using CoppAddresd.Telemedicine.Domain.Enums;
@@ -23,6 +24,14 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
     /// </summary>
     private readonly HashSet<Guid> _loadedSessionIds = [];
 
+    /// <summary>
+    /// Id de la sala cargada de BD (si existía) en <see cref="GetForUpdateAsync"/>.
+    /// Distingue la sala NUEVA (creada en memoria) de la existente: una sala
+    /// cargada que se modifica (p. ej. Status → Ended) también queda Modified,
+    /// así que el estado de EF por sí solo no alcanza para decidir el INSERT.
+    /// </summary>
+    private readonly HashSet<Guid> _loadedRoomIds = [];
+
     public async Task<Appointment?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         await dbContext.Appointments.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
 
@@ -41,6 +50,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         // sesiones conocidas son las de la sala (referencia para el estado Added).
         if (appointment?.Room is not null)
         {
+            _loadedRoomIds.Add(appointment.Room.Id);
             _loadedSessionIds.UnionWith(appointment.Room.Sessions.Select(s => s.Id));
         }
 
@@ -75,6 +85,16 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             {
                 dbContext.Entry(reschedule).State = EntityState.Added;
             }
+        }
+
+        // NOTA: la sala NUEVA (creada en memoria al iniciar o reabrir una cita
+        // sin sala previa) sufre el mismo fixup que las sesiones: EF la marca
+        // Modified por su Guid pre-generado. DbSet.Add la inserta de verdad;
+        // la sala cargada de BD (registrada en _loadedRoomIds) se actualiza
+        // normalmente aunque sus campos cambien (p. ej. Status → Ended).
+        if (appointment.Room is { } room && !_loadedRoomIds.Contains(room.Id))
+        {
+            dbContext.Rooms.Add(room);
         }
 
         // NOTA: las sesiones NUEVAS se re-trackean con DbSet.Add. El fixup de EF
@@ -543,6 +563,131 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .Distinct()
             .CountAsync(ct);
 
+    /// <summary>
+    /// Claves EAV de llamada (F5) que participan del fast path del rollup: set
+    /// v1 reconstruible + P2 «solo evento».
+    /// </summary>
+    private static readonly string[] CallMetricKeys =
+    [
+        TelemedicineMetricKeys.RoomsOpened,
+        TelemedicineMetricKeys.SessionsStarted,
+        TelemedicineMetricKeys.SessionsEnded,
+        TelemedicineMetricKeys.SessionDurationSeconds,
+        TelemedicineMetricKeys.Reopens,
+        TelemedicineMetricKeys.ChatMessagesSent,
+        TelemedicineMetricKeys.JoinTokensIssued,
+        TelemedicineMetricKeys.ParticipantConnections,
+    ];
+
+    public async Task<CallMetricsAggregate> GetCallMetricsAsync(
+        Guid? professionalId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    )
+    {
+        var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
+        var toDate = InclusiveEndDate(to);
+        var profId = professionalId ?? Guid.Empty;
+
+        // Fast path: rollup por la fecha de agenda de la cita (día del evento).
+        var rollup = await dbContext
+            .AppointmentDailyMetrics.AsNoTracking()
+            .Where(m =>
+                m.ProfessionalId == profId
+                && m.MetricDate >= fromDate
+                && m.MetricDate <= toDate
+                && CallMetricKeys.Contains(m.MetricKey)
+            )
+            .Select(m => new
+            {
+                m.MetricKey,
+                m.DimensionKey,
+                m.TotalCount,
+            })
+            .ToListAsync(ct);
+
+        if (rollup.Count > 0)
+        {
+            long Sum(string metricKey) =>
+                rollup.Where(m => m.MetricKey == metricKey).Sum(m => m.TotalCount);
+
+            var chatByRole = rollup
+                .Where(m => m.MetricKey == TelemedicineMetricKeys.ChatMessagesSent)
+                .GroupBy(m => m.DimensionKey)
+                .ToDictionary(g => g.Key, g => (int)g.Sum(m => m.TotalCount));
+
+            var connectionsByRole = rollup
+                .Where(m => m.MetricKey == TelemedicineMetricKeys.ParticipantConnections)
+                .GroupBy(m => m.DimensionKey)
+                .ToDictionary(g => g.Key, g => (int)g.Sum(m => m.TotalCount));
+
+            return new CallMetricsAggregate(
+                (int)Sum(TelemedicineMetricKeys.RoomsOpened),
+                (int)Sum(TelemedicineMetricKeys.SessionsStarted),
+                (int)Sum(TelemedicineMetricKeys.SessionsEnded),
+                Sum(TelemedicineMetricKeys.SessionDurationSeconds),
+                (int)Sum(TelemedicineMetricKeys.Reopens),
+                chatByRole,
+                (int)Sum(TelemedicineMetricKeys.JoinTokensIssued),
+                connectionsByRole
+            );
+        }
+
+        // Fallback OLTP: el rollup está vacío o desactualizado. La atribución
+        // es la fecha de agenda de la cita (misma semántica que los eventos).
+        var appointments = dbContext
+            .Appointments.AsNoTracking()
+            .Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+
+        if (professionalId is not null)
+        {
+            appointments = appointments.Where(a => a.ProfessionalId == professionalId);
+        }
+
+        var roomsOpened = await dbContext
+            .Rooms.AsNoTracking()
+            .Join(appointments, r => r.AppointmentId, a => a.Id, (_, _) => 1)
+            .CountAsync(ct);
+
+        var sessions = await dbContext
+            .Sessions.AsNoTracking()
+            .Join(
+                appointments,
+                s => s.AppointmentId,
+                a => a.Id,
+                (s, _) => new { s.EndedAt, s.DurationSeconds }
+            )
+            .ToListAsync(ct);
+
+        var endedSessions = sessions.Where(s => s.EndedAt is not null).ToList();
+
+        var reopens = await appointments.SumAsync(a => a.ReopenCount, ct);
+
+        var chatRows = await dbContext
+            .ChatMessages.AsNoTracking()
+            .Join(
+                appointments,
+                m => m.AppointmentId,
+                a => a.Id,
+                (m, _) => new { m.SenderRole }
+            )
+            .GroupBy(m => m.SenderRole)
+            .Select(g => new { Role = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+
+        return new CallMetricsAggregate(
+            roomsOpened,
+            sessions.Count,
+            endedSessions.Count,
+            endedSessions.Sum(s => s.DurationSeconds ?? 0),
+            reopens,
+            chatRows.ToDictionary(r => r.Role, r => r.Count),
+            0,
+            new Dictionary<string, int>()
+        );
+    }
+
     public async Task<IReadOnlyList<Appointment>> ListUpcomingAsync(
         Guid? professionalId,
         DateTimeOffset from,
@@ -560,11 +705,56 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         return await query.OrderBy(a => a.ScheduledStart).Take(limit).ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<Appointment>> ListByStatusEndingBeforeAsync(
+        AppointmentStatus status,
+        DateTimeOffset before,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
+            .Where(a => a.Status == status && a.ScheduledEnd < before)
+            .OrderBy(a => a.ScheduledEnd)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Appointment>> ListByStatusStartingBetweenAsync(
+        AppointmentStatus status,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
+            .Where(a => a.Status == status && a.ScheduledStart >= from && a.ScheduledStart < to)
+            .OrderBy(a => a.ScheduledStart)
+            .ToListAsync(ct);
+
     private async Task SaveWithConflictTranslationAsync(CancellationToken ct)
     {
         try
         {
-            await dbContext.SaveChangesAsync(ct);
+            // Transacción ambiente (p. ej. webhook con ITelemedicineUnitOfWork):
+            // el interceptor ya propagó el actor al iniciarla y EF no permite
+            // anidar transacciones; se guarda dentro de la existente.
+            if (dbContext.Database.CurrentTransaction is not null)
+            {
+                await dbContext.SaveChangesAsync(ct);
+                return;
+            }
+
+            // Transacción explícita corta (patrón del proyecto, obligatorio con
+            // EnableRetryOnFailure): `AuditTriggerInterceptor` solo propaga el
+            // actor del JWT a los GUC `audit.*` al iniciar la transacción. Sin
+            // ella, un SaveChanges de una sola sentencia no abre transacción y
+            // las mutaciones auditadas de cita/sesión/sala quedarían con actor
+            // SYSTEM.
+            var strategy = dbContext.Database.CreateExecutionStrategy();
+
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            });
         }
         catch (DbUpdateConcurrencyException)
         {

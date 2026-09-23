@@ -89,6 +89,7 @@ public sealed class EndSessionCommandHandler(
 
             var oldStatus = appointment.Status;
             appointment.Status = AppointmentStatus.Completed;
+            appointment.CompletedAt = now;
             appointment.UpdatedAt = now.UtcDateTime;
 
             await appointments.UpdateAsync(appointment, ct);
@@ -96,13 +97,24 @@ public sealed class EndSessionCommandHandler(
             // Métricas pre-agregadas CQRS en segundo plano (0ms impacto en escritura)
             if (metricsQueue != null)
             {
+                var scheduledDate = DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime);
+
                 await metricsQueue.EnqueueAsync(new AppointmentStatusChangedMetricEvent(
                     appointment.Id,
                     appointment.ProfessionalId,
                     appointment.ClinicId,
-                    DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime),
+                    scheduledDate,
                     oldStatus,
                     AppointmentStatus.Completed
+                ));
+
+                // F5: fin de sesión con duración (suma para el promedio).
+                await metricsQueue.EnqueueAsync(new SessionEndedMetricEvent(
+                    appointment.Id,
+                    appointment.ProfessionalId,
+                    appointment.ClinicId,
+                    scheduledDate,
+                    activeSession.DurationSeconds
                 ));
             }
         }

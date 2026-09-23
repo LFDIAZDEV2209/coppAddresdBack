@@ -19,6 +19,8 @@
     <PackageReference Include="SkiaSharp" Version="4.152.0" />
     <!-- Cliente RESP compatible con Valkey local y ElastiCache for Valkey (prod). -->
     <PackageReference Include="StackExchange.Redis" Version="2.8.58" />
+    <!-- Twilio Messages (SMS real, SPEC A13/F2): misma versión que Auth (Verify) y Telemedicine (Video). -->
+    <PackageReference Include="Twilio" Version="7.14.9" />
     <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
   </ItemGroup>
 

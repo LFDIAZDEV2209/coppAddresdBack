@@ -240,13 +240,20 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
         );
     }
 
-    public async Task<(IReadOnlyList<ClinicalBoardItemDto> Items, int Total)> GetClinicalBoardAsync(
+    public async Task<(
+        IReadOnlyList<ClinicalBoardItemDto> Items,
+        int Total,
+        ClinicalBoardSummaryDto Summary
+    )> GetClinicalBoardAsync(
         int page,
         int pageSize,
         string? search,
         string? risk,
         bool? hasAlerts,
         string? followUp,
+        string? status,
+        Guid? insurerId,
+        string? stateCode,
         Guid? clinicId,
         Guid? professionalId,
         DateTime nowUtc,
@@ -266,10 +273,148 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
             );
         }
 
-        // Proyección con señales por paciente (subconsultas correlacionadas:
-        // "última evaluación", "mínima fecha pendiente" y alertas activas), sin
-        // una consulta por fila. Los filtros se componen sobre la proyección
-        // para que la paginación siga siendo server-side y estable.
+        // Filtros de directorio (mismos que el listado de pacientes): estado,
+        // aseguradora y estado geográfico acotan el tablero completo.
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(x => x.Status == status);
+
+        if (insurerId is not null)
+            query = query.Where(x => x.InsurerId == insurerId);
+
+        if (!string.IsNullOrWhiteSpace(stateCode))
+            query = query.Where(x => x.State != null && x.State.Code == stateCode);
+
+        // Resumen y total: se materializan solo las señales clínicas del alcance
+        // acotado por los filtros no clínicos (búsqueda, estado, aseguradora,
+        // ubicación). Los filtros clínicos (riesgo/alertas/seguimiento) NO
+        // acotan el resumen: las tarjetas del tab cuentan ese universo y
+        // funcionan como puntos de entrada. Los buckets replican exactamente
+        // las condiciones SQL de los filtros, por eso el conteo se resuelve en
+        // memoria sobre una única consulta liviana (vista viva, sin
+        // pre-agregación CQRS: no hay serie temporal ni KPI histórico nuevo).
+        var lightRows = await query
+            .Select(x => new
+            {
+                LastSeverity = dbContext
+                    .HealthTestResults.AsNoTracking()
+                    .Where(r =>
+                        r.Evaluation!.PatientId == x.Id
+                        && r.Evaluation.Status == HealthTestEvaluationStatus.completed
+                        && r.ResultType == HealthTestResultType.score
+                    )
+                    .OrderByDescending(r => r.Evaluation!.CompletedAt)
+                    .Select(r => r.Severity)
+                    .FirstOrDefault(),
+                LastPct = dbContext
+                    .HealthTestEvaluations.AsNoTracking()
+                    .Where(e =>
+                        e.PatientId == x.Id && e.Status == HealthTestEvaluationStatus.completed
+                    )
+                    .OrderByDescending(e => e.CompletedAt)
+                    .Select(e => e.ScorePercentage)
+                    .FirstOrDefault(),
+                PendingCount = dbContext
+                    .HealthTestAssignments.AsNoTracking()
+                    .Count(a =>
+                        a.PatientId == x.Id
+                        && (
+                            a.Status == HealthTestAssignmentStatus.pending
+                            || a.Status == HealthTestAssignmentStatus.in_progress
+                        )
+                    ),
+                NextDue = dbContext
+                    .HealthTestAssignments.AsNoTracking()
+                    .Where(a =>
+                        a.PatientId == x.Id
+                        && (
+                            a.Status == HealthTestAssignmentStatus.pending
+                            || a.Status == HealthTestAssignmentStatus.in_progress
+                        )
+                    )
+                    .Min(a => (DateTime?)a.DueDate),
+                ActiveAlerts = dbContext
+                    .HealthTestAlerts.AsNoTracking()
+                    .Count(a => a.PatientId == x.Id && a.Status == HealthTestAlertStatus.active),
+            })
+            .ToListAsync(ct);
+
+        var total = 0;
+        var riskHigh = 0;
+        var riskModerate = 0;
+        var riskLow = 0;
+        var withoutEvaluation = 0;
+        var withActiveAlerts = 0;
+        var followUpOnTrack = 0;
+        var followUpOverdue = 0;
+        var followUpUnassigned = 0;
+
+        foreach (var row in lightRows)
+        {
+            var bucket = ResolveRiskBucket(row.LastSeverity, row.LastPct);
+            switch (bucket)
+            {
+                case ClinicalBoardFilters.RiskHigh:
+                    riskHigh++;
+                    break;
+                case ClinicalBoardFilters.RiskModerate:
+                    riskModerate++;
+                    break;
+                case ClinicalBoardFilters.RiskLow:
+                    riskLow++;
+                    break;
+                default:
+                    withoutEvaluation++;
+                    break;
+            }
+
+            var followUpState = ResolveFollowUp(row.PendingCount, row.NextDue, nowUtc);
+            switch (followUpState)
+            {
+                case ClinicalBoardFollowUp.OnTrack:
+                    followUpOnTrack++;
+                    break;
+                case ClinicalBoardFollowUp.Overdue:
+                    followUpOverdue++;
+                    break;
+                default:
+                    followUpUnassigned++;
+                    break;
+            }
+
+            if (row.ActiveAlerts > 0)
+                withActiveAlerts++;
+
+            if (
+                MatchesClinicalFilters(
+                    risk,
+                    hasAlerts,
+                    followUp,
+                    bucket,
+                    row.LastSeverity,
+                    row.ActiveAlerts,
+                    followUpState
+                )
+            )
+            {
+                total++;
+            }
+        }
+
+        var summary = new ClinicalBoardSummaryDto(
+            lightRows.Count,
+            withoutEvaluation,
+            riskHigh,
+            riskModerate,
+            riskLow,
+            withActiveAlerts,
+            followUpOnTrack,
+            followUpOverdue,
+            followUpUnassigned
+        );
+
+        // Proyección de página: señales clínicas + datos de directorio. Los
+        // filtros clínicos se componen sobre la proyección para que la
+        // paginación siga siendo server-side y estable.
         var projected = query.Select(x => new
         {
             PatientId = x.Id,
@@ -277,6 +422,24 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
             x.FirstName,
             x.LastName,
             x.DocumentNumber,
+            x.Status,
+            StateCode = x.State != null ? x.State.Code : null,
+            StateName = x.State != null ? x.State.Name : null,
+            InsurerName = x.Insurer != null ? x.Insurer.Name : null,
+            PrimaryDiagnosisCode = dbContext
+                .PatientDiagnoses.AsNoTracking()
+                .Where(d => d.PatientId == x.Id)
+                .OrderBy(d => d.IsPrimary ? 0 : 1)
+                .ThenByDescending(d => d.CreatedAt)
+                .Select(d => d.Icd10Code!.Code)
+                .FirstOrDefault(),
+            PrimaryDiagnosisDescription = dbContext
+                .PatientDiagnoses.AsNoTracking()
+                .Where(d => d.PatientId == x.Id)
+                .OrderBy(d => d.IsPrimary ? 0 : 1)
+                .ThenByDescending(d => d.CreatedAt)
+                .Select(d => d.Icd10Code!.Description)
+                .FirstOrDefault(),
             LastSeverity = dbContext
                 .HealthTestResults.AsNoTracking()
                 .Where(r =>
@@ -359,6 +522,18 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
                 || (p.LastSeverity == null && p.LastPct != null && p.LastPct < 40)
             );
         }
+        else if (
+            string.Equals(
+                risk,
+                ClinicalBoardFilters.RiskCritical,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
+        {
+            // Crítico = severidad explícitamente crítica (subconjunto de high,
+            // que además incluye high y el fallback por porcentaje).
+            projected = projected.Where(p => p.LastSeverity == HealthTestSeverity.critical);
+        }
 
         if (hasAlerts is true)
         {
@@ -400,8 +575,8 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
             projected = projected.Where(p => p.PendingCount == 0);
         }
 
-        var total = await projected.CountAsync(ct);
-
+        // El total ya se resolvió en memoria con los mismos buckets/follow-up
+        // que replican estos filtros; la página se consulta en SQL (Skip/Take).
         var rows = await projected
             .OrderBy(p => p.LastName)
             .ThenBy(p => p.FirstName)
@@ -454,6 +629,39 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
                 : [];
         var alertLookup = alertAgg.ToDictionary(a => a.PatientId);
 
+        // Profesionales asignados por paciente de la página: solo alcance global
+        // (con alcance propio todos son el mismo profesional). Una consulta bulk
+        // + un diccionario de nombres, nunca una consulta por fila.
+        var professionalNamesByPatient = new Dictionary<Guid, IReadOnlyList<string>>();
+        if (professionalId is null && patientIds.Count > 0)
+        {
+            var assignments = await dbContext
+                .PatientProfessionalAssignments.AsNoTracking()
+                .Where(a => patientIds.Contains(a.PatientId) && a.Status == "Active")
+                .Select(a => new { a.PatientId, a.ProfessionalId })
+                .ToListAsync(ct);
+
+            var professionalIds = assignments.Select(a => a.ProfessionalId).Distinct().ToList();
+            if (professionalIds.Count > 0)
+            {
+                var names = await patients.GetProfessionalNamesAsync(professionalIds, ct);
+                professionalNamesByPatient = assignments
+                    .GroupBy(a => a.PatientId)
+                    .ToDictionary(
+                        group => group.Key,
+                        group =>
+                            (IReadOnlyList<string>)
+                                group
+                                    .Select(a =>
+                                        names.GetValueOrDefault(a.ProfessionalId, "Profesional")
+                                    )
+                                    .Distinct()
+                                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                                    .ToList()
+                    );
+            }
+        }
+
         var items = rows.Select(r =>
             {
                 alertLookup.TryGetValue(r.PatientId, out var alerts);
@@ -472,6 +680,13 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
                     r.FirstName,
                     r.LastName,
                     r.DocumentNumber,
+                    r.PrimaryDiagnosisCode,
+                    r.PrimaryDiagnosisDescription,
+                    r.StateCode,
+                    r.StateName,
+                    r.InsurerName,
+                    professionalNamesByPatient.GetValueOrDefault(r.PatientId) ?? [],
+                    r.Status,
                     ResolveRisk(r.LastSeverity, r.LastPct),
                     r.LastEvalAt,
                     r.LastVersionId is { } versionId
@@ -485,7 +700,7 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
             })
             .ToList();
 
-        return (items, total);
+        return (items, total, summary);
     }
 
     /// <summary>Pacientes no eliminados con la frontera de datos del módulo.</summary>
@@ -528,6 +743,77 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
         return "low";
     }
 
+    /// <summary>
+    /// Bucket de riesgo para el resumen y el total paginado: replica
+    /// exactamente las condiciones SQL de los filtros (critical pertenece al
+    /// bucket high). <c>null</c> = sin evaluaciones.
+    /// </summary>
+    private static string? ResolveRiskBucket(
+        HealthTestSeverity? severity,
+        decimal? scorePercentage
+    )
+    {
+        if (severity is not null)
+        {
+            return severity.Value switch
+            {
+                HealthTestSeverity.critical
+                or HealthTestSeverity.high => ClinicalBoardFilters.RiskHigh,
+                HealthTestSeverity.moderate => ClinicalBoardFilters.RiskModerate,
+                HealthTestSeverity.low => ClinicalBoardFilters.RiskLow,
+                _ => null,
+            };
+        }
+
+        if (scorePercentage is null)
+            return null;
+
+        if (scorePercentage >= 70)
+            return ClinicalBoardFilters.RiskHigh;
+        if (scorePercentage >= 40)
+            return ClinicalBoardFilters.RiskModerate;
+        return ClinicalBoardFilters.RiskLow;
+    }
+
+    /// <summary>
+    /// Equivalencia en memoria de los filtros clínicos SQL, usada para el total
+    /// de la paginación; <c>critical</c> filtra la severidad explícitamente
+    /// crítica (subconjunto de <c>high</c>).
+    /// </summary>
+    private static bool MatchesClinicalFilters(
+        string? risk,
+        bool? hasAlerts,
+        string? followUp,
+        string? bucket,
+        HealthTestSeverity? severity,
+        int activeAlerts,
+        string followUpState
+    )
+    {
+        if (risk is not null)
+        {
+            var matchesRisk = risk switch
+            {
+                ClinicalBoardFilters.RiskHigh => bucket == ClinicalBoardFilters.RiskHigh,
+                ClinicalBoardFilters.RiskModerate => bucket == ClinicalBoardFilters.RiskModerate,
+                ClinicalBoardFilters.RiskLow => bucket == ClinicalBoardFilters.RiskLow,
+                ClinicalBoardFilters.RiskCritical => severity == HealthTestSeverity.critical,
+                _ => true,
+            };
+
+            if (!matchesRisk)
+                return false;
+        }
+
+        if (hasAlerts is true && activeAlerts == 0)
+            return false;
+
+        if (followUp is not null && followUpState != followUp)
+            return false;
+
+        return true;
+    }
+
     private static string ResolveFollowUp(int pendingCount, DateTime? nextDue, DateTime nowUtc)
     {
         if (pendingCount == 0)
@@ -549,7 +835,7 @@ public sealed class PatientDashboardRepository(AppDbContext dbContext, IPatientR
             _ => "65+",
         };
 
-    private static int AgeBucketOrder(string bucket) =>
+    private static int AgeBucketOrder(string? bucket) =>
         bucket switch
         {
             "0-17" => 0,

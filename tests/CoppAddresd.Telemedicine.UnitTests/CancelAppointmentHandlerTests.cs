@@ -15,14 +15,15 @@ public class CancelAppointmentHandlerTests
     private readonly FakeReferenceDataService _referenceData = new();
     private readonly FakeAppointmentRepository _appointments = new();
     private readonly FakeAlertRepository _alerts = new();
+    private readonly FakeTelemedicineNotifier _notifier = new();
     private readonly CancelAppointmentCommandHandler _handler;
 
     public CancelAppointmentHandlerTests()
     {
         _handler = new CancelAppointmentCommandHandler(
-            _appointments, _referenceData, _alerts);
+            _appointments, _referenceData, _alerts, notifier: _notifier);
         _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
-        _referenceData.Patients[TestData.PatientId] = TestData.Patient();
+        _referenceData.Patients[TestData.PatientId] = TestData.Patient(userId: TestData.PatientUserId);
         _referenceData.Specialties[TestData.SpecialtyId] = TestData.Specialty();
     }
 
@@ -109,5 +110,35 @@ public class CancelAppointmentHandlerTests
             Guid.NewGuid(), "Razón", CancelledBy.Admin, TestData.UserId);
 
         await Assert.ThrowsAsync<NotFoundException>(() => _handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Handle_CanceladoPorProfesional_NotificaAlPacienteConLaRazon()
+    {
+        var appointment = TestData.Appointment(status: AppointmentStatus.Confirmed);
+        _appointments.Items.Add(appointment);
+        var command = new CancelAppointmentCommand(
+            appointment.Id, "Emergencia del profesional", CancelledBy.Professional, TestData.UserId);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        var notification = Assert.Single(_notifier.Sent);
+        Assert.Equal(TestData.PatientUserId, notification.UserId);
+        Assert.Contains("Emergencia del profesional", notification.Body);
+    }
+
+    [Fact]
+    public async Task Handle_CanceladoPorPaciente_NotificaAlProfesional()
+    {
+        var appointment = TestData.Appointment(status: AppointmentStatus.Confirmed);
+        _appointments.Items.Add(appointment);
+        var command = new CancelAppointmentCommand(
+            appointment.Id, "No puedo asistir", CancelledBy.Patient, TestData.PatientUserId);
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        var notification = Assert.Single(_notifier.Sent);
+        Assert.Equal(TestData.UserId, notification.UserId);
+        Assert.Contains("No puedo asistir", notification.Body);
     }
 }

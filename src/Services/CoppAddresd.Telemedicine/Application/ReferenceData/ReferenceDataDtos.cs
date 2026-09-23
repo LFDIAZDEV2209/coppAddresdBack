@@ -25,7 +25,12 @@ public sealed record PatientRefDto(
     string? Email,
     Guid? ClinicId,
     Guid? LocationId,
-    string? StateCode
+    string? StateCode,
+    /// <summary>
+    /// Usuario de Auth del paciente (destinatario de notificaciones F2). Null =
+    /// paciente sin cuenta (no notificable); el emisor omite el envío.
+    /// </summary>
+    Guid? UserId = null
 );
 
 /// <summary>Especialidad (id = <c>erp.specialties</c>).</summary>

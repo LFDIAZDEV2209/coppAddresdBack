@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CoppAddresd.Telemedicine.Application.Features.Telemedicine.Events;
 using CoppAddresd.Telemedicine.Application.Interfaces;
 using CoppAddresd.Telemedicine.Application.VideoProvider;
 using CoppAddresd.Telemedicine.Domain.Entities;
@@ -45,9 +46,22 @@ public sealed class ProcessTwilioWebhookCommandHandler(
     IAppointmentReferenceDataService referenceData,
     IAlertRepository alerts,
     ITelemedicineUnitOfWork unitOfWork,
-    ILogger<ProcessTwilioWebhookCommandHandler> logger)
+    ILogger<ProcessTwilioWebhookCommandHandler> logger,
+    ITelemedicineMetricsQueue? metricsQueue = null)
     : IRequestHandler<ProcessTwilioWebhookCommand, WebhookProcessResult>
 {
+    /// <summary>
+    /// Eventos de métricas producidos por un webhook procesado. Se emiten
+    /// FUERA de la transacción (después del commit): un duplicado que hace
+    /// rollback no debe contar dos veces (F5).
+    /// </summary>
+    private sealed record WebhookMetricEvents(
+        AppointmentStatusChangedMetricEvent? StatusChanged,
+        SessionEndedMetricEvent? SessionEnded)
+    {
+        public static readonly WebhookMetricEvents None = new(null, null);
+    }
+
     public async Task<WebhookProcessResult> Handle(ProcessTwilioWebhookCommand request, CancellationToken ct)
     {
         var valid = await videoProvider.ValidateWebhookSignatureAsync(
@@ -73,6 +87,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         }
 
         var payloadJson = JsonSerializer.Serialize(request.FormParams);
+        var metricEvents = WebhookMetricEvents.None;
 
         try
         {
@@ -89,7 +104,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
                 }, txCt);
 
                 // 2. Aplicar las mutaciones según el tipo de evento.
-                await ApplyEventAsync(eventType, roomSid, participantIdentity, now: DateTimeOffset.UtcNow, txCt);
+                metricEvents = await ApplyEventAsync(eventType, roomSid, participantIdentity, now: DateTimeOffset.UtcNow, txCt);
             }, ct);
         }
         catch (BusinessRuleViolationException)
@@ -97,10 +112,25 @@ public sealed class ProcessTwilioWebhookCommandHandler(
             return new WebhookProcessResult(WebhookProcessOutcome.Duplicate, eventType);
         }
 
+        // 3. Métricas (F5) después del commit: el duplicado que hace rollback
+        //    nunca llega aquí, y la cola es en memoria (sin impacto en la request).
+        if (metricsQueue is not null)
+        {
+            if (metricEvents.StatusChanged is not null)
+            {
+                await metricsQueue.EnqueueAsync(metricEvents.StatusChanged);
+            }
+
+            if (metricEvents.SessionEnded is not null)
+            {
+                await metricsQueue.EnqueueAsync(metricEvents.SessionEnded);
+            }
+        }
+
         return new WebhookProcessResult(WebhookProcessOutcome.Processed, eventType);
     }
 
-    private async Task ApplyEventAsync(string eventType, string roomSid, string participantIdentity, DateTimeOffset now, CancellationToken ct)
+    private async Task<WebhookMetricEvents> ApplyEventAsync(string eventType, string roomSid, string participantIdentity, DateTimeOffset now, CancellationToken ct)
     {
         var room = await rooms.GetForUpdateByProviderRoomSidAsync(roomSid, ct);
         if (room is null)
@@ -109,16 +139,28 @@ public sealed class ProcessTwilioWebhookCommandHandler(
             // registra el webhook (auditoría) pero no se aplican mutaciones.
             logger.LogDebug("Webhook {EventType} de sala desconocida {RoomSid} registrado sin mutaciones.",
                 eventType, roomSid);
-            return;
+            return WebhookMetricEvents.None;
         }
+
+        var metricEvents = WebhookMetricEvents.None;
 
         switch (eventType)
         {
             case "room-ended":
                 room.Status = VirtualRoomStatus.Ended;
                 room.UpdatedAt = now.UtcDateTime;
-                EndActiveSession(room, endReason: "room-ended", endedBy: null, now);
-                await CompleteAppointmentIfInProgressAsync(room.AppointmentId, now, ct);
+
+                // La sesión activa (si existe) se captura antes de cerrarla para
+                // reportar su duración en las métricas de llamada.
+                var activeSession = room.Sessions
+                    .Where(s => s.Status == TelemedicineSessionStatus.Active)
+                    .OrderByDescending(s => s.StartedAt)
+                    .FirstOrDefault();
+
+                SessionSupport.EndActiveSession(room, endReason: "room-ended", endedBy: null, now);
+
+                metricEvents = await CompleteAppointmentIfInProgressAsync(
+                    room.AppointmentId, activeSession is not null, activeSession?.DurationSeconds, now, ct);
                 await EmitSessionAlertsAsync(room.AppointmentId, eventType, participantIdentity, ct);
                 break;
 
@@ -129,6 +171,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
                     room.UpdatedAt = now.UtcDateTime;
                 }
                 TouchActiveSession(room, now);
+                await TrackPatientJoinAsync(room, participantIdentity, now, ct);
                 await EmitSessionAlertsAsync(room.AppointmentId, eventType, participantIdentity, ct);
                 break;
 
@@ -144,6 +187,7 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         }
 
         await rooms.UpdateAsync(room, ct);
+        return metricEvents;
     }
 
     /// <summary>
@@ -210,27 +254,6 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         }
     }
 
-    private static void EndActiveSession(VirtualRoom room, string endReason, Guid? endedBy, DateTimeOffset now)
-    {
-        var active = room.Sessions
-            .Where(s => s.Status == TelemedicineSessionStatus.Active)
-            .OrderByDescending(s => s.StartedAt)
-            .FirstOrDefault();
-
-        if (active is null)
-        {
-            return;
-        }
-
-        active.Status = TelemedicineSessionStatus.Ended;
-        active.EndedAt = now;
-        active.DurationSeconds = active.StartedAt is { } startedAt
-            ? (long)Math.Max(0, (now - startedAt).TotalSeconds)
-            : null;
-        active.EndedBy = endedBy;
-        active.EndReason = endReason;
-    }
-
     private static void TouchActiveSession(VirtualRoom room, DateTimeOffset now)
     {
         var active = room.Sessions
@@ -244,19 +267,87 @@ public sealed class ProcessTwilioWebhookCommandHandler(
         }
     }
 
-    private async Task CompleteAppointmentIfInProgressAsync(Guid appointmentId, DateTimeOffset now, CancellationToken ct)
+    /// <summary>
+    /// Registra el primer ingreso del paciente a la sala (identidad del token
+    /// distinta a la del profesional). Si el backend no resuelve al profesional
+    /// no se marca nada, para no confundir NoShow con Completed en el barrido.
+    /// </summary>
+    private async Task TrackPatientJoinAsync(
+        VirtualRoom room,
+        string participantIdentity,
+        DateTimeOffset now,
+        CancellationToken ct)
+    {
+        if (room.PatientJoinedAt is not null || string.IsNullOrWhiteSpace(participantIdentity))
+        {
+            return;
+        }
+
+        var appointment = await appointments.GetForUpdateAsync(room.AppointmentId, ct);
+        if (appointment is null)
+        {
+            return;
+        }
+
+        var professional = await referenceData.GetProfessionalAsync(appointment.ProfessionalId, ct);
+        if (professional?.UserId is not { } professionalUserId)
+        {
+            return;
+        }
+
+        if (Guid.TryParse(participantIdentity, out var participantUserId)
+            && participantUserId == professionalUserId)
+        {
+            return;
+        }
+
+        room.PatientJoinedAt = now;
+    }
+
+    private async Task<WebhookMetricEvents> CompleteAppointmentIfInProgressAsync(
+        Guid appointmentId,
+        bool sessionEnded,
+        long? sessionDurationSeconds,
+        DateTimeOffset now,
+        CancellationToken ct)
     {
         // La sala terminó: si la cita estaba en curso, pasa a completada. Si nunca
         // se inició sesión (nadie entró), se deja como está (NoShow es una
         // decisión de negocio aparte, no una conclusión automática de la sala).
         var appointment = await appointments.GetForUpdateAsync(appointmentId, ct);
-        if (appointment is null || appointment.Status != AppointmentStatus.InProgress)
+        if (appointment is null)
         {
-            return;
+            return WebhookMetricEvents.None;
         }
 
-        appointment.Status = AppointmentStatus.Completed;
-        appointment.UpdatedAt = now.UtcDateTime;
-        await appointments.UpdateAsync(appointment, ct);
+        var scheduledDate = DateOnly.FromDateTime(appointment.ScheduledStart.UtcDateTime);
+
+        AppointmentStatusChangedMetricEvent? statusChanged = null;
+        if (appointment.Status == AppointmentStatus.InProgress)
+        {
+            appointment.Status = AppointmentStatus.Completed;
+            appointment.CompletedAt = now;
+            appointment.UpdatedAt = now.UtcDateTime;
+            await appointments.UpdateAsync(appointment, ct);
+
+            statusChanged = new AppointmentStatusChangedMetricEvent(
+                appointment.Id,
+                appointment.ProfessionalId,
+                appointment.ClinicId,
+                scheduledDate,
+                AppointmentStatus.InProgress,
+                AppointmentStatus.Completed);
+        }
+
+        var sessionEndedEvent = sessionEnded
+            ? new SessionEndedMetricEvent(
+                appointment.Id,
+                appointment.ProfessionalId,
+                appointment.ClinicId,
+                scheduledDate,
+                sessionDurationSeconds)
+            : null;
+
+        return new WebhookMetricEvents(statusChanged, sessionEndedEvent);
     }
 }
