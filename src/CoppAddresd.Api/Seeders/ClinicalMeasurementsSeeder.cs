@@ -15,11 +15,17 @@ namespace CoppAddresd.Api.Seeders;
 /// </summary>
 public sealed class ClinicalMeasurementsSeeder(
     IServiceScopeFactory scopeFactory,
-    ILogger<ClinicalMeasurementsSeeder> logger) : IHostedService
+    ILogger<ClinicalMeasurementsSeeder> logger
+) : IHostedService
 {
     private sealed record UnitSeed(string Code, string Name, string Symbol);
 
-    private sealed record MetricSeed(string Code, string Name, string Category, string DefaultUnitCode);
+    private sealed record MetricSeed(
+        string Code,
+        string Name,
+        string Category,
+        string DefaultUnitCode
+    );
 
     private sealed record ReferenceRangeSeed(
         string MetricCode,
@@ -29,7 +35,8 @@ public sealed class ClinicalMeasurementsSeeder(
         decimal? MinValue,
         decimal? MaxValue,
         string UnitCode,
-        int Priority);
+        int Priority
+    );
 
     private static readonly IReadOnlyList<UnitSeed> Units =
     [
@@ -74,6 +81,18 @@ public sealed class ClinicalMeasurementsSeeder(
         // vital-signs-tracking: rango de referencia clínica para SpO2 (pendiente
         // de validación del comité; no altera las reglas de debilidad/seguridad).
         new("o2_saturation", null, null, null, 94m, 100m, "pct", 0),
+        // FASE 3 (app-fase-3-catalogos-seeds): bandas de referencia adulto general
+        // para las 7 métricas que quedaban sin rango — el API las usa como banda
+        // de referencia en metrics-history (MetricsHistoryRepository) y la APP las
+        // muestra en Historia/Home. Valores de demo para adulto general; el
+        // ajuste fino por género/edad llega cuando el comité lo defina.
+        new("weight", null, null, null, 45m, 160m, "kg", 0),
+        new("height", null, null, null, 140m, 210m, "cm", 0),
+        new("waist", null, null, null, 45m, 150m, "cm", 0),
+        new("hip", null, null, null, 70m, 150m, "cm", 0),
+        new("wrist", null, null, null, 12m, 20m, "cm", 0),
+        new("body_fat", null, null, null, 5m, 45m, "pct", 0),
+        new("temperature_c", null, null, null, 35.5m, 37.5m, "celsius", 0),
     ];
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -106,7 +125,10 @@ public sealed class ClinicalMeasurementsSeeder(
 
         logger.LogInformation(
             "Catálogo de mediciones clínicas sembrado: {UnitCount} unidades, {MetricCount} métricas, {RangeCount} rangos definidos",
-            unitIds.Count, metricIds.Count, ReferenceRanges.Count);
+            unitIds.Count,
+            metricIds.Count,
+            ReferenceRanges.Count
+        );
     }
 
     private async Task SeedUnitsAsync(CancellationToken ct)
@@ -114,22 +136,29 @@ public sealed class ClinicalMeasurementsSeeder(
         foreach (var unit in Units)
         {
             var exists = await WithContext(
-                db => db.UnitOfMeasures.AnyAsync(x => x.Code == unit.Code, ct), ct);
+                db => db.UnitOfMeasures.AnyAsync(x => x.Code == unit.Code, ct),
+                ct
+            );
 
             if (exists)
                 continue;
 
-            await WithContext(async db =>
-            {
-                db.UnitOfMeasures.Add(new UnitOfMeasure
+            await WithContext(
+                async db =>
                 {
-                    Code = unit.Code,
-                    Name = unit.Name,
-                    Symbol = unit.Symbol,
-                });
-                await db.SaveChangesAsync(ct);
-                return true;
-            }, ct);
+                    db.UnitOfMeasures.Add(
+                        new UnitOfMeasure
+                        {
+                            Code = unit.Code,
+                            Name = unit.Name,
+                            Symbol = unit.Symbol,
+                        }
+                    );
+                    await db.SaveChangesAsync(ct);
+                    return true;
+                },
+                ct
+            );
 
             logger.LogInformation("Unidad sembrada: {Code} ({Symbol})", unit.Code, unit.Symbol);
         }
@@ -140,7 +169,9 @@ public sealed class ClinicalMeasurementsSeeder(
         foreach (var metric in Metrics)
         {
             var exists = await WithContext(
-                db => db.MeasurementMetrics.AnyAsync(x => x.Code == metric.Code, ct), ct);
+                db => db.MeasurementMetrics.AnyAsync(x => x.Code == metric.Code, ct),
+                ct
+            );
 
             if (exists)
                 continue;
@@ -149,31 +180,43 @@ public sealed class ClinicalMeasurementsSeeder(
             {
                 logger.LogWarning(
                     "Métrica {Code} omitida: la unidad por defecto {UnitCode} no existe en el catálogo",
-                    metric.Code, metric.DefaultUnitCode);
+                    metric.Code,
+                    metric.DefaultUnitCode
+                );
                 continue;
             }
 
-            await WithContext(async db =>
-            {
-                db.MeasurementMetrics.Add(new MeasurementMetric
+            await WithContext(
+                async db =>
                 {
-                    Code = metric.Code,
-                    Name = metric.Name,
-                    Category = metric.Category,
-                    DefaultUnitId = unitId,
-                });
-                await db.SaveChangesAsync(ct);
-                return true;
-            }, ct);
+                    db.MeasurementMetrics.Add(
+                        new MeasurementMetric
+                        {
+                            Code = metric.Code,
+                            Name = metric.Name,
+                            Category = metric.Category,
+                            DefaultUnitId = unitId,
+                        }
+                    );
+                    await db.SaveChangesAsync(ct);
+                    return true;
+                },
+                ct
+            );
 
-            logger.LogInformation("Métrica sembrada: {Code} ({Category})", metric.Code, metric.Category);
+            logger.LogInformation(
+                "Métrica sembrada: {Code} ({Category})",
+                metric.Code,
+                metric.Category
+            );
         }
     }
 
     private async Task SeedReferenceRangesAsync(
         Dictionary<string, Guid> unitIds,
         Dictionary<string, Guid> metricIds,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var seeded = 0;
 
@@ -183,7 +226,8 @@ public sealed class ClinicalMeasurementsSeeder(
             {
                 logger.LogWarning(
                     "Rango omitido: la métrica {MetricCode} no existe en el catálogo",
-                    range.MetricCode);
+                    range.MetricCode
+                );
                 continue;
             }
 
@@ -191,36 +235,48 @@ public sealed class ClinicalMeasurementsSeeder(
             {
                 logger.LogWarning(
                     "Rango omitido: la unidad {UnitCode} no existe en el catálogo",
-                    range.UnitCode);
+                    range.UnitCode
+                );
                 continue;
             }
 
             var exists = await WithContext(
-                db => db.MeasurementReferenceRanges.AnyAsync(
-                    x => x.MetricId == metricId
-                        && x.MinValue == range.MinValue
-                        && x.MaxValue == range.MaxValue
-                        && x.UnitId == unitId, ct), ct);
+                db =>
+                    db.MeasurementReferenceRanges.AnyAsync(
+                        x =>
+                            x.MetricId == metricId
+                            && x.MinValue == range.MinValue
+                            && x.MaxValue == range.MaxValue
+                            && x.UnitId == unitId,
+                        ct
+                    ),
+                ct
+            );
 
             if (exists)
                 continue;
 
-            await WithContext(async db =>
-            {
-                db.MeasurementReferenceRanges.Add(new MeasurementReferenceRange
+            await WithContext(
+                async db =>
                 {
-                    MetricId = metricId,
-                    AgeMin = range.AgeMin,
-                    AgeMax = range.AgeMax,
-                    Gender = range.Gender,
-                    MinValue = range.MinValue,
-                    MaxValue = range.MaxValue,
-                    UnitId = unitId,
-                    Priority = range.Priority,
-                });
-                await db.SaveChangesAsync(ct);
-                return true;
-            }, ct);
+                    db.MeasurementReferenceRanges.Add(
+                        new MeasurementReferenceRange
+                        {
+                            MetricId = metricId,
+                            AgeMin = range.AgeMin,
+                            AgeMax = range.AgeMax,
+                            Gender = range.Gender,
+                            MinValue = range.MinValue,
+                            MaxValue = range.MaxValue,
+                            UnitId = unitId,
+                            Priority = range.Priority,
+                        }
+                    );
+                    await db.SaveChangesAsync(ct);
+                    return true;
+                },
+                ct
+            );
 
             seeded++;
         }
@@ -230,15 +286,19 @@ public sealed class ClinicalMeasurementsSeeder(
 
     private async Task<Dictionary<string, Guid>> GetUnitIdsAsync(CancellationToken ct) =>
         await WithContext(
-            db => db.UnitOfMeasures
-                .Where(x => x.IsActive)
-                .ToDictionaryAsync(x => x.Code, x => x.Id, ct), ct);
+            db =>
+                db.UnitOfMeasures.Where(x => x.IsActive)
+                    .ToDictionaryAsync(x => x.Code, x => x.Id, ct),
+            ct
+        );
 
     private async Task<Dictionary<string, Guid>> GetMetricIdsAsync(CancellationToken ct) =>
         await WithContext(
-            db => db.MeasurementMetrics
-                .Where(x => x.IsActive)
-                .ToDictionaryAsync(x => x.Code, x => x.Id, ct), ct);
+            db =>
+                db.MeasurementMetrics.Where(x => x.IsActive)
+                    .ToDictionaryAsync(x => x.Code, x => x.Id, ct),
+            ct
+        );
 
     /// <summary>
     /// Ejecuta una operación con un scope propio: cada llamada resuelve un
