@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   oidc-test:
-    runs-on: ubuntu-latest
+    # ubuntu-24.04 fijado: `ubuntu-latest` migra a Ubuntu 26 desde el
+    # 2026-10-19 (runner-images#14748) — el pin evita sorpresas de tooling.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 
