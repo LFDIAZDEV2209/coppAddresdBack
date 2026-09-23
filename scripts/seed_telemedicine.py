@@ -107,6 +107,7 @@ def main() -> None:
             )
 
         wipe_seed(conn, professionals)
+        pin_demo_patient_clinic(conn)
         requests = create_requests(conn, professionals, patients)
         appointments = create_appointments(conn, professionals, patients, requests)
         appointments += ensure_demo_future_appointments(conn, professionals, patients)
@@ -115,6 +116,26 @@ def main() -> None:
 
         conn.commit()
         print(f"Seed completo: {len(requests)} solicitudes, {len(appointments)} citas.")
+
+
+def pin_demo_patient_clinic(conn: psycopg.Connection) -> None:
+    """Asigna la clínica/sede demo a los pacientes demo de la APP (idempotente).
+
+    Los pacientes demo se crean sin clínica; sin ella el backend no puede
+    resolver su organización para las solicitudes de la móvil (organizationId
+    nulo en /telemedicine/me). La clínica/sede del seed es la misma que usan
+    las citas sembradas, así que el contexto queda coherente.
+    """
+    cur = conn.execute(
+        """
+        UPDATE app.patient_profiles pp
+        SET clinic_id = %s, location_id = %s
+        WHERE pp.document_number IN ('77777777', '55551234')
+          AND (pp.clinic_id IS NULL OR pp.location_id IS NULL)
+        """,
+        (SEED_CLINIC, SEED_LOCATION),
+    )
+    print(f"Pacientes demo asignados a la clínica demo: {cur.rowcount}")
 
 
 def load_professionals(conn: psycopg.Connection) -> list[dict]:

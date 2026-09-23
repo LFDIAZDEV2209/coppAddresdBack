@@ -52,6 +52,9 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
             .PatientProfiles.AsNoTracking()
             .Where(x => x.DeletedAt == null && x.UserId == userId)
             .Include(x => x.State)
+            // La clínica trae la organización del paciente (FASE 6): la
+            // referencia de telemedicina la necesita para las solicitudes.
+            .Include(x => x.Clinic)
             .FirstOrDefaultAsync(ct);
 
     public async Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(

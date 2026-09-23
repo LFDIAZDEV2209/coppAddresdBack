@@ -31,7 +31,9 @@ public sealed class AppointmentReferenceDataService(
     /// <summary>TTL de referencias del backend: mutaciones poco frecuentes, tolerancia documentada.</summary>
     private static readonly TimeSpan ReferenceTtl = TimeSpan.FromMinutes(10);
 
-    private const string KeyVersion = "v1";
+    // v2 (FASE 6): PatientRefDto agrega OrganizationId — el bump invalida las
+    // entradas de caché de la versión anterior (sin organización).
+    private const string KeyVersion = "v2";
 
     public async Task<ProfessionalRefDto?> GetProfessionalAsync(
         Guid professionalId,
