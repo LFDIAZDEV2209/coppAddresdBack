@@ -1,5 +1,5 @@
-using CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatient;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatient;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using CoppAddresd.Domain.Exceptions;
@@ -11,7 +11,8 @@ namespace CoppAddresd.UnitTests.ProgramProgress.Handlers;
 /// <summary>
 /// Tests del caso de uso de inscripción de paciente (SPEC §7.5): resolución de
 /// la plantilla por defecto (Program:DefaultTemplate:Code → fallback
-/// default-83w), default de startLocalDate al lunes local, devolución del DTO
+/// program-coppaddresd-83-days, el programa 83 días / 12 semanas), default de
+/// startLocalDate al lunes local, devolución del DTO
 /// de inscripción con su estado de gamificación e invalidación del caché de
 /// scores-history tras el commit (re-inscripción = historia nueva, SPEC
 /// §13.7.3).
@@ -26,14 +27,19 @@ public class EnrollPatientHandlerTests
     public EnrollPatientHandlerTests()
     {
         _handler = new EnrollPatientCommandHandler(
-            _repository, _cache, NullLogger<EnrollPatientCommandHandler>.Instance);
+            _repository,
+            _cache,
+            NullLogger<EnrollPatientCommandHandler>.Instance
+        );
 
         _repository.Templates[_templateId] = new ProgramTemplate
         {
             Id = _templateId,
-            Code = "default-83w",
-            Name = "Programa 83 semanas",
-            TotalWeeks = 83,
+            // El programa inicial y principal de todos los pacientes es el de
+            // 83 días (12 semanas): es el código del fallback del handler.
+            Code = "program-coppaddresd-83-days",
+            Name = "Programa COPP-ADRESD (83 días / 12 semanas)",
+            TotalWeeks = 12,
             Status = TemplateStatus.Active,
             Version = 1,
         };
@@ -44,7 +50,11 @@ public class EnrollPatientHandlerTests
     {
         var patientId = Guid.NewGuid();
         var command = new EnrollPatientCommand(
-            patientId, _templateId, "America/Bogota", new DateOnly(2026, 9, 21));
+            patientId,
+            _templateId,
+            "America/Bogota",
+            new DateOnly(2026, 9, 21)
+        );
 
         var dto = await _handler.Handle(command, CancellationToken.None);
 
@@ -64,7 +74,11 @@ public class EnrollPatientHandlerTests
     {
         // Resuelve la plantilla por defecto por código (fallback default-83w).
         var command = new EnrollPatientCommand(
-            Guid.NewGuid(), TemplateId: null, "America/Bogota", new DateOnly(2026, 9, 21));
+            Guid.NewGuid(),
+            TemplateId: null,
+            "America/Bogota",
+            new DateOnly(2026, 9, 21)
+        );
 
         var dto = await _handler.Handle(command, CancellationToken.None);
 
@@ -87,8 +101,12 @@ public class EnrollPatientHandlerTests
         };
 
         var command = new EnrollPatientCommand(
-            Guid.NewGuid(), TemplateId: null, "America/Bogota",
-            new DateOnly(2026, 9, 21), DefaultTemplateCode: "custom-code");
+            Guid.NewGuid(),
+            TemplateId: null,
+            "America/Bogota",
+            new DateOnly(2026, 9, 21),
+            DefaultTemplateCode: "custom-code"
+        );
 
         var dto = await _handler.Handle(command, CancellationToken.None);
 
@@ -101,10 +119,15 @@ public class EnrollPatientHandlerTests
         // Plantilla por defecto inexistente → 404 (no se fabrica una).
         _repository.Templates.Clear();
         var command = new EnrollPatientCommand(
-            Guid.NewGuid(), TemplateId: null, "America/Bogota", new DateOnly(2026, 9, 21));
+            Guid.NewGuid(),
+            TemplateId: null,
+            "America/Bogota",
+            new DateOnly(2026, 9, 21)
+        );
 
-        var ex = await Assert.ThrowsAsync<NotFoundException>(
-            () => _handler.Handle(command, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<NotFoundException>(() =>
+            _handler.Handle(command, CancellationToken.None)
+        );
         Assert.Contains("TEMPLATE_NOT_FOUND", ex.Message);
         Assert.Empty(_repository.Enrollments);
     }
@@ -116,11 +139,17 @@ public class EnrollPatientHandlerTests
         // paciente (SPEC §6.11). Se computa el esperado con el mismo reloj que
         // el handler (hoy real en la zona del paciente → lunes).
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/Bogota");
-        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz));
+        var localToday = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz)
+        );
         var expectedMonday = localToday.AddDays(-(((int)localToday.DayOfWeek + 6) % 7));
 
         var command = new EnrollPatientCommand(
-            Guid.NewGuid(), _templateId, "America/Bogota", StartLocalDate: null);
+            Guid.NewGuid(),
+            _templateId,
+            "America/Bogota",
+            StartLocalDate: null
+        );
 
         var dto = await _handler.Handle(command, CancellationToken.None);
 
@@ -133,10 +162,15 @@ public class EnrollPatientHandlerTests
         // Defensa en profundidad: aunque el pipeline valide, el handler no
         // persiste con una zona IANA inválida.
         var command = new EnrollPatientCommand(
-            Guid.NewGuid(), _templateId, "Mars/Olympus", new DateOnly(2026, 9, 21));
+            Guid.NewGuid(),
+            _templateId,
+            "Mars/Olympus",
+            new DateOnly(2026, 9, 21)
+        );
 
-        var ex = await Assert.ThrowsAsync<UnprocessableEntityException>(
-            () => _handler.Handle(command, CancellationToken.None));
+        var ex = await Assert.ThrowsAsync<UnprocessableEntityException>(() =>
+            _handler.Handle(command, CancellationToken.None)
+        );
         Assert.Contains("INVALID_TIMEZONE", ex.Message);
         Assert.Empty(_repository.Enrollments);
     }
@@ -153,7 +187,11 @@ public class EnrollPatientHandlerTests
     {
         var patientId = Guid.NewGuid();
         var command = new EnrollPatientCommand(
-            patientId, _templateId, "America/Bogota", new DateOnly(2026, 9, 21));
+            patientId,
+            _templateId,
+            "America/Bogota",
+            new DateOnly(2026, 9, 21)
+        );
 
         await _handler.Handle(command, CancellationToken.None);
 

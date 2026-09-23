@@ -934,9 +934,11 @@ public sealed class ProgramController(
     /// paciente o sin inscripción activa → 404 (anti-IDOR AC-11).
     /// </summary>
     [HttpGet("scores")]
-    [RequirePermission("Program.View")]
     public async Task<ActionResult<ScoresResponseDto>> GetScores(CancellationToken ct)
     {
+        // Self-service del paciente (SPEC §13.7.1, pestaña Evolución del móvil):
+        // el patientId se resuelve del JWT, así que NO lleva permiso ERP
+        // (Program.View lo excluye del aud=app y daba 403 a la APP).
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         if (patientId is null)
         {
