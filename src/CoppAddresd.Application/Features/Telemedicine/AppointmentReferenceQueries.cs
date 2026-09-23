@@ -33,7 +33,14 @@ public sealed record AppointmentPatientRefDto(
     /// Usuario de Auth del paciente (destinatario de notificaciones). Null =
     /// paciente sin cuenta (no notificable); el emisor omite el envío.
     /// </summary>
-    Guid? UserId = null
+    Guid? UserId = null,
+    /// <summary>
+    /// Organización del ERP de la clínica asignada al paciente (FASE 6): la APP
+    /// la usa al crear solicitudes — nunca un id hardcodeado ni el árbol ERP.
+    /// Null = paciente sin clínica (el backend rechaza la solicitud con su
+    /// mensaje de dominio).
+    /// </summary>
+    Guid? OrganizationId = null
 );
 
 public sealed record AppointmentSpecialtyRefDto(Guid Id, string Code, string Name, string Category);
@@ -122,7 +129,10 @@ public sealed class GetAppointmentPatientRefQueryHandler(IPatientRepository pati
             patient.ClinicId,
             patient.LocationId,
             patient.State?.Code,
-            patient.UserId
+            patient.UserId,
+            // La organización del paciente vive en su clínica asignada (ERP):
+            // la clínica viene incluida por el detalle del repositorio.
+            patient.Clinic?.OrganizationId
         );
     }
 }
@@ -229,7 +239,10 @@ public sealed class GetAppointmentPatientByUserIdQueryHandler(IPatientRepository
             patient.ClinicId,
             patient.LocationId,
             patient.State?.Code,
-            patient.UserId
+            patient.UserId,
+            // La organización del paciente vive en su clínica asignada (ERP):
+            // la clínica viene incluida por el detalle del repositorio.
+            patient.Clinic?.OrganizationId
         );
     }
 }

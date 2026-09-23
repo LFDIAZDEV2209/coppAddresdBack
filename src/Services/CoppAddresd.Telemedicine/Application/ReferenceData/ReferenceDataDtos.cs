@@ -30,7 +30,13 @@ public sealed record PatientRefDto(
     /// Usuario de Auth del paciente (destinatario de notificaciones F2). Null =
     /// paciente sin cuenta (no notificable); el emisor omite el envío.
     /// </summary>
-    Guid? UserId = null
+    Guid? UserId = null,
+    /// <summary>
+    /// Organización ERP de la clínica del paciente (FASE 6): el móvil la usa al
+    /// crear solicitudes; el backend la resuelve de la clínica del paciente.
+    /// Null = paciente sin clínica (la creación rechaza con su mensaje).
+    /// </summary>
+    Guid? OrganizationId = null
 );
 
 /// <summary>Especialidad (id = <c>erp.specialties</c>).</summary>
