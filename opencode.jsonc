@@ -9,59 +9,52 @@
     "../LEARNINGS.md",
     "../.agents/rules/*.md",
   ],
-  "skills": {
-    "paths": ["./.agents/skills", "../.agents/skills"],
-  },
-  "permission": {
-    "skill": {
-      "*": "allow",
-    },
-    "bash": {
-      "dotnet build*": "allow",
-      "dotnet test*": "allow",
-      "dotnet ef*": "allow",
-      "dotnet run*": "ask",
-      "docker compose*": "allow",
-    },
-    "lsp": "allow",
-  },
-  "agent": {
+  "skills": ["./.agents/skills", "../.agents/skills"],
+  "permissions": [
+    { "action": "skill", "resource": "*", "effect": "allow" },
+    { "action": "shell", "resource": "dotnet build*", "effect": "allow" },
+    { "action": "shell", "resource": "dotnet test*", "effect": "allow" },
+    { "action": "shell", "resource": "dotnet ef*", "effect": "allow" },
+    { "action": "shell", "resource": "dotnet run*", "effect": "ask" },
+    { "action": "shell", "resource": "docker compose*", "effect": "allow" },
+  ],
+  "agents": {
     "coppaddresd": {
       "description": "Agente principal CoppAddresd: skills-first, memoria LEARNINGS, CodeGraph primero",
       "mode": "primary",
-      "prompt": "Eres el agente principal CoppAddresd (.NET 10 / Clean Architecture). Aplica .agents/rules/*.md siempre: lee LEARNINGS.md + ../LEARNINGS.md al iniciar; carga architecture con skill() ANTES de cualquier cambio .NET y la skill del módulo después; codegraph_explore antes de grep/Read; verifica con dotnet build; anexa lo no obvio a LEARNINGS.md. Responde en el idioma del usuario; docs y comentarios en español.",
-      "permission": {
-        "skill": {
-          "*": "allow",
-        },
-      },
+      "system": "Eres el agente principal CoppAddresd (.NET 10 / Clean Architecture). Aplica .agents/rules/*.md siempre: lee LEARNINGS.md + ../LEARNINGS.md al iniciar; carga architecture con skill() ANTES de cualquier cambio .NET y la skill del módulo después; codegraph_explore antes de grep/Read; verifica con dotnet build; anexa lo no obvio a LEARNINGS.md. Responde en el idioma del usuario; docs y comentarios en español.",
+      "permissions": [
+        { "action": "skill", "resource": "*", "effect": "allow" },
+      ],
     },
     "design-expert": {
       "description": "Diseñador UX/UI senior para piezas web del ecosistema (Swagger, emails, docs visibles)",
       "mode": "subagent",
-      "prompt": "Eres diseñador UX/UI senior. Carga design-taste-frontend + impeccable antes de codificar. Bans anti-slop, WCAG 2.2 AA, responsive, estados loading/empty/error.",
+      "system": "Eres diseñador UX/UI senior. Carga design-taste-frontend + impeccable antes de codificar. Bans anti-slop, WCAG 2.2 AA, responsive, estados loading/empty/error.",
     },
     "reviewer": {
       "description": "Revisor .NET: calidad, seguridad, N+1, CancellationToken, transacciones, sin editar",
       "mode": "subagent",
-      "prompt": "Revisor .NET senior. Analiza sin editar: N+1, CancellationToken propagado, transacciones cortas, índices documentados, paginación keyset, secretos fuera de código. Cita archivo:línea.",
-      "permission": {
-        "edit": "deny",
-      },
+      "system": "Revisor .NET senior. Analiza sin editar: N+1, CancellationToken propagado, transacciones cortas, índices documentados, paginación keyset, secretos fuera de código. Cita archivo:línea.",
+      "permissions": [
+        { "action": "edit", "resource": "*", "effect": "deny" },
+      ],
     },
   },
-  "subagent_depth": 2,
+  "experimental": {
+    "subagent_depth": 2,
+  },
   "compaction": {
     "auto": true,
-    "prune": true,
-    "reserved": 15000,
+    "buffer": 15000,
   },
   "lsp": true,
   "mcp": {
-    "codegraph": {
-      "type": "local",
-      "command": ["codegraph", "serve", "--mcp"],
-      "enabled": true,
+    "servers": {
+      "codegraph": {
+        "type": "local",
+        "command": ["codegraph", "serve", "--mcp"],
+      },
     },
   },
 }
