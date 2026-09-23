@@ -14,6 +14,8 @@ import psycopg
 DB_DSN = "host=localhost port=5432 dbname=coppaddresd user=app_user password=CoppAddresdDev!2026"
 SOURCE = "seed-hist"
 DOCS = ["77777777", "55551234", "66666666", "88888888", "99999999"]
+# Tendencias por métrica: (code, valor_inicio, valor_fin). Unidades = catálogo
+# (height en cm: la FASE 3 corrigió el 1.70 histórico que era metros sobre unidad cm).
 TRAJ = [
     ("weight", 95, 82),
     ("bmi", 32.9, 28.4),
@@ -21,7 +23,7 @@ TRAJ = [
     ("waist", 112, 97),
     ("hip", 112, 103),
     ("wrist", 17.5, 17.0),
-    ("height", 1.70, 1.70),
+    ("height", 170, 170),
     ("hba1c", 8.2, 6.3),
     ("glucose_fasting", 138, 96),
     ("systolic_bp", 138, 119),
@@ -33,10 +35,30 @@ TRAJ = [
 MONTHS = 12
 
 
+def month_shift(base: datetime, back: int) -> datetime:
+    """Devuelve el día 15 del mes `back` meses ANTES de `base` (sin cruces de año
+    erróneos: el cálculo aritmético previo con floors de Python producía meses
+    futuros 2027 para desplazamientos negativos — bug corregido en FASE 3)."""
+    total = base.year * 12 + (base.month - 1) - back
+    return datetime(total // 12, (total % 12) + 1, 15, 10, 0, tzinfo=base.tzinfo)
+
+
 def main() -> None:
     now = datetime.now(timezone.utc)
     with psycopg.connect(DB_DSN) as conn:
         with conn.cursor() as cur:
+            # Reparación FASE 3: los históricos previos guardaron la talla en
+            # metros (1.70) con unidad cm y tres meses quedaron en 2027 por el
+            # bug de fechas. Se eliminan esas filas del seed para que el re-run
+            # las recree correctas (idempotente: solo filas source='seed-hist').
+            cur.execute(
+                "DELETE FROM app.clinical_measurements cm "
+                "USING app.measurement_metrics mm "
+                "WHERE cm.metric_id = mm.id AND cm.source = 'seed-hist' "
+                "AND (mm.code = 'height' AND cm.value < 3 "
+                "     OR cm.observed_at > now())"
+            )
+            repaired = cur.rowcount
             cur.execute(
                 "SELECT code, id, default_unit_id FROM app.measurement_metrics WHERE is_active"
             )
@@ -61,9 +83,7 @@ def main() -> None:
                     start, end = next((s, e) for c, s, e in TRAJ if c == code)
                     for i in range(MONTHS):
                         offset = MONTHS - 1 - i
-                        year = now.year - ((now.month - offset - 1) // 12)
-                        month = ((now.month - offset - 1) % 12) + 1
-                        observed = datetime(year, month, 15, 10, 0, tzinfo=timezone.utc)
+                        observed = month_shift(now, offset)
                         if (code, observed.strftime("%Y-%m")) in existing:
                             continue
                         progress = i / (MONTHS - 1)
@@ -78,7 +98,9 @@ def main() -> None:
                         )
                         total += 1
             conn.commit()
-            print(f"insertadas {total} filas para {len(patients)} pacientes")
+            print(
+                f"reparadas {repaired} filas; insertadas {total} filas para {len(patients)} pacientes"
+            )
 
 
 if __name__ == "__main__":
