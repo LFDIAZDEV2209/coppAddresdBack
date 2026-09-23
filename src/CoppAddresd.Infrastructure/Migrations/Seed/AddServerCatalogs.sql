@@ -218,7 +218,11 @@ FROM (VALUES
     ('bpm', 'Latidos por minuto', 'bpm'),
     ('pct', 'Porcentaje', '%'),
     ('kg_m2', 'Kilogramos por metro cuadrado', 'kg/m²'),
-    ('celsius', 'Grados Celsius', '°C')
+    ('celsius', 'Grados Celsius', '°C'),
+    ('count', 'Conteos', 'u'),
+    ('meters', 'Metros', 'm'),
+    ('kcal', 'Kilocalorías', 'kcal'),
+    ('minutes', 'Minutos', 'min')
 ) AS u(code, name, symbol)
 ON CONFLICT (code) DO NOTHING;
 
@@ -235,7 +239,11 @@ FROM (VALUES
     ('bmi', 'Índice de masa corporal', 'kg_m2', 'body_comp'),
     ('body_fat', 'Porcentaje de grasa corporal', 'pct', 'body_comp'),
     ('o2_saturation', 'Saturación de oxígeno', 'pct', 'vital'),
-    ('temperature_c', 'Temperatura corporal', 'celsius', 'vital')
+    ('temperature_c', 'Temperatura corporal', 'celsius', 'vital'),
+    ('step_count', 'Pasos', 'count', 'activity'),
+    ('distance_m', 'Distancia recorrida', 'meters', 'activity'),
+    ('activity_kcal', 'Calorías activas', 'kcal', 'activity'),
+    ('sleep_minutes', 'Sueño', 'minutes', 'lifestyle')
 ) AS m(code, name, unit_code, category)
 JOIN app.unit_of_measures u ON u.code = m.unit_code
 ON CONFLICT (code) DO NOTHING;

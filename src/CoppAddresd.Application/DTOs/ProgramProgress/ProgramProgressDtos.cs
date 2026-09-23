@@ -31,7 +31,10 @@ public sealed record VitalsPayload(
     decimal? Glucose,
     decimal? WeightKg,
     decimal? TemperatureC,
-    DateTime? MeasuredAt);
+    DateTime? MeasuredAt,
+    // Del wearable (device-metrics-tracking): pasos del día y sueño en minutos.
+    decimal? Steps = null,
+    decimal? SleepMinutes = null);
 
 /// <summary>
 /// Entrada de la persistencia de una tarea completada. Los FKs de contenido

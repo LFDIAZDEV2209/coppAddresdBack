@@ -10,7 +10,8 @@ namespace CoppAddresd.Application.Features.ProgramProgress.DTOs.Scores;
 /// <c>me/*</c> (espejo de LeagueDtos).
 /// </summary>
 public sealed record ScoresHistoryResponseDto(
-    [property: JsonPropertyName("points")] IReadOnlyList<ScoresHistoryPointDto> Points);
+    [property: JsonPropertyName("points")] IReadOnlyList<ScoresHistoryPointDto> Points
+);
 
 /// <summary>
 /// Punto de la serie: una semana del programa. <c>WeekNumber</c> sale de
@@ -29,7 +30,9 @@ public sealed record ScoresHistoryPointDto(
     [property: JsonPropertyName("periodEnd")] DateOnly PeriodEnd,
     [property: JsonPropertyName("healthScore")] int? HealthScore,
     [property: JsonPropertyName("healthPrevious")] int? HealthPrevious,
-    [property: JsonPropertyName("transformationScore")] int? TransformationScore);
+    [property: JsonPropertyName("transformationScore")] int? TransformationScore,
+    [property: JsonPropertyName("dimensions")] HealthScoreDimensionsDto? Dimensions = null
+);
 
 // ===========================================================================
 // Resultados del repositorio (NO cacheados; espejo de LeagueContext en
@@ -45,22 +48,28 @@ public sealed record ScoresHistoryPointDto(
 public sealed record ScoresHistoryContext(
     IReadOnlyList<ScoreWeekRow> Weeks,
     IReadOnlyList<HealthScoreHistoryRow> HealthRows,
-    IReadOnlyList<TransformationScoreHistoryRow> TransformationRows);
+    IReadOnlyList<TransformationScoreHistoryRow> TransformationRows
+);
 
 /// <summary>Semana materializada de la inscripción (<c>ProgramWeek</c>): número + rango local.</summary>
 public sealed record ScoreWeekRow(
     int WeekNumber,
     DateOnly WeekStartDateLocal,
-    DateOnly WeekEndDateLocal);
+    DateOnly WeekEndDateLocal
+);
 
-/// <summary>Fila persistida de <c>app.health_scores</c> (proyección mínima para la serie).</summary>
+/// <summary>Fila persistida de <c>app.health_scores</c> (proyección mínima para la serie + 5 dimensiones).</summary>
 public sealed record HealthScoreHistoryRow(
     DateOnly PeriodStart,
     DateOnly PeriodEnd,
     int Score,
-    int? ScorePrevious);
+    int? ScorePrevious,
+    int ScoreAdherence,
+    int ScoreClinical,
+    int ScoreNutrition,
+    int ScorePsychology,
+    int ScoreExercise
+);
 
 /// <summary>Fila persistida de <c>app.transformation_scores</c> (proyección mínima para la serie).</summary>
-public sealed record TransformationScoreHistoryRow(
-    int WeekNumber,
-    int Score);
+public sealed record TransformationScoreHistoryRow(int WeekNumber, int Score);

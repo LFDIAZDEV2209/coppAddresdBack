@@ -1,5 +1,4 @@
 using System.Globalization;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.RecordWeight;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
@@ -23,6 +22,8 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleSchedule
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PauseEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PublishTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.RecordDeviceMetrics;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.RecordWeight;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceWeekdayTasks;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ResumeEnrollment;
@@ -1071,16 +1072,74 @@ public sealed class ProgramController(
     [HttpPost("me/weight")]
     [Authorize(Roles = "Admin")] // Rol global de acceso total existente (SuperAdmin).
     public async Task<ActionResult<RecordedWeightDto>> RecordWeight(
-        [FromBody] RecordWeightRequest request, CancellationToken ct)
+        [FromBody] RecordWeightRequest request,
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
         if (patientId is null || enrollmentId is null)
-            return NotFound(new { code = "NO_ACTIVE_ENROLLMENT", message = "Se requiere perfil de paciente e inscripción activa." });
-        if (actorContext.UserId is not { } actorId) return Unauthorized();
-        var result = await mediator.Send(new RecordWeightCommand(patientId.Value, enrollmentId.Value,
-            actorId, request.WeightKg, request.Date), ct);
+            return NotFound(
+                new
+                {
+                    code = "NO_ACTIVE_ENROLLMENT",
+                    message = "Se requiere perfil de paciente e inscripción activa.",
+                }
+            );
+        if (actorContext.UserId is not { } actorId)
+            return Unauthorized();
+        var result = await mediator.Send(
+            new RecordWeightCommand(
+                patientId.Value,
+                enrollmentId.Value,
+                actorId,
+                request.WeightKg,
+                request.Date
+            ),
+            ct
+        );
         return StatusCode(StatusCodes.Status201Created, result);
+    }
+
+    /// <summary>
+    /// Métricas diarias del anillo del paciente autenticado
+    /// (device-metrics-tracking): pasos, distancia, calorías activas y sueño.
+    /// Persiste UNA fila por día y métrica en <c>app.clinical_measurements</c>
+    /// (Source = "device"), de modo que las series se leen por el
+    /// metrics-history existente. Self-service: identidad del JWT.
+    /// </summary>
+    [HttpPost("me/device-metrics")]
+    public async Task<ActionResult<RecordedDeviceMetricsDto>> RecordDeviceMetrics(
+        [FromBody] RecordDeviceMetricsRequest request,
+        CancellationToken ct
+    )
+    {
+        var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
+        var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
+        if (patientId is null || enrollmentId is null)
+            return NotFound(
+                new
+                {
+                    code = "NO_ACTIVE_ENROLLMENT",
+                    message = "Se requiere perfil de paciente e inscripción activa.",
+                }
+            );
+        if (actorContext.UserId is not { } actorId)
+            return Unauthorized();
+        var result = await mediator.Send(
+            new RecordDeviceMetricsCommand(
+                patientId.Value,
+                enrollmentId.Value,
+                actorId,
+                request.Steps,
+                request.DistanceM,
+                request.ActivityKcal,
+                request.SleepMinutes,
+                request.RecordedAt
+            ),
+            ct
+        );
+        return Ok(result);
     }
 
     [HttpGet("me/metrics-history")]

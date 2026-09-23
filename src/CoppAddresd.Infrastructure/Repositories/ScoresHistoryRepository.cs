@@ -56,8 +56,8 @@ public sealed class ScoresHistoryRepository(AppDbContext dbContext) : IScoresHis
         // historial pertenece al programa en curso (SPEC §13.7.3).
         var today = PatientLocalToday(enrollment.Timezone);
         var firstWeek = weeks[0];
-        var currentWeek = weeks.FirstOrDefault(
-                w => today >= w.WeekStartDateLocal && today <= w.WeekEndDateLocal)
+        var currentWeek =
+            weeks.FirstOrDefault(w => today >= w.WeekStartDateLocal && today <= w.WeekEndDateLocal)
             ?? weeks[^1];
         var windowStart = firstWeek.WeekStartDateLocal;
         var windowEnd = currentWeek.WeekEndDateLocal;
@@ -69,16 +69,23 @@ public sealed class ScoresHistoryRepository(AppDbContext dbContext) : IScoresHis
         // La más reciente del grupo gana en el alineamiento del handler.
         var healthRows = await dbContext
             .HealthScores.AsNoTracking()
-            .Where(
-                h =>
-                    h.PatientId == patientId
-                    && h.PeriodEnd >= windowStart
-                    && h.PeriodEnd <= windowEnd
+            .Where(h =>
+                h.PatientId == patientId && h.PeriodEnd >= windowStart && h.PeriodEnd <= windowEnd
             )
             .OrderBy(h => h.PeriodEnd)
             .ThenBy(h => h.CalculatedAt)
             .ThenBy(h => h.Id)
-            .Select(h => new HealthScoreHistoryRow(h.PeriodStart, h.PeriodEnd, h.Score, h.ScorePrevious))
+            .Select(h => new HealthScoreHistoryRow(
+                h.PeriodStart,
+                h.PeriodEnd,
+                h.Score,
+                h.ScorePrevious,
+                h.ScoreAdherence,
+                h.ScoreClinical,
+                h.ScoreNutrition,
+                h.ScorePsychology,
+                h.ScoreExercise
+            ))
             .ToListAsync(ct);
 
         // Filas de transformación: ASC por weekNumber; CalculatedAt DESC dentro
@@ -86,11 +93,10 @@ public sealed class ScoresHistoryRepository(AppDbContext dbContext) : IScoresHis
         // desempate final por Id (determinismo bajo empate exacto).
         var transformationRows = await dbContext
             .TransformationScores.AsNoTracking()
-            .Where(
-                t =>
-                    t.PatientId == patientId
-                    && t.WeekNumber >= firstWeek.WeekNumber
-                    && t.WeekNumber <= currentWeekNumber
+            .Where(t =>
+                t.PatientId == patientId
+                && t.WeekNumber >= firstWeek.WeekNumber
+                && t.WeekNumber <= currentWeekNumber
             )
             .OrderBy(t => t.WeekNumber)
             .ThenByDescending(t => t.CalculatedAt)

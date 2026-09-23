@@ -2206,6 +2206,33 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
     }
 
     [RequiresPostgresFact]
+    public async Task CompleteTask_Vitals_ConPasosYSueno_MapeaStepCountYSleepMinutes()
+    {
+        var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Wearable");
+        var enrollmentId = await EnrollAsync(patientId: patientId);
+        var tuesday = _monday.AddDays(1);
+
+        // Pasos y sueño del wearable: se persisten con los códigos del catálogo
+        // (step_count / sleep_minutes), sin tocar las filas del sync del móvil.
+        var result = await CompleteVitalsAsync(
+            enrollmentId, tuesday, "vs-wearable",
+            new VitalsPayload(null, null, null, null, null, null, null, null,
+                Steps: 6240m, SleepMinutes: 393m));
+
+        Assert.Equal(CompleteTaskOutcome.Created, result.Outcome);
+
+        await using var db = fixture.CreateDbContext();
+        var rows = await db.ClinicalMeasurements
+            .Where(m => m.PatientId == patientId)
+            .Select(m => new { m.Metric.Code, m.Value, m.Source })
+            .ToListAsync();
+        Assert.Equal(2, rows.Count);
+        Assert.Contains(rows, r => r.Code == "step_count" && r.Value == 6240m);
+        Assert.Contains(rows, r => r.Code == "sleep_minutes" && r.Value == 393m);
+        Assert.True(rows.All(r => r.Source == "mobile"));
+    }
+
+    [RequiresPostgresFact]
     public async Task CompleteTask_Vitals_SinPayload_0Filas()
     {
         var patientId = await CreatePatientAsync(fixture.CreateDbContext(), "VS", "Vacio");

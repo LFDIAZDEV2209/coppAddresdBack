@@ -22,7 +22,8 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Queries.GetScoresHist
 /// serie COMPLETA del paciente; el recorte a las últimas N semanas se aplica
 /// por request (nunca se cachea por-petición).
 /// </summary>
-public sealed record GetScoresHistoryQuery(Guid PatientId, int Weeks) : IRequest<ScoresHistoryResponseDto>
+public sealed record GetScoresHistoryQuery(Guid PatientId, int Weeks)
+    : IRequest<ScoresHistoryResponseDto>
 {
     /// <summary>Valor por defecto de <c>weeks</c> (12 semanas ≈ un trimestre).</summary>
     public const int DefaultWeeks = 12;
@@ -40,9 +41,13 @@ public sealed record GetScoresHistoryQuery(Guid PatientId, int Weeks) : IRequest
 public sealed class GetScoresHistoryQueryHandler(
     IScoresHistoryRepository repository,
     ICacheService cache,
-    ILogger<GetScoresHistoryQueryHandler> logger) : IRequestHandler<GetScoresHistoryQuery, ScoresHistoryResponseDto>
+    ILogger<GetScoresHistoryQueryHandler> logger
+) : IRequestHandler<GetScoresHistoryQuery, ScoresHistoryResponseDto>
 {
-    public async Task<ScoresHistoryResponseDto> Handle(GetScoresHistoryQuery request, CancellationToken ct)
+    public async Task<ScoresHistoryResponseDto> Handle(
+        GetScoresHistoryQuery request,
+        CancellationToken ct
+    )
     {
         var weeks = Math.Clamp(request.Weeks, 1, GetScoresHistoryQuery.MaxWeeks);
 
@@ -51,21 +56,26 @@ public sealed class GetScoresHistoryQueryHandler(
             CacheKeys.ScoresHistoryTtl,
             async token =>
             {
-                var context = await repository.GetScoresHistoryContextAsync(request.PatientId, token)
+                var context =
+                    await repository.GetScoresHistoryContextAsync(request.PatientId, token)
                     ?? throw new NotFoundException(
-                        $"NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente {request.PatientId}.");
+                        $"NO_ACTIVE_ENROLLMENT: no existe una inscripción activa para el paciente {request.PatientId}."
+                    );
                 return BuildPoints(context);
             },
-            ct);
+            ct
+        );
 
         // Recorte por-request (nunca cacheado): las últimas N semanas.
-        IReadOnlyList<ScoresHistoryPointDto> trimmed = points.Count <= weeks
-            ? points
-            : points.Skip(points.Count - weeks).ToList();
+        IReadOnlyList<ScoresHistoryPointDto> trimmed =
+            points.Count <= weeks ? points : points.Skip(points.Count - weeks).ToList();
 
         // Log estructurado sin PHI (espejo de la regla §13.6 del motor de puntajes).
         logger.LogInformation(
-            "Program.ScoresHistory: semanas={Weeks} puntos={Count}", weeks, trimmed.Count);
+            "Program.ScoresHistory: semanas={Weeks} puntos={Count}",
+            weeks,
+            trimmed.Count
+        );
 
         return new ScoresHistoryResponseDto(trimmed);
     }
@@ -92,34 +102,43 @@ public sealed class GetScoresHistoryQueryHandler(
         var healthByWeek = new Dictionary<int, HealthScoreHistoryRow>();
         foreach (var health in context.HealthRows)
         {
-            var week = context.Weeks.FirstOrDefault(
-                w => health.PeriodEnd >= w.WeekStartDateLocal && health.PeriodEnd <= w.WeekEndDateLocal);
+            var week = context.Weeks.FirstOrDefault(w =>
+                health.PeriodEnd >= w.WeekStartDateLocal && health.PeriodEnd <= w.WeekEndDateLocal
+            );
             if (week is not null)
             {
                 healthByWeek[week.WeekNumber] = health;
             }
         }
 
-        var points = new List<ScoresHistoryPointDto>(context.TransformationRows.Count + healthByWeek.Count);
+        var points = new List<ScoresHistoryPointDto>(
+            context.TransformationRows.Count + healthByWeek.Count
+        );
         var seen = new HashSet<int>();
         foreach (var transformation in context.TransformationRows)
         {
             // Sin restricción única por semana: gana la fila más reciente
             // (el repositorio ordena CalculatedAt DESC dentro de la semana).
-            if (!seen.Add(transformation.WeekNumber)
-                || !weeksByNumber.TryGetValue(transformation.WeekNumber, out var week))
+            if (
+                !seen.Add(transformation.WeekNumber)
+                || !weeksByNumber.TryGetValue(transformation.WeekNumber, out var week)
+            )
             {
                 continue;
             }
 
             var health = healthByWeek.TryGetValue(transformation.WeekNumber, out var h) ? h : null;
-            points.Add(new ScoresHistoryPointDto(
-                transformation.WeekNumber,
-                week.WeekStartDateLocal,
-                week.WeekEndDateLocal,
-                health?.Score,
-                health?.ScorePrevious,
-                transformation.Score));
+            points.Add(
+                new ScoresHistoryPointDto(
+                    transformation.WeekNumber,
+                    week.WeekStartDateLocal,
+                    week.WeekEndDateLocal,
+                    health?.Score,
+                    health?.ScorePrevious,
+                    transformation.Score,
+                    DimensionsOf(health)
+                )
+            );
             healthByWeek.Remove(transformation.WeekNumber);
         }
 
@@ -127,16 +146,36 @@ public sealed class GetScoresHistoryQueryHandler(
         // período PERSISTIDO de la fila (periodStart/periodEnd del registro).
         foreach (var (weekNumber, health) in healthByWeek.OrderBy(kv => kv.Key))
         {
-            points.Add(new ScoresHistoryPointDto(
-                weekNumber,
-                health.PeriodStart,
-                health.PeriodEnd,
-                health.Score,
-                health.ScorePrevious,
-                null));
+            points.Add(
+                new ScoresHistoryPointDto(
+                    weekNumber,
+                    health.PeriodStart,
+                    health.PeriodEnd,
+                    health.Score,
+                    health.ScorePrevious,
+                    null,
+                    DimensionsOf(health)
+                )
+            );
         }
 
         points.Sort((a, b) => a.WeekNumber.CompareTo(b.WeekNumber));
         return points;
     }
+
+    /// <summary>
+    /// Dimensiones del punto desde la fila de salud; null sin fila (semana
+    /// solo con transformación). Alimenta la tarjeta Adherencia del Home
+    /// móvil (<c>dimensions.adherence</c>).
+    /// </summary>
+    private static HealthScoreDimensionsDto? DimensionsOf(HealthScoreHistoryRow? health) =>
+        health is null
+            ? null
+            : new HealthScoreDimensionsDto(
+                health.ScoreAdherence,
+                health.ScoreClinical,
+                health.ScoreNutrition,
+                health.ScorePsychology,
+                health.ScoreExercise
+            );
 }

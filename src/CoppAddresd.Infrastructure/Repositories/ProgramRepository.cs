@@ -1178,6 +1178,8 @@ public sealed class ProgramRepository(
         "glucose_fasting",
         "weight",
         "temperature_c",
+        "step_count",
+        "sleep_minutes",
     ];
 
     private static bool HasAnyVitalValue(VitalsPayload v) =>
@@ -1187,7 +1189,9 @@ public sealed class ProgramRepository(
         || v.O2Saturation.HasValue
         || v.Glucose.HasValue
         || v.WeightKg.HasValue
-        || v.TemperatureC.HasValue;
+        || v.TemperatureC.HasValue
+        || v.Steps.HasValue
+        || v.SleepMinutes.HasValue;
 
     /// <summary>
     /// Construye las filas (código, valor) en orden fijo a partir de los campos
@@ -1195,7 +1199,7 @@ public sealed class ProgramRepository(
     /// </summary>
     private static IReadOnlyList<(string Code, decimal Value)> BuildVitalsRows(VitalsPayload v)
     {
-        var rows = new List<(string Code, decimal Value)>(7);
+        var rows = new List<(string Code, decimal Value)>(9);
         if (v.HeartRate.HasValue)
             rows.Add(("heart_rate", v.HeartRate.Value));
         if (v.Systolic.HasValue)
@@ -1210,6 +1214,10 @@ public sealed class ProgramRepository(
             rows.Add(("weight", v.WeightKg.Value));
         if (v.TemperatureC.HasValue)
             rows.Add(("temperature_c", v.TemperatureC.Value));
+        if (v.Steps.HasValue)
+            rows.Add(("step_count", v.Steps.Value));
+        if (v.SleepMinutes.HasValue)
+            rows.Add(("sleep_minutes", v.SleepMinutes.Value));
         return rows;
     }
 

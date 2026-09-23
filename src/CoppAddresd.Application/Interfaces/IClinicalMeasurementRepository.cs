@@ -5,6 +5,12 @@ using CoppAddresd.Application.Features.Patients;
 namespace CoppAddresd.Application.Interfaces;
 
 /// <summary>
+/// Fila de una métrica diaria capturada por un dispositivo (anillo/banda):
+/// código canónico, métrica y unidad del catálogo, y valor del día.
+/// </summary>
+public sealed record DailyDeviceMetric(string Code, Guid MetricId, Guid UnitId, decimal Value);
+
+/// <summary>
 /// Acceso a las mediciones clínicas del catálogo de mediciones
 /// (<see cref="Domain.Entities.ClinicalMeasurement"/>), proyectadas para el
 /// contexto de IA. Las mediciones se devuelven ordenadas por fecha de
@@ -12,7 +18,10 @@ namespace CoppAddresd.Application.Interfaces;
 /// </summary>
 public interface IClinicalMeasurementRepository
 {
-    Task<IReadOnlyList<ClinicalMeasurementDto>> ListByPatientAsync(Guid patientId, CancellationToken ct = default);
+    Task<IReadOnlyList<ClinicalMeasurementDto>> ListByPatientAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Proyección ERP de las mediciones de un paciente
@@ -28,7 +37,8 @@ public interface IClinicalMeasurementRepository
     Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
         Guid patientId,
         Guid? batchId = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Variante set-based de los lotes de examen (UC-004): mediciones del
@@ -41,23 +51,48 @@ public interface IClinicalMeasurementRepository
     Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
         Guid patientId,
         IReadOnlyCollection<Guid> batchIds,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Inserta un lote de mediciones clínicas (p. ej. extraídas de un examen de laboratorio)
     /// en una sola operación atómica.
     /// </summary>
-    Task AddBatchAsync(IReadOnlyList<Domain.Entities.ClinicalMeasurement> measurements, CancellationToken ct = default);
+    Task AddBatchAsync(
+        IReadOnlyList<Domain.Entities.ClinicalMeasurement> measurements,
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Obtiene las métricas activas del catálogo con su unidad por defecto cargada.
     /// </summary>
-    Task<IReadOnlyList<Domain.Entities.MeasurementMetric>> GetActiveMetricsWithUnitsAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<Domain.Entities.MeasurementMetric>> GetActiveMetricsWithUnitsAsync(
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Upsert de métricas diarias de dispositivo: deja UNA fila por (paciente,
+    /// métrica, día local). Actualiza la fila existente del día (mismo
+    /// <paramref name="source"/>) o la inserta; así los contadores acumulados
+    /// (pasos, distancia, kcal) no generan filas ilimitadas al sincronizar.
+    /// </summary>
+    Task UpsertDailyDeviceMetricsAsync(
+        Guid patientId,
+        IReadOnlyList<DailyDeviceMetric> rows,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        DateTime observedAt,
+        Guid actorId,
+        string source,
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Obtiene todas las unidades de medida activas del catálogo.
     /// </summary>
-    Task<IReadOnlyList<Domain.Entities.UnitOfMeasure>> GetActiveUnitsAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<Domain.Entities.UnitOfMeasure>> GetActiveUnitsAsync(
+        CancellationToken ct = default
+    );
 
     /// <summary>
     /// Última medición por métrica para el contexto de narración de exámenes
@@ -70,5 +105,6 @@ public interface IClinicalMeasurementRepository
         Guid patientId,
         IEnumerable<string> metricNames,
         Guid excludeBatchId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
 }

@@ -104,6 +104,14 @@ public sealed class CompleteTaskCommandValidator : AbstractValidator<CompleteTas
                 .InclusiveBetween(30, 45)
                 .When(x => x.Vitals!.TemperatureC.HasValue)
                 .WithMessage("temperatureC debe estar entre 30 y 45.");
+            RuleFor(x => x.Vitals!.Steps)
+                .InclusiveBetween(0m, 200_000m)
+                .When(x => x.Vitals!.Steps.HasValue)
+                .WithMessage("steps debe estar entre 0 y 200000.");
+            RuleFor(x => x.Vitals!.SleepMinutes)
+                .InclusiveBetween(0m, 24m * 60m)
+                .When(x => x.Vitals!.SleepMinutes.HasValue)
+                .WithMessage("sleepMinutes debe estar entre 0 y 1440.");
         });
     }
 }

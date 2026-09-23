@@ -256,6 +256,11 @@ UNITS = [
     ("kg_m2", "Kilogramos por metro cuadrado", "kg/m²"),
     # vital-signs-tracking: unidad para temperatura corporal.
     ("celsius", "Grados Celsius", "°C"),
+    # device-metrics-tracking: métricas diarias del wearable.
+    ("count", "Conteos", "u"),
+    ("meters", "Metros", "m"),
+    ("kcal", "Kilocalorías", "kcal"),
+    ("minutes", "Minutos", "min"),
 ]
 
 # Métricas de medición (app.measurement_metrics, único por code; FK a la unidad
@@ -272,6 +277,11 @@ METRICS = [
     # vital-signs-tracking: métricas nuevas para el payload de signos vitales.
     ("o2_saturation", "Saturación de oxígeno", "pct", "vital"),
     ("temperature_c", "Temperatura corporal", "celsius", "vital"),
+    # device-metrics-tracking: métricas diarias capturadas por el wearable.
+    ("step_count", "Pasos", "count", "activity"),
+    ("distance_m", "Distancia recorrida", "meters", "activity"),
+    ("activity_kcal", "Calorías activas", "kcal", "activity"),
+    ("sleep_minutes", "Sueño", "minutes", "lifestyle"),
 ]
 
 # Rangos de referencia (app.measurement_reference_ranges). Sin clave única:

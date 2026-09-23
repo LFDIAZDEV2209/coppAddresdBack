@@ -66,3 +66,48 @@ un SystemMessage compacto (métricas + resumen) con
 (`_visible_role`), presente para el LLM. El endpoint
 `/internal/agents/proactive-message` acepta `role: bot|system` (default bot,
 sin cambios para push/controles).
+
+## 2026-09-15 — Seed demo paciente CC 32534534 por SQL directo
+
+Paciente demo vive en `app.patient_profiles` (Javier Andrés Cárdenas Ruiz,
+enrollment `0b1e93...`, semana 3 Active). Estados enum verificados en código:
+requests `Pending/Approved/Rejected/Cancelled/Converted` (viejas→Converted),
+citas `Requested/Confirmed/InProgress/Completed/Cancelled/NoShow`
+(InProgress atoradas→Completed), plan nutricional `Draft=1/Active=2/...`.
+Citas futuras con `request_id` NULL (válido, UQ solo where not null) y sin
+solape mismo profesional (exclusión GiST). Script en `/tmp/seed-32534534.sql`.
+
+## 2026-09-15 — scores-history no traía dimensions: tarjeta Adherencia del móvil en requires-data
+
+El Home del móvil lee adherencia de `dimensions.adherence` en cada punto de
+`GET /program/me/scores-history`, pero el DTO backend no lo emitía (solo
+score/previous). Fix aditivo: `dimensions` nullable en `ScoresHistoryPointDto`
+
+- 5 columnas en `HealthScoreHistoryRow` + proyección en
+  `ScoresHistoryRepository` + `DimensionsOf()` en el handler. Al verificar tras
+  reiniciar el Api, el caché Valkey (`erp:scores-history:{patient}:v1`, TTL 5min)
+  sirvió la respuesta vieja → borrar la clave (`DEL`) antes de dar por roto el fix.
+
+## 2026-09-23 — Catálogo de métricas: el seeder C# NO llega a las BD de test (hay que regenerar el SQL)
+
+Los tests con BD real (`ProgramRepositoryTestDb`, `COP_TEST_DB_CONNECTION`)
+crean una BD NUEVA y solo aplican migraciones: el catálogo les llega por la
+migración `AddVitalSignsCatalogSeeds`, que ejecuta el recurso embebido
+`Migrations/Seed/AddServerCatalogs.sql`. El hosted seeder
+(`ClinicalMeasurementsSeeder`) solo parchea BD ya existentes al arrancar el Api.
+Por eso agregar una unidad/métrica SOLO al seeder C# deja los tests rojos con
+`VITALS_METRIC_NOT_SEEDED: la métrica 'X' no está sembrada en el catálogo.`
+(típico en `CompleteTask_Vitals_*`). Flujo correcto al agregar catálogo:
+editar el seeder C# → `cd scripts && python3 generate_server_catalogs_seed.py`
+(espeja UNITS/METRICS/REFERENCE_RANGES) → commitear el `.sql` regenerado. No
+hace falta migración nueva: la existente lee el recurso al aplicarse.
+
+## 2026-09-23 — 10 tests rojos preexistentes en `CoppAddresd.UnitTests` (no perseguirlos)
+
+Verificado con un worktree limpio en HEAD: la suite completa deja 10 fallos que
+NO tienen relación con device-metrics/vitals: `ScoresContractTests.GetScoresHistory_*`
+(2), `ProgramRepositoryTests.BonusDayBonus_*` (3),
+`ProgramRepositoryTests.Racha_Hito14_*` / `Racha_Parity_*` (3),
+`ProgramRepositoryTests.GetSnapshot_RecentVitals_PobladoTrasVitals` y
+`HealthTests.NotifyAlertsCommandHandlerTests.Auto_selecciona_la_plantilla_...`.
+Base sana para comparar: 883 pasan / 10 fallan (total 893).

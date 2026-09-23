@@ -189,6 +189,27 @@ public class CompleteTaskHandlerTests
     }
 
     [Fact]
+    public async Task Handle_VitalsConPasosYSueno_LleganAlInput()
+    {
+        // Métricas del wearable: pasos del día y sueño en minutos pasan íntegros
+        // al repositorio (que los mapea a step_count / sleep_minutes).
+        var vitals = new VitalsPayload(null, null, null, null, null, null, null, null,
+            Steps: 6240m, SleepMinutes: 393m);
+        var command = ValidCommand() with
+        {
+            TaskCode = TaskCode.vitals,
+            Vitals = vitals,
+        };
+
+        await _handler.Handle(command, CancellationToken.None);
+
+        var input = Assert.Single(_repository.CompletedTaskInputs);
+        Assert.NotNull(input.Vitals);
+        Assert.Equal(6240m, input.Vitals!.Steps);
+        Assert.Equal(393m, input.Vitals.SleepMinutes);
+    }
+
+    [Fact]
     public async Task Handle_TareaNoVitals_SinPayload_InputVitalsEsNull()
     {
         // S2: tarea no-vitals (podcast) sin payload → el input no trae Vitals

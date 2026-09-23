@@ -22,25 +22,29 @@ public sealed record MeasurementAnchor(Guid Id, DateTime ObservedAt, string Sour
 /// sola query) y contexto ERP (lista plana con <c>batchId</c> derivado de los
 /// anclas de lote). Sin N+1.
 /// </summary>
-public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : IClinicalMeasurementRepository
+public sealed class ClinicalMeasurementRepository(AppDbContext dbContext)
+    : IClinicalMeasurementRepository
 {
     public async Task<IReadOnlyList<ClinicalMeasurementDto>> ListByPatientAsync(
         Guid patientId,
-        CancellationToken ct = default)
-        => await dbContext.ClinicalMeasurements
-            .AsNoTracking()
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .ClinicalMeasurements.AsNoTracking()
             .Where(x => x.PatientId == patientId)
             .OrderByDescending(x => x.ObservedAt)
             .Select(x => new ClinicalMeasurementDto(
                 x.Metric!.Code,
                 x.Value,
                 x.Unit!.Code,
-                x.ObservedAt))
+                x.ObservedAt
+            ))
             .ToListAsync(ct);
 
     public async Task AddBatchAsync(
         IReadOnlyList<ClinicalMeasurement> measurements,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         if (measurements.Count == 0)
         {
@@ -51,21 +55,89 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
         await dbContext.SaveChangesAsync(ct);
     }
 
-    public async Task<IReadOnlyList<MeasurementMetric>> GetActiveMetricsWithUnitsAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<MeasurementMetric>> GetActiveMetricsWithUnitsAsync(
+        CancellationToken ct = default
+    )
     {
-        return await dbContext.MeasurementMetrics
-            .AsNoTracking()
+        return await dbContext
+            .MeasurementMetrics.AsNoTracking()
             .Include(m => m.DefaultUnit)
             .Where(m => m.IsActive)
             .ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<UnitOfMeasure>> GetActiveUnitsAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Upsert por día local: lee las filas del día (una sola query para todas
+    /// las métricas) y actualiza o inserta. El índice único parcial no existe
+    /// en BD, así que la idempotencia se garantiza en esta única ruta de
+    /// escritura del móvil (Source = "device").
+    /// </summary>
+    public async Task UpsertDailyDeviceMetricsAsync(
+        Guid patientId,
+        IReadOnlyList<DailyDeviceMetric> rows,
+        DateTime dayStartUtc,
+        DateTime dayEndUtc,
+        DateTime observedAt,
+        Guid actorId,
+        string source,
+        CancellationToken ct = default
+    )
     {
-        return await dbContext.UnitOfMeasures
-            .AsNoTracking()
-            .Where(u => u.IsActive)
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        var metricIds = rows.Select(r => r.MetricId).Distinct().ToArray();
+        var existing = await dbContext
+            .ClinicalMeasurements.Where(m =>
+                m.PatientId == patientId
+                && metricIds.Contains(m.MetricId)
+                && m.Source == source
+                && m.ObservedAt >= dayStartUtc
+                && m.ObservedAt < dayEndUtc
+            )
             .ToListAsync(ct);
+
+        var byMetric = existing.GroupBy(m => m.MetricId).ToDictionary(g => g.Key, g => g.First());
+        var now = DateTime.UtcNow;
+
+        foreach (var row in rows)
+        {
+            if (byMetric.TryGetValue(row.MetricId, out var current))
+            {
+                current.Value = row.Value;
+                current.UnitId = row.UnitId;
+                current.ObservedAt = observedAt;
+                current.RecordedAt = now;
+                continue;
+            }
+
+            dbContext.ClinicalMeasurements.Add(
+                new ClinicalMeasurement
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    MetricId = row.MetricId,
+                    UnitId = row.UnitId,
+                    Value = row.Value,
+                    ObservedAt = observedAt,
+                    RecordedAt = now,
+                    CreatedAt = now,
+                    CreatedBy = actorId,
+                    Source = source,
+                }
+            );
+        }
+
+        await dbContext.SaveChangesAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<UnitOfMeasure>> GetActiveUnitsAsync(
+        CancellationToken ct = default
+    )
+    {
+        return await dbContext.UnitOfMeasures.AsNoTracking().Where(u => u.IsActive).ToListAsync(ct);
     }
 
     /// <summary>
@@ -84,7 +156,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
         Guid patientId,
         IEnumerable<string> metricNames,
         Guid excludeBatchId,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var names = metricNames
             .Where(n => !string.IsNullOrWhiteSpace(n))
@@ -96,29 +169,32 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
             return new Dictionary<string, LabExamMetricSnapshot>(StringComparer.OrdinalIgnoreCase);
         }
 
-        var rows = await dbContext.ClinicalMeasurements
-            .AsNoTracking()
-            .Where(m => m.PatientId == patientId
-                        && (m.BatchId == null || m.BatchId != excludeBatchId)
-                        && names.Contains(m.Metric!.Code))
+        var rows = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Where(m =>
+                m.PatientId == patientId
+                && (m.BatchId == null || m.BatchId != excludeBatchId)
+                && names.Contains(m.Metric!.Code)
+            )
             .Select(m => new
             {
                 Code = m.Metric!.Code,
                 m.Value,
                 UnitSymbol = m.Unit!.Symbol,
                 m.ObservedAt,
-                m.RecordedAt
+                m.RecordedAt,
             })
             .GroupBy(x => x.Code)
-            .Select(g => g.OrderByDescending(x => x.ObservedAt)
-                           .ThenByDescending(x => x.RecordedAt)
-                           .First())
+            .Select(g =>
+                g.OrderByDescending(x => x.ObservedAt).ThenByDescending(x => x.RecordedAt).First()
+            )
             .ToListAsync(ct);
 
         return rows.ToDictionary(
             r => r.Code,
             r => new LabExamMetricSnapshot(r.Code, r.Value, r.UnitSymbol, r.ObservedAt),
-            StringComparer.OrdinalIgnoreCase);
+            StringComparer.OrdinalIgnoreCase
+        );
     }
 
     /// <summary>
@@ -137,7 +213,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
     public async Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
         Guid patientId,
         Guid? batchId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         // Q1: anclas del paciente. Un solo query: la subconsulta DISTINCT de
         // vital_signs_batch_id (⋈ program_enrollments.patient_id) se traduce a
@@ -145,12 +222,18 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
         var anchors = new List<MeasurementAnchor>();
         if (batchId is null)
         {
-            anchors = await dbContext.ClinicalMeasurements.AsNoTracking()
-                .Where(m => dbContext.TaskCompletions.AsNoTracking()
-                    .Where(tc => tc.VitalSignsBatchId != null && tc.Enrollment!.PatientId == patientId)
-                    .Select(tc => tc.VitalSignsBatchId!.Value)
-                    .Distinct()
-                    .Contains(m.Id))
+            anchors = await dbContext
+                .ClinicalMeasurements.AsNoTracking()
+                .Where(m =>
+                    dbContext
+                        .TaskCompletions.AsNoTracking()
+                        .Where(tc =>
+                            tc.VitalSignsBatchId != null && tc.Enrollment!.PatientId == patientId
+                        )
+                        .Select(tc => tc.VitalSignsBatchId!.Value)
+                        .Distinct()
+                        .Contains(m.Id)
+                )
                 .Select(m => new MeasurementAnchor(m.Id, m.ObservedAt, m.Source))
                 .ToListAsync(ct);
         }
@@ -158,7 +241,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
 
         // Q2: filas del paciente en una proyección (joins con métrica y unidad),
         // ordenadas por observación desc y registro desc. AsNoTracking.
-        var query = dbContext.ClinicalMeasurements.AsNoTracking()
+        var query = dbContext
+            .ClinicalMeasurements.AsNoTracking()
             .Where(m => m.PatientId == patientId);
 
         if (batchId is { } labBatchId)
@@ -179,16 +263,22 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
                 m.ObservedAt,
                 m.Source,
                 m.BatchId ?? m.EncounterId,
-                m.SourceKey))
+                m.SourceKey
+            ))
             .ToListAsync(ct);
 
         // Remap en memoria: el BatchId proyectado (BatchId ?? EncounterId) se reemplaza
         // solo cuando es null. La derivación es la función pura ResolveBatchId.
-        return rows
-            .Select(r =>
+        return rows.Select(r =>
             {
                 var resolvedBatchId = ResolveBatchId(
-                    r.Id, r.BatchId, r.Source, r.ObservedAt, anchorIds, anchors);
+                    r.Id,
+                    r.BatchId,
+                    r.Source,
+                    r.ObservedAt,
+                    anchorIds,
+                    anchors
+                );
                 return resolvedBatchId == r.BatchId ? r : r with { BatchId = resolvedBatchId };
             })
             .ToList();
@@ -205,7 +295,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
     public async Task<IReadOnlyList<PatientMeasurementDto>> ListForErpAsync(
         Guid patientId,
         IReadOnlyCollection<Guid> batchIds,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var ids = batchIds.Distinct().ToArray();
         if (ids.Length == 0)
@@ -213,10 +304,11 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
             return [];
         }
 
-        return await dbContext.ClinicalMeasurements.AsNoTracking()
-            .Where(m => m.PatientId == patientId
-                        && m.BatchId != null
-                        && ids.Contains(m.BatchId.Value))
+        return await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Where(m =>
+                m.PatientId == patientId && m.BatchId != null && ids.Contains(m.BatchId.Value)
+            )
             .OrderByDescending(m => m.ObservedAt)
             .ThenByDescending(m => m.RecordedAt)
             .Select(m => new PatientMeasurementDto(
@@ -229,7 +321,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
                 m.ObservedAt,
                 m.Source,
                 m.BatchId,
-                m.SourceKey))
+                m.SourceKey
+            ))
             .ToListAsync(ct);
     }
 
@@ -249,7 +342,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext) : ICli
         string source,
         DateTime observedAt,
         IReadOnlyCollection<Guid> anchorIds,
-        IReadOnlyCollection<MeasurementAnchor> anchors)
+        IReadOnlyCollection<MeasurementAnchor> anchors
+    )
     {
         if (encounterId is not null)
         {

@@ -81,6 +81,19 @@ public class ProgramValidatorsTests
         Assert.True(result.IsValid);
     }
 
+    [Fact]
+    public void CompleteTask_VitalsConPasosYSueno_EsValido()
+    {
+        // Pasos del día y sueño en minutos (métricas del wearable) dentro de rango.
+        var validator = new CompleteTaskCommandValidator();
+        var command = new CompleteTaskCommand(
+            Guid.NewGuid(), Today, TaskCode.vitals, null, null, null, null, null,
+            Vitals: new VitalsPayload(null, null, null, null, null, null, null, null,
+                Steps: 6240m, SleepMinutes: 393m));
+
+        Assert.True(validator.Validate(command).IsValid);
+    }
+
     [Theory]
     [InlineData(10, "heartRate")]   // < 20
     [InlineData(300, "heartRate")]  // > 250
@@ -96,6 +109,10 @@ public class ProgramValidatorsTests
     [InlineData(600, "weightKg")]   // > 500
     [InlineData(20, "temperatureC")] // < 30
     [InlineData(50, "temperatureC")] // > 45
+    [InlineData(-1, "steps")]        // < 0
+    [InlineData(200001, "steps")]    // > 200000
+    [InlineData(-1, "sleepMinutes")] // < 0
+    [InlineData(1441, "sleepMinutes")] // > 24 h
     public void CompleteTask_VitalsFueraDeRango_EsInvalido(decimal value, string field)
     {
         // Validador: valor implausible en cualquier campo → 422 (no pasa la validación).
@@ -109,6 +126,8 @@ public class ProgramValidatorsTests
             "glucose" => new VitalsPayload(null, null, null, null, value, null, null, null),
             "weightKg" => new VitalsPayload(null, null, null, null, null, value, null, null),
             "temperatureC" => new VitalsPayload(null, null, null, null, null, null, value, null),
+            "steps" => new VitalsPayload(null, null, null, null, null, null, null, null, Steps: value),
+            "sleepMinutes" => new VitalsPayload(null, null, null, null, null, null, null, null, SleepMinutes: value),
             _ => throw new ArgumentOutOfRangeException(nameof(field)),
         };
         var command = new CompleteTaskCommand(
