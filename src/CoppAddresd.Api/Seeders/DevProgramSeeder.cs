@@ -12,14 +12,16 @@ using Microsoft.Extensions.Logging;
 namespace CoppAddresd.Api.Seeders;
 
 /// <summary>
-/// Seeder masivo e idempotente para el módulo de Progreso del Programa (83 semanas).
+/// Seeder masivo e idempotente para el módulo de Progreso del Programa (83 días / 12 semanas).
 ///
 /// Propósito:
 /// 1. Garantiza la existencia de al menos 24 pacientes activos en <c>app.patient_profiles</c>.
 /// 2. Siembra un catálogo enriquecido de planes de nutrición (Keto, Mediterráneo, DASH,
 ///    Diabetes, Longevidad) con días, comidas, macros y recetas gourmet.
 /// 3. Siembra lecciones de podcast multimedia en <c>app.media_items</c>.
-/// 4. Inscribe a al menos 20 pacientes activos en la plantilla de 83 semanas (<c>default-83w</c>).
+/// 4. Inscribe a al menos 20 pacientes activos en la plantilla del programa 83 días
+///    (<c>program-coppaddresd-83-days</c>, 12 semanas — el programa inicial y principal
+///    de todos los pacientes).
 /// 5. Asigna a cada paciente sus planes nutricionales y rutinas de ejercicio por día de la semana.
 /// 6. Simula progreso realista distribuido en 4 tiers:
 ///    - Tier 1: Veteranos de alta adherencia (Semana 5-6, 35 días de racha, Nivel 5-7, 5,000-9,000 XP).
@@ -35,7 +37,8 @@ namespace CoppAddresd.Api.Seeders;
 public sealed class DevProgramSeeder(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
-    ILogger<DevProgramSeeder> logger) : IHostedService
+    ILogger<DevProgramSeeder> logger
+) : IHostedService
 {
     private const string DefaultTimezone = "America/Bogota";
     private readonly string _defaultTemplateCode =
@@ -49,45 +52,310 @@ public sealed class DevProgramSeeder(
         string DocumentNumber,
         string Email,
         string Phone,
-        string CityName);
+        string CityName
+    );
 
     private static readonly IReadOnlyList<PatientSeedDef> DemoPatientSeeds =
     [
-        new("Valentina", "Ríos", "Femenino", new DateOnly(1992, 4, 15), "1000000001", "valentina.rios@demo.antares.co", "3102458891", "Bogotá"),
-        new("Andrés", "Cárdenas", "Masculino", new DateOnly(1985, 8, 22), "1000000002", "andres.cardenas@demo.antares.co", "3204561234", "Medellín"),
-        new("Carolina", "Mendoza", "Femenino", new DateOnly(1990, 11, 5), "1000000003", "carolina.mendoza@demo.antares.co", "3005672345", "Cali"),
-        new("Jorge", "Herrera", "Masculino", new DateOnly(1978, 6, 30), "1000000004", "jorge.herrera@demo.antares.co", "3116783456", "Barranquilla"),
-        new("Luisa", "Fernández", "Femenino", new DateOnly(1995, 2, 18), "1000000005", "luisa.fernandez@demo.antares.co", "3157894567", "Bogotá"),
-        new("Miguel Ángel", "Peña", "Masculino", new DateOnly(1982, 9, 12), "1000000006", "miguel.pena@demo.antares.co", "3168905678", "Medellín"),
-        new("Diana", "Ospina", "Femenino", new DateOnly(1988, 12, 3), "1000000007", "diana.ospina@demo.antares.co", "3129016789", "Cali"),
-        new("Camilo", "Restrepo", "Masculino", new DateOnly(1975, 3, 27), "1000000008", "camilo.restrepo@demo.antares.co", "3180127890", "Bogotá"),
-        new("Paola", "Salazar", "Femenino", new DateOnly(1993, 7, 19), "1000000009", "paola.salazar@demo.antares.co", "3191238901", "Barranquilla"),
-        new("Santiago", "Pineda", "Masculino", new DateOnly(1987, 1, 14), "1000000010", "santiago.pineda@demo.antares.co", "3012349012", "Medellín"),
-        new("María", "Castillo", "Femenino", new DateOnly(1991, 10, 8), "1000000011", "maria.castillo@demo.antares.co", "3023450123", "Bogotá"),
-        new("David", "Quiroga", "Masculino", new DateOnly(1980, 5, 25), "1000000012", "david.quiroga@demo.antares.co", "3034561234", "Cali"),
-        new("Laura", "Serna", "Femenino", new DateOnly(1994, 9, 16), "1000000013", "laura.serna@demo.antares.co", "3045672345", "Bogotá"),
-        new("Felipe", "Montoya", "Masculino", new DateOnly(1983, 4, 2), "1000000014", "felipe.montoya@demo.antares.co", "3056783456", "Medellín"),
-        new("Mariana", "Patiño", "Femenino", new DateOnly(1996, 6, 21), "1000000015", "mariana.patino@demo.antares.co", "3067894567", "Cali"),
-        new("Ricardo", "Bermúdez", "Masculino", new DateOnly(1977, 8, 14), "1000000016", "ricardo.bermudez@demo.antares.co", "3078905678", "Bogotá"),
-        new("Sofía", "Toro", "Femenino", new DateOnly(1989, 3, 29), "1000000017", "sofia.toro@demo.antares.co", "3089016789", "Barranquilla"),
-        new("Mateo", "Zapata", "Masculino", new DateOnly(1997, 11, 11), "1000000018", "mateo.zapata@demo.antares.co", "3090127890", "Medellín"),
-        new("Isabella", "Rojas", "Femenino", new DateOnly(1984, 2, 7), "1000000019", "isabella.rojas@demo.antares.co", "3101238901", "Bogotá"),
-        new("Sebastián", "Molina", "Masculino", new DateOnly(1992, 5, 17), "1000000020", "sebastian.molina@demo.antares.co", "3112349012", "Cali"),
-        new("Camila", "Herrera", "Femenino", new DateOnly(1986, 12, 24), "1000000021", "camila.herrera@demo.antares.co", "3123450123", "Medellín"),
-        new("Tomás", "Vargas", "Masculino", new DateOnly(1981, 7, 9), "1000000022", "tomas.vargas@demo.antares.co", "3134561234", "Bogotá"),
-        new("Ximena", "Pérez", "Femenino", new DateOnly(1979, 10, 31), "1000000023", "ximena.perez@demo.antares.co", "3145672345", "Barranquilla"),
-        new("Diego", "Moreno", "Masculino", new DateOnly(1988, 4, 18), "1000000024", "diego.moreno@demo.antares.co", "3156783456", "Cali"),
+        new(
+            "Valentina",
+            "Ríos",
+            "Femenino",
+            new DateOnly(1992, 4, 15),
+            "1000000001",
+            "valentina.rios@demo.antares.co",
+            "3102458891",
+            "Bogotá"
+        ),
+        new(
+            "Andrés",
+            "Cárdenas",
+            "Masculino",
+            new DateOnly(1985, 8, 22),
+            "1000000002",
+            "andres.cardenas@demo.antares.co",
+            "3204561234",
+            "Medellín"
+        ),
+        new(
+            "Carolina",
+            "Mendoza",
+            "Femenino",
+            new DateOnly(1990, 11, 5),
+            "1000000003",
+            "carolina.mendoza@demo.antares.co",
+            "3005672345",
+            "Cali"
+        ),
+        new(
+            "Jorge",
+            "Herrera",
+            "Masculino",
+            new DateOnly(1978, 6, 30),
+            "1000000004",
+            "jorge.herrera@demo.antares.co",
+            "3116783456",
+            "Barranquilla"
+        ),
+        new(
+            "Luisa",
+            "Fernández",
+            "Femenino",
+            new DateOnly(1995, 2, 18),
+            "1000000005",
+            "luisa.fernandez@demo.antares.co",
+            "3157894567",
+            "Bogotá"
+        ),
+        new(
+            "Miguel Ángel",
+            "Peña",
+            "Masculino",
+            new DateOnly(1982, 9, 12),
+            "1000000006",
+            "miguel.pena@demo.antares.co",
+            "3168905678",
+            "Medellín"
+        ),
+        new(
+            "Diana",
+            "Ospina",
+            "Femenino",
+            new DateOnly(1988, 12, 3),
+            "1000000007",
+            "diana.ospina@demo.antares.co",
+            "3129016789",
+            "Cali"
+        ),
+        new(
+            "Camilo",
+            "Restrepo",
+            "Masculino",
+            new DateOnly(1975, 3, 27),
+            "1000000008",
+            "camilo.restrepo@demo.antares.co",
+            "3180127890",
+            "Bogotá"
+        ),
+        new(
+            "Paola",
+            "Salazar",
+            "Femenino",
+            new DateOnly(1993, 7, 19),
+            "1000000009",
+            "paola.salazar@demo.antares.co",
+            "3191238901",
+            "Barranquilla"
+        ),
+        new(
+            "Santiago",
+            "Pineda",
+            "Masculino",
+            new DateOnly(1987, 1, 14),
+            "1000000010",
+            "santiago.pineda@demo.antares.co",
+            "3012349012",
+            "Medellín"
+        ),
+        new(
+            "María",
+            "Castillo",
+            "Femenino",
+            new DateOnly(1991, 10, 8),
+            "1000000011",
+            "maria.castillo@demo.antares.co",
+            "3023450123",
+            "Bogotá"
+        ),
+        new(
+            "David",
+            "Quiroga",
+            "Masculino",
+            new DateOnly(1980, 5, 25),
+            "1000000012",
+            "david.quiroga@demo.antares.co",
+            "3034561234",
+            "Cali"
+        ),
+        new(
+            "Laura",
+            "Serna",
+            "Femenino",
+            new DateOnly(1994, 9, 16),
+            "1000000013",
+            "laura.serna@demo.antares.co",
+            "3045672345",
+            "Bogotá"
+        ),
+        new(
+            "Felipe",
+            "Montoya",
+            "Masculino",
+            new DateOnly(1983, 4, 2),
+            "1000000014",
+            "felipe.montoya@demo.antares.co",
+            "3056783456",
+            "Medellín"
+        ),
+        new(
+            "Mariana",
+            "Patiño",
+            "Femenino",
+            new DateOnly(1996, 6, 21),
+            "1000000015",
+            "mariana.patino@demo.antares.co",
+            "3067894567",
+            "Cali"
+        ),
+        new(
+            "Ricardo",
+            "Bermúdez",
+            "Masculino",
+            new DateOnly(1977, 8, 14),
+            "1000000016",
+            "ricardo.bermudez@demo.antares.co",
+            "3078905678",
+            "Bogotá"
+        ),
+        new(
+            "Sofía",
+            "Toro",
+            "Femenino",
+            new DateOnly(1989, 3, 29),
+            "1000000017",
+            "sofia.toro@demo.antares.co",
+            "3089016789",
+            "Barranquilla"
+        ),
+        new(
+            "Mateo",
+            "Zapata",
+            "Masculino",
+            new DateOnly(1997, 11, 11),
+            "1000000018",
+            "mateo.zapata@demo.antares.co",
+            "3090127890",
+            "Medellín"
+        ),
+        new(
+            "Isabella",
+            "Rojas",
+            "Femenino",
+            new DateOnly(1984, 2, 7),
+            "1000000019",
+            "isabella.rojas@demo.antares.co",
+            "3101238901",
+            "Bogotá"
+        ),
+        new(
+            "Sebastián",
+            "Molina",
+            "Masculino",
+            new DateOnly(1992, 5, 17),
+            "1000000020",
+            "sebastian.molina@demo.antares.co",
+            "3112349012",
+            "Cali"
+        ),
+        new(
+            "Camila",
+            "Herrera",
+            "Femenino",
+            new DateOnly(1986, 12, 24),
+            "1000000021",
+            "camila.herrera@demo.antares.co",
+            "3123450123",
+            "Medellín"
+        ),
+        new(
+            "Tomás",
+            "Vargas",
+            "Masculino",
+            new DateOnly(1981, 7, 9),
+            "1000000022",
+            "tomas.vargas@demo.antares.co",
+            "3134561234",
+            "Bogotá"
+        ),
+        new(
+            "Ximena",
+            "Pérez",
+            "Femenino",
+            new DateOnly(1979, 10, 31),
+            "1000000023",
+            "ximena.perez@demo.antares.co",
+            "3145672345",
+            "Barranquilla"
+        ),
+        new(
+            "Diego",
+            "Moreno",
+            "Masculino",
+            new DateOnly(1988, 4, 18),
+            "1000000024",
+            "diego.moreno@demo.antares.co",
+            "3156783456",
+            "Cali"
+        ),
     ];
 
-    private static readonly (string Title, string Description, string Author, int DurationSecs, int SortOrder)[] PodcastSeeds =
+    private static readonly (
+        string Title,
+        string Description,
+        string Author,
+        int DurationSecs,
+        int SortOrder
+    )[] PodcastSeeds =
     [
-        ("Ep. 1: Fundamentos del Biohacking y Ritmos Circadianos", "Introducción a la optimización biológica y sincronización del reloj interno para potenciar energía y metabolismo.", "Dr. Alejandro Gómez", 720, 1),
-        ("Ep. 2: Flexibilidad Metabólica y Nutrición Celular", "Cómo entrenar al cuerpo para alternar eficientemente entre carbohidratos y grasas como fuente de energía.", "Dra. Sofía Morales", 840, 2),
-        ("Ep. 3: Microbiota Intestinal y el Eje Intestino-Cerebro", "El impacto de la salud intestinal en la inflamación sistémica, inmunidad y bienestar emocional.", "Dr. Carlos Valencia", 660, 3),
-        ("Ep. 4: Regulación del Cortisol y Manejo del Estrés", "Estrategias prácticas de respiración y hábitos para mitigar el estrés crónico y proteger el sistema cardiovascular.", "Dra. Elena Ruiz", 600, 4),
-        ("Ep. 5: Calidad de Sueño y Recuperación Profunda", "Técnicas de higiene del sueño, arquitectura de ondas lentas y optimización de la reparación celular nocturna.", "Dr. Alejandro Gómez", 780, 5),
-        ("Ep. 6: Entrenamiento de Fuerza y Longevidad Mitocondrial", "La importancia de la masa muscular como órgano endocrino y su rol en la sensibilidad a la insulina.", "Lic. Mateo Ríos", 900, 6),
-        ("Ep. 7: Ayuno Intermitente y Autofagia Estratégica", "Mecanismos de reciclaje celular y longevidad a través de ventanas controladas de alimentación.", "Dra. Sofía Morales", 750, 7),
+        (
+            "Ep. 1: Fundamentos del Biohacking y Ritmos Circadianos",
+            "Introducción a la optimización biológica y sincronización del reloj interno para potenciar energía y metabolismo.",
+            "Dr. Alejandro Gómez",
+            720,
+            1
+        ),
+        (
+            "Ep. 2: Flexibilidad Metabólica y Nutrición Celular",
+            "Cómo entrenar al cuerpo para alternar eficientemente entre carbohidratos y grasas como fuente de energía.",
+            "Dra. Sofía Morales",
+            840,
+            2
+        ),
+        (
+            "Ep. 3: Microbiota Intestinal y el Eje Intestino-Cerebro",
+            "El impacto de la salud intestinal en la inflamación sistémica, inmunidad y bienestar emocional.",
+            "Dr. Carlos Valencia",
+            660,
+            3
+        ),
+        (
+            "Ep. 4: Regulación del Cortisol y Manejo del Estrés",
+            "Estrategias prácticas de respiración y hábitos para mitigar el estrés crónico y proteger el sistema cardiovascular.",
+            "Dra. Elena Ruiz",
+            600,
+            4
+        ),
+        (
+            "Ep. 5: Calidad de Sueño y Recuperación Profunda",
+            "Técnicas de higiene del sueño, arquitectura de ondas lentas y optimización de la reparación celular nocturna.",
+            "Dr. Alejandro Gómez",
+            780,
+            5
+        ),
+        (
+            "Ep. 6: Entrenamiento de Fuerza y Longevidad Mitocondrial",
+            "La importancia de la masa muscular como órgano endocrino y su rol en la sensibilidad a la insulina.",
+            "Lic. Mateo Ríos",
+            900,
+            6
+        ),
+        (
+            "Ep. 7: Ayuno Intermitente y Autofagia Estratégica",
+            "Mecanismos de reciclaje celular y longevidad a través de ventanas controladas de alimentación.",
+            "Dra. Sofía Morales",
+            750,
+            7
+        ),
     ];
 
     private static readonly (TaskCode Code, int Points)[] StandardTasks =
@@ -135,7 +403,10 @@ public sealed class DevProgramSeeder(
         var template = await GetProgramTemplateAsync(ct);
         if (template is null)
         {
-            logger.LogWarning("Plantilla de programa {Code} no encontrada. Abortando seed de inscripciones.", _defaultTemplateCode);
+            logger.LogWarning(
+                "Plantilla de programa {Code} no encontrada. Abortando seed de inscripciones.",
+                _defaultTemplateCode
+            );
             return;
         }
 
@@ -147,29 +418,56 @@ public sealed class DevProgramSeeder(
         var clinicalMetricMap = await GetClinicalMetricsMapAsync(ct);
 
         // Paso 7: Cargar los 24 pacientes demo/activos para el programa
-        var demoEmails = DemoPatientSeeds.Select(d => d.Email).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var demoDocs = DemoPatientSeeds.Select(d => d.DocumentNumber).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var demoEmails = DemoPatientSeeds
+            .Select(d => d.Email)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var demoDocs = DemoPatientSeeds
+            .Select(d => d.DocumentNumber)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var activePatients = await WithContext(
-            db => db.PatientProfiles
-                .Where(p => p.Status == "Activo" && p.DeletedAt == null)
-                .Where(p => demoEmails.Contains(p.Email!) || demoDocs.Contains(p.DocumentNumber!))
-                .OrderBy(p => p.DocumentNumber)
-                .Select(p => new { p.Id, p.FirstName, p.LastName, p.Email, p.DocumentNumber })
-                .ToListAsync(ct), ct);
+            db =>
+                db.PatientProfiles.Where(p => p.Status == "Activo" && p.DeletedAt == null)
+                    .Where(p =>
+                        demoEmails.Contains(p.Email!) || demoDocs.Contains(p.DocumentNumber!)
+                    )
+                    .OrderBy(p => p.DocumentNumber)
+                    .Select(p => new
+                    {
+                        p.Id,
+                        p.FirstName,
+                        p.LastName,
+                        p.Email,
+                        p.DocumentNumber,
+                    })
+                    .ToListAsync(ct),
+            ct
+        );
 
         if (activePatients.Count < 20)
         {
             activePatients = await WithContext(
-                db => db.PatientProfiles
-                    .Where(p => p.Status == "Activo" && p.DeletedAt == null)
-                    .OrderBy(p => p.CreatedAt)
-                    .Take(24)
-                    .Select(p => new { p.Id, p.FirstName, p.LastName, p.Email, p.DocumentNumber })
-                    .ToListAsync(ct), ct);
+                db =>
+                    db.PatientProfiles.Where(p => p.Status == "Activo" && p.DeletedAt == null)
+                        .OrderBy(p => p.CreatedAt)
+                        .Take(24)
+                        .Select(p => new
+                        {
+                            p.Id,
+                            p.FirstName,
+                            p.LastName,
+                            p.Email,
+                            p.DocumentNumber,
+                        })
+                        .ToListAsync(ct),
+                ct
+            );
         }
 
-        logger.LogInformation("Pacientes activos seleccionados para el programa: {Count}", activePatients.Count);
+        logger.LogInformation(
+            "Pacientes activos seleccionados para el programa: {Count}",
+            activePatients.Count
+        );
 
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var thisMonday = GetMondayOfDate(today);
@@ -220,7 +518,8 @@ public sealed class DevProgramSeeder(
                 template,
                 startLocalDate,
                 currentWeekNumber,
-                ct);
+                ct
+            );
 
             if (enrollmentId == Guid.Empty)
             {
@@ -230,10 +529,22 @@ public sealed class DevProgramSeeder(
             enrolledCount++;
 
             // Asignar plan de alimentación para las semanas activas
-            await EnsureNutritionPlanAssignmentAsync(patient.Id, planId, startLocalDate, template.TotalWeeks, ct);
+            await EnsureNutritionPlanAssignmentAsync(
+                patient.Id,
+                planId,
+                startLocalDate,
+                template.TotalWeeks,
+                ct
+            );
 
             // Asignar rutinas de ejercicio por día de semana
-            await EnsureRoutineAssignmentsAsync(patient.Id, routineMap, startLocalDate, template.TotalWeeks, ct);
+            await EnsureRoutineAssignmentsAsync(
+                patient.Id,
+                routineMap,
+                startLocalDate,
+                template.TotalWeeks,
+                ct
+            );
 
             // Si el tier tiene progreso histórico, simularlo
             var seededProgress = await SeedPatientProgressAsync(
@@ -250,7 +561,8 @@ public sealed class DevProgramSeeder(
                 tier,
                 i,
                 clinicianUserId,
-                ct);
+                ct
+            );
 
             if (seededProgress)
             {
@@ -260,7 +572,9 @@ public sealed class DevProgramSeeder(
 
         logger.LogInformation(
             "Seed masivo de Progreso del Programa completado: {Enrolled} pacientes inscritos, {Progress} con progreso gamificado simulado.",
-            enrolledCount, progressCount);
+            enrolledCount,
+            progressCount
+        );
     }
 
     // =========================================================================
@@ -313,7 +627,10 @@ public sealed class DevProgramSeeder(
         if (db.ChangeTracker.HasChanges())
         {
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("Podcasts sembrados en app.media_items: {Count}", PodcastSeeds.Length);
+            logger.LogInformation(
+                "Podcasts sembrados en app.media_items: {Count}",
+                PodcastSeeds.Length
+            );
         }
 
         return resultIds;
@@ -333,8 +650,8 @@ public sealed class DevProgramSeeder(
 
         foreach (var def in planDefs)
         {
-            var existing = await db.NutritionPlans
-                .Include(p => p.Days)
+            var existing = await db
+                .NutritionPlans.Include(p => p.Days)
                 .FirstOrDefaultAsync(p => p.Name == def.Name, ct);
 
             if (existing is not null)
@@ -372,7 +689,11 @@ public sealed class DevProgramSeeder(
             await db.SaveChangesAsync(ct);
 
             resultIds.Add(plan.Id);
-            logger.LogInformation("Plan nutricional sembrado: '{Plan}' ({Days} comidas)", plan.Name, planDays.Count);
+            logger.LogInformation(
+                "Plan nutricional sembrado: '{Plan}' ({Days} comidas)",
+                plan.Name,
+                planDays.Count
+            );
         }
 
         return resultIds;
@@ -387,65 +708,247 @@ public sealed class DevProgramSeeder(
         decimal DailyCarbsTarget,
         decimal DailyFatTarget,
         decimal DailyFiberTarget,
-        IReadOnlyList<(MealType Type, string Desc, string Foods, int Cal, int Prot, int Carbs, int Fat, int Fiber, string Notes)> DailyPattern);
+        IReadOnlyList<(
+            MealType Type,
+            string Desc,
+            string Foods,
+            int Cal,
+            int Prot,
+            int Carbs,
+            int Fat,
+            int Fiber,
+            string Notes
+        )> DailyPattern
+    );
 
     private static List<NutritionPlanSeedDef> GetNutritionPlanSeeds() =>
-    [
-        new(
-            "Plan Keto Biohacking",
-            "Plan cetogénico antiinflamatorio alto en grasas saludables (aguacate, aceite de oliva, MCT) para optimizar energía y autofagia.",
-            "Obesidad / Resistencia a la insulina",
-            1800, 95m, 25m, 145m, 28m,
-            [
-                (MealType.Desayuno, "Omelette de espinacas tiernas, queso feta y aguacate con té verde", "3 huevos camperos, 60g espinaca tierna, 40g queso feta, 1/2 aguacate hass, aceite de oliva virgen extra", 460, 26, 4, 38, 6, "Cocinar a fuego medio para preservar los nutrientes de las espinacas."),
-                (MealType.Almuerzo, "Bowl keto de pechuga marinada al limón con espárragos y rúcula", "220g pechuga de pollo, 120g espárragos, 80g rúcula, 1/2 aguacate, 2 cdas aceite de oliva", 680, 48, 7, 50, 8, "Marinar con orégano y ajo antes de sellar a la plancha."),
-                (MealType.Cena, "Filete de salmón salvaje al horno con brócoli al vapor y mantequilla ghee", "200g filete de salmón, 180g brócoli, 15g mantequilla ghee, 30g queso parmesano rallado", 580, 38, 6, 44, 6, "Cenar al menos 2.5 horas antes de acostarse."),
-            ]),
-
-        new(
-            "Plan Mediterráneo Antiinflamatorio",
-            "Patrón mediterráneo rico en polifenoles, ácidos grasos Omega-3, legumbres y vegetales frescos para longevidad cardiovascular.",
-            "Riesgo cardiovascular / Hipertensión",
-            1900, 110m, 160m, 80m, 35m,
-            [
-                (MealType.Desayuno, "Tostada integral de masa madre con tomate rallado, aguacate y huevo pochado", "2 rebanadas pan masa madre, 1 tomate rallado, 1/2 aguacate, 2 huevos pochados, aceite de oliva virgen extra", 480, 22, 42, 26, 7, "Acompañar con infusión de romero o té blanco."),
-                (MealType.Almuerzo, "Lomo de lubina a la plancha con quinoa tricolor y pisto de verduras", "200g lubina fresca, 80g quinoa, calabacín, berenjena, pimiento rojo, aceite de oliva", 640, 44, 52, 28, 9, "Cocinar las verduras a fuego lento para potenciar sus antioxidantes."),
-                (MealType.Cena, "Crema templada de calabaza y jengibre con dados de tofu marinado y semillas de calabaza", "250g calabaza, 150g tofu firme, 20g semillas de calabaza, cebollino, caldo vegetal", 490, 24, 38, 22, 8, "Cena ligera ideal para optimizar el descanso nocturno."),
-            ]),
-
-        new(
-            "Plan DASH Control Cardiovascular",
-            "Enfoque dietético para frenar la hipertensión: bajo en sodio, alto en potasio, magnesio y fibra soluble.",
-            "Hipertensión / Salud Renal",
-            1750, 100m, 180m, 60m, 38m,
-            [
-                (MealType.Desayuno, "Porridge de avena integral con frutos rojos, semillas de chía y leche de almendras", "60g avena integral, 80g arándanos frescos, 15g chía, 200ml leche almendras sin azúcar, canela ceylán", 420, 16, 58, 14, 12, "La canela ayuda a modular la glucemia matutina."),
-                (MealType.Almuerzo, "Pechuga de pavo al romero con batata asada y ensalada de espinacas", "200g pechuga de pavo, 150g batata asada, 100g espinaca baby, nueces, vinagreta de limón", 620, 48, 54, 20, 8, "Sin sal añadida; realzar sabor con hierbas aromáticas."),
-                (MealType.Cena, "Merluza al vapor con judías verdes, zanahorias baby y patata al vapor", "220g lomo de merluza, 150g judías verdes, 100g zanahorias, 1 patata pequeña, aceite de oliva", 460, 38, 36, 16, 7, "Cocción al vapor suave para conservar minerales."),
-            ]),
-
-        new(
-            "Plan Control Glucémico Diabetes",
-            "Plan con bajo índice glucémico, distribución estratégica de carbohidratos complejos y balance proteico para estabilizar la glucemia.",
-            "Diabetes tipo 2 / Prediabetes",
-            1650, 105m, 120m, 70m, 40m,
-            [
-                (MealType.Desayuno, "Revuelto de claras y huevo entero con champiñones Portobello y espárragos trigueros", "1 huevo entero + 3 claras, 100g champiñones, 80g espárragos, 30g queso bajo en grasa, té verde", 380, 32, 12, 18, 6, "Excelente densidad proteica con mínimo impacto glucémico."),
-                (MealType.Almuerzo, "Solomillo de ternera magra con ensalada tibia de lentejas pardinas y rúcula", "180g solomillo de ternera, 120g lentejas cocidas, 60g rúcula, tomate cherry, aceite de oliva virgen extra", 610, 46, 44, 22, 11, "Las legumbres aportan fibra prebiótica de lenta absorción."),
-                (MealType.Cena, "Pechuga de pollo a la plancha con brócoli salteado con almendras laminadas", "200g pechuga de pollo, 180g brócoli, 20g almendras laminadas, ajo tierno, aceite de oliva", 470, 42, 14, 24, 7, "Cena alta en magnesio y antioxidantes protectores."),
-            ]),
-
-        new(
-            "Plan Longevidad y Autofagia",
-            "Densidad nutricional máxima, alimentos fermentados, crucíferas y polifenoles bioactivos para potenciar la salud mitocondrial.",
-            "Longevidad / Bienestar Integral",
-            1850, 100m, 140m, 90m, 36m,
-            [
-                (MealType.Desayuno, "Pudding de chía y kéfir artesanal con frambuesas y nueces de brasil", "150g kéfir de cabra, 25g semillas de chía, 60g frambuesas, 2 nueces de brasil (selenio), cacao puro", 440, 20, 28, 24, 11, "Aporte probiótico y prebiótico óptimo para la microbiota."),
-                (MealType.Almuerzo, "Bowl de salmón salvaje con arroz negro venere, aguacate y chucrut artesanal", "180g salmón salvaje, 70g arroz venere, 1/2 aguacate, 40g chucrut no pasteurizado, semillas de sésamo", 670, 40, 46, 34, 8, "Rico en antocianinas y ácidos grasos esenciales."),
-                (MealType.Cena, "Crema de calabacín y puerro con huevo poché y lascas de trufa o AOVE picual", "250g calabacín, 80g puerro, 2 huevos camperos pochados, 15ml AOVE cosecha temprana", 480, 22, 22, 32, 6, "Favorece la producción de melatonina endógena."),
-            ]),
-    ];
+        [
+            new(
+                "Plan Keto Biohacking",
+                "Plan cetogénico antiinflamatorio alto en grasas saludables (aguacate, aceite de oliva, MCT) para optimizar energía y autofagia.",
+                "Obesidad / Resistencia a la insulina",
+                1800,
+                95m,
+                25m,
+                145m,
+                28m,
+                [
+                    (
+                        MealType.Desayuno,
+                        "Omelette de espinacas tiernas, queso feta y aguacate con té verde",
+                        "3 huevos camperos, 60g espinaca tierna, 40g queso feta, 1/2 aguacate hass, aceite de oliva virgen extra",
+                        460,
+                        26,
+                        4,
+                        38,
+                        6,
+                        "Cocinar a fuego medio para preservar los nutrientes de las espinacas."
+                    ),
+                    (
+                        MealType.Almuerzo,
+                        "Bowl keto de pechuga marinada al limón con espárragos y rúcula",
+                        "220g pechuga de pollo, 120g espárragos, 80g rúcula, 1/2 aguacate, 2 cdas aceite de oliva",
+                        680,
+                        48,
+                        7,
+                        50,
+                        8,
+                        "Marinar con orégano y ajo antes de sellar a la plancha."
+                    ),
+                    (
+                        MealType.Cena,
+                        "Filete de salmón salvaje al horno con brócoli al vapor y mantequilla ghee",
+                        "200g filete de salmón, 180g brócoli, 15g mantequilla ghee, 30g queso parmesano rallado",
+                        580,
+                        38,
+                        6,
+                        44,
+                        6,
+                        "Cenar al menos 2.5 horas antes de acostarse."
+                    ),
+                ]
+            ),
+            new(
+                "Plan Mediterráneo Antiinflamatorio",
+                "Patrón mediterráneo rico en polifenoles, ácidos grasos Omega-3, legumbres y vegetales frescos para longevidad cardiovascular.",
+                "Riesgo cardiovascular / Hipertensión",
+                1900,
+                110m,
+                160m,
+                80m,
+                35m,
+                [
+                    (
+                        MealType.Desayuno,
+                        "Tostada integral de masa madre con tomate rallado, aguacate y huevo pochado",
+                        "2 rebanadas pan masa madre, 1 tomate rallado, 1/2 aguacate, 2 huevos pochados, aceite de oliva virgen extra",
+                        480,
+                        22,
+                        42,
+                        26,
+                        7,
+                        "Acompañar con infusión de romero o té blanco."
+                    ),
+                    (
+                        MealType.Almuerzo,
+                        "Lomo de lubina a la plancha con quinoa tricolor y pisto de verduras",
+                        "200g lubina fresca, 80g quinoa, calabacín, berenjena, pimiento rojo, aceite de oliva",
+                        640,
+                        44,
+                        52,
+                        28,
+                        9,
+                        "Cocinar las verduras a fuego lento para potenciar sus antioxidantes."
+                    ),
+                    (
+                        MealType.Cena,
+                        "Crema templada de calabaza y jengibre con dados de tofu marinado y semillas de calabaza",
+                        "250g calabaza, 150g tofu firme, 20g semillas de calabaza, cebollino, caldo vegetal",
+                        490,
+                        24,
+                        38,
+                        22,
+                        8,
+                        "Cena ligera ideal para optimizar el descanso nocturno."
+                    ),
+                ]
+            ),
+            new(
+                "Plan DASH Control Cardiovascular",
+                "Enfoque dietético para frenar la hipertensión: bajo en sodio, alto en potasio, magnesio y fibra soluble.",
+                "Hipertensión / Salud Renal",
+                1750,
+                100m,
+                180m,
+                60m,
+                38m,
+                [
+                    (
+                        MealType.Desayuno,
+                        "Porridge de avena integral con frutos rojos, semillas de chía y leche de almendras",
+                        "60g avena integral, 80g arándanos frescos, 15g chía, 200ml leche almendras sin azúcar, canela ceylán",
+                        420,
+                        16,
+                        58,
+                        14,
+                        12,
+                        "La canela ayuda a modular la glucemia matutina."
+                    ),
+                    (
+                        MealType.Almuerzo,
+                        "Pechuga de pavo al romero con batata asada y ensalada de espinacas",
+                        "200g pechuga de pavo, 150g batata asada, 100g espinaca baby, nueces, vinagreta de limón",
+                        620,
+                        48,
+                        54,
+                        20,
+                        8,
+                        "Sin sal añadida; realzar sabor con hierbas aromáticas."
+                    ),
+                    (
+                        MealType.Cena,
+                        "Merluza al vapor con judías verdes, zanahorias baby y patata al vapor",
+                        "220g lomo de merluza, 150g judías verdes, 100g zanahorias, 1 patata pequeña, aceite de oliva",
+                        460,
+                        38,
+                        36,
+                        16,
+                        7,
+                        "Cocción al vapor suave para conservar minerales."
+                    ),
+                ]
+            ),
+            new(
+                "Plan Control Glucémico Diabetes",
+                "Plan con bajo índice glucémico, distribución estratégica de carbohidratos complejos y balance proteico para estabilizar la glucemia.",
+                "Diabetes tipo 2 / Prediabetes",
+                1650,
+                105m,
+                120m,
+                70m,
+                40m,
+                [
+                    (
+                        MealType.Desayuno,
+                        "Revuelto de claras y huevo entero con champiñones Portobello y espárragos trigueros",
+                        "1 huevo entero + 3 claras, 100g champiñones, 80g espárragos, 30g queso bajo en grasa, té verde",
+                        380,
+                        32,
+                        12,
+                        18,
+                        6,
+                        "Excelente densidad proteica con mínimo impacto glucémico."
+                    ),
+                    (
+                        MealType.Almuerzo,
+                        "Solomillo de ternera magra con ensalada tibia de lentejas pardinas y rúcula",
+                        "180g solomillo de ternera, 120g lentejas cocidas, 60g rúcula, tomate cherry, aceite de oliva virgen extra",
+                        610,
+                        46,
+                        44,
+                        22,
+                        11,
+                        "Las legumbres aportan fibra prebiótica de lenta absorción."
+                    ),
+                    (
+                        MealType.Cena,
+                        "Pechuga de pollo a la plancha con brócoli salteado con almendras laminadas",
+                        "200g pechuga de pollo, 180g brócoli, 20g almendras laminadas, ajo tierno, aceite de oliva",
+                        470,
+                        42,
+                        14,
+                        24,
+                        7,
+                        "Cena alta en magnesio y antioxidantes protectores."
+                    ),
+                ]
+            ),
+            new(
+                "Plan Longevidad y Autofagia",
+                "Densidad nutricional máxima, alimentos fermentados, crucíferas y polifenoles bioactivos para potenciar la salud mitocondrial.",
+                "Longevidad / Bienestar Integral",
+                1850,
+                100m,
+                140m,
+                90m,
+                36m,
+                [
+                    (
+                        MealType.Desayuno,
+                        "Pudding de chía y kéfir artesanal con frambuesas y nueces de brasil",
+                        "150g kéfir de cabra, 25g semillas de chía, 60g frambuesas, 2 nueces de brasil (selenio), cacao puro",
+                        440,
+                        20,
+                        28,
+                        24,
+                        11,
+                        "Aporte probiótico y prebiótico óptimo para la microbiota."
+                    ),
+                    (
+                        MealType.Almuerzo,
+                        "Bowl de salmón salvaje con arroz negro venere, aguacate y chucrut artesanal",
+                        "180g salmón salvaje, 70g arroz venere, 1/2 aguacate, 40g chucrut no pasteurizado, semillas de sésamo",
+                        670,
+                        40,
+                        46,
+                        34,
+                        8,
+                        "Rico en antocianinas y ácidos grasos esenciales."
+                    ),
+                    (
+                        MealType.Cena,
+                        "Crema de calabacín y puerro con huevo poché y lascas de trufa o AOVE picual",
+                        "250g calabacín, 80g puerro, 2 huevos camperos pochados, 15ml AOVE cosecha temprana",
+                        480,
+                        22,
+                        22,
+                        32,
+                        6,
+                        "Favorece la producción de melatonina endógena."
+                    ),
+                ]
+            ),
+        ];
 
     private static List<NutritionPlanDay> BuildPlanDays(Guid planId, NutritionPlanSeedDef def)
     {
@@ -453,25 +956,29 @@ public sealed class DevProgramSeeder(
         for (var dayNum = 1; dayNum <= 7; dayNum++)
         {
             var sort = 1;
-            foreach (var (type, desc, foods, cal, prot, carbs, fat, fiber, notes) in def.DailyPattern)
+            foreach (
+                var (type, desc, foods, cal, prot, carbs, fat, fiber, notes) in def.DailyPattern
+            )
             {
-                days.Add(new NutritionPlanDay
-                {
-                    PlanId = planId,
-                    DayNumber = dayNum,
-                    MealType = type,
-                    Description = desc,
-                    Foods = foods,
-                    Calories = cal,
-                    ProteinG = prot,
-                    CarbsG = carbs,
-                    FatG = fat,
-                    FiberG = fiber,
-                    WaterMl = 500,
-                    Notes = notes,
-                    SortOrder = sort++,
-                    CreatedAt = DateTime.UtcNow,
-                });
+                days.Add(
+                    new NutritionPlanDay
+                    {
+                        PlanId = planId,
+                        DayNumber = dayNum,
+                        MealType = type,
+                        Description = desc,
+                        Foods = foods,
+                        Calories = cal,
+                        ProteinG = prot,
+                        CarbsG = carbs,
+                        FatG = fat,
+                        FiberG = fiber,
+                        WaterMl = 500,
+                        Notes = notes,
+                        SortOrder = sort++,
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
             }
         }
         return days;
@@ -486,18 +993,21 @@ public sealed class DevProgramSeeder(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var existingDocs = await db.PatientProfiles
-            .Select(p => p.DocumentNumber)
+        var existingDocs = await db
+            .PatientProfiles.Select(p => p.DocumentNumber)
             .Where(d => d != null)
             .ToListAsync(ct);
 
-        var existingEmails = await db.PatientProfiles
-            .Select(p => p.Email)
+        var existingEmails = await db
+            .PatientProfiles.Select(p => p.Email)
             .Where(e => e != null)
             .ToListAsync(ct);
 
         var existingDocSet = new HashSet<string>(existingDocs!, StringComparer.OrdinalIgnoreCase);
-        var existingEmailSet = new HashSet<string>(existingEmails!, StringComparer.OrdinalIgnoreCase);
+        var existingEmailSet = new HashSet<string>(
+            existingEmails!,
+            StringComparer.OrdinalIgnoreCase
+        );
 
         var cities = await db.Cities.Select(c => new { c.Id, c.Name }).ToListAsync(ct);
         var cityMap = cities
@@ -545,7 +1055,10 @@ public sealed class DevProgramSeeder(
         if (inserted > 0)
         {
             await db.SaveChangesAsync(ct);
-            logger.LogInformation("Pacientes demo creados en app.patient_profiles: {Count}", inserted);
+            logger.LogInformation(
+                "Pacientes demo creados en app.patient_profiles: {Count}",
+                inserted
+            );
         }
     }
 
@@ -558,8 +1071,8 @@ public sealed class DevProgramSeeder(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var template = await db.ProgramTemplates
-            .Include(t => t.DayTemplates)
+        var template = await db
+            .ProgramTemplates.Include(t => t.DayTemplates)
             .FirstOrDefaultAsync(t => t.Code == _defaultTemplateCode, ct);
 
         if (template is not null)
@@ -567,9 +1080,12 @@ public sealed class DevProgramSeeder(
             return template;
         }
 
-        return await db.ProgramTemplates
-            .Include(t => t.DayTemplates)
-            .FirstOrDefaultAsync(t => t.Code == "default-83w" || t.Status == TemplateStatus.Active, ct);
+        return await db
+            .ProgramTemplates.Include(t => t.DayTemplates)
+            // Resiliente: primero la plantilla oficial del programa (83 días /
+            // 12 semanas); si no existe, cualquiera activa (determinista).
+            .OrderBy(t => t.Code == "program-coppaddresd-83-days" ? 0 : 1)
+            .FirstOrDefaultAsync(t => t.Status == TemplateStatus.Active, ct);
     }
 
     private async Task<Dictionary<int, Guid>> GetExerciseRoutineMapAsync(CancellationToken ct)
@@ -586,13 +1102,28 @@ public sealed class DevProgramSeeder(
 
         // Mapeo 0=Lunes, 1=Martes, 2=Miércoles, 3=Jueves, 4=Viernes
         var map = new Dictionary<int, Guid>();
-        if (routineByName.TryGetValue("Cardio Básico", out var r0)) map[0] = r0; else map[0] = firstId;
-        if (routineByName.TryGetValue("Pierna", out var r1)) map[1] = r1; else map[1] = firstId;
-        if (routineByName.TryGetValue("Cardio HIIT", out var r2)) map[2] = r2; else map[2] = firstId;
-        if (routineByName.TryGetValue("Espalda", out var r3)) map[3] = r3; else map[3] = firstId;
-        if (routineByName.TryGetValue("Movilidad y Core", out var r4)) map[4] = r4;
-        else if (routineByName.TryGetValue("Full Body", out var r4b)) map[4] = r4b;
-        else map[4] = firstId;
+        if (routineByName.TryGetValue("Cardio Básico", out var r0))
+            map[0] = r0;
+        else
+            map[0] = firstId;
+        if (routineByName.TryGetValue("Pierna", out var r1))
+            map[1] = r1;
+        else
+            map[1] = firstId;
+        if (routineByName.TryGetValue("Cardio HIIT", out var r2))
+            map[2] = r2;
+        else
+            map[2] = firstId;
+        if (routineByName.TryGetValue("Espalda", out var r3))
+            map[3] = r3;
+        else
+            map[3] = firstId;
+        if (routineByName.TryGetValue("Movilidad y Core", out var r4))
+            map[4] = r4;
+        else if (routineByName.TryGetValue("Full Body", out var r4b))
+            map[4] = r4b;
+        else
+            map[4] = firstId;
 
         return map;
     }
@@ -608,19 +1139,30 @@ public sealed class DevProgramSeeder(
             .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.OrdinalIgnoreCase);
     }
 
-    private async Task<Dictionary<string, (Guid MetricId, Guid DefaultUnitId)>> GetClinicalMetricsMapAsync(CancellationToken ct)
+    private async Task<
+        Dictionary<string, (Guid MetricId, Guid DefaultUnitId)>
+    > GetClinicalMetricsMapAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var metrics = await db.MeasurementMetrics
-            .AsNoTracking()
-            .Select(m => new { m.Code, m.Id, m.DefaultUnitId })
+        var metrics = await db
+            .MeasurementMetrics.AsNoTracking()
+            .Select(m => new
+            {
+                m.Code,
+                m.Id,
+                m.DefaultUnitId,
+            })
             .ToListAsync(ct);
 
         return metrics
             .GroupBy(m => m.Code, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => (g.First().Id, g.First().DefaultUnitId), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                g => g.Key,
+                g => (g.First().Id, g.First().DefaultUnitId),
+                StringComparer.OrdinalIgnoreCase
+            );
     }
 
     // =========================================================================
@@ -632,13 +1174,16 @@ public sealed class DevProgramSeeder(
         ProgramTemplate template,
         DateOnly startLocalDate,
         int currentWeekNumber,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var existing = await db.ProgramEnrollments
-            .FirstOrDefaultAsync(e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active, ct);
+        var existing = await db.ProgramEnrollments.FirstOrDefaultAsync(
+            e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active,
+            ct
+        );
 
         if (existing is not null)
         {
@@ -660,39 +1205,52 @@ public sealed class DevProgramSeeder(
 
         db.ProgramEnrollments.Add(enrollment);
 
-        db.StreakStates.Add(new StreakState
-        {
-            EnrollmentId = enrollment.Id,
-            CurrentStreak = 0,
-            LongestStreak = 0,
-            FreezesRemaining = 0,
-            FreezesUsedTotal = 0,
-            MultiplierActive = 1.0m,
-        });
+        db.StreakStates.Add(
+            new StreakState
+            {
+                EnrollmentId = enrollment.Id,
+                CurrentStreak = 0,
+                LongestStreak = 0,
+                FreezesRemaining = 0,
+                FreezesUsedTotal = 0,
+                MultiplierActive = 1.0m,
+            }
+        );
 
         // Crear las 83 semanas
         var snapshotJson = BuildTasksSnapshot(template.DayTemplates);
         for (var w = 1; w <= template.TotalWeeks; w++)
         {
             var weekStart = startLocalDate.AddDays((w - 1) * 7);
-            var status = w < currentWeekNumber
-                ? ProgramWeekStatus.Completed
-                : (w == currentWeekNumber ? ProgramWeekStatus.Active : ProgramWeekStatus.Locked);
+            var status =
+                w < currentWeekNumber
+                    ? ProgramWeekStatus.Completed
+                    : (
+                        w == currentWeekNumber ? ProgramWeekStatus.Active : ProgramWeekStatus.Locked
+                    );
 
-            db.ProgramWeeks.Add(new ProgramWeek
-            {
-                Id = Guid.NewGuid(),
-                EnrollmentId = enrollment.Id,
-                WeekNumber = w,
-                Status = status,
-                WeekStartDateLocal = weekStart,
-                WeekEndDateLocal = weekStart.AddDays(6),
-                TasksSnapshot = w <= currentWeekNumber ? snapshotJson : BuildEmptySnapshot(),
-                TemplateVersionAtStart = template.Version,
-                ActivatedAt = w <= currentWeekNumber ? weekStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc) : null,
-                CompletedAt = w < currentWeekNumber ? weekStart.AddDays(7).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc) : null,
-                CreatedAt = DateTime.UtcNow,
-            });
+            db.ProgramWeeks.Add(
+                new ProgramWeek
+                {
+                    Id = Guid.NewGuid(),
+                    EnrollmentId = enrollment.Id,
+                    WeekNumber = w,
+                    Status = status,
+                    WeekStartDateLocal = weekStart,
+                    WeekEndDateLocal = weekStart.AddDays(6),
+                    TasksSnapshot = w <= currentWeekNumber ? snapshotJson : BuildEmptySnapshot(),
+                    TemplateVersionAtStart = template.Version,
+                    ActivatedAt =
+                        w <= currentWeekNumber
+                            ? weekStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+                            : null,
+                    CompletedAt =
+                        w < currentWeekNumber
+                            ? weekStart.AddDays(7).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+                            : null,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
 
         await db.SaveChangesAsync(ct);
@@ -729,13 +1287,16 @@ public sealed class DevProgramSeeder(
         Guid planId,
         DateOnly startLocalDate,
         int totalWeeks,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var exists = await db.NutritionPlanAssignments
-            .AnyAsync(a => a.PatientId == patientId && a.PlanId == planId, ct);
+        var exists = await db.NutritionPlanAssignments.AnyAsync(
+            a => a.PatientId == patientId && a.PlanId == planId,
+            ct
+        );
 
         if (exists)
         {
@@ -743,19 +1304,23 @@ public sealed class DevProgramSeeder(
         }
 
         var start = startLocalDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var end = startLocalDate.AddDays(totalWeeks * 7).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var end = startLocalDate
+            .AddDays(totalWeeks * 7)
+            .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
-        db.NutritionPlanAssignments.Add(new NutritionPlanAssignment
-        {
-            Id = Guid.NewGuid(),
-            PatientId = patientId,
-            PlanId = planId,
-            StartDate = start,
-            EndDate = end,
-            Status = AssignmentStatus.Active,
-            Notes = "Asignación del programa integral de 83 semanas.",
-            CreatedAt = DateTime.UtcNow,
-        });
+        db.NutritionPlanAssignments.Add(
+            new NutritionPlanAssignment
+            {
+                Id = Guid.NewGuid(),
+                PatientId = patientId,
+                PlanId = planId,
+                StartDate = start,
+                EndDate = end,
+                Status = AssignmentStatus.Active,
+                Notes = "Asignación del programa integral de 83 semanas.",
+                CreatedAt = DateTime.UtcNow,
+            }
+        );
 
         await db.SaveChangesAsync(ct);
     }
@@ -765,13 +1330,16 @@ public sealed class DevProgramSeeder(
         Dictionary<int, Guid> routineMap,
         DateOnly startLocalDate,
         int totalWeeks,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var existingCount = await db.RoutineAssignments
-            .CountAsync(a => a.PatientId == patientId && a.Status == AssignmentStatus.Active, ct);
+        var existingCount = await db.RoutineAssignments.CountAsync(
+            a => a.PatientId == patientId && a.Status == AssignmentStatus.Active,
+            ct
+        );
 
         if (existingCount >= 5)
         {
@@ -779,7 +1347,9 @@ public sealed class DevProgramSeeder(
         }
 
         var start = startLocalDate.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var end = startLocalDate.AddDays(totalWeeks * 7).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var end = startLocalDate
+            .AddDays(totalWeeks * 7)
+            .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
 
         for (var dow = 0; dow < 5; dow++)
         {
@@ -788,18 +1358,20 @@ public sealed class DevProgramSeeder(
                 continue;
             }
 
-            db.RoutineAssignments.Add(new RoutineAssignment
-            {
-                Id = Guid.NewGuid(),
-                PatientId = patientId,
-                RoutineId = routineId,
-                StartDate = start,
-                EndDate = end,
-                Frequency = AssignmentFrequency.Personalizada,
-                Status = AssignmentStatus.Active,
-                Notes = $"Rutina para el día {dow + 1} de la semana.",
-                CreatedAt = DateTime.UtcNow,
-            });
+            db.RoutineAssignments.Add(
+                new RoutineAssignment
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    RoutineId = routineId,
+                    StartDate = start,
+                    EndDate = end,
+                    Frequency = AssignmentFrequency.Personalizada,
+                    Status = AssignmentStatus.Active,
+                    Notes = $"Rutina para el día {dow + 1} de la semana.",
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
 
         await db.SaveChangesAsync(ct);
@@ -823,20 +1395,24 @@ public sealed class DevProgramSeeder(
         int tier,
         int patientIndex,
         Guid clinicianUserId,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         // Idempotencia: si ya existen task_completions para este enrollment, no re-sembrar progreso
-        var existingCompletions = await db.TaskCompletions.CountAsync(t => t.EnrollmentId == enrollmentId, ct);
+        var existingCompletions = await db.TaskCompletions.CountAsync(
+            t => t.EnrollmentId == enrollmentId,
+            ct
+        );
         if (existingCompletions > 0)
         {
             return false;
         }
 
-        var weeks = await db.ProgramWeeks
-            .Where(w => w.EnrollmentId == enrollmentId)
+        var weeks = await db
+            .ProgramWeeks.Where(w => w.EnrollmentId == enrollmentId)
             .OrderBy(w => w.WeekNumber)
             .ToListAsync(ct);
 
@@ -873,7 +1449,8 @@ public sealed class DevProgramSeeder(
             var dow0 = weekday - 1;
 
             var weekStart = GetMondayOfDate(date);
-            var week = weeks.FirstOrDefault(w => w.WeekStartDateLocal == weekStart) ?? weeks.First();
+            var week =
+                weeks.FirstOrDefault(w => w.WeekStartDateLocal == weekStart) ?? weeks.First();
 
             // Simulación de día perdido en Tier 3 (para mostrar el rescate de racha con congelamiento)
             var isMissedDayTier3 = tier == 3 && d == 10; // día 11 perdido
@@ -883,15 +1460,17 @@ public sealed class DevProgramSeeder(
                 // Usar congelamiento si estaba disponible
                 freezesUsedTotal++;
                 freezesRemaining = Math.Max(0, freezesRemaining - 1);
-                db.StreakFreezes.Add(new StreakFreeze
-                {
-                    Id = Guid.NewGuid(),
-                    EnrollmentId = enrollmentId,
-                    Kind = StreakFreezeKind.Consumed,
-                    UsedOnLocalDate = date,
-                    GrantedReason = "StreakRescue",
-                    CreatedAt = DateTime.UtcNow,
-                });
+                db.StreakFreezes.Add(
+                    new StreakFreeze
+                    {
+                        Id = Guid.NewGuid(),
+                        EnrollmentId = enrollmentId,
+                        Kind = StreakFreezeKind.Consumed,
+                        UsedOnLocalDate = date,
+                        GrantedReason = "StreakRescue",
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
                 continue;
             }
 
@@ -924,7 +1503,10 @@ public sealed class DevProgramSeeder(
                 ProgramEnrollmentId = enrollmentId,
                 RecordedLocalDate = date,
                 MoodScore = mood,
-                Notes = mood >= 4 ? "Excelente energía y cumplimiento de metas del día." : "Buen día en general, algo de fatiga laboral.",
+                Notes =
+                    mood >= 4
+                        ? "Excelente energía y cumplimiento de metas del día."
+                        : "Buen día en general, algo de fatiga laboral.",
                 CreatedAt = date.ToDateTime(new TimeOnly(20, 0), DateTimeKind.Utc),
             };
             db.EmotionalRecords.Add(emotionalRecord);
@@ -967,7 +1549,10 @@ public sealed class DevProgramSeeder(
                     ExerciseRoutineId = routineId,
                     MediaId = mediaId,
                     EmotionalRecordId = taskCode == TaskCode.emocional ? emotionalRecord.Id : null,
-                    CompletedAt = date.ToDateTime(new TimeOnly(8 + (int)taskCode * 2, 0), DateTimeKind.Utc),
+                    CompletedAt = date.ToDateTime(
+                        new TimeOnly(8 + (int)taskCode * 2, 0),
+                        DateTimeKind.Utc
+                    ),
                 };
 
                 db.TaskCompletions.Add(taskCompletion);
@@ -975,28 +1560,30 @@ public sealed class DevProgramSeeder(
 
                 // XP Ledger por completación de tarea
                 runningXp += basePoints;
-                db.XpLedgerEntries.Add(new XpLedgerEntry
-                {
-                    Id = Guid.NewGuid(),
-                    EnrollmentId = enrollmentId,
-                    Amount = basePoints,
-                    Reason = XpReason.TaskCompletion,
-                    SourceRefType = "task_completion",
-                    SourceRefId = taskCompletion.Id,
-                    RuleCode = taskCode switch
+                db.XpLedgerEntries.Add(
+                    new XpLedgerEntry
                     {
-                        TaskCode.podcast => XpRuleCodes.TaskPodcast,
-                        TaskCode.vitals => XpRuleCodes.TaskVitals,
-                        TaskCode.nut => XpRuleCodes.TaskNut,
-                        TaskCode.ejercicio => XpRuleCodes.TaskEjercicio,
-                        TaskCode.nutraceutico => XpRuleCodes.TaskNutraceutico,
-                        TaskCode.emocional => XpRuleCodes.TaskEmocional,
-                        _ => null,
-                    },
-                    BalanceAfter = runningXp,
-                    AwardedAt = taskCompletion.CompletedAt,
-                    MultiplierUsed = 1.0m,
-                });
+                        Id = Guid.NewGuid(),
+                        EnrollmentId = enrollmentId,
+                        Amount = basePoints,
+                        Reason = XpReason.TaskCompletion,
+                        SourceRefType = "task_completion",
+                        SourceRefId = taskCompletion.Id,
+                        RuleCode = taskCode switch
+                        {
+                            TaskCode.podcast => XpRuleCodes.TaskPodcast,
+                            TaskCode.vitals => XpRuleCodes.TaskVitals,
+                            TaskCode.nut => XpRuleCodes.TaskNut,
+                            TaskCode.ejercicio => XpRuleCodes.TaskEjercicio,
+                            TaskCode.nutraceutico => XpRuleCodes.TaskNutraceutico,
+                            TaskCode.emocional => XpRuleCodes.TaskEmocional,
+                            _ => null,
+                        },
+                        BalanceAfter = runningXp,
+                        AwardedAt = taskCompletion.CompletedAt,
+                        MultiplierUsed = 1.0m,
+                    }
+                );
             }
 
             // Bonus de día perfecto (+50 XP)
@@ -1006,19 +1593,21 @@ public sealed class DevProgramSeeder(
             checkIn.IsPerfectDay = isPerfectDay;
 
             runningXp += dayBonus;
-            db.XpLedgerEntries.Add(new XpLedgerEntry
-            {
-                Id = Guid.NewGuid(),
-                EnrollmentId = enrollmentId,
-                Amount = dayBonus,
-                Reason = XpReason.DailyBonus,
-                SourceRefType = "daily_bonus",
-                SourceRefId = checkIn.Id,
-                RuleCode = XpRuleCodes.DayBonus,
-                BalanceAfter = runningXp,
-                AwardedAt = date.ToDateTime(new TimeOnly(21, 0), DateTimeKind.Utc),
-                MultiplierUsed = 1.0m,
-            });
+            db.XpLedgerEntries.Add(
+                new XpLedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EnrollmentId = enrollmentId,
+                    Amount = dayBonus,
+                    Reason = XpReason.DailyBonus,
+                    SourceRefType = "daily_bonus",
+                    SourceRefId = checkIn.Id,
+                    RuleCode = XpRuleCodes.DayBonus,
+                    BalanceAfter = runningXp,
+                    AwardedAt = date.ToDateTime(new TimeOnly(21, 0), DateTimeKind.Utc),
+                    MultiplierUsed = 1.0m,
+                }
+            );
 
             // Actualizar contadores de racha
             currentStreak++;
@@ -1033,15 +1622,17 @@ public sealed class DevProgramSeeder(
             if (perfectDaysCount % 7 == 0 && freezesRemaining < 3)
             {
                 freezesRemaining++;
-                db.StreakFreezes.Add(new StreakFreeze
-                {
-                    Id = Guid.NewGuid(),
-                    EnrollmentId = enrollmentId,
-                    Kind = StreakFreezeKind.Granted,
-                    GrantedAt = date.ToDateTime(new TimeOnly(21, 30), DateTimeKind.Utc),
-                    GrantedReason = "PerfectWeekBonus",
-                    CreatedAt = DateTime.UtcNow,
-                });
+                db.StreakFreezes.Add(
+                    new StreakFreeze
+                    {
+                        Id = Guid.NewGuid(),
+                        EnrollmentId = enrollmentId,
+                        Kind = StreakFreezeKind.Granted,
+                        GrantedAt = date.ToDateTime(new TimeOnly(21, 30), DateTimeKind.Utc),
+                        GrantedReason = "PerfectWeekBonus",
+                        CreatedAt = DateTime.UtcNow,
+                    }
+                );
             }
 
             // Hitos de racha general
@@ -1055,15 +1646,17 @@ public sealed class DevProgramSeeder(
             {
                 if (habitTemplateMap.TryGetValue(habitCode, out var hId))
                 {
-                    db.HabitChecks.Add(new HabitCheck
-                    {
-                        Id = Guid.NewGuid(),
-                        PatientId = patientId,
-                        HabitTemplateId = hId,
-                        LocalDate = date,
-                        IsDone = true,
-                        CreatedAt = date.ToDateTime(new TimeOnly(19, 0), DateTimeKind.Utc),
-                    });
+                    db.HabitChecks.Add(
+                        new HabitCheck
+                        {
+                            Id = Guid.NewGuid(),
+                            PatientId = patientId,
+                            HabitTemplateId = hId,
+                            LocalDate = date,
+                            IsDone = true,
+                            CreatedAt = date.ToDateTime(new TimeOnly(19, 0), DateTimeKind.Utc),
+                        }
+                    );
                 }
             }
         }
@@ -1078,7 +1671,11 @@ public sealed class DevProgramSeeder(
         streakState.NbCurrentStreak = (short)nbCurrentStreak;
         streakState.NbLongestStreak = (short)nbLongestStreak;
         streakState.NbLastCompletedDate = nbLastDate;
-        streakState.MultiplierActive = (currentStreak >= 11 && currentStreak < 14) || (currentStreak >= 22 && currentStreak < 26) ? 2.0m : 1.0m;
+        streakState.MultiplierActive =
+            (currentStreak >= 11 && currentStreak < 14)
+            || (currentStreak >= 22 && currentStreak < 26)
+                ? 2.0m
+                : 1.0m;
         streakState.UpdatedAt = DateTime.UtcNow;
 
         // Sembrar HealthScores y TransformationScores para semanas completadas
@@ -1090,80 +1687,93 @@ public sealed class DevProgramSeeder(
 
             var baseScore = tier switch
             {
-                1 => 82 + w * 2,  // 84, 86, 88, 90, 92...
-                2 => 70 + w * 3,  // 73, 76, 79...
-                3 => 63 + w * 2,  // 65, 67...
+                1 => 82 + w * 2, // 84, 86, 88, 90, 92...
+                2 => 70 + w * 3, // 73, 76, 79...
+                3 => 63 + w * 2, // 65, 67...
                 _ => 60,
             };
             baseScore = Math.Clamp(baseScore, 50, 96);
             var prevScore = Math.Clamp(baseScore - 3, 45, 90);
 
-            db.HealthScores.Add(new HealthScore
-            {
-                Id = Guid.NewGuid(),
-                PatientId = patientId,
-                Score = (short)baseScore,
-                ScorePrevious = (short)prevScore,
-                ScoreAdherence = (short)Math.Min(100, baseScore + 4),
-                ScoreClinical = (short)Math.Min(100, baseScore - 2),
-                ScoreNutrition = (short)Math.Min(100, baseScore + 2),
-                ScorePsychology = (short)Math.Min(100, baseScore + 1),
-                ScoreExercise = (short)Math.Min(100, baseScore),
-                Trend = ScoreTrend.up,
-                PeriodStart = pStart,
-                PeriodEnd = pEnd,
-                CalculatedAt = pEnd.ToDateTime(new TimeOnly(23, 59), DateTimeKind.Utc),
-                CreatedAt = DateTime.UtcNow,
-            });
-
-            db.TransformationScores.Add(new TransformationScore
-            {
-                Id = Guid.NewGuid(),
-                PatientId = patientId,
-                Score = (short)Math.Clamp(baseScore - 2, 40, 95),
-                ScorePrevious = (short)Math.Clamp(prevScore - 2, 35, 90),
-                WeekNumber = w,
-                OverallTrend = ScoreTrend.up,
-                Detail = JsonSerializer.SerializeToElement(new Dictionary<string, object>
+            db.HealthScores.Add(
+                new HealthScore
                 {
-                    ["weight"] = new
-                    {
-                        baseline = 90.0m,
-                        current = Math.Max(76.0m, 90.0m - (1.2m * w)),
-                        unit = "kg",
-                        delta = -1.2m * w,
-                        delta_pct = Math.Round(-((1.2m * w) / 90.0m) * 100m, 1),
-                        favorable = true,
-                        score = Math.Min(100, 70 + (w * 3)),
-                    },
-                    ["glucose_fasting"] = new
-                    {
-                        baseline = 118.0m,
-                        current = Math.Max(88.0m, 118.0m - (2.1m * w)),
-                        unit = "mg/dL",
-                        delta = -2.1m * w,
-                        delta_pct = Math.Round(-((2.1m * w) / 118.0m) * 100m, 1),
-                        favorable = true,
-                        score = Math.Min(100, 68 + (w * 4)),
-                    },
-                    ["adherence"] = new
-                    {
-                        baseline = 50.0m,
-                        current = 92.0m,
-                        unit = "%",
-                        delta = 42.0m,
-                        delta_pct = 84.0m,
-                        favorable = true,
-                        score = 92,
-                    },
-                }),
-                CalculatedAt = pEnd.ToDateTime(new TimeOnly(23, 59), DateTimeKind.Utc),
-                CreatedAt = DateTime.UtcNow,
-            });
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    Score = (short)baseScore,
+                    ScorePrevious = (short)prevScore,
+                    ScoreAdherence = (short)Math.Min(100, baseScore + 4),
+                    ScoreClinical = (short)Math.Min(100, baseScore - 2),
+                    ScoreNutrition = (short)Math.Min(100, baseScore + 2),
+                    ScorePsychology = (short)Math.Min(100, baseScore + 1),
+                    ScoreExercise = (short)Math.Min(100, baseScore),
+                    Trend = ScoreTrend.up,
+                    PeriodStart = pStart,
+                    PeriodEnd = pEnd,
+                    CalculatedAt = pEnd.ToDateTime(new TimeOnly(23, 59), DateTimeKind.Utc),
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
+
+            db.TransformationScores.Add(
+                new TransformationScore
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    Score = (short)Math.Clamp(baseScore - 2, 40, 95),
+                    ScorePrevious = (short)Math.Clamp(prevScore - 2, 35, 90),
+                    WeekNumber = w,
+                    OverallTrend = ScoreTrend.up,
+                    Detail = JsonSerializer.SerializeToElement(
+                        new Dictionary<string, object>
+                        {
+                            ["weight"] = new
+                            {
+                                baseline = 90.0m,
+                                current = Math.Max(76.0m, 90.0m - (1.2m * w)),
+                                unit = "kg",
+                                delta = -1.2m * w,
+                                delta_pct = Math.Round(-((1.2m * w) / 90.0m) * 100m, 1),
+                                favorable = true,
+                                score = Math.Min(100, 70 + (w * 3)),
+                            },
+                            ["glucose_fasting"] = new
+                            {
+                                baseline = 118.0m,
+                                current = Math.Max(88.0m, 118.0m - (2.1m * w)),
+                                unit = "mg/dL",
+                                delta = -2.1m * w,
+                                delta_pct = Math.Round(-((2.1m * w) / 118.0m) * 100m, 1),
+                                favorable = true,
+                                score = Math.Min(100, 68 + (w * 4)),
+                            },
+                            ["adherence"] = new
+                            {
+                                baseline = 50.0m,
+                                current = 92.0m,
+                                unit = "%",
+                                delta = 42.0m,
+                                delta_pct = 84.0m,
+                                favorable = true,
+                                score = 92,
+                            },
+                        }
+                    ),
+                    CalculatedAt = pEnd.ToDateTime(new TimeOnly(23, 59), DateTimeKind.Utc),
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
 
         // Sembrar líneas base clínicas (ClinicalBaselines) para el paciente
-        await EnsureClinicalBaselinesAsync(db, patientId, startLocalDate, clinicalMetricMap, tier, clinicianUserId);
+        await EnsureClinicalBaselinesAsync(
+            db,
+            patientId,
+            startLocalDate,
+            clinicalMetricMap,
+            tier,
+            clinicianUserId
+        );
 
         await db.SaveChangesAsync(ct);
         return true;
@@ -1174,7 +1784,8 @@ public sealed class DevProgramSeeder(
         Guid enrollmentId,
         int streak,
         ref int runningXp,
-        DateOnly date)
+        DateOnly date
+    )
     {
         var (points, reason, ruleCode) = streak switch
         {
@@ -1190,18 +1801,20 @@ public sealed class DevProgramSeeder(
         if (points > 0 && ruleCode is not null)
         {
             runningXp += points;
-            db.XpLedgerEntries.Add(new XpLedgerEntry
-            {
-                Id = Guid.NewGuid(),
-                EnrollmentId = enrollmentId,
-                Amount = points,
-                Reason = reason,
-                SourceRefType = "streak_milestone",
-                RuleCode = ruleCode,
-                BalanceAfter = runningXp,
-                AwardedAt = date.ToDateTime(new TimeOnly(21, 15), DateTimeKind.Utc),
-                MultiplierUsed = 1.0m,
-            });
+            db.XpLedgerEntries.Add(
+                new XpLedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EnrollmentId = enrollmentId,
+                    Amount = points,
+                    Reason = reason,
+                    SourceRefType = "streak_milestone",
+                    RuleCode = ruleCode,
+                    BalanceAfter = runningXp,
+                    AwardedAt = date.ToDateTime(new TimeOnly(21, 15), DateTimeKind.Utc),
+                    MultiplierUsed = 1.0m,
+                }
+            );
         }
     }
 
@@ -1210,7 +1823,8 @@ public sealed class DevProgramSeeder(
         Guid enrollmentId,
         int nbStreak,
         ref int runningXp,
-        DateOnly date)
+        DateOnly date
+    )
     {
         var (points, reason, ruleCode) = nbStreak switch
         {
@@ -1225,18 +1839,20 @@ public sealed class DevProgramSeeder(
         if (points > 0 && ruleCode is not null)
         {
             runningXp += points;
-            db.XpLedgerEntries.Add(new XpLedgerEntry
-            {
-                Id = Guid.NewGuid(),
-                EnrollmentId = enrollmentId,
-                Amount = points,
-                Reason = reason,
-                SourceRefType = "nb_milestone",
-                RuleCode = ruleCode,
-                BalanceAfter = runningXp,
-                AwardedAt = date.ToDateTime(new TimeOnly(21, 20), DateTimeKind.Utc),
-                MultiplierUsed = 1.0m,
-            });
+            db.XpLedgerEntries.Add(
+                new XpLedgerEntry
+                {
+                    Id = Guid.NewGuid(),
+                    EnrollmentId = enrollmentId,
+                    Amount = points,
+                    Reason = reason,
+                    SourceRefType = "nb_milestone",
+                    RuleCode = ruleCode,
+                    BalanceAfter = runningXp,
+                    AwardedAt = date.ToDateTime(new TimeOnly(21, 20), DateTimeKind.Utc),
+                    MultiplierUsed = 1.0m,
+                }
+            );
         }
     }
 
@@ -1246,7 +1862,8 @@ public sealed class DevProgramSeeder(
         DateOnly measuredAt,
         Dictionary<string, (Guid MetricId, Guid DefaultUnitId)> metricMap,
         int tier,
-        Guid clinicianUserId)
+        Guid clinicianUserId
+    )
     {
         if (clinicianUserId == Guid.Empty)
         {
@@ -1269,27 +1886,30 @@ public sealed class DevProgramSeeder(
                 continue;
             }
 
-            var exists = await db.ClinicalBaselines
-                .AnyAsync(b => b.PatientId == patientId && b.MetricId == metricInfo.MetricId);
+            var exists = await db.ClinicalBaselines.AnyAsync(b =>
+                b.PatientId == patientId && b.MetricId == metricInfo.MetricId
+            );
 
             if (exists)
             {
                 continue;
             }
 
-            db.ClinicalBaselines.Add(new ClinicalBaseline
-            {
-                Id = Guid.NewGuid(),
-                PatientId = patientId,
-                MetricId = metricInfo.MetricId,
-                UnitId = metricInfo.DefaultUnitId,
-                Value = baseVal,
-                TargetValue = targetVal,
-                FavorableDirection = FavorableDirection.LowerIsBetter,
-                MeasuredAt = measuredAt,
-                SetBy = clinicianUserId,
-                CreatedAt = DateTime.UtcNow,
-            });
+            db.ClinicalBaselines.Add(
+                new ClinicalBaseline
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId,
+                    MetricId = metricInfo.MetricId,
+                    UnitId = metricInfo.DefaultUnitId,
+                    Value = baseVal,
+                    TargetValue = targetVal,
+                    FavorableDirection = FavorableDirection.LowerIsBetter,
+                    MeasuredAt = measuredAt,
+                    SetBy = clinicianUserId,
+                    CreatedAt = DateTime.UtcNow,
+                }
+            );
         }
     }
 
@@ -1302,15 +1922,19 @@ public sealed class DevProgramSeeder(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var id = await db.Database.SqlQueryRaw<Guid>(
-            @"SELECT ""Id"" AS ""Value"" FROM auth.""Users"" WHERE ""Email"" = 'admin@coppaddresd.com' OR ""Email"" LIKE '%admin%' LIMIT 1"
-        ).FirstOrDefaultAsync(ct);
+        var id = await db
+            .Database.SqlQueryRaw<Guid>(
+                @"SELECT ""Id"" AS ""Value"" FROM auth.""Users"" WHERE ""Email"" = 'admin@coppaddresd.com' OR ""Email"" LIKE '%admin%' LIMIT 1"
+            )
+            .FirstOrDefaultAsync(ct);
 
         if (id == Guid.Empty)
         {
-            id = await db.Database.SqlQueryRaw<Guid>(
-                @"SELECT ""Id"" AS ""Value"" FROM auth.""Users"" LIMIT 1"
-            ).FirstOrDefaultAsync(ct);
+            id = await db
+                .Database.SqlQueryRaw<Guid>(
+                    @"SELECT ""Id"" AS ""Value"" FROM auth.""Users"" LIMIT 1"
+                )
+                .FirstOrDefaultAsync(ct);
         }
 
         return id;

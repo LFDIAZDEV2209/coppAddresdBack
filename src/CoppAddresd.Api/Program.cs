@@ -17,7 +17,10 @@ using Serilog;
 using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
-CoppAddresd.Shared.Security.ErpSessionValidationExtensions.AddErpSessionValidation(builder.Services, builder.Configuration);
+CoppAddresd.Shared.Security.ErpSessionValidationExtensions.AddErpSessionValidation(
+    builder.Services,
+    builder.Configuration
+);
 
 // Structured logging (Serilog). Sinks come from the "Serilog" configuration
 // section (appsettings.Development.json enables Console + rolling compact-JSON
@@ -28,17 +31,20 @@ CoppAddresd.Shared.Security.ErpSessionValidationExtensions.AddErpSessionValidati
 // app code, Microsoft.AspNetCore lowered to Warning (same verbosity as
 // appsettings.Example.json Logging:LogLevel), and a template that includes
 // {Properties:j} so CorrelationId/RequestPath stay visible on console.
-builder.Host.UseSerilog((ctx, cfg) =>
-{
-    cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
-
-    if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+builder.Host.UseSerilog(
+    (ctx, cfg) =>
     {
-        cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-            .WriteTo.Console(outputTemplate:
-                "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+        cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
+
+        if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+        {
+            cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+                .WriteTo.Console(
+                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+                );
+        }
     }
-});
+);
 
 builder
     .Services.AddControllers()
@@ -74,48 +80,50 @@ builder.Services.AddTransient<CoppAddresd.Api.Handlers.CorrelationIdDelegatingHa
 // Seed del catálogo de agentes (idempotente) + sync al AI Service al arrancar.
 if (!builder.Configuration.GetValue<bool>("SkipDatabaseInitialization"))
 {
-builder.Services.AddHostedService<AgentCatalogSeeder>();
+    builder.Services.AddHostedService<AgentCatalogSeeder>();
 
-// Seed del catálogo de mediciones clínicas (unidades, métricas y rangos).
-builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
+    // Seed del catálogo de mediciones clínicas (unidades, métricas y rangos).
+    builder.Services.AddHostedService<ClinicalMeasurementsSeeder>();
 
-// Seed de Biometría: mediciones clínicas (weight/height/waist/hip/wrist) y datos demográficos.
-builder.Services.AddHostedService<BiometriaSeeder>();
+    // Seed de Biometría: mediciones clínicas (weight/height/waist/hip/wrist) y datos demográficos.
+    builder.Services.AddHostedService<BiometriaSeeder>();
 
-// Seed de reglas de seguridad clínica para la generación de planes con IA.
-builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
+    // Seed de reglas de seguridad clínica para la generación de planes con IA.
+    builder.Services.AddHostedService<ClinicalSafetyRulesSeeder>();
 
-// Seed del catálogo nutricional de Food AI (schema foodai, USDA FDC).
-builder.Services.AddHostedService<FoodAiNutritionSeeder>();
+    // Seed del catálogo nutricional de Food AI (schema foodai, USDA FDC).
+    builder.Services.AddHostedService<FoodAiNutritionSeeder>();
 
-// Seed de la plantilla por defecto del programa de 83 semanas (default-83w).
-builder.Services.AddHostedService<ProgramProgressSeeder>();
+    // Seed de la plantilla por defecto del programa (83 días / 12 semanas,
+    // program-coppaddresd-83-days — el programa inicial y principal de todos los pacientes).
+    builder.Services.AddHostedService<ProgramProgressSeeder>();
 
-// Seed de rutinas de ejercicio base para el configurador de contenido del ERP.
-builder.Services.AddHostedService<ExerciseRoutineSeeder>();
+    // Seed de rutinas de ejercicio base para el configurador de contenido del ERP.
+    builder.Services.AddHostedService<ExerciseRoutineSeeder>();
 
-// Seed de desarrollo: inscribe masivamente a más de 20 pacientes en default-83w,
-// asigna planes nutricionales, rutinas de ejercicio por día de semana y simula
-// progreso histórico y XP en tiers realistas. Se registra DESPUÉS de
-// ProgramProgressSeeder y ExerciseRoutineSeeder.
-builder.Services.AddHostedService<DevProgramSeeder>();
+    // Seed de desarrollo: inscribe masivamente a más de 20 pacientes en el programa
+    // 83 días (program-coppaddresd-83-days), asigna planes nutricionales, rutinas de
+    // ejercicio por día de semana y simula progreso histórico y XP en tiers realistas. Se registra DESPUÉS de
+    // ProgramProgressSeeder y ExerciseRoutineSeeder.
+    builder.Services.AddHostedService<DevProgramSeeder>();
 
-// Seed de desarrollo del dashboard de Tests de Salud: pacientes evaluados
-// (con resultados de score y alertas) y pendientes por estado de EE. UU.
-// Solo en Development; en otros entornos no se registra.
-if (builder.Environment.IsDevelopment())
-{
-    builder.Services.AddHostedService<HealthTestsDemoSeeder>();
+    // Seed de desarrollo del dashboard de Tests de Salud: pacientes evaluados
+    // (con resultados de score y alertas) y pendientes por estado de EE. UU.
+    // Solo en Development; en otros entornos no se registra.
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.Services.AddHostedService<HealthTestsDemoSeeder>();
+    }
+
+    // Catálogo base de plantillas de notificación de alertas (SPEC A13): bilingüe y
+    // solo inserta las que faltan (por Code), por lo que se registra en todos los
+    // entornos — producción incluida — sin sobrescribir plantillas editadas.
+    builder.Services.AddHostedService<HealthTestNotificationTemplateSeeder>();
+
+    // Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsBackfillSeeder>());
 }
 
-// Catálogo base de plantillas de notificación de alertas (SPEC A13): bilingüe y
-// solo inserta las que faltan (por Code), por lo que se registra en todos los
-// entornos — producción incluida — sin sobrescribir plantillas editadas.
-builder.Services.AddHostedService<HealthTestNotificationTemplateSeeder>();
-
-// Backfill y reconciliación histórica de métricas CQRS (puebla rollups para datos existentes)
-builder.Services.AddHostedService(sp => sp.GetRequiredService<MetricsBackfillSeeder>());
-}
 // El servicio también se resuelve desde los endpoints de mantenimiento.
 builder.Services.AddSingleton<MetricsBackfillSeeder>();
 
@@ -200,10 +208,7 @@ if (args.Contains("--migrate"))
 
 var app = builder.Build();
 
-app.UseForwardedHeaders(new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.All
-});
+app.UseForwardedHeaders(new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.All });
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();

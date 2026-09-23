@@ -12,7 +12,8 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatien
 /// 1. Valida la zona IANA (defensa en profundidad; el pipeline ya lo hizo).
 /// 2. Resuelve la plantilla: la explícita o, si no viene, la de código
 ///    <paramref name="EnrollPatientCommand.DefaultTemplateCode"/> (la capa API
-///    lee <c>Program:DefaultTemplate:Code</c>; fallback <c>default-83w</c>).
+///    lee <c>Program:DefaultTemplate:Code</c>; fallback
+///    <c>program-coppaddresd-83-days</c>, el programa 83 días / 12 semanas).
 /// 3. <c>StartLocalDate</c> por defecto: el lunes de la semana local actual.
 /// 4. Delega en <c>EnrollAsync</c> (que purga los puntajes de la corrida
 ///    anterior, SPEC §13.7.3) y devuelve la inscripción con su estado de
@@ -27,45 +28,68 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatien
 public sealed class EnrollPatientCommandHandler(
     IProgramRepository repository,
     ICacheService cache,
-    ILogger<EnrollPatientCommandHandler> logger) : IRequestHandler<EnrollPatientCommand, ProgramEnrollmentDto>
+    ILogger<EnrollPatientCommandHandler> logger
+) : IRequestHandler<EnrollPatientCommand, ProgramEnrollmentDto>
 {
-    public async Task<ProgramEnrollmentDto> Handle(EnrollPatientCommand request, CancellationToken ct)
+    public async Task<ProgramEnrollmentDto> Handle(
+        EnrollPatientCommand request,
+        CancellationToken ct
+    )
     {
         if (!ProgramProgressTime.IsValidIanaTimezone(request.Timezone))
         {
             throw new UnprocessableEntityException(
-                "INVALID_TIMEZONE: la zona horaria debe ser un identificador IANA válido.");
+                "INVALID_TIMEZONE: la zona horaria debe ser un identificador IANA válido."
+            );
         }
 
         var templateId = request.TemplateId;
         if (templateId is null)
         {
             var defaultCode = string.IsNullOrWhiteSpace(request.DefaultTemplateCode)
-                ? "default-83w"
+                ? "program-coppaddresd-83-days" // programa 83 días / 12 semanas (el inicial de todos los pacientes)
                 : request.DefaultTemplateCode.Trim();
-            var defaultTemplate = await repository.GetTemplateByCodeAsync(defaultCode, ct)
-                ?? throw new NotFoundException($"TEMPLATE_NOT_FOUND: plantilla por defecto '{defaultCode}' no encontrada.");
+            var defaultTemplate =
+                await repository.GetTemplateByCodeAsync(defaultCode, ct)
+                ?? throw new NotFoundException(
+                    $"TEMPLATE_NOT_FOUND: plantilla por defecto '{defaultCode}' no encontrada."
+                );
             templateId = defaultTemplate.Id;
         }
 
-        var startLocalDate = request.StartLocalDate
-            ?? ProgramProgressTime.MondayOfWeek(ProgramProgressTime.PatientLocalToday(request.Timezone));
+        var startLocalDate =
+            request.StartLocalDate
+            ?? ProgramProgressTime.MondayOfWeek(
+                ProgramProgressTime.PatientLocalToday(request.Timezone)
+            );
 
         var enrollment = await repository.EnrollAsync(
-            request.PatientId, templateId.Value, request.Timezone, startLocalDate, request.ActorId, ct);
+            request.PatientId,
+            templateId.Value,
+            request.Timezone,
+            startLocalDate,
+            request.ActorId,
+            ct
+        );
 
         // Post-commit (EnrollAsync ya commiteó): la serie cacheada de la
         // corrida anterior no debe servirse a la nueva (historia por
         // programa, SPEC §13.7.3). Best-effort (fail-open de la abstracción).
         await cache.RemoveAsync(CacheKeys.ScoresHistory(request.PatientId), ct);
 
-        var dto = await repository.GetEnrollmentAsync(enrollment.Id, ct)
+        var dto =
+            await repository.GetEnrollmentAsync(enrollment.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer la inscripción creada.");
 
         logger.LogInformation(
-            "Program.Enroll: enrollment={EnrollmentId} paciente={PatientId} " +
-            "plantilla={TemplateId} zona={Timezone} inicio={StartLocalDate}",
-            enrollment.Id, request.PatientId, templateId.Value, request.Timezone, startLocalDate);
+            "Program.Enroll: enrollment={EnrollmentId} paciente={PatientId} "
+                + "plantilla={TemplateId} zona={Timezone} inicio={StartLocalDate}",
+            enrollment.Id,
+            request.PatientId,
+            templateId.Value,
+            request.Timezone,
+            startLocalDate
+        );
 
         return dto;
     }
