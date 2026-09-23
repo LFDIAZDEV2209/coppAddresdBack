@@ -159,7 +159,8 @@ public interface IProgramRepository
     /// <summary>
     /// Busca una plantilla por código (resolución de la plantilla por defecto
     /// al inscribir, SPEC §8.4: <c>Program:DefaultTemplate:Code</c>, fallback
-    /// <c>default-83w</c>). Devuelve null si no existe.
+    /// <c>program-coppaddresd-83-days</c>, el programa 83 días / 12 semanas).
+    /// Devuelve null si no existe.
     /// </summary>
     Task<ProgramTemplate?> GetTemplateByCodeAsync(string code, CancellationToken ct = default);
 

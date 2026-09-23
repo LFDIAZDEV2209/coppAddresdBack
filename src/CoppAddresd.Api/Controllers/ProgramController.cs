@@ -1,5 +1,4 @@
 using System.Globalization;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.RecordWeight;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
@@ -23,6 +22,7 @@ using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkTeleSchedule
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PauseEnrollment;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.PublishTemplate;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.RecordWeight;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceEnrollmentWeekTasks;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceWeekdayTasks;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ResumeEnrollment;
@@ -104,7 +104,9 @@ public sealed class ProgramController(
 ) : ControllerBase
 {
     private const string DefaultTemplateCodeKey = "Program:DefaultTemplate:Code";
-    private const string DefaultTemplateCodeFallback = "default-83w";
+
+    // Programa inicial y principal de todos los pacientes: 83 días (12 semanas).
+    private const string DefaultTemplateCodeFallback = "program-coppaddresd-83-days";
 
     // ===================== PACIENTE: snapshot =====================
 
@@ -1071,15 +1073,32 @@ public sealed class ProgramController(
     [HttpPost("me/weight")]
     [Authorize(Roles = "Admin")] // Rol global de acceso total existente (SuperAdmin).
     public async Task<ActionResult<RecordedWeightDto>> RecordWeight(
-        [FromBody] RecordWeightRequest request, CancellationToken ct)
+        [FromBody] RecordWeightRequest request,
+        CancellationToken ct
+    )
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);
         var enrollmentId = await actorContext.ResolveActiveEnrollmentIdAsync(ct);
         if (patientId is null || enrollmentId is null)
-            return NotFound(new { code = "NO_ACTIVE_ENROLLMENT", message = "Se requiere perfil de paciente e inscripción activa." });
-        if (actorContext.UserId is not { } actorId) return Unauthorized();
-        var result = await mediator.Send(new RecordWeightCommand(patientId.Value, enrollmentId.Value,
-            actorId, request.WeightKg, request.Date), ct);
+            return NotFound(
+                new
+                {
+                    code = "NO_ACTIVE_ENROLLMENT",
+                    message = "Se requiere perfil de paciente e inscripción activa.",
+                }
+            );
+        if (actorContext.UserId is not { } actorId)
+            return Unauthorized();
+        var result = await mediator.Send(
+            new RecordWeightCommand(
+                patientId.Value,
+                enrollmentId.Value,
+                actorId,
+                request.WeightKg,
+                request.Date
+            ),
+            ct
+        );
         return StatusCode(StatusCodes.Status201Created, result);
     }
 
