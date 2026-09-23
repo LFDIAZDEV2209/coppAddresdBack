@@ -1,7 +1,0 @@
-{
-  "CoppAddresd.Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\Carlos Cortina\\Documents\\CoppAddresd\\coppAddresdBack\\src\\CoppAddresd.Api",
-  "CoppAddresd.Application, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\Carlos Cortina\\Documents\\CoppAddresd\\coppAddresdBack\\src\\CoppAddresd.Application",
-  "CoppAddresd.Auth, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\Carlos Cortina\\Documents\\CoppAddresd\\coppAddresdBack\\src\\Services\\CoppAddresd.Auth",
-  "CoppAddresd.Domain, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\Carlos Cortina\\Documents\\CoppAddresd\\coppAddresdBack\\src\\CoppAddresd.Domain",
-  "CoppAddresd.Infrastructure, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null": "C:\\Users\\Carlos Cortina\\Documents\\CoppAddresd\\coppAddresdBack\\src\\CoppAddresd.Infrastructure"
-}
