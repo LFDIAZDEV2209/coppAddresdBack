@@ -2,6 +2,7 @@ using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Features.HealthTests.Notifications;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
+using CoppAddresd.Application.Features.Redes;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Services;
 using CoppAddresd.Application.Services.ProgramProgress;
@@ -67,6 +68,12 @@ public static class DependencyInjection
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
         services.AddScoped<IHealthTestNotificationRepository, HealthTestNotificationRepository>();
+        services.AddScoped<IRedesRepository, RedesRepository>();
+
+        // Validador de CUV (Acceso a Redes): determinístico mock en Application;
+        // la integración real con el validador de plataforma lo implementa en
+        // Infrastructure detrás de la misma interfaz.
+        services.AddScoped<ICuvValidator, DeterministicCuvValidator>();
         services.AddSingleton<IHealthTestTemplateRenderer, HealthTestTemplateRenderer>();
 
         // Controles del programa (Program Controls): repositorio enfocado de

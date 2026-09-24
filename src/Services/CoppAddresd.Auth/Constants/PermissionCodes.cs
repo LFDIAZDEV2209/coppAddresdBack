@@ -150,6 +150,10 @@ public static class PermissionCodes
     public const string HealthTestsAssign = "HealthTests.Assign";
     public const string HealthTestsReview = "HealthTests.Review";
 
+    // Acceso a Redes: radicaciones de autorizaciones + facturación RIPS.
+    public const string RedesView = "Redes.View";
+    public const string RedesManage = "Redes.Manage";
+
     public static IEnumerable<string> GetAll()
     {
         yield return UsersView;
@@ -247,6 +251,8 @@ public static class PermissionCodes
         yield return HealthTestsManage;
         yield return HealthTestsAssign;
         yield return HealthTestsReview;
+        yield return RedesView;
+        yield return RedesManage;
     }
 
     public static string GetModule(string permissionCode)

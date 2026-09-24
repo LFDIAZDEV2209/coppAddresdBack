@@ -52,6 +52,10 @@ public static class PermissionCodes
     public const string HealthTestsReview = "HealthTests.Review";
     public const string HealthTestsNotify = "HealthTests.Notify";
 
+    // Acceso a Redes: radicaciones de autorizaciones + facturación RIPS.
+    public const string RedesView = "Redes.View";
+    public const string RedesManage = "Redes.Manage";
+
     // Documentos Legales
     public const string LegalDocumentsView = "LegalDocuments.View";
     public const string LegalDocumentsManage = "LegalDocuments.Manage";
@@ -105,6 +109,8 @@ public static class PermissionCodes
         HealthTestsAssign,
         HealthTestsReview,
         HealthTestsNotify,
+        RedesView,
+        RedesManage,
         LegalDocumentsView,
         LegalDocumentsManage,
         StoreView,

@@ -221,6 +221,10 @@ using (var scope = app.Services.CreateScope())
     // AdminSeeder para que el rol Admin reciba los cÃ³digos por convenciÃ³n.
     await HealthTestsPermissionsSeeder.SeedAsync(dbContext, logger);
 
+    // Permisos del mÃ³dulo Acceso a Redes (Redes.*): radicaciones de
+    // autorizaciones y facturaciÃ³n RIPS. Idem: antes de AdminSeeder.
+    await RedesPermissionsSeeder.SeedAsync(dbContext, logger);
+
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
     var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
     var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;

@@ -2,6 +2,7 @@ using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.FoodAi;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Entities.ProgramProgress;
+using CoppAddresd.Domain.Entities.Redes;
 using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Infrastructure.Persistence;
@@ -24,6 +25,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Allergen> Allergens => Set<Allergen>();
     public DbSet<Icd10Code> Icd10Codes => Set<Icd10Code>();
     public DbSet<CptCode> CptCodes => Set<CptCode>();
+
+    // Acceso a redes: radicaciones de autorizaciones + facturación RIPS.
+    public DbSet<RedPrestadora> RedesPrestadoras => Set<RedPrestadora>();
+    public DbSet<RadicacionRed> RadicacionesRed => Set<RadicacionRed>();
+    public DbSet<RadicacionRedLinea> RadicacionesRedLineas => Set<RadicacionRedLinea>();
+    public DbSet<FacturaRed> FacturasRed => Set<FacturaRed>();
+    public DbSet<FacturaRedArchivo> FacturasRedArchivos => Set<FacturaRedArchivo>();
     public DbSet<Medication> Medications => Set<Medication>();
     public DbSet<PatientDiagnosis> PatientDiagnoses => Set<PatientDiagnosis>();
     public DbSet<PatientMedication> PatientMedications => Set<PatientMedication>();
