@@ -399,6 +399,16 @@ public sealed class DevProgramSeeder(
         // Paso 3: Asegurar que existan al menos 24 pacientes activos en app.patient_profiles
         await EnsurePatientProfilesAsync(ct);
 
+        // Notificaciones demo del centro de avisos (Fase 11) para el paciente de prueba.
+        try
+        {
+            await SeedDemoNotificationsAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudieron sembrar las notificaciones demo.");
+        }
+
         // Paso 4: Obtener la plantilla de programa de 83 semanas
         var template = await GetProgramTemplateAsync(ct);
         if (template is null)
@@ -569,10 +579,6 @@ public sealed class DevProgramSeeder(
                 progressCount++;
             }
         }
-
-        // Paso 8: Notificaciones demo del centro de avisos (Fase 11) para el
-        // paciente de prueba.
-        await SeedDemoNotificationsAsync(ct);
 
         logger.LogInformation(
             "Seed masivo de Progreso del Programa completado: {Enrolled} pacientes inscritos, {Progress} con progreso gamificado simulado.",
