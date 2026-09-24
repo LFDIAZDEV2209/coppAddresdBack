@@ -34,6 +34,9 @@ DB = "coppaddresd"
 
 # (email, app) — pacientes de la app móvil ANTARES
 PATIENT_APP_EMAILS = [
+    "luis.prueba@coppaddresd.com",
+    "playwright.e2e@coppaddresd.com",
+    "test.e2e@coppaddresd.com",
     "juan.perez@coppaddresd.com",
     "maria.gomez@coppaddresd.com",
     "carlos.rodriguez@coppaddresd.com",
