@@ -85,6 +85,12 @@ public class ChatCommandHandlerTests
             string? language,
             CancellationToken ct = default
         ) => throw new NotImplementedException();
+
+        public Task<ChatFeedbackResponseDto> SendFeedbackAsync(
+            ChatFeedbackRequestDto request,
+            string userId,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
     }
 
     private sealed class FakeRuntimeSync : IAgentRuntimeSyncService

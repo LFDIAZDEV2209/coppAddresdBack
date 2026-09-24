@@ -297,6 +297,55 @@ public class AiServiceClient : IAiServiceClient
         return new ProactiveMessageResult(result!.ThreadId, result.MessageId);
     }
 
+    public async Task<ChatFeedbackResponseDto> SendFeedbackAsync(
+        ChatFeedbackRequestDto request,
+        string userId,
+        CancellationToken ct = default
+    )
+    {
+        _logger.LogDebug(
+            "Enviando feedback al AI service: ThreadId={ThreadId} Rating={Rating}",
+            request.ThreadId,
+            request.Rating
+        );
+
+        var payload = new
+        {
+            execution_id = request.ExecutionId,
+            thread_id = request.ThreadId,
+            rating = request.Rating,
+            comment = request.Comment,
+            user_id = userId,
+        };
+
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, _settings.FeedbackEndpoint)
+        {
+            Content = JsonContent.Create(payload, options: JsonOpts),
+        };
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<FeedbackResponseJson>(
+            JsonOpts,
+            cancellationToken: ct
+        );
+        if (result is null)
+            throw new AiServiceException(
+                (int)response.StatusCode,
+                "El AI Service no devolvió una respuesta válida para el feedback."
+            );
+
+        return new ChatFeedbackResponseDto(
+            result.ThreadId,
+            result.Rating,
+            result.ExperienceSaved,
+            result.Outcome
+        );
+    }
+
     private static async Task ThrowForResponseAsync(
         HttpResponseMessage response,
         CancellationToken ct
@@ -577,6 +626,15 @@ public class AiServiceClient : IAiServiceClient
     private sealed record ThreadMessageJson(
         [property: JsonPropertyName("role")] string Role,
         [property: JsonPropertyName("text")] string Text
+    );
+
+    // Contrato del endpoint de feedback: eco del thread/rating más si la
+    // adaptive memory guardó una experiencia (snake_case).
+    private sealed record FeedbackResponseJson(
+        [property: JsonPropertyName("thread_id")] string ThreadId,
+        [property: JsonPropertyName("rating")] int Rating,
+        [property: JsonPropertyName("experience_saved")] bool ExperienceSaved = false,
+        [property: JsonPropertyName("outcome")] string? Outcome = null
     );
 
     // Contrato del endpoint de narración: `empathetic_message` (snake_case). Un

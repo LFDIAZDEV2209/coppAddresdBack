@@ -72,6 +72,18 @@ public interface IAiServiceClient
     );
 
     /// <summary>
+    /// Registra el feedback del paciente sobre una respuesta del chat
+    /// (rating 1-5 + comentario opcional). Canal interno con X-Internal-Key;
+    /// alimenta la adaptive memory del AI Service. El <c>userId</c> proviene
+    /// del JWT del backend, nunca del cliente.
+    /// </summary>
+    Task<ChatFeedbackResponseDto> SendFeedbackAsync(
+        ChatFeedbackRequestDto request,
+        string userId,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
     /// Envía un archivo de examen de laboratorio al AI Service vía multipart/form-data
     /// y devuelve las métricas extraídas y el resumen textual para el chat.
     /// Canal interno (X-Internal-Key); el frontend jamás llama directo.

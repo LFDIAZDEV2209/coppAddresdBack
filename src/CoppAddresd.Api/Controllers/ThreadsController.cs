@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using CoppAddresd.Application.Features.Threads;
 using CoppAddresd.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CoppAddresd.Api.Controllers;
@@ -12,9 +13,9 @@ namespace CoppAddresd.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/threads")]
-public class ThreadsController(
-    IAiServiceClient aiService,
-    ILogger<ThreadsController> logger) : ControllerBase
+[Authorize]
+public class ThreadsController(IAiServiceClient aiService, ILogger<ThreadsController> logger)
+    : ControllerBase
 {
     /// <summary>
     /// Devuelve el historial de un thread (messageCount + lastMessage +
@@ -26,9 +27,10 @@ public class ThreadsController(
     /// Service, 1..100) y <c>before</c> (offset desde el final del historial,
     /// devuelto como <c>nextCursor</c>); la respuesta incluye <c>hasMore</c> y
     /// <c>nextCursor</c>. Sin valor, se delegan los defaults del AI Service.
-    /// El dueño del thread se deriva del JWT cuando hay sesión real; el query
-    /// param <c>userId</c> es SOLO el respaldo del flujo demo (login aún no
-    /// conectado) — cuando el login real exista, el JWT siempre gana.
+    /// Blindaje anti-IDOR: el dueño del thread proviene estricta y
+    /// exclusivamente del JWT (<c>ClaimTypes.NameIdentifier</c>). El query
+    /// param <c>userId</c> se conserva solo por compatibilidad y se IGNORA
+    /// siempre: nunca define identidad ni alcance.
     /// Si el AI Service falla o el thread no existe se devuelve un estado
     /// vacío (nunca 500) para que el front degrade a chat vacío.
     /// </summary>
@@ -40,10 +42,14 @@ public class ThreadsController(
         [FromQuery] string? userId,
         [FromQuery] int? limit,
         [FromQuery] int? before,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
-        var ownerId = ResolveOwnerId(userId);
-        if (ownerId is null)
+        // Anti-IDOR: el query param userId se ignora deliberadamente
+        // (retenido solo por compatibilidad); la identidad sale solo del JWT.
+        _ = userId;
+        var ownerId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerId))
             return Unauthorized(new { message = "Usuario no identificado." });
 
         try
@@ -55,22 +61,12 @@ public class ThreadsController(
         {
             // Degradación: el AI Service puede no estar disponible o el thread
             // puede no existir todavía (404). El cliente siempre recibe 200.
-            logger.LogWarning(ex, "No se pudo leer el thread {ThreadId} en el AI Service", threadId);
+            logger.LogWarning(
+                ex,
+                "No se pudo leer el thread {ThreadId} en el AI Service",
+                threadId
+            );
             return Ok(new ThreadStateResult(threadId, 0, null, []));
         }
-    }
-
-    /// <summary>
-    /// Identidad del dueño del thread: JWT primero (regla de seguridad del
-    /// backend), query param solo como respaldo mientras el login demo no
-    /// emite JWT válidos.
-    /// </summary>
-    private string? ResolveOwnerId(string? queryUserId)
-    {
-        var jwtUserId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!string.IsNullOrWhiteSpace(jwtUserId))
-            return jwtUserId;
-
-        return string.IsNullOrWhiteSpace(queryUserId) ? null : queryUserId;
     }
 }
