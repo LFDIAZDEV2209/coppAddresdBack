@@ -182,6 +182,9 @@ public static class DependencyInjection
         // Contexto clínico y reglas de seguridad para la generación de planes
         // con IA (servicios de aplicación + repositorios de lectura).
         services.AddScoped<IClinicalMeasurementRepository, ClinicalMeasurementRepository>();
+        // Lectura self-service del móvil (Fase 7, GET /api/v1/me/measurements):
+        // repositorio paginado con cursor keyset (no crece ClinicalMeasurementRepository).
+        services.AddScoped<IPatientMeasurementRepository, PatientMeasurementRepository>();
         services.AddScoped<ISafetyRuleRepository, SafetyRuleRepository>();
         services.AddScoped<IClinicalContextService, ClinicalContextService>();
         services.AddScoped<ISafetyRulesService, SafetyRulesService>();
@@ -257,8 +260,10 @@ public static class DependencyInjection
             configuration.GetValue("Sms:IsEnabled", false)
             && !string.IsNullOrWhiteSpace(configuration["Sms:AccountSid"])
             && !string.IsNullOrWhiteSpace(configuration["Sms:AuthToken"])
-            && (!string.IsNullOrWhiteSpace(configuration["Sms:FromNumber"])
-                || !string.IsNullOrWhiteSpace(configuration["Sms:MessagingServiceSid"]));
+            && (
+                !string.IsNullOrWhiteSpace(configuration["Sms:FromNumber"])
+                || !string.IsNullOrWhiteSpace(configuration["Sms:MessagingServiceSid"])
+            );
 
         if (isTwilio && isConfigured)
         {

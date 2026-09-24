@@ -92,8 +92,7 @@ public static class CacheKeys
     /// diferencia del cohorte de la liga, el scoping lo garantiza la propia
     /// clave: ningún payload contiene datos de otros pacientes).
     /// </summary>
-    public static string ScoresHistory(Guid patientId) =>
-        $"scores-history:{patientId}:{Version}";
+    public static string ScoresHistory(Guid patientId) => $"scores-history:{patientId}:{Version}";
 
     /// <summary>
     /// TTL del historial de métricas clínicas del paciente (metrics-history):
@@ -109,6 +108,16 @@ public static class CacheKeys
     /// Clave POR PACIENTE — datos propios, nunca compartida (mismo criterio
     /// que scores-history).
     /// </summary>
-    public static string MetricsHistory(Guid patientId) =>
-        $"metrics-history:{patientId}:{Version}";
+    public static string MetricsHistory(Guid patientId) => $"metrics-history:{patientId}:{Version}";
+
+    /// <summary>
+    /// Clave del historial de métricas ABIERTO (<c>GET /api/v1/me/metrics-history</c>):
+    /// <c>my-metrics-history:{patientId}:v1</c>. Clave SEPARADA de
+    /// <see cref="MetricsHistory"/> a propósito: la ventana del endpoint de
+    /// programa es paciente-local (zona de la inscripción) y la del endpoint
+    /// abierto es UTC — compartir clave mezclaría ventanas. Mismo TTL.
+    /// Clave POR PACIENTE — datos propios, nunca compartida.
+    /// </summary>
+    public static string MyMetricsHistory(Guid patientId) =>
+        $"my-metrics-history:{patientId}:{Version}";
 }

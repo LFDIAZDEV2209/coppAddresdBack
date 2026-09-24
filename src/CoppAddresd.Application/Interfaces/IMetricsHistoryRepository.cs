@@ -30,5 +30,17 @@ public interface IMetricsHistoryRepository
     /// </summary>
     Task<MetricsHistoryContext?> GetMetricsHistoryContextAsync(
         Guid patientId,
-        CancellationToken ct = default);
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Contexto ABIERTO del historial (endpoint <c>GET /api/v1/me/metrics-history</c>):
+    /// mismo contenido que <see cref="GetMetricsHistoryContextAsync"/> pero SIN
+    /// exigir inscripción activa — la ventana máxima (365d) se computa en UTC.
+    /// Nunca devuelve null: sin filas → contexto vacío.
+    /// </summary>
+    Task<MetricsHistoryContext> GetOpenMetricsHistoryContextAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    );
 }

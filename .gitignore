@@ -123,3 +123,18 @@ docker-compose.override.yaml
 .artifacts/
 
 *.dll
+
+# --- QA, Pruebas y Capturas Visuales temporales ---
+.shots/
+screenshots/
+**/screenshots/
+qa-reports/
+docs/*-qa/
+docs/**/*-qa/
+docs/**/*.png
+docs/**/*.jpg
+docs/**/*.jpeg
+scripts/tmp-*
+scripts/*.tmp.*
+scripts/*-qa*.*
+

@@ -20,8 +20,11 @@ namespace CoppAddresd.Infrastructure.Repositories;
 public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsHistoryRepository
 {
     /// <inheritdoc />
-    public async Task<bool> HasActiveEnrollmentAsync(Guid patientId, CancellationToken ct = default)
-        => await dbContext
+    public async Task<bool> HasActiveEnrollmentAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
             .ProgramEnrollments.AsNoTracking()
             .AnyAsync(
                 e => e.PatientId == patientId && e.Status == ProgramEnrollmentStatus.Active,
@@ -45,8 +48,36 @@ public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsH
             return null;
         }
 
-        var tz = ResolveTimeZone(enrollment.Timezone);
-        var todayLocal = PatientLocalToday(enrollment.Timezone);
+        // La ventana es paciente-local (zona de la inscripción, DST-aware).
+        return await FetchContextCoreAsync(patientId, enrollment.Timezone, ct);
+    }
+
+    /// <inheritdoc />
+    public async Task<MetricsHistoryContext> GetOpenMetricsHistoryContextAsync(
+        Guid patientId,
+        CancellationToken ct = default
+    )
+    {
+        // Sin inscripción: ventana en UTC (el endpoint abierto
+        // /api/v1/me/metrics-history no exige inscripción activa; el hoy local
+        // es el día UTC y la conversión DST-aware es identidad).
+        return await FetchContextCoreAsync(patientId, "UTC", ct);
+    }
+
+    /// <summary>
+    /// Núcleo compartido del contexto: catálogo ACTIVO completo, mediciones de
+    /// TODAS las métricas en la ventana MÁXIMA, rangos activos, líneas base y
+    /// talla del perfil. Solo cambia la zona de la ventana (inscripción vs
+    /// UTC); las queries son las mismas (set-based, AsNoTracking, sin N+1).
+    /// </summary>
+    private async Task<MetricsHistoryContext> FetchContextCoreAsync(
+        Guid patientId,
+        string timezone,
+        CancellationToken ct
+    )
+    {
+        var tz = ResolveTimeZone(timezone);
+        var todayLocal = PatientLocalToday(timezone);
         var fromLocal = todayLocal.AddDays(-(GetMetricsHistoryQuery.CacheWindowDays - 1));
         var fromUtc = LocalDateToUtcStart(fromLocal, tz);
         var toExclusiveUtc = LocalDateToUtcStart(todayLocal.AddDays(1), tz);
@@ -56,7 +87,12 @@ public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsH
         var metricsRaw = await dbContext
             .MeasurementMetrics.AsNoTracking()
             .Where(m => m.IsActive)
-            .Select(m => new { m.Id, m.Code, DefaultUnitCode = m.DefaultUnit != null ? m.DefaultUnit.Code : null })
+            .Select(m => new
+            {
+                m.Id,
+                m.Code,
+                DefaultUnitCode = m.DefaultUnit != null ? m.DefaultUnit.Code : null,
+            })
             .OrderBy(m => m.Code)
             .ToListAsync(ct);
 
@@ -82,55 +118,53 @@ public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsH
                 dbContext.MeasurementMetrics.AsNoTracking(),
                 x => x.MetricId,
                 m => m.Id,
-                (x, m) => new
-                {
-                    x.PatientId,
-                    x.MetricId,
-                    x.Value,
-                    x.ObservedAt,
-                    x.Id,
-                    x.UnitId,
-                    Code = m.Code,
-                }
+                (x, m) =>
+                    new
+                    {
+                        x.PatientId,
+                        x.MetricId,
+                        x.Value,
+                        x.ObservedAt,
+                        x.Id,
+                        x.UnitId,
+                        Code = m.Code,
+                    }
             )
             .Join(
                 dbContext.UnitOfMeasures.AsNoTracking(),
                 x => x.UnitId,
                 u => u.Id,
-                (x, u) => new
-                {
-                    x.PatientId,
-                    x.MetricId,
-                    x.Value,
-                    x.ObservedAt,
-                    x.Id,
-                    x.Code,
-                    UnitCode = u.Code,
-                }
+                (x, u) =>
+                    new
+                    {
+                        x.PatientId,
+                        x.MetricId,
+                        x.Value,
+                        x.ObservedAt,
+                        x.Id,
+                        x.Code,
+                        UnitCode = u.Code,
+                    }
             )
-            .Where(
-                x =>
-                    x.PatientId == patientId
-                    && metricIds.Contains(x.MetricId)
-                    && x.ObservedAt >= fromUtc
-                    && x.ObservedAt < toExclusiveUtc
+            .Where(x =>
+                x.PatientId == patientId
+                && metricIds.Contains(x.MetricId)
+                && x.ObservedAt >= fromUtc
+                && x.ObservedAt < toExclusiveUtc
             )
             .OrderBy(x => x.ObservedAt)
             .ThenBy(x => x.Id)
             .ToListAsync(ct);
 
         var measurementRows = measurements
-            .Select(
-                x =>
-                    new MetricsHistoryMeasurementRow(
-                        x.MetricId,
-                        DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(x.ObservedAt, tz)),
-                        x.Value,
-                        x.UnitCode,
-                        x.ObservedAt,
-                        x.Id
-                    )
-            )
+            .Select(x => new MetricsHistoryMeasurementRow(
+                x.MetricId,
+                DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(x.ObservedAt, tz)),
+                x.Value,
+                x.UnitCode,
+                x.ObservedAt,
+                x.Id
+            ))
             .ToList();
 
         // Rangos ACTIVOS ordenados en SQL (prioridad DESC, Id ASC — desempate
@@ -141,7 +175,13 @@ public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsH
             .Where(r => r.IsActive && metricIds.Contains(r.MetricId))
             .OrderByDescending(r => r.Priority)
             .ThenBy(r => r.Id)
-            .Select(r => new MetricsHistoryRangeRow(r.MetricId, r.MinValue, r.MaxValue, r.Priority, r.Id))
+            .Select(r => new MetricsHistoryRangeRow(
+                r.MetricId,
+                r.MinValue,
+                r.MaxValue,
+                r.Priority,
+                r.Id
+            ))
             .ToListAsync(ct);
 
         // Líneas base clínicas del paciente (dirección favorable, SPEC §13.1.2).
@@ -159,7 +199,14 @@ public sealed class MetricsHistoryRepository(AppDbContext dbContext) : IMetricsH
             .Select(v => (decimal?)v.HeightCm)
             .FirstOrDefaultAsync(ct);
 
-        return new MetricsHistoryContext(heightCm, todayLocal, metrics, measurementRows, ranges, baselines);
+        return new MetricsHistoryContext(
+            heightCm,
+            todayLocal,
+            metrics,
+            measurementRows,
+            ranges,
+            baselines
+        );
     }
 
     private static TimeZoneInfo ResolveTimeZone(string timezone)
