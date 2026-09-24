@@ -23,6 +23,7 @@ namespace CoppAddresd.Community.GraphQL.Mutations;
 /// (anti-overbooking por UPDATE condicional).
 /// </summary>
 [ExtendObjectType(typeof(CommunityMutation))]
+[Authorize]
 public sealed class ClubMutation
 {
     // ─── CLUBES (CRUD) ──────────────────────────────────────────────────
@@ -1142,11 +1143,14 @@ public sealed class ClubMutation
 
     private static async Task<Profile> RequireMyProfileAsync(CommunityDbContext db, IHttpContextAccessor http, CancellationToken ct)
     {
-        var userId = CommunityQuery.CurrentUserId(http);
-        var existing = userId is not null
-            ? await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct)
-            : null;
-        if (existing is not null) return existing;
+        // Blindaje anti-IDOR (Fase 10): sin JWT no hay identidad y no se
+        // aprovisiona nada: jamás se crea un perfil con UserId nulo para un
+        // solicitante anónimo.
+        var userId = CommunityQuery.CurrentUserId(http)
+            ?? throw new GraphQLException("Debes iniciar sesión para usar los clubes.");
+        var existing = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct);
+        if (existing is not null)
+            return existing;
 
         // Auto-provisión (mismo patrón que la query Me): cualquier usuario
         // autenticado obtiene su perfil de comunidad al primer uso.

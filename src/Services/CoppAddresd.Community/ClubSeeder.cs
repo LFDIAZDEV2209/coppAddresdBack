@@ -1,19 +1,23 @@
-﻿using CoppAddresd.Community.Entities;
+using CoppAddresd.Community.Entities;
 using CoppAddresd.Community.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using System.Data;
 
 namespace CoppAddresd.Community;
 
 /// <summary>
-/// Siembra de clubes de la comunidad (idempotente, solo si no hay clubes):
-/// catálogo de categorías, perfiles demo deterministas, 5 clubes de sistema
-/// (antiguos destinos de <see cref="PostDestination"/>, <c>IsSystem=true</c>)
-/// y 9 clubes demo espejo del mock de la app/ERP (contrato D1). Cada club demo
-/// trae miembros, publicaciones (texto/anuncio/encuesta, públicas y privadas,
-/// fijadas/destacadas/programadas), eventos con cupos/lista de espera, lives
-/// con chat y solicitudes pendientes. Fechas relativas a una base fija
-/// (2026-09-01 UTC) para que las demos sean repetibles.
+/// Siembra de clubes de la comunidad:
+/// - 5 clubes oficiales de sistema (Fase 10, <c>IsSystem=true</c>), siempre e
+///   idempotentes por slug, con membresías y posts demo de los pacientes de
+///   prueba (55551234, 77777777, 88888888, 1012345678);
+/// - catálogo de categorías, perfiles demo deterministas, 5 clubes de sistema
+///   antiguos (destinos de <see cref="PostDestination"/>) y 9 clubes demo
+///   espejo del mock de la app/ERP (contrato D1), solo si no hay clubes.
+/// Cada club demo trae miembros, publicaciones (texto/anuncio/encuesta,
+/// públicas y privadas, fijadas/destacadas/programadas), eventos con
+/// cupos/lista de espera, lives con chat y solicitudes pendientes. Fechas
+/// relativas a una base fija (2026-09-01 UTC) para que las demos sean repetibles.
 /// </summary>
 public static class ClubSeeder
 {
@@ -52,6 +56,17 @@ public static class ClubSeeder
 
     public static async Task SeedAsync(CommunityDbContext db, IConfiguration? configuration = null, CancellationToken ct = default)
     {
+        // Perfil de sistema (lo crea CommunitySeeder, que corre antes en Program).
+        var systemProfile = await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem, ct)
+            ?? throw new InvalidOperationException(
+                "ClubSeeder requiere el perfil de sistema 'Equipo Copp Adresd' (lo crea CommunitySeeder).");
+
+        // Clubes oficiales de sistema (Fase 10) + membresías y posts de los
+        // pacientes de prueba: idempotentes por slug/perfil, corren siempre
+        // (también en BDs ya sembradas con los demos antiguos).
+        var officialClubs = await SeedOfficialClubsAsync(db, systemProfile, ct);
+        await SeedTestPatientMembershipsAsync(db, officialClubs, ct);
+
         if (await db.Clubs.AnyAsync(c => c.Slug == "caminantes-adres", ct))
         {
             // Los clubes demo ya están sembrados; no duplicar. Los clubes reales
@@ -69,12 +84,7 @@ public static class ClubSeeder
         }
 
         // ─── PERFILES DEMO (deterministas) ─────────────────────────────
-        // "Equipo ANTARES" es el perfil de sistema (ya lo crea CommunitySeeder);
-        // el resto se busca por nombre y se crea con GUID fijo si no existe.
-        var systemProfile = await db.Profiles.FirstOrDefaultAsync(p => p.IsSystem, ct)
-            ?? throw new InvalidOperationException(
-                "ClubSeeder requiere el perfil de sistema 'Equipo Copp Adresd' (lo crea CommunitySeeder).");
-
+        // El resto se busca por nombre y se crea con GUID fijo si no existe.
         var byName = await db.Profiles
             .Where(p => DemoMembers.Select(d => d.Name).Contains(p.DisplayName))
             .ToDictionaryAsync(p => p.DisplayName, ct);
@@ -566,6 +576,223 @@ public static class ClubSeeder
     }
 
     // ─── HELPERS ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Clubes oficiales de sistema de la Fase 10 (slug, nombre, descripción,
+    /// categoría, visibilidad y capacidad).
+    /// </summary>
+    private static readonly (string Slug, string Name, string Description, string Category, ClubVisibility Visibility, int MaxMembers)[] OfficialClubs =
+    [
+        ("nutricion-saludable", "Nutrición Saludable",
+            "Recetas, menús y hábitos de alimentación saludable entre pares.",
+            "Nutrición", ClubVisibility.Publico, 5000),
+        ("movimiento-y-ejercicio", "Movimiento y Ejercicio",
+            "Caminatas, retos de pasos y actividad física adaptada al programa.",
+            "Deporte", ClubVisibility.Publico, 5000),
+        ("mente-y-bienestar", "Mente y Bienestar",
+            "Espacio seguro de salud mental, manejo del estrés y autocuidado.",
+            "Bienestar", ClubVisibility.Privado, 2000),
+        ("habitos-y-sueno", "Hábitos y Sueño",
+            "Rutinas, higiene del sueño y hábitos que sostienen el programa.",
+            "Bienestar", ClubVisibility.Publico, 2000),
+        ("comunidad-general", "Comunidad General",
+            "Anuncios, bienvenidas y conversación general del programa.",
+            "Salud", ClubVisibility.Publico, 10000),
+    ];
+
+    /// <summary>
+    /// Documentos de los pacientes de prueba con membresías y posts demo en los
+    /// clubes oficiales (visualización en pruebas).
+    /// </summary>
+    private static readonly string[] TestPatientDocs = ["55551234", "77777777", "88888888", "1012345678"];
+
+    /// <summary>
+    /// Siembra los 5 clubes oficiales de sistema (Fase 10). Idempotente por
+    /// slug: solo crea los que faltan, sin tocar clubes existentes. Devuelve
+    /// los clubes (existentes + creados) en el orden de <see cref="OfficialClubs"/>.
+    /// </summary>
+    public static async Task<IReadOnlyList<Club>> SeedOfficialClubsAsync(CommunityDbContext db, Profile systemProfile, CancellationToken ct = default)
+    {
+        var slugs = OfficialClubs.Select(c => c.Slug).ToList();
+        var existing = await db.Clubs.Where(c => slugs.Contains(c.Slug)).ToDictionaryAsync(c => c.Slug, ct);
+
+        var result = new List<Club>(OfficialClubs.Length);
+        foreach (var def in OfficialClubs)
+        {
+            if (existing.TryGetValue(def.Slug, out var club))
+            {
+                result.Add(club);
+                continue;
+            }
+            club = new Club
+            {
+                Id = Guid.NewGuid(),
+                Slug = def.Slug,
+                Name = def.Name,
+                Description = def.Description,
+                Rules = ["Respeto ante todo", "No compartir datos médicos de terceros"],
+                Objectives = ["Acompañar a los miembros del programa", "Crear comunidad alrededor del bienestar"],
+                Category = def.Category,
+                Tags = [],
+                Visibility = def.Visibility,
+                MaxMembers = def.MaxMembers,
+                CreatedByProfileId = systemProfile.Id,
+                IsSystem = true,
+                CreatedAt = Base.AddMinutes(-60_000),
+            };
+            db.Clubs.Add(club);
+            result.Add(club);
+        }
+        await db.SaveChangesAsync(ct);
+        return result;
+    }
+
+    /// <summary>Fila de paciente de prueba (resuelta desde app.patient_profiles).</summary>
+    public sealed record TestPatientSeed(string DocumentNumber, Guid UserId, string DisplayName);
+
+    /// <summary>
+    /// Asegura membresías activas y un post demo de los pacientes de prueba en
+    /// los clubes oficiales. Resuelve a los pacientes por documento en
+    /// <c>app.patient_profiles</c> (ADO.NET directo: el DbContext de Community
+    /// no mapea ese esquema) y vincula por su <c>user_id</c> real, sin importar
+    /// qué seeder creó la cuenta. Best-effort: si el esquema app no existe o no
+    /// hay pacientes, no hace nada.
+    /// </summary>
+    public static async Task SeedTestPatientMembershipsAsync(CommunityDbContext db, IReadOnlyList<Club> officialClubs, CancellationToken ct = default)
+    {
+        if (officialClubs.Count == 0)
+            return;
+        var patients = await FindTestPatientsAsync(db, ct);
+        if (patients.Count == 0)
+            return;
+        await SeedTestPatientMembershipsAsync(db, officialClubs, patients, ct);
+    }
+
+    /// <summary>
+    /// Núcleo testeable: perfiles + membresías + posts a partir de pacientes ya
+    /// resueltos (sin acceso a BD externa).
+    /// </summary>
+    public static async Task SeedTestPatientMembershipsAsync(
+        CommunityDbContext db,
+        IReadOnlyList<Club> officialClubs,
+        IReadOnlyList<TestPatientSeed> patients,
+        CancellationToken ct = default)
+    {
+        if (officialClubs.Count == 0 || patients.Count == 0)
+            return;
+
+        var userIds = patients.Select(p => p.UserId).ToList();
+        var profiles = await db.Profiles
+            .Where(p => p.UserId != null && userIds.Contains(p.UserId.Value))
+            .ToDictionaryAsync(p => p.UserId!.Value, ct);
+
+        foreach (var patient in patients)
+        {
+            if (!profiles.TryGetValue(patient.UserId, out var profile))
+            {
+                profile = new Profile
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = patient.UserId,
+                    DisplayName = patient.DisplayName,
+                    Status = ProfileStatus.Active,
+                    CreatedAt = DateTime.UtcNow,
+                };
+                db.Profiles.Add(profile);
+                profiles[patient.UserId] = profile;
+            }
+        }
+        await db.SaveChangesAsync(ct);
+
+        foreach (var club in officialClubs)
+        {
+            foreach (var profile in profiles.Values)
+            {
+                if (!await db.ClubMembers.AnyAsync(m => m.ClubId == club.Id && m.ProfileId == profile.Id, ct))
+                {
+                    db.ClubMembers.Add(new ClubMember
+                    {
+                        ClubId = club.Id,
+                        ProfileId = profile.Id,
+                        Role = ClubMemberRole.Miembro,
+                        Status = ClubMemberStatus.Activo,
+                        JoinedAt = DateTime.UtcNow,
+                    });
+                }
+            }
+        }
+        await db.SaveChangesAsync(ct);
+
+        var general = officialClubs.FirstOrDefault(c => c.Slug == "comunidad-general");
+        if (general is null)
+            return;
+        foreach (var patient in patients)
+        {
+            var profile = profiles[patient.UserId];
+            var body = $"¡Hola comunidad! Soy {patient.DisplayName} y me uno a la Comunidad General.";
+            if (!await db.Posts.AnyAsync(p => p.ClubId == general.Id && p.ProfileId == profile.Id && p.Body == body, ct))
+            {
+                db.Posts.Add(new Post
+                {
+                    Id = Guid.NewGuid(),
+                    ProfileId = profile.Id,
+                    ClubId = general.Id,
+                    Body = body,
+                    Type = PostType.Texto,
+                    ClubVisibility = ClubPostVisibility.Publico,
+                    ClubStatus = ClubPostStatus.Publicado,
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Resuelve los pacientes de prueba por documento en app.patient_profiles.
+    /// Best-effort: cualquier fallo (esquema ausente, BD no disponible) retorna
+    /// lista vacía para no romper el arranque del servicio en desarrollo.
+    /// </summary>
+    private static async Task<IReadOnlyList<TestPatientSeed>> FindTestPatientsAsync(CommunityDbContext db, CancellationToken ct)
+    {
+        try
+        {
+            var conn = db.Database.GetDbConnection();
+            var opened = false;
+            if (conn.State != ConnectionState.Open)
+            {
+                await conn.OpenAsync(ct);
+                opened = true;
+            }
+            try
+            {
+                await using var cmd = conn.CreateCommand();
+                var docs = string.Join(",", TestPatientDocs.Select(d => "'" + d + "'"));
+                cmd.CommandText = "SELECT document_number, user_id, first_name, last_name FROM app.patient_profiles WHERE document_number IN (" + docs + ") AND user_id IS NOT NULL";
+                var result = new List<TestPatientSeed>();
+                await using var reader = await cmd.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    var doc = reader.GetString(0);
+                    var userId = reader.GetGuid(1);
+                    var first = reader.IsDBNull(2) ? "" : reader.GetString(2);
+                    var last = reader.IsDBNull(3) ? "" : reader.GetString(3);
+                    var display = (first + " " + last).Trim();
+                    result.Add(new TestPatientSeed(doc, userId, string.IsNullOrEmpty(display) ? "Paciente " + doc : display));
+                }
+                return result;
+            }
+            finally
+            {
+                if (opened)
+                    await conn.CloseAsync();
+            }
+        }
+        catch
+        {
+            return [];
+        }
+    }
 
     /// <summary>Perfil solicitante demo (GUID determinista) reutilizado entre corridas.</summary>
     private static async Task<Profile> FindOrCreateApplicantAsync(CommunityDbContext db, int n, string name, CancellationToken ct)
