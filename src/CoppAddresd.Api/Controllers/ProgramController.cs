@@ -1413,7 +1413,7 @@ public sealed class ProgramController(
     /// perfil de paciente → 404 (anti-IDOR AC-11).
     /// </summary>
     [HttpGet("notifications")]
-    [RequirePermission("Program.View")]
+    [HttpGet("me/notifications")]
     public async Task<ActionResult<PaginatedNotificationsResult>> ListNotifications(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -1439,7 +1439,6 @@ public sealed class ProgramController(
     /// (anti-IDOR AC-11): si no, 404 sin distinguir si existe.
     /// </summary>
     [HttpPost("notifications/{id:guid}/read")]
-    [RequirePermission("Program.View")]
     public async Task<IActionResult> MarkNotificationRead(Guid id, CancellationToken ct)
     {
         var patientId = await actorContext.ResolvePatientProfileIdAsync(ct);

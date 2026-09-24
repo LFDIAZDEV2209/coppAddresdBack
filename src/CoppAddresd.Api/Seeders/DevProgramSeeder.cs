@@ -570,11 +570,91 @@ public sealed class DevProgramSeeder(
             }
         }
 
+        // Paso 8: Notificaciones demo del centro de avisos (Fase 11) para el
+        // paciente de prueba.
+        await SeedDemoNotificationsAsync(ct);
+
         logger.LogInformation(
             "Seed masivo de Progreso del Programa completado: {Enrolled} pacientes inscritos, {Progress} con progreso gamificado simulado.",
             enrolledCount,
             progressCount
         );
+    }
+
+    // =========================================================================
+    // 8. NOTIFICACIONES DEMO DEL CENTRO DE AVISOS (Fase 11)
+    // =========================================================================
+
+    /// <summary>
+    /// Paciente de prueba del centro de avisos in-app (mismo login de las
+    /// pruebas E2E del móvil).
+    /// </summary>
+    private const string DemoNotificationsPatientDoc = "55551234";
+
+    private static readonly (string Type, string Title, string Message, string Priority)[] DemoNotificationSeeds =
+    [
+        ("appointment_reminder", "Próxima cita en 1 hora",
+            "Tienes una cita médica en 1 hora. Revisa la hora y el lugar en tu agenda.",
+            "high"),
+        ("hydration_reminder", "Meta de hidratación de hoy",
+            "Vas a mitad de tu meta de agua de hoy. ¡Un vaso más y sigues en racha!",
+            "normal"),
+        ("streak_milestone", "¡Racha de 7 días alcanzada!",
+            "7 días seguidos completando tu programa. ¡Sigue así!",
+            "normal"),
+    ];
+
+    /// <summary>
+    /// Siembra las 3 notificaciones demo del centro de avisos para el paciente
+    /// de prueba (Fase 11). Idempotente por tipo: solo inserta los tipos que el
+    /// paciente aún no tiene. Si el paciente no existe, no hace nada.
+    /// </summary>
+    private async Task SeedDemoNotificationsAsync(CancellationToken ct)
+    {
+        await WithContext(async db =>
+        {
+            var patientId = await db.PatientProfiles
+                .Where(p => p.DocumentNumber == DemoNotificationsPatientDoc && p.DeletedAt == null)
+                .Select(p => (Guid?)p.Id)
+                .FirstOrDefaultAsync(ct);
+            if (patientId is null)
+            {
+                logger.LogInformation(
+                    "Sin paciente de prueba ({Doc}): seed de notificaciones demo omitido.",
+                    DemoNotificationsPatientDoc);
+                return 0;
+            }
+
+            var existingTypes = await db.AppNotifications
+                .Where(n => n.PatientId == patientId.Value)
+                .Select(n => n.Type)
+                .ToListAsync(ct);
+
+            var now = DateTime.UtcNow;
+            var added = 0;
+            foreach (var (type, title, message, priority) in DemoNotificationSeeds)
+            {
+                if (existingTypes.Contains(type))
+                    continue;
+                db.AppNotifications.Add(new AppNotification
+                {
+                    Id = Guid.NewGuid(),
+                    PatientId = patientId.Value,
+                    Type = type,
+                    Title = title,
+                    Message = message,
+                    Priority = priority,
+                    Channel = "push",
+                    SentAt = now,
+                });
+                added++;
+            }
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation(
+                "Notificaciones demo sembradas para el paciente de prueba: {Count}.",
+                added);
+            return added;
+        }, ct);
     }
 
     // =========================================================================
