@@ -75,6 +75,13 @@ public class CatalogsController(IMediator mediator) : ControllerBase
         CancellationToken ct = default)
         => Ok(await mediator.Send(new SearchIcd10CodesQuery(search, limit), ct));
 
+    [HttpGet("cpt-codes")]
+    public async Task<ActionResult<IReadOnlyList<CatalogSearchItemDto>>> CptCodes(
+        [FromQuery] string? search = null,
+        [FromQuery] int limit = 30,
+        CancellationToken ct = default)
+        => Ok(await mediator.Send(new SearchCptCodesQuery(search, limit), ct));
+
     [HttpGet("medications")]
     public async Task<ActionResult<IReadOnlyList<CatalogSearchItemDto>>> Medications(
         [FromQuery] string? search = null,

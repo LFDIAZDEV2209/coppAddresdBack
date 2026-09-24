@@ -32,6 +32,10 @@ public interface ICatalogRepository
     Task<IReadOnlyList<Icd10Code>> SearchIcd10CodesAsync(
         string? search, int limit = 30, CancellationToken ct = default);
 
+    /// <summary>Busca códigos CPT por código o descripción (índice trigram).</summary>
+    Task<IReadOnlyList<CptCode>> SearchCptCodesAsync(
+        string? search, int limit = 30, CancellationToken ct = default);
+
     /// <summary>Busca medicamentos por nombre o NDC (índice trigram).</summary>
     Task<IReadOnlyList<Medication>> SearchMedicationsAsync(
         string? search, int limit = 30, CancellationToken ct = default);

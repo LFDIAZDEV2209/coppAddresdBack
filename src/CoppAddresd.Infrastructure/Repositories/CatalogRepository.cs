@@ -87,6 +87,25 @@ public sealed class CatalogRepository(AppDbContext dbContext) : ICatalogReposito
             .ToListAsync(ct);
     }
 
+    public async Task<IReadOnlyList<CptCode>> SearchCptCodesAsync(
+        string? search, int limit = 30, CancellationToken ct = default)
+    {
+        var query = dbContext.CptCodes.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search.Trim()}%";
+            query = query.Where(x =>
+                EF.Functions.ILike(x.Code, pattern) ||
+                EF.Functions.ILike(x.Description ?? string.Empty, pattern));
+        }
+
+        return await query
+            .OrderBy(x => x.Code)
+            .Take(limit)
+            .ToListAsync(ct);
+    }
+
     public async Task<IReadOnlyList<Medication>> SearchMedicationsAsync(
         string? search, int limit = 30, CancellationToken ct = default)
     {

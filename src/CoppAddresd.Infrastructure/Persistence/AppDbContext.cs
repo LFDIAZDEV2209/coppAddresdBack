@@ -23,6 +23,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Insurer> Insurers => Set<Insurer>();
     public DbSet<Allergen> Allergens => Set<Allergen>();
     public DbSet<Icd10Code> Icd10Codes => Set<Icd10Code>();
+    public DbSet<CptCode> CptCodes => Set<CptCode>();
     public DbSet<Medication> Medications => Set<Medication>();
     public DbSet<PatientDiagnosis> PatientDiagnoses => Set<PatientDiagnosis>();
     public DbSet<PatientMedication> PatientMedications => Set<PatientMedication>();
