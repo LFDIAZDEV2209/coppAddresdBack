@@ -1,6 +1,7 @@
 using System.Globalization;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
+using CoppAddresd.Api.Http;
 using CoppAddresd.Api.Context;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.DTOs.ProgramProgress;
@@ -156,6 +157,8 @@ public sealed class ProgramController(
     /// body se valida contra el paciente autenticado (anti-IDOR AC-11): si no
     /// le pertenece → 404, sin distinguir si la inscripción existe (no filtra
     /// existencia). Replay idempotente → 200 con el body existente.
+/// Clave de reintento: <c>clientRequestId</c> del body o, si falta,
+/// header <c>X-Idempotency-Key</c> (Fase 12, cola offline del móvil).
     /// </summary>
     [HttpPost("tasks/complete")]
     public async Task<ActionResult<CompleteTaskResponseDto>> CompleteTask(
@@ -173,7 +176,7 @@ public sealed class ProgramController(
                 request.EnrollmentId,
                 request.LocalDate,
                 request.TaskCode,
-                request.ClientRequestId,
+                IdempotencyKeys.Resolve(Request, request.ClientRequestId),
                 request.ClientCompletedAt,
                 request.MoodScore,
                 request.Barriers,
