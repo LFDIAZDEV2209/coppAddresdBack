@@ -50,3 +50,18 @@ public sealed record LocationRefDto(Guid Id, string Name, Guid ClinicId, bool Is
 /// <c>Weekday</c> ISO 1–7 con lunes = 1, horas <c>HH:mm</c> sin zona horaria).
 /// </summary>
 public sealed record ProfessionalScheduleRefDto(int Weekday, string StartTime, string EndTime);
+
+/// <summary>
+/// Profesional activo candidato de una especialidad con sus turnos semanales
+/// (batch interno por especialidad, citas-e2e 1.1a). El backend ya filtró por
+/// contexto; el microservicio no re-filtra.
+/// </summary>
+public sealed record ProfessionalCandidateRefDto(
+    Guid ProfessionalId,
+    Guid EmployeeId,
+    Guid? UserId,
+    string FullName,
+    IReadOnlyList<Guid> ClinicIds,
+    IReadOnlyList<Guid> LocationIds,
+    IReadOnlyList<ProfessionalScheduleRefDto> Schedules
+);

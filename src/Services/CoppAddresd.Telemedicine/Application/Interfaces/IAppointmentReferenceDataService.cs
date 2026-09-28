@@ -45,4 +45,17 @@ public interface IAppointmentReferenceDataService
         Guid professionalId,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Profesionales activos candidatos de una especialidad con sus horarios
+    /// (batch interno del backend, una sola llamada HTTP). <c>null</c> si la
+    /// especialidad no existe; lista vacía si no hay candidatos.
+    /// </summary>
+    Task<IReadOnlyList<ProfessionalCandidateRefDto>?> GetProfessionalCandidatesAsync(
+        Guid specialtyId,
+        Guid? organizationId,
+        Guid? clinicId,
+        Guid? locationId,
+        CancellationToken ct = default
+    );
 }

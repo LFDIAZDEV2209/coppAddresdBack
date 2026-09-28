@@ -260,7 +260,10 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
 
                         if (completeOnboarding)
                         {
-                            setters.SetProperty(x => x.Status, x => x.Status == "Invited" ? "Active" : x.Status);
+                            setters.SetProperty(
+                                x => x.Status,
+                                x => x.Status == "Invited" ? "Active" : x.Status
+                            );
                         }
                     },
                     ct
@@ -360,7 +363,8 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
 
     public async Task UpdateAsync(Employee employee, CancellationToken ct = default)
     {
-        var canWriteStatus = employee.UserId is null
+        var canWriteStatus =
+            employee.UserId is null
             || (employee.Professional is null && employee.ErpAccessVersion == 0);
         var strategy = dbContext.Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async () =>
@@ -382,7 +386,13 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
                             .SetProperty(x => x.JobTitle, employee.JobTitle)
                             .SetProperty(x => x.Department, employee.Department)
                             .SetProperty(x => x.HireDate, employee.HireDate)
-                            .SetProperty(x => x.Status, x => canWriteStatus && x.ErpAccessVersion == 0 ? employee.Status : x.Status)
+                            .SetProperty(
+                                x => x.Status,
+                                x =>
+                                    canWriteStatus && x.ErpAccessVersion == 0
+                                        ? employee.Status
+                                        : x.Status
+                            )
                             .SetProperty(x => x.UpdatedAt, employee.UpdatedAt),
                     ct
                 );
@@ -589,6 +599,24 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
             .OrderBy(s => s.Weekday)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<ProfessionalSchedule>> GetSchedulesByProfessionalIdsAsync(
+        IReadOnlyCollection<Guid> professionalIds,
+        CancellationToken ct = default
+    )
+    {
+        if (professionalIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await dbContext
+            .ProfessionalSchedules.AsNoTracking()
+            .Where(s => professionalIds.Contains(s.ProfessionalId))
+            .OrderBy(s => s.ProfessionalId)
+            .ThenBy(s => s.Weekday)
+            .ToListAsync(ct);
+    }
+
     public async Task ReplaceSchedulesAsync(
         Guid professionalId,
         IReadOnlyList<ProfessionalSchedule> schedules,
@@ -624,21 +652,21 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
         });
     }
 
-    public async Task<IReadOnlyList<ProfessionalClinicMembership>> GetProfessionalClinicMembershipsAsync(
-        CancellationToken ct = default
-    )
+    public async Task<
+        IReadOnlyList<ProfessionalClinicMembership>
+    > GetProfessionalClinicMembershipsAsync(CancellationToken ct = default)
     {
-        return await dbContext.Employees
-            .AsNoTracking()
+        return await dbContext
+            .Employees.AsNoTracking()
             .Where(e => e.Professional != null)
             .Select(e => new ProfessionalClinicMembership(
                 e.Id,
                 e.Professional!.Id,
                 e.UserId,
-                e.ClinicAssignments
-                    .Where(c => c.Status == "Active")
+                e.ClinicAssignments.Where(c => c.Status == "Active")
                     .Select(c => c.ClinicId)
-                    .ToList()))
+                    .ToList()
+            ))
             .ToListAsync(ct);
     }
 }

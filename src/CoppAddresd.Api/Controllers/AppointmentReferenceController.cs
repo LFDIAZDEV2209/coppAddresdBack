@@ -122,4 +122,39 @@ public class AppointmentReferenceController(IMediator mediator) : ControllerBase
         var result = await mediator.Send(new GetProfessionalSchedulesQuery(id), ct);
         return Ok(result);
     }
+
+    /// <summary>
+    /// Profesionales activos candidatos de una especialidad con sus turnos
+    /// semanales (modo specialty de disponibilidad, citas-e2e 1.1a). 404 si la
+    /// especialidad no existe; 200 con lista (vacía si no hay candidatos).
+    /// </summary>
+    [HttpGet("professionals/by-specialty")]
+    [ProducesResponseType(
+        typeof(IReadOnlyList<AppointmentProfessionalCandidateDto>),
+        StatusCodes.Status200OK
+    )]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<
+        ActionResult<IReadOnlyList<AppointmentProfessionalCandidateDto>>
+    > GetProfessionalCandidates(
+        [FromQuery] Guid specialtyId,
+        [FromQuery] Guid? organizationId,
+        [FromQuery] Guid? clinicId,
+        [FromQuery] Guid? locationId,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new GetAppointmentCandidatesBySpecialtyQuery(
+                specialtyId,
+                organizationId,
+                clinicId,
+                locationId
+            ),
+            ct
+        );
+        return result is null
+            ? NotFound(new { message = "Especialidad no encontrada." })
+            : Ok(result);
+    }
 }

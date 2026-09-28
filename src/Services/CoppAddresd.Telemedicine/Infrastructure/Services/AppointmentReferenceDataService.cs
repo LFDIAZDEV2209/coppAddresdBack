@@ -96,6 +96,49 @@ public sealed class AppointmentReferenceDataService(
         return fetched;
     }
 
+    /// <summary>
+    /// Candidatos por especialidad desde el internal endpoint batch del backend
+    /// (<c>GET /api/v1/internal/telemedicine/professionals/by-specialty</c>).
+    /// Una sola llamada HTTP para todos los candidatos (sin N+1). Cache-aside
+    /// con el TTL de referencias (10 min) por combinación de filtros; el 404
+    /// (especialidad inexistente) NO se cachea y se propaga como <c>null</c>.
+    /// Fail-open vía <c>ICacheService</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<ProfessionalCandidateRefDto>?> GetProfessionalCandidatesAsync(
+        Guid specialtyId,
+        Guid? organizationId,
+        Guid? clinicId,
+        Guid? locationId,
+        CancellationToken ct = default
+    )
+    {
+        var key =
+            $"ref:candidates:{specialtyId}:{organizationId}:{clinicId}:{locationId}:{KeyVersion}";
+
+        var cached = await cache.GetAsync<List<ProfessionalCandidateRefDto>>(key, ct);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
+        var query =
+            $"specialtyId={specialtyId}"
+            + (organizationId is { } org ? $"&organizationId={org}" : string.Empty)
+            + (clinicId is { } clinic ? $"&clinicId={clinic}" : string.Empty)
+            + (locationId is { } location ? $"&locationId={location}" : string.Empty);
+
+        var fetched = await GetAsync<List<ProfessionalCandidateRefDto>>(
+            $"/api/v1/internal/telemedicine/professionals/by-specialty?{query}",
+            ct
+        );
+        if (fetched is not null)
+        {
+            await cache.SetAsync(key, fetched, ReferenceTtl, ct);
+        }
+
+        return fetched;
+    }
+
     private async Task<T?> GetCachedAsync<T>(string referencePath, CancellationToken ct)
         where T : class
     {

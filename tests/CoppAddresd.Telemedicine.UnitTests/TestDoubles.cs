@@ -142,6 +142,12 @@ public sealed class FakeReferenceDataService : IAppointmentReferenceDataService
     /// <summary>Turnos semanales por profesional (vacío = sin horario).</summary>
     public Dictionary<Guid, List<ProfessionalScheduleRefDto>> Schedules { get; } = [];
 
+    /// <summary>
+    /// Candidatos por especialidad (el backend ya filtró por contexto; null =
+    /// especialidad inexistente → el handler responde 404).
+    /// </summary>
+    public List<ProfessionalCandidateRefDto>? Candidates { get; set; }
+
     public Task<ProfessionalRefDto?> GetProfessionalAsync(
         Guid professionalId,
         CancellationToken ct = default
@@ -185,6 +191,14 @@ public sealed class FakeReferenceDataService : IAppointmentReferenceDataService
         Task.FromResult<IReadOnlyList<ProfessionalScheduleRefDto>>(
             Schedules.GetValueOrDefault(professionalId) ?? []
         );
+
+    public Task<IReadOnlyList<ProfessionalCandidateRefDto>?> GetProfessionalCandidatesAsync(
+        Guid specialtyId,
+        Guid? organizationId,
+        Guid? clinicId,
+        Guid? locationId,
+        CancellationToken ct = default
+    ) => Task.FromResult<IReadOnlyList<ProfessionalCandidateRefDto>?>(Candidates);
 }
 
 /// <summary>Proveedor de settings en memoria (sustituye al TelemedicineSettingsProvider).</summary>
