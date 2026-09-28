@@ -80,7 +80,7 @@ public class AvailabilitySlotsTests
     }
 
     [Fact]
-    public async Task Handle_RanuraSolapada_MarcaBookedYConservaLibres()
+    public async Task Handle_RanuraSolapada_ExcluyeOcupadoYConservaLibre()
     {
         var date = NextWeekday(DayOfWeek.Monday);
         _referenceData.Schedules[TestData.ProfessionalId] =
@@ -101,20 +101,17 @@ public class AvailabilitySlotsTests
 
         var result = await _handler.Handle(query, CancellationToken.None);
 
-        Assert.Equal(2, result.Slots.Count);
-        var first = result.Slots[0];
-        Assert.True(first.IsAvailable);
-        Assert.Null(first.ConflictReason);
-        Assert.Equal(1, first.AvailableProfessionalCount);
-        var second = result.Slots[1];
-        Assert.False(second.IsAvailable);
-        Assert.Equal("Booked", second.ConflictReason);
-        Assert.Equal(0, second.AvailableProfessionalCount);
+        // Veredicto B4: el slot ocupado 09:30 no está presente en la lista.
+        var slot = Assert.Single(result.Slots);
+        Assert.Equal(UtcOf(date, 9), slot.Start);
+        Assert.True(slot.IsAvailable);
+        Assert.Null(slot.ConflictReason);
+        Assert.Equal(1, slot.AvailableProfessionalCount);
         Assert.Equal("+00:00", result.TimezoneOffset);
     }
 
     [Fact]
-    public async Task Handle_AnticipacionMinima_MarcaTooSoon()
+    public async Task Handle_AnticipacionMinima_ExcluyeSlotsEnVentana()
     {
         var date = DateOnly.FromDateTime(DateTime.UtcNow);
         _referenceData.Schedules[TestData.ProfessionalId] =
@@ -132,21 +129,19 @@ public class AvailabilitySlotsTests
 
         var result = await _handler.Handle(query, CancellationToken.None);
 
-        var now = DateTimeOffset.UtcNow;
-        Assert.NotEmpty(result.Slots);
+        // Veredicto B4: ningún slot en ventana de anticipación está presente.
+        // La jornada completa son 47 slots de 30 min; al menos los 4 primeros
+        // (00:00–01:30) caen siempre dentro de now + 2 h.
+        Assert.True(result.Slots.Count < 47);
         foreach (var slot in result.Slots)
         {
-            if (slot.Start < now.AddHours(_settings.Settings.MinAdvanceBookingHours))
-            {
-                Assert.False(slot.IsAvailable);
-                Assert.Equal("TooSoon", slot.ConflictReason);
-            }
-            else
-            {
-                Assert.True(slot.IsAvailable);
-            }
+            Assert.True(slot.IsAvailable);
+            Assert.Null(slot.ConflictReason);
+            Assert.True(
+                slot.Start
+                    >= DateTimeOffset.UtcNow.AddHours(_settings.Settings.MinAdvanceBookingHours)
+            );
         }
-        Assert.Contains(result.Slots, s => s.ConflictReason == "TooSoon");
     }
 
     [Fact]
@@ -176,11 +171,11 @@ public class AvailabilitySlotsTests
 
         var result = await _handler.Handle(query, CancellationToken.None);
 
-        var slot = Assert.Single(result.Slots, s => s.Start == UtcOf(date, 9));
-        Assert.False(slot.IsAvailable);
-        Assert.Equal("Booked", slot.ConflictReason);
-        Assert.Equal(UtcOf(date, 9), slot.Start);
+        // El slot 09:00 UTC ocupado no está presente; solo queda el 09:30.
+        var slot = Assert.Single(result.Slots);
+        Assert.Equal(UtcOf(date, 9, 30), slot.Start);
         Assert.Equal(TimeSpan.Zero, slot.Start.Offset);
+        Assert.True(slot.IsAvailable);
     }
 
     [Fact]
@@ -251,6 +246,57 @@ public class AvailabilitySlotsTests
         var result = await _handler.Handle(query, CancellationToken.None);
 
         Assert.Empty(result.Slots);
+    }
+
+    [Fact]
+    public async Task Handle_ModoEspecialidadSlotTotalmenteOcupado_ExcluyeSlot()
+    {
+        var date = NextWeekday(DayOfWeek.Thursday);
+        var weekday = IsoWeekday(date);
+        var otherProfessional = Guid.NewGuid();
+        _referenceData.Candidates =
+        [
+            new ProfessionalCandidateRefDto(
+                TestData.ProfessionalId,
+                Guid.NewGuid(),
+                TestData.UserId,
+                "Dra. Ana Pérez",
+                [TestData.Clinic],
+                [TestData.LocationId],
+                [new ProfessionalScheduleRefDto(weekday, "09:00", "10:00")]
+            ),
+            new ProfessionalCandidateRefDto(
+                otherProfessional,
+                Guid.NewGuid(),
+                null,
+                "Dr. Luis Gómez",
+                [TestData.Clinic],
+                [TestData.LocationId],
+                [new ProfessionalScheduleRefDto(weekday, "09:00", "10:00")]
+            ),
+        ];
+        _appointments.Items.Add(
+            TestData.Appointment(professionalId: TestData.ProfessionalId, start: UtcOf(date, 9))
+        );
+        _appointments.Items.Add(
+            TestData.Appointment(professionalId: otherProfessional, start: UtcOf(date, 9))
+        );
+        var query = new GetAvailabilitySlotsQuery(
+            null,
+            TestData.SpecialtyId,
+            TestData.Org,
+            null,
+            null,
+            date
+        );
+
+        var result = await _handler.Handle(query, CancellationToken.None);
+
+        // Veredicto B4: el slot 09:00 (sin profesionales libres) no está presente.
+        var slot = Assert.Single(result.Slots);
+        Assert.Equal(UtcOf(date, 9, 30), slot.Start);
+        Assert.True(slot.IsAvailable);
+        Assert.Equal(2, slot.AvailableProfessionalCount);
     }
 
     [Fact]

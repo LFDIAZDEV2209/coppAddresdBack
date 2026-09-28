@@ -7,8 +7,11 @@ using MediatR;
 namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 
 /// <summary>
-/// Ranura de agendamiento con su estado de ocupación. Los tiempos están en UTC;
-/// la UI convierte a la hora local con <c>TimezoneOffset</c> del resultado.
+/// Ranura de agendamiento disponible. Los tiempos están en UTC; la UI convierte
+/// a la hora local con <c>TimezoneOffset</c> del resultado. Por veredicto B4
+/// (REQ-TELE-01) la respuesta contiene únicamente slots libres
+/// (<c>IsAvailable = true</c>, <c>ConflictReason = null</c>); los campos se
+/// conservan por compatibilidad contractual con ERP/App.
 /// </summary>
 public sealed record AvailabilitySlotDto(
     DateTimeOffset Start,
@@ -98,13 +101,18 @@ public sealed class GetAvailabilitySlotsQueryHandler(
             await ReferenceDataGuard.RequireProfessionalAsync(referenceData, professionalId, ct);
             var schedules = await referenceData.GetProfessionalSchedulesAsync(professionalId, ct);
             var dayAppointments = await ActiveAppointmentsOnDayAsync(professionalId, dayStart, ct);
-            var slots = AvailabilitySlotBuilder.BuildProfessionalSlots(
-                schedules.Where(s => s.Weekday == isoWeekday),
-                dayAppointments,
-                dayStart,
-                settings.DefaultAppointmentDurationMinutes,
-                now.AddHours(settings.MinAdvanceBookingHours)
-            );
+            var slots = AvailabilitySlotBuilder
+                .BuildProfessionalSlots(
+                    schedules.Where(s => s.Weekday == isoWeekday),
+                    dayAppointments,
+                    dayStart,
+                    settings.DefaultAppointmentDurationMinutes,
+                    now.AddHours(settings.MinAdvanceBookingHours)
+                )
+                // Veredicto B4 (REQ-TELE-01 prevalece): el endpoint devuelve
+                // únicamente slots disponibles; el filtrado ocurre en el servidor.
+                .Where(s => s.IsAvailable)
+                .ToList();
             return new AvailabilitySlotsResult(
                 professionalId,
                 null,
@@ -170,34 +178,18 @@ public sealed class GetAvailabilitySlotsQueryHandler(
             }
         }
 
-        var allKeys = AvailabilitySlotBuilder.AllSlotKeys(
-            withSchedule.SelectMany(x => x.DaySchedules),
-            dayStart,
-            settings.DefaultAppointmentDurationMinutes
-        );
-
-        var result = allKeys
-            .OrderBy(k => k.Start)
-            .Select(k =>
-            {
-                var freeCount = slotsByStart.TryGetValue(k, out var free) ? free.Count : 0;
-                string? reason = null;
-                if (freeCount == 0)
-                {
-                    reason =
-                        k.Start < now.AddHours(settings.MinAdvanceBookingHours)
-                            ? "TooSoon"
-                            : "Booked";
-                }
-                return new AvailabilitySlotDto(
-                    k.Start,
-                    k.End,
-                    settings.DefaultAppointmentDurationMinutes,
-                    freeCount > 0,
-                    reason,
-                    freeCount
-                );
-            })
+        // Veredicto B4 (REQ-TELE-01 prevalece): solo slots con al menos un
+        // profesional libre; los ocupados o en anticipación no se devuelven.
+        var result = slotsByStart
+            .OrderBy(kv => kv.Key.Start)
+            .Select(kv => new AvailabilitySlotDto(
+                kv.Key.Start,
+                kv.Key.End,
+                settings.DefaultAppointmentDurationMinutes,
+                true,
+                null,
+                kv.Value.Count
+            ))
             .ToList();
 
         return new AvailabilitySlotsResult(null, specialtyId, request.Date, UtcOffset, result);
