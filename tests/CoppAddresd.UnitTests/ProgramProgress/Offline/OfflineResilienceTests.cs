@@ -6,6 +6,7 @@ using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.CompleteTask;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.LogNutrition;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.MarkNotificationRead;
+using CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 using CoppAddresd.Application.Features.ProgramProgress.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums.ProgramProgress;
