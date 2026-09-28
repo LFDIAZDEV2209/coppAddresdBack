@@ -25,8 +25,11 @@ public class AppointmentConcurrencyTests
     }
 
     private static Appointment ActiveAppointment(
-        Guid professionalId, DateTimeOffset start, int duration = 30)
-        => new()
+        Guid professionalId,
+        DateTimeOffset start,
+        int duration = 30
+    ) =>
+        new()
         {
             ProfessionalId = professionalId,
             PatientId = TestData.PatientId,
@@ -42,11 +45,29 @@ public class AppointmentConcurrencyTests
         };
 
     private static async Task<(bool Ok, Exception? Error)> TryAddAsync(
-        IAppointmentRepository repo, Appointment appointment)
+        IAppointmentRepository repo,
+        Appointment appointment
+    )
     {
         try
         {
             await repo.AddAsync(appointment);
+            return (true, null);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex);
+        }
+    }
+
+    private static async Task<(bool Ok, Exception? Error)> TryUpdateAsync(
+        IAppointmentRepository repo,
+        Appointment appointment
+    )
+    {
+        try
+        {
+            await repo.UpdateAsync(appointment);
             return (true, null);
         }
         catch (Exception ex)
@@ -66,9 +87,7 @@ public class AppointmentConcurrencyTests
         var repo1 = new AppointmentRepository(_ctx.Create());
         var repo2 = new AppointmentRepository(_ctx.Create());
 
-        var results = await Task.WhenAll(
-            TryAddAsync(repo1, a1),
-            TryAddAsync(repo2, a2));
+        var results = await Task.WhenAll(TryAddAsync(repo1, a1), TryAddAsync(repo2, a2));
 
         var failures = results.Where(r => !r.Ok).ToList();
         Assert.Single(failures);
@@ -91,7 +110,10 @@ public class AppointmentConcurrencyTests
         var (_, firstError) = await TryAddAsync(new AppointmentRepository(_ctx.Create()), a1);
         Assert.Null(firstError);
 
-        var (secondOk, secondError) = await TryAddAsync(new AppointmentRepository(_ctx.Create()), a2);
+        var (secondOk, secondError) = await TryAddAsync(
+            new AppointmentRepository(_ctx.Create()),
+            a2
+        );
         Assert.False(secondOk);
         Assert.IsType<BusinessRuleViolationException>(secondError);
     }
@@ -127,6 +149,56 @@ public class AppointmentConcurrencyTests
         Assert.True(ok2, e2?.ToString());
     }
 
+    /// <summary>
+    /// Carrera de reprogramación (citas-e2e 1.6): dos citas confirmadas en
+    /// slots distintos se mueven al mismo slot libre desde contextos
+    /// separados. La exclusión GiST deja pasar a una y rechaza a la otra con
+    /// <c>BusinessRuleViolationException</c> (el chequeo de aplicación
+    /// <c>HasActiveOverlapAsync</c> no ve la transacción rival).
+    /// </summary>
+    [Fact]
+    public async Task ReprogramacionConcurrenteAlMismoSlot_UnaFallaConExclusion()
+    {
+        var professionalId = Guid.NewGuid();
+        var target = DateTimeOffset.UtcNow.AddDays(1);
+
+        var a1 = ActiveAppointment(professionalId, target.AddHours(-3));
+        var a2 = ActiveAppointment(professionalId, target.AddHours(3));
+        var (ok1, e1) = await TryAddAsync(new AppointmentRepository(_ctx.Create()), a1);
+        Assert.True(ok1, e1?.ToString());
+        var (ok2, e2) = await TryAddAsync(new AppointmentRepository(_ctx.Create()), a2);
+        Assert.True(ok2, e2?.ToString());
+
+        await using var ctx1 = _ctx.Create();
+        await using var ctx2 = _ctx.Create();
+        var repo1 = new AppointmentRepository(ctx1);
+        var repo2 = new AppointmentRepository(ctx2);
+        var m1 = await repo1.GetForUpdateAsync(a1.Id);
+        var m2 = await repo2.GetForUpdateAsync(a2.Id);
+        Assert.NotNull(m1);
+        Assert.NotNull(m2);
+        m1!.ScheduledStart = target;
+        m1.ScheduledEnd = target.AddMinutes(30);
+        m2!.ScheduledStart = target;
+        m2.ScheduledEnd = target.AddMinutes(30);
+
+        var results = await Task.WhenAll(TryUpdateAsync(repo1, m1), TryUpdateAsync(repo2, m2));
+
+        var failures = results.Where(r => !r.Ok).ToList();
+        Assert.Single(failures);
+        Assert.IsType<BusinessRuleViolationException>(failures[0].Error);
+
+        // Solo una de las dos ocupa el slot disputado.
+        await using var verify = _ctx.Create();
+        var occupying = await verify.Appointments.CountAsync(a =>
+            a.ProfessionalId == professionalId
+            && a.Status == AppointmentStatus.Confirmed
+            && a.ScheduledStart < target.AddMinutes(30)
+            && a.ScheduledEnd > target
+        );
+        Assert.Equal(1, occupying);
+    }
+
     [Fact]
     public async Task UnaSolicitudUnaCita_IndiceUnicoRequestId()
     {
@@ -134,16 +206,18 @@ public class AppointmentConcurrencyTests
         // La FK cita → solicitud exige que la solicitud exista primero.
         await using (var seed = _ctx.Create())
         {
-            seed.Requests.Add(new TelemedicineRequest
-            {
-                Id = requestId,
-                PatientId = TestData.PatientId,
-                OrganizationId = TestData.Org,
-                SpecialtyId = TestData.SpecialtyId,
-                Reason = "Dolor abdominal",
-                Status = AppointmentRequestStatus.Pending,
-                CreatedBy = TestData.UserId,
-            });
+            seed.Requests.Add(
+                new TelemedicineRequest
+                {
+                    Id = requestId,
+                    PatientId = TestData.PatientId,
+                    OrganizationId = TestData.Org,
+                    SpecialtyId = TestData.SpecialtyId,
+                    Reason = "Dolor abdominal",
+                    Status = AppointmentRequestStatus.Pending,
+                    CreatedBy = TestData.UserId,
+                }
+            );
             await seed.SaveChangesAsync();
         }
 

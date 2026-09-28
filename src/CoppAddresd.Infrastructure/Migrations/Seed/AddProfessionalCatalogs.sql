@@ -53,7 +53,8 @@ INSERT INTO erp.specialties (code, name, category, description, sort_order) VALU
     ('CARE_COORDINATION', 'Care Coordination', 'Coordinación', 'Coordinación de cuidados y navegación del paciente.', 26),
     ('HEALTH_EDUCATION', 'Health Education', 'Coordinación', 'Educación para la salud y promoción.', 27),
     ('EXERCISE_PHYSIOLOGY', 'Exercise Physiology', 'Fitness', 'Fisiología del ejercicio y prescripción de actividad física.', 28),
-    ('WELLNESS_COACHING', 'Wellness Coaching', 'Fitness', 'Coaching de bienestar y hábitos saludables.', 29)
+    ('WELLNESS_COACHING', 'Wellness Coaching', 'Fitness', 'Coaching de bienestar y hábitos saludables.', 29),
+    ('URGENT_CARE', 'Urgent Care', 'Medicina', 'Atención prioritaria de urgencias no vitales.', 30)
 ON CONFLICT (code) DO NOTHING;
 
 -- Mapeo profesión → especialidades válidas (professional_type_specialties).
@@ -76,6 +77,7 @@ FROM (VALUES
     ('PHYSICIAN', 'SLEEP_MEDICINE'),
     ('PHYSICIAN', 'CLINICAL_NUTRITION'),
     ('PHYSICIAN', 'BEHAVIORAL_HEALTH'),
+    ('PHYSICIAN', 'URGENT_CARE'),
     ('NURSE_PRACTITIONER', 'FAMILY_MEDICINE'),
     ('NURSE_PRACTITIONER', 'INTERNAL_MEDICINE'),
     ('NURSE_PRACTITIONER', 'PEDIATRICS'),
@@ -86,6 +88,7 @@ FROM (VALUES
     ('NURSE_PRACTITIONER', 'ENDOCRINOLOGY'),
     ('NURSE_PRACTITIONER', 'BEHAVIORAL_HEALTH'),
     ('NURSE_PRACTITIONER', 'COMMUNITY_HEALTH_NURSING'),
+    ('NURSE_PRACTITIONER', 'URGENT_CARE'),
     ('PHYSICIAN_ASSISTANT', 'FAMILY_MEDICINE'),
     ('PHYSICIAN_ASSISTANT', 'INTERNAL_MEDICINE'),
     ('PHYSICIAN_ASSISTANT', 'PEDIATRICS'),
@@ -93,12 +96,14 @@ FROM (VALUES
     ('PHYSICIAN_ASSISTANT', 'ENDOCRINOLOGY'),
     ('PHYSICIAN_ASSISTANT', 'SPORTS_MEDICINE'),
     ('PHYSICIAN_ASSISTANT', 'PREVENTIVE_MEDICINE'),
+    ('PHYSICIAN_ASSISTANT', 'URGENT_CARE'),
     ('REGISTERED_NURSE', 'MEDSURG_NURSING'),
     ('REGISTERED_NURSE', 'COMMUNITY_HEALTH_NURSING'),
     ('REGISTERED_NURSE', 'CARE_COORDINATION'),
     ('REGISTERED_NURSE', 'HEALTH_EDUCATION'),
     ('REGISTERED_NURSE', 'OBESITY_MEDICINE'),
     ('REGISTERED_NURSE', 'ENDOCRINOLOGY'),
+    ('REGISTERED_NURSE', 'URGENT_CARE'),
     ('LICENSED_PRACTICAL_NURSE', 'MEDSURG_NURSING'),
     ('LICENSED_PRACTICAL_NURSE', 'COMMUNITY_HEALTH_NURSING'),
     ('LICENSED_PRACTICAL_NURSE', 'CARE_COORDINATION'),

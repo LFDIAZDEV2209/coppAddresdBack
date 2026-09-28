@@ -1,4 +1,5 @@
 using CoppAddresd.Api.Authorization;
+using CoppAddresd.Application.Features.Professionals;
 using CoppAddresd.Application.Features.Telemedicine;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -22,10 +23,14 @@ public class AppointmentReferenceController(IMediator mediator) : ControllerBase
     [ProducesResponseType(typeof(AppointmentProfessionalRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentProfessionalRefDto>> GetProfessional(
-        Guid id, CancellationToken ct)
+        Guid id,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetAppointmentProfessionalRefQuery(id), ct);
-        return result is null ? NotFound(new { message = "Profesional no encontrado." }) : Ok(result);
+        return result is null
+            ? NotFound(new { message = "Profesional no encontrado." })
+            : Ok(result);
     }
 
     /// <summary>Paciente por id (<c>app.patient_profiles</c>).</summary>
@@ -33,7 +38,9 @@ public class AppointmentReferenceController(IMediator mediator) : ControllerBase
     [ProducesResponseType(typeof(AppointmentPatientRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentPatientRefDto>> GetPatient(
-        Guid id, CancellationToken ct)
+        Guid id,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetAppointmentPatientRefQuery(id), ct);
         return result is null ? NotFound(new { message = "Paciente no encontrado." }) : Ok(result);
@@ -44,10 +51,14 @@ public class AppointmentReferenceController(IMediator mediator) : ControllerBase
     [ProducesResponseType(typeof(AppointmentSpecialtyRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentSpecialtyRefDto>> GetSpecialty(
-        Guid id, CancellationToken ct)
+        Guid id,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetAppointmentSpecialtyRefQuery(id), ct);
-        return result is null ? NotFound(new { message = "Especialidad no encontrada." }) : Ok(result);
+        return result is null
+            ? NotFound(new { message = "Especialidad no encontrada." })
+            : Ok(result);
     }
 
     /// <summary>Sede por id (<c>erp.locations</c>).</summary>
@@ -55,7 +66,9 @@ public class AppointmentReferenceController(IMediator mediator) : ControllerBase
     [ProducesResponseType(typeof(AppointmentLocationRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentLocationRefDto>> GetLocation(
-        Guid id, CancellationToken ct)
+        Guid id,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetAppointmentLocationRefQuery(id), ct);
         return result is null ? NotFound(new { message = "Sede no encontrada." }) : Ok(result);
@@ -70,10 +83,14 @@ public class AppointmentReferenceController(IMediator mediator) : ControllerBase
     [ProducesResponseType(typeof(AppointmentProfessionalRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentProfessionalRefDto>> GetProfessionalByUser(
-        Guid userId, CancellationToken ct)
+        Guid userId,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetAppointmentProfessionalByUserIdQuery(userId), ct);
-        return result is null ? NotFound(new { message = "Profesional no encontrado para el usuario." }) : Ok(result);
+        return result is null
+            ? NotFound(new { message = "Profesional no encontrado para el usuario." })
+            : Ok(result);
     }
 
     /// <summary>Paciente por usuario de Auth (contexto del JWT), para autorizar el acceso a la sala del paciente.</summary>
@@ -81,9 +98,63 @@ public class AppointmentReferenceController(IMediator mediator) : ControllerBase
     [ProducesResponseType(typeof(AppointmentPatientRefDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AppointmentPatientRefDto>> GetPatientByUser(
-        Guid userId, CancellationToken ct)
+        Guid userId,
+        CancellationToken ct
+    )
     {
         var result = await mediator.Send(new GetAppointmentPatientByUserIdQuery(userId), ct);
-        return result is null ? NotFound(new { message = "Paciente no encontrado para el usuario." }) : Ok(result);
+        return result is null
+            ? NotFound(new { message = "Paciente no encontrado para el usuario." })
+            : Ok(result);
+    }
+
+    /// <summary>
+    /// Turnos semanales de atención de un profesional (<c>erp.professional_schedules</c>).
+    /// Siempre 200 con lista (vacía si el profesional no existe o no tiene horario):
+    /// el cálculo de disponibilidad trata ambos casos como sin cupo.
+    /// </summary>
+    [HttpGet("professionals/{id:guid}/schedules")]
+    [ProducesResponseType(typeof(IReadOnlyList<ProfessionalScheduleDto>), StatusCodes.Status200OK)]
+    public async Task<
+        ActionResult<IReadOnlyList<ProfessionalScheduleDto>>
+    > GetProfessionalSchedules(Guid id, CancellationToken ct)
+    {
+        var result = await mediator.Send(new GetProfessionalSchedulesQuery(id), ct);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Profesionales activos candidatos de una especialidad con sus turnos
+    /// semanales (modo specialty de disponibilidad, citas-e2e 1.1a). 404 si la
+    /// especialidad no existe; 200 con lista (vacía si no hay candidatos).
+    /// </summary>
+    [HttpGet("professionals/by-specialty")]
+    [ProducesResponseType(
+        typeof(IReadOnlyList<AppointmentProfessionalCandidateDto>),
+        StatusCodes.Status200OK
+    )]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<
+        ActionResult<IReadOnlyList<AppointmentProfessionalCandidateDto>>
+    > GetProfessionalCandidates(
+        [FromQuery] Guid specialtyId,
+        [FromQuery] Guid? organizationId,
+        [FromQuery] Guid? clinicId,
+        [FromQuery] Guid? locationId,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new GetAppointmentCandidatesBySpecialtyQuery(
+                specialtyId,
+                organizationId,
+                clinicId,
+                locationId
+            ),
+            ct
+        );
+        return result is null
+            ? NotFound(new { message = "Especialidad no encontrada." })
+            : Ok(result);
     }
 }

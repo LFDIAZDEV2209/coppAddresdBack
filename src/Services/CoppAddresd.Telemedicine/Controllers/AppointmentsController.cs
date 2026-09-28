@@ -82,6 +82,40 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
         CancellationToken ct
     ) => Ok(await mediator.Send(new GetProfessionalAgendaQuery(professionalId, from, to), ct));
 
+    /// <summary>
+    /// Ranuras disponibles de un día: por profesional concreto o por
+    /// especialidad (el modo specialty agrega los slots de los profesionales
+    /// elegibles con su conteo de libres, sin asignar ni reservar).
+    /// Autorización dual sin permiso específico: paciente (`aud: app`) y ERP
+    /// (`aud: erp`). Tiempos en UTC (`timezoneOffset: "+00:00"`).
+    /// </summary>
+    [HttpGet("availability")]
+    [ProducesResponseType(typeof(AvailabilitySlotsResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AvailabilitySlotsResult>> Availability(
+        [FromQuery] Guid? professionalId,
+        [FromQuery] Guid? specialtyId,
+        [FromQuery] Guid? organizationId,
+        [FromQuery] Guid? clinicId,
+        [FromQuery] Guid? locationId,
+        [FromQuery] DateOnly date,
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                new GetAvailabilitySlotsQuery(
+                    professionalId,
+                    specialtyId,
+                    organizationId,
+                    clinicId,
+                    locationId,
+                    date
+                ),
+                ct
+            )
+        );
+
     [HttpPost("{id:guid}/cancel")]
     [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -106,21 +140,30 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id:guid}/reschedule")]
-    [RequirePermission(AppointmentPermissionCodes.AppointmentsReschedule)]
     [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<AppointmentDto>> Reschedule(
         Guid id,
         [FromBody] RescheduleAppointmentDto request,
         CancellationToken ct
     )
     {
+        // Alcance dual (igual que Cancel): con el permiso ERP el RequestedBy
+        // sale del body; sin permiso, el llamador es el paciente de la cita
+        // (identidad del JWT), el servidor fuerza RequestedBy = Patient y el
+        // handler valida propiedad/estado/límites.
+        var erpMode = User.HasClaim(
+            "permission",
+            AppointmentPermissionCodes.AppointmentsReschedule
+        );
         var command = new RescheduleAppointmentCommand(
             id,
             request.NewStart,
             request.DurationMinutes,
             request.Reason,
-            request.RequestedBy,
-            CurrentUserId()
+            erpMode ? request.RequestedBy : RescheduleRequestedBy.Patient,
+            CurrentUserId(),
+            erpMode ? null : CurrentUserId()
         );
         return Ok(await mediator.Send(command, ct));
     }

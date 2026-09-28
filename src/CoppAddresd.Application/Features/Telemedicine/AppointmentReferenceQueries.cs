@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Professionals;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using MediatR;
@@ -72,6 +73,103 @@ public sealed record GetAppointmentProfessionalByUserIdQuery(Guid UserId)
 
 public sealed record GetAppointmentPatientByUserIdQuery(Guid UserId)
     : IRequest<AppointmentPatientRefDto?>;
+
+// Candidatos por especialidad (modo specialty de /availability, citas-e2e 1.1a):
+// profesionales ACTIVOS asociados a la especialidad con sus horarios semanales,
+// filtrados por contexto organización/clínica/sede. Null si la especialidad no
+// existe; lista vacía si existe pero sin candidatos (p. ej. inactiva o sin
+// profesionales). Una sola respuesta batch: evita una llamada HTTP por profesional.
+
+/// <summary>Profesional candidato con sus turnos semanales.</summary>
+public sealed record AppointmentProfessionalCandidateDto(
+    Guid ProfessionalId,
+    Guid EmployeeId,
+    Guid? UserId,
+    string FullName,
+    IReadOnlyList<Guid> ClinicIds,
+    IReadOnlyList<Guid> LocationIds,
+    IReadOnlyList<ProfessionalScheduleDto> Schedules
+);
+
+public sealed record GetAppointmentCandidatesBySpecialtyQuery(
+    Guid SpecialtyId,
+    Guid? OrganizationId,
+    Guid? ClinicId,
+    Guid? LocationId
+) : IRequest<IReadOnlyList<AppointmentProfessionalCandidateDto>?>;
+
+public sealed class GetAppointmentCandidatesBySpecialtyQueryHandler(
+    IEmployeeRepository employees,
+    IOrganizationRepository organizations
+)
+    : IRequestHandler<
+        GetAppointmentCandidatesBySpecialtyQuery,
+        IReadOnlyList<AppointmentProfessionalCandidateDto>?
+    >
+{
+    // Tope interno del batch (una especialidad por contexto tiene decenas de
+    // profesionales como máximo; evita respuestas desbordadas).
+    private const int MaxCandidates = 500;
+
+    public async Task<IReadOnlyList<AppointmentProfessionalCandidateDto>?> Handle(
+        GetAppointmentCandidatesBySpecialtyQuery request,
+        CancellationToken ct
+    )
+    {
+        var specialty = await organizations.GetSpecialtyByIdAsync(request.SpecialtyId, ct);
+        if (specialty is null)
+        {
+            return null;
+        }
+
+        var (items, _) = await employees.ListProfessionalsAsync(
+            1,
+            MaxCandidates,
+            null,
+            "Active",
+            request.SpecialtyId,
+            request.LocationId,
+            request.OrganizationId,
+            request.ClinicId,
+            ct
+        );
+
+        if (items.Count == 0)
+        {
+            return [];
+        }
+
+        var professionalIds = items.Select(e => e.Professional!.Id).Distinct().ToList();
+
+        var schedules = await employees.GetSchedulesByProfessionalIdsAsync(professionalIds, ct);
+
+        var byProfessional = schedules
+            .GroupBy(s => s.ProfessionalId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                    (IReadOnlyList<ProfessionalScheduleDto>)
+                        g.OrderBy(s => s.Weekday)
+                            .Select(ProfessionalScheduleDto.FromEntity)
+                            .ToList()
+            );
+
+        return items
+            .Select(e => new AppointmentProfessionalCandidateDto(
+                e.Professional!.Id,
+                e.Id,
+                e.UserId,
+                $"{e.FirstName} {e.MiddleName} {e.LastName}".Trim(),
+                e.ClinicAssignments.Select(a => a.ClinicId).Distinct().ToList(),
+                e.ClinicAssignments.SelectMany(a => a.Clinic.Locations)
+                    .Select(l => l.Id)
+                    .Distinct()
+                    .ToList(),
+                byProfessional.GetValueOrDefault(e.Professional.Id) ?? []
+            ))
+            .ToList();
+    }
+}
 
 public sealed class GetAppointmentProfessionalRefQueryHandler(IEmployeeRepository employees)
     : IRequestHandler<GetAppointmentProfessionalRefQuery, AppointmentProfessionalRefDto?>

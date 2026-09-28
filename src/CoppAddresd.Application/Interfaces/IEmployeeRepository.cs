@@ -128,6 +128,16 @@ public interface IEmployeeRepository
     );
 
     /// <summary>
+    /// Horarios semanales de varios profesionales en una sola consulta
+    /// (evita N+1 al resolver candidatos por especialidad). Ordenados por
+    /// profesional y weekday.
+    /// </summary>
+    Task<IReadOnlyList<ProfessionalSchedule>> GetSchedulesByProfessionalIdsAsync(
+        IReadOnlyCollection<Guid> professionalIds,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
     /// Reemplazo total de los horarios semanales de un profesional: elimina
     /// todas las filas existentes e inserta las nuevas en una sola transacción.
     /// </summary>

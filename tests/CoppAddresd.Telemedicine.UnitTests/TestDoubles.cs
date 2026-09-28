@@ -43,8 +43,11 @@ public static class TestData
             [Clinic]
         );
 
-    public static PatientRefDto Patient(Guid? id = null, string? stateCode = null, Guid? userId = null) =>
-        new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId, stateCode, userId);
+    public static PatientRefDto Patient(
+        Guid? id = null,
+        string? stateCode = null,
+        Guid? userId = null
+    ) => new(id ?? PatientId, "María Gómez", "maria@x.com", Clinic, LocationId, stateCode, userId);
 
     public static SpecialtyRefDto Specialty(Guid? id = null) =>
         new(id ?? SpecialtyId, "MED-GEN", "Medicina General", "General");
@@ -111,15 +114,19 @@ public sealed class FakeMetricsQueue : ITelemedicineMetricsQueue
 {
     public List<ITelemedicineMetricEvent> Events { get; } = [];
 
-    public ValueTask EnqueueAsync(ITelemedicineMetricEvent metricEvent, CancellationToken ct = default)
+    public ValueTask EnqueueAsync(
+        ITelemedicineMetricEvent metricEvent,
+        CancellationToken ct = default
+    )
     {
         Events.Add(metricEvent);
         return ValueTask.CompletedTask;
     }
 
     // Los tests de emisores solo encolan; el consumo lo cubre el processor.
-    public IAsyncEnumerable<ITelemedicineMetricEvent> ReadAllAsync(CancellationToken ct = default) =>
-        throw new NotSupportedException();
+    public IAsyncEnumerable<ITelemedicineMetricEvent> ReadAllAsync(
+        CancellationToken ct = default
+    ) => throw new NotSupportedException();
 }
 
 /// <summary>Datos de referencia del ERP en memoria (sustituye al AppointmentReferenceDataService).</summary>
@@ -131,6 +138,15 @@ public sealed class FakeReferenceDataService : IAppointmentReferenceDataService
     public Dictionary<Guid, LocationRefDto> Locations { get; } = [];
     public Dictionary<Guid, Guid> UserToProfessional { get; } = [];
     public Dictionary<Guid, Guid> UserToPatient { get; } = [];
+
+    /// <summary>Turnos semanales por profesional (vacío = sin horario).</summary>
+    public Dictionary<Guid, List<ProfessionalScheduleRefDto>> Schedules { get; } = [];
+
+    /// <summary>
+    /// Candidatos por especialidad (el backend ya filtró por contexto; null =
+    /// especialidad inexistente → el handler responde 404).
+    /// </summary>
+    public List<ProfessionalCandidateRefDto>? Candidates { get; set; }
 
     public Task<ProfessionalRefDto?> GetProfessionalAsync(
         Guid professionalId,
@@ -167,6 +183,22 @@ public sealed class FakeReferenceDataService : IAppointmentReferenceDataService
         Task.FromResult(
             UserToPatient.TryGetValue(userId, out var id) ? Patients.GetValueOrDefault(id) : null
         );
+
+    public Task<IReadOnlyList<ProfessionalScheduleRefDto>> GetProfessionalSchedulesAsync(
+        Guid professionalId,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<ProfessionalScheduleRefDto>>(
+            Schedules.GetValueOrDefault(professionalId) ?? []
+        );
+
+    public Task<IReadOnlyList<ProfessionalCandidateRefDto>?> GetProfessionalCandidatesAsync(
+        Guid specialtyId,
+        Guid? organizationId,
+        Guid? clinicId,
+        Guid? locationId,
+        CancellationToken ct = default
+    ) => Task.FromResult<IReadOnlyList<ProfessionalCandidateRefDto>?>(Candidates);
 }
 
 /// <summary>Proveedor de settings en memoria (sustituye al TelemedicineSettingsProvider).</summary>
@@ -546,16 +578,8 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
         );
 
     /// <summary>Agregado de métricas de llamada devuelto por el fake (configurable por test).</summary>
-    public CallMetricsAggregate CallMetrics { get; set; } = new(
-        0,
-        0,
-        0,
-        0,
-        0,
-        new Dictionary<string, int>(),
-        0,
-        new Dictionary<string, int>()
-    );
+    public CallMetricsAggregate CallMetrics { get; set; } =
+        new(0, 0, 0, 0, 0, new Dictionary<string, int>(), 0, new Dictionary<string, int>());
 
     public Task<CallMetricsAggregate> GetCallMetricsAsync(
         Guid? professionalId,
@@ -601,9 +625,7 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
     ) =>
         Task.FromResult<IReadOnlyList<Appointment>>(
             Items
-                .Where(a =>
-                    a.Status == status && a.ScheduledStart >= from && a.ScheduledStart < to
-                )
+                .Where(a => a.Status == status && a.ScheduledStart >= from && a.ScheduledStart < to)
                 .OrderBy(a => a.ScheduledStart)
                 .ToList()
         );
@@ -1031,7 +1053,8 @@ public sealed class FakeChatMessageRepository : IChatMessageRepository
             query = afterId is { } cursorId
                 ? query.Where(m =>
                     m.CreatedAt > cursorUtc
-                    || (m.CreatedAt == cursorUtc && m.Id.CompareTo(cursorId) > 0))
+                    || (m.CreatedAt == cursorUtc && m.Id.CompareTo(cursorId) > 0)
+                )
                 : query.Where(m => m.CreatedAt > cursorUtc);
         }
 
