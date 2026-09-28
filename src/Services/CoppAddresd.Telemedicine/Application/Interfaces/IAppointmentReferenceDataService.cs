@@ -13,13 +13,19 @@ namespace CoppAddresd.Telemedicine.Application.Interfaces;
 public interface IAppointmentReferenceDataService
 {
     /// <summary>Profesional por su id de <c>erp.professionals</c>; <c>null</c> si no existe.</summary>
-    Task<ProfessionalRefDto?> GetProfessionalAsync(Guid professionalId, CancellationToken ct = default);
+    Task<ProfessionalRefDto?> GetProfessionalAsync(
+        Guid professionalId,
+        CancellationToken ct = default
+    );
 
     /// <summary>Paciente por su id de <c>app.patient_profiles</c>; <c>null</c> si no existe.</summary>
     Task<PatientRefDto?> GetPatientAsync(Guid patientId, CancellationToken ct = default);
 
     /// <summary>Profesional del usuario de Auth (contexto del JWT); <c>null</c> si el usuario no es profesional.</summary>
-    Task<ProfessionalRefDto?> GetProfessionalByUserIdAsync(Guid userId, CancellationToken ct = default);
+    Task<ProfessionalRefDto?> GetProfessionalByUserIdAsync(
+        Guid userId,
+        CancellationToken ct = default
+    );
 
     /// <summary>Paciente del usuario de Auth (contexto del JWT); <c>null</c> si el usuario no es paciente.</summary>
     Task<PatientRefDto?> GetPatientByUserIdAsync(Guid userId, CancellationToken ct = default);
@@ -29,4 +35,14 @@ public interface IAppointmentReferenceDataService
 
     /// <summary>Sede por id de <c>erp.locations</c>; <c>null</c> si no existe.</summary>
     Task<LocationRefDto?> GetLocationAsync(Guid locationId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Turnos semanales de atención del profesional (<c>erp.professional_schedules</c>,
+    /// vía internal endpoint del backend). Lista vacía si el profesional no existe
+    /// o no tiene horario configurado.
+    /// </summary>
+    Task<IReadOnlyList<ProfessionalScheduleRefDto>> GetProfessionalSchedulesAsync(
+        Guid professionalId,
+        CancellationToken ct = default
+    );
 }

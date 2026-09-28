@@ -44,3 +44,9 @@ public sealed record SpecialtyRefDto(Guid Id, string Code, string Name, string C
 
 /// <summary>Sede (id = <c>erp.locations</c>).</summary>
 public sealed record LocationRefDto(Guid Id, string Name, Guid ClinicId, bool IsActive);
+
+/// <summary>
+/// Franja semanal de atención (reflejo de <c>erp.professional_schedules</c>:
+/// <c>Weekday</c> ISO 1–7 con lunes = 1, horas <c>HH:mm</c> sin zona horaria).
+/// </summary>
+public sealed record ProfessionalScheduleRefDto(int Weekday, string StartTime, string EndTime);

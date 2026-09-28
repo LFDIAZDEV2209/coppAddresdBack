@@ -14,11 +14,11 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Services;
 /// DI (sección <c>Backend</c>). Devuelve <c>null</c> ante 404 (el recurso no
 /// existe en el ERP) y traduce errores transitorios del backend a una
 /// excepción de dominio comprensible. Cache-aside DISTRIBUIDO con TTL 10 min
-/// por referencia (profesional/paciente/especialidad/sede): las pantallas de
+/// por referencia (profesional/paciente/especialidad/sede/horarios): las pantallas de
 /// agenda y salas repiten las mismas referencias por cita; datos catalogables
 /// sin PHI a nivel fila. Fail-open: con Valkey caído, el backend se consulta
 /// siempre. Los 404 NO se cachean (evita envenenar el caché con recursos que
-/// aparecen después).
+/// aparecen después); la lista vacía de horarios SÍ se cachea (sin cupo).
 /// </summary>
 public sealed class AppointmentReferenceDataService(
     HttpClient httpClient,
@@ -64,6 +64,37 @@ public sealed class AppointmentReferenceDataService(
         Guid locationId,
         CancellationToken ct = default
     ) => await GetCachedAsync<LocationRefDto>($"locations/{locationId}", ct);
+
+    /// <summary>
+    /// Turnos semanales del profesional desde el internal endpoint del backend
+    /// (<c>GET /api/v1/internal/telemedicine/professionals/{id}/schedules</c>).
+    /// Cache-aside con el mismo TTL de referencias (10 min): la lista vacía SÍ
+    /// se cachea (profesional sin horario = miss caro repetido en agenda).
+    /// Fail-open vía <c>ICacheService</c> (Valkey caído → backend directo).
+    /// </summary>
+    public async Task<IReadOnlyList<ProfessionalScheduleRefDto>> GetProfessionalSchedulesAsync(
+        Guid professionalId,
+        CancellationToken ct = default
+    )
+    {
+        var key = $"ref:professionals/{professionalId}/schedules:{KeyVersion}";
+
+        var cached = await cache.GetAsync<List<ProfessionalScheduleRefDto>>(key, ct);
+        if (cached is not null)
+        {
+            return cached;
+        }
+
+        var fetched =
+            await GetAsync<List<ProfessionalScheduleRefDto>>(
+                $"/api/v1/internal/telemedicine/professionals/{professionalId}/schedules",
+                ct
+            ) ?? [];
+
+        await cache.SetAsync(key, fetched, ReferenceTtl, ct);
+
+        return fetched;
+    }
 
     private async Task<T?> GetCachedAsync<T>(string referencePath, CancellationToken ct)
         where T : class
