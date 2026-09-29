@@ -235,6 +235,20 @@ public interface IHealthTestRepository
         int pageSize,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Alertas restringidas a los pacientes asignados al profesional del JWT
+    /// (alcance HealthTests.ViewOwn): el filtro de patientIds es obligatorio;
+    /// con una lista vacía devuelve cero filas (nunca abre el alcance).
+    /// </summary>
+    Task<(IReadOnlyList<HealthTestAlert> Items, int Total)> ListAlertsForProfessionalAsync(
+        IReadOnlyCollection<Guid> patientIds,
+        string? status,
+        string? severity,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    );
     Task<IReadOnlyList<HealthTestAlert>> ListAlertsByPatientAsync(
         Guid patientId,
         CancellationToken ct = default
@@ -252,6 +266,7 @@ public interface IHealthTestRepository
         Guid professionalId,
         CancellationToken ct = default
     );
+
     /// <summary>
     /// Pacientes activos con ciudad dentro de uno o varios estados
     /// (<paramref name="stateCodes"/>, códigos, unión) o de una ciudad concreta
@@ -263,6 +278,7 @@ public interface IHealthTestRepository
         Guid? cityId,
         CancellationToken ct = default
     );
+
     /// <summary>
     /// KPIs del dashboard acotados por zona geográfica (unión de estados o
     /// ciudad con precedencia) y alcance del profesional, en UNA consulta
@@ -274,6 +290,7 @@ public interface IHealthTestRepository
         Guid? cityId,
         CancellationToken ct = default
     );
+
     /// <summary>
     /// Asignaciones (con paciente/version/instrumento/evaluaciones/resultados)
     /// acotadas por zona geográfica en SQL (JOIN), sin lista de GUIDs. Alcance
@@ -285,6 +302,7 @@ public interface IHealthTestRepository
         Guid? cityId,
         CancellationToken ct = default
     );
+
     /// <summary>
     /// Conteo de alertas activas/review por paciente acotado a la zona
     /// geográfica (JOIN en SQL).
@@ -294,6 +312,7 @@ public interface IHealthTestRepository
         Guid? cityId,
         CancellationToken ct = default
     );
+
     /// <summary>
     /// Nombre del profesional activo por paciente acotado a la zona geográfica.
     /// </summary>
@@ -302,6 +321,7 @@ public interface IHealthTestRepository
         Guid? cityId,
         CancellationToken ct = default
     );
+
     /// <summary>
     /// Geo agregado del mapa leído del rollup snapshot
     /// (<c>app.health_test_geo_rollups</c>): ciudades con % de alto riesgo y
@@ -309,8 +329,10 @@ public interface IHealthTestRepository
     /// memoria que reemplaza.
     /// </summary>
     Task<HealthTestsGeoDto> GetGeoFromRollupAsync(CancellationToken ct = default);
+
     /// <summary>El rollup geo tiene al menos una fila (fast path disponible).</summary>
     Task<bool> GeoRollupExistsAsync(CancellationToken ct = default);
+
     /// <summary>
     /// Cobertura de tests de los últimos 12 meses leída del rollup diario
     /// (<c>assignments_count/completed</c> global): 1 consulta de ~365 filas.

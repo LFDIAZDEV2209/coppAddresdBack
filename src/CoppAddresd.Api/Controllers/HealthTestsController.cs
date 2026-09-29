@@ -452,6 +452,27 @@ public class HealthTestsController(
             return Forbid();
         }
 
+        // Alcance propio: solo alertas de pacientes asignados al profesional
+        // del JWT. El filtro por patientIds lo resuelve el servidor.
+        if (ownProfessionalId is { } profId && patientId is null)
+        {
+            var patientIds = await repository.GetPatientIdsForProfessionalAsync(profId, ct);
+            var result = await mediator.Send(
+                new ListAlertsForProfessionalQuery(patientIds, status, severity, page, pageSize),
+                ct
+            );
+            return Ok(result);
+        }
+
+        if (
+            ownProfessionalId is { } ownId
+            && patientId is { } pId
+            && !await repository.PatientBelongsToProfessionalAsync(pId, ownId, ct)
+        )
+        {
+            return NotFound(new { message = "Paciente no encontrado" });
+        }
+
         return Ok(
             await mediator.Send(
                 new ListAlertsQuery(patientId, status, severity, page, pageSize),
@@ -549,9 +570,7 @@ public class HealthTestsController(
     )
     {
         var result = await mediator.Send(new GetNotificationTemplateQuery(id), ct);
-        return result is null
-            ? NotFound(new { message = "Plantilla no encontrada" })
-            : Ok(result);
+        return result is null ? NotFound(new { message = "Plantilla no encontrada" }) : Ok(result);
     }
 
     /// <summary>Crea una plantilla de notificación.</summary>
@@ -636,29 +655,24 @@ public class HealthTestsController(
             new SetNotificationTemplateActiveCommand(id, false, context.UserId),
             ct
         );
-        return result is null
-            ? NotFound(new { message = "Plantilla no encontrada" })
-            : Ok(result);
+        return result is null ? NotFound(new { message = "Plantilla no encontrada" }) : Ok(result);
     }
 
     /// <summary>Activa o desactiva una plantilla de notificación.</summary>
     [HttpPost("notification-templates/{id:guid}/activate")]
     [HttpPost("notification-templates/{id:guid}/deactivate")]
     [RequirePermission(PermissionCodes.HealthTestsNotify)]
-    public async Task<ActionResult<HealthTestNotificationTemplateDto>> SetNotificationTemplateActive(
-        Guid id,
-        CancellationToken ct
-    )
+    public async Task<
+        ActionResult<HealthTestNotificationTemplateDto>
+    > SetNotificationTemplateActive(Guid id, CancellationToken ct)
     {
-        var isActive = Request.Path.Value?.EndsWith("/activate", StringComparison.OrdinalIgnoreCase)
-            == true;
+        var isActive =
+            Request.Path.Value?.EndsWith("/activate", StringComparison.OrdinalIgnoreCase) == true;
         var result = await mediator.Send(
             new SetNotificationTemplateActiveCommand(id, isActive, context.UserId),
             ct
         );
-        return result is null
-            ? NotFound(new { message = "Plantilla no encontrada" })
-            : Ok(result);
+        return result is null ? NotFound(new { message = "Plantilla no encontrada" }) : Ok(result);
     }
 
     /// <summary>Clona una plantilla de notificación.</summary>
@@ -690,11 +704,9 @@ public class HealthTestsController(
     /// <summary>Restaura una versión anterior como nueva versión vigente.</summary>
     [HttpPost("notification-templates/{id:guid}/versions/{version:int}/restore")]
     [RequirePermission(PermissionCodes.HealthTestsNotify)]
-    public async Task<ActionResult<HealthTestNotificationTemplateDto>> RestoreNotificationTemplateVersion(
-        Guid id,
-        int version,
-        CancellationToken ct
-    )
+    public async Task<
+        ActionResult<HealthTestNotificationTemplateDto>
+    > RestoreNotificationTemplateVersion(Guid id, int version, CancellationToken ct)
     {
         var result = await mediator.Send(
             new RestoreNotificationTemplateVersionCommand(id, version, context.UserId),
@@ -718,9 +730,7 @@ public class HealthTestsController(
             new SendTestNotificationCommand(id, request, context.UserId),
             ct
         );
-        return result is null
-            ? NotFound(new { message = "Plantilla no encontrada" })
-            : Ok(result);
+        return result is null ? NotFound(new { message = "Plantilla no encontrada" }) : Ok(result);
     }
 
     /// <summary>
@@ -815,9 +825,7 @@ public class HealthTestsController(
             return Forbid();
         }
 
-        return Ok(
-            await mediator.Send(new GetNotificationChartsQuery(ownProfessionalId, days), ct)
-        );
+        return Ok(await mediator.Send(new GetNotificationChartsQuery(ownProfessionalId, days), ct));
     }
 
     // ===================== GEO (mapa) =====================
@@ -845,9 +853,8 @@ public class HealthTestsController(
     [HttpGet("coverage-trend")]
     public async Task<
         ActionResult<IReadOnlyList<HealthTestCoverageTrendPointDto>>
-    > GetCoverageTrend(CancellationToken ct) => Ok(
-        await mediator.Send(new GetHealthTestCoverageTrendQuery(), ct)
-    );
+    > GetCoverageTrend(CancellationToken ct) =>
+        Ok(await mediator.Send(new GetHealthTestCoverageTrendQuery(), ct));
 
     /// <summary>
     /// KPIs del dashboard. Sin filtros devuelve el alcance global; con

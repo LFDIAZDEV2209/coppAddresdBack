@@ -45,6 +45,53 @@ public sealed class ListAlertsQueryHandler(IHealthTestRepository repository)
     }
 }
 
+// --- List Alerts (alcance propio ViewOwn) ---
+
+/// <summary>
+/// Bandeja de alertas restringida a los pacientes asignados al profesional
+/// del JWT (alcance <c>HealthTests.ViewOwn</c>). Los patientIds son
+/// obligatorios y provienen SIEMPRE del servidor
+/// (<c>GetPatientIdsForProfessionalAsync</c>), nunca de parámetros del cliente.
+/// </summary>
+public record ListAlertsForProfessionalQuery(
+    IReadOnlyCollection<Guid> PatientIds,
+    string? Status = null,
+    string? Severity = null,
+    int Page = 1,
+    int PageSize = 20
+) : IRequest<PaginatedHealthTestsResult<HealthTestAlertDto>>;
+
+public sealed class ListAlertsForProfessionalQueryHandler(IHealthTestRepository repository)
+    : IRequestHandler<
+        ListAlertsForProfessionalQuery,
+        PaginatedHealthTestsResult<HealthTestAlertDto>
+    >
+{
+    public async Task<PaginatedHealthTestsResult<HealthTestAlertDto>> Handle(
+        ListAlertsForProfessionalQuery request,
+        CancellationToken ct
+    )
+    {
+        var (items, total) = await repository.ListAlertsForProfessionalAsync(
+            request.PatientIds,
+            request.Status,
+            request.Severity,
+            Math.Max(1, request.Page),
+            Math.Clamp(request.PageSize, 1, 100),
+            ct
+        );
+        var pageSize = Math.Clamp(request.PageSize, 1, 100);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+        return new PaginatedHealthTestsResult<HealthTestAlertDto>(
+            items.Select(HealthTestAlertDto.FromEntity).ToList(),
+            total,
+            Math.Max(1, request.Page),
+            pageSize,
+            totalPages
+        );
+    }
+}
+
 // --- Transition alert (review / resolve / close / reopen) ---
 
 public record TransitionAlertCommand(
@@ -267,13 +314,10 @@ public sealed class GetHealthTestStatsQueryHandler(
 // --- Coverage trend (dashboard ERP) ---
 
 /// <summary>Últimos 12 meses de cobertura de tests (global, rollup mensual).</summary>
-public record HealthTestCoverageTrendPointDto(
-    string Label,
-    double Coverage,
-    int Completed
-);
+public record HealthTestCoverageTrendPointDto(string Label, double Coverage, int Completed);
 
-public sealed record GetHealthTestCoverageTrendQuery : IRequest<IReadOnlyList<HealthTestCoverageTrendPointDto>>;
+public sealed record GetHealthTestCoverageTrendQuery
+    : IRequest<IReadOnlyList<HealthTestCoverageTrendPointDto>>;
 
 public sealed class GetHealthTestCoverageTrendQueryHandler(
     IHealthTestRepository repository,

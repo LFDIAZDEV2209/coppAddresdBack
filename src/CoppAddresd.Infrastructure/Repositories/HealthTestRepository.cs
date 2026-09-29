@@ -709,22 +709,23 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .OrderByDescending(r => r.PatientsCount)
             .ToListAsync(ct);
 
-        var geoCities = rows
-            .Select(r => new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoCityDto(
-                r.CityId,
-                r.CityName,
-                r.StateCode,
-                (int)r.PatientsCount,
-                (int)r.EvaluatedCount,
-                r.EvaluatedCount > 0
-                    ? Math.Round((double)r.HighRiskCount / r.EvaluatedCount * 100, 1)
-                    : null,
-                r.AvgScoreCount > 0
-                    ? Math.Round((double)(r.AvgScoreSum / r.AvgScoreCount), 1)
-                    : null,
-                null,
-                null
-            ))
+        var geoCities = rows.Select(
+                r => new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoCityDto(
+                    r.CityId,
+                    r.CityName,
+                    r.StateCode,
+                    (int)r.PatientsCount,
+                    (int)r.EvaluatedCount,
+                    r.EvaluatedCount > 0
+                        ? Math.Round((double)r.HighRiskCount / r.EvaluatedCount * 100, 1)
+                        : null,
+                    r.AvgScoreCount > 0
+                        ? Math.Round((double)(r.AvgScoreSum / r.AvgScoreCount), 1)
+                        : null,
+                    null,
+                    null
+                )
+            )
             .ToList();
 
         int totalPatients = (int)rows.Sum(r => r.PatientsCount);
@@ -747,7 +748,8 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
                 r.ResultType == CoppAddresd.Domain.Enums.HealthTests.HealthTestResultType.score
                 && (
                     r.Severity == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.high
-                    || r.Severity == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
+                    || r.Severity
+                        == CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.critical
                 )
             select e.PatientId
         )
@@ -760,11 +762,17 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         {
             var scoreRows = await (
                 from r in dbContext.HealthTestResults.AsNoTracking()
-                join e in dbContext.HealthTestEvaluations.AsNoTracking() on r.EvaluationId equals e.Id
+                join e in dbContext.HealthTestEvaluations.AsNoTracking()
+                    on r.EvaluationId equals e.Id
                 where
                     r.ResultType == CoppAddresd.Domain.Enums.HealthTests.HealthTestResultType.score
                     && highRiskPatientIds.Contains(e.PatientId)
-                select new { e.PatientId, r.Severity, r.Value }
+                select new
+                {
+                    e.PatientId,
+                    r.Severity,
+                    r.Value,
+                }
             ).ToListAsync(ct);
 
             var names = await dbContext
@@ -787,14 +795,15 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             foreach (var pid in highRiskPatientIds)
             {
                 var grp = scoreRows.Where(x => x.PatientId == pid).ToList();
-                var worst = grp
-                    .OrderByDescending(x =>
-                        x.Severity.HasValue && severityOrder.TryGetValue(x.Severity.Value, out var ov)
+                var worst = grp.OrderByDescending(x =>
+                        x.Severity.HasValue
+                        && severityOrder.TryGetValue(x.Severity.Value, out var ov)
                             ? ov
                             : -1
                     )
                     .First();
-                var sev = worst.Severity ?? CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.low;
+                var sev =
+                    worst.Severity ?? CoppAddresd.Domain.Enums.HealthTests.HealthTestSeverity.low;
                 alerts.Add(
                     new CoppAddresd.Application.Features.HealthTests.HealthTestsGeoAlertDto(
                         pid,
@@ -1206,6 +1215,42 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         return (items, total);
     }
 
+    public async Task<(
+        IReadOnlyList<HealthTestAlert> Items,
+        int Total
+    )> ListAlertsForProfessionalAsync(
+        IReadOnlyCollection<Guid> patientIds,
+        string? status,
+        string? severity,
+        int page,
+        int pageSize,
+        CancellationToken ct = default
+    )
+    {
+        // Alcance propio (HealthTests.ViewOwn): solo alertas de los pacientes
+        // asignados al profesional del JWT. Lista vacía → cero filas.
+        var query = dbContext
+            .HealthTestAlerts.AsNoTracking()
+            .Where(x => patientIds.Contains(x.PatientId))
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(x => x.Status.ToString() == status);
+
+        if (!string.IsNullOrWhiteSpace(severity))
+            query = query.Where(x => x.Severity.ToString() == severity);
+
+        var total = await query.CountAsync(ct);
+        var items = await query
+            .Include(x => x.Patient)
+            .OrderByDescending(x => x.CreatedAt)
+            .Skip((Math.Max(1, page) - 1) * pageSize)
+            .Take(Math.Clamp(pageSize, 1, 100))
+            .ToListAsync(ct);
+
+        return (items, total);
+    }
+
     public async Task<IReadOnlyList<HealthTestAlert>> ListAlertsByPatientAsync(
         Guid patientId,
         CancellationToken ct = default
@@ -1296,8 +1341,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
 
     /// <summary>¿Trae zona geográfica real (ciudad o algún estado)?</summary>
     private static bool ZoneHasFilter(IReadOnlyCollection<string>? stateCodes, Guid? cityId) =>
-        cityId.HasValue
-        || (stateCodes ?? []).Any(c => !string.IsNullOrWhiteSpace(c));
+        cityId.HasValue || (stateCodes ?? []).Any(c => !string.IsNullOrWhiteSpace(c));
 
     /// <summary>
     /// Predicado reutilizable de zona: pacientes activos con ciudad dentro de
@@ -1413,8 +1457,8 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             Value = (stateCodes ?? []).ToArray(),
         };
 
-        var rows = await dbContext.Database
-            .SqlQueryRaw<HealthTestStatsZoneRow>(sql, cityParam, statesParam, profParam)
+        var rows = await dbContext
+            .Database.SqlQueryRaw<HealthTestStatsZoneRow>(sql, cityParam, statesParam, profParam)
             .ToListAsync(ct);
 
         var row = rows.FirstOrDefault() ?? new HealthTestStatsZoneRow(0, 0, 0, 0, 0);
@@ -1428,7 +1472,9 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<HealthTestAssignment>> ListAssignmentsWithPatientDataForZoneAsync(
+    public async Task<
+        IReadOnlyList<HealthTestAssignment>
+    > ListAssignmentsWithPatientDataForZoneAsync(
         Guid? professionalId,
         IReadOnlyCollection<string>? stateCodes,
         Guid? cityId,
@@ -1482,9 +1528,10 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         return await dbContext
             .HealthTestAlerts.AsNoTracking()
             .Where(a =>
-                (a.Status == HealthTestAlertStatus.active
-                 || a.Status == HealthTestAlertStatus.reviewing)
-                && ZonePatientsQuery(stateCodes, cityId).Select(p => p.Id).Contains(a.PatientId)
+                (
+                    a.Status == HealthTestAlertStatus.active
+                    || a.Status == HealthTestAlertStatus.reviewing
+                ) && ZonePatientsQuery(stateCodes, cityId).Select(p => p.Id).Contains(a.PatientId)
             )
             .GroupBy(a => a.PatientId)
             .Select(g => new { g.Key, Count = g.Count() })
@@ -1525,12 +1572,25 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
     /// "es-CO" month short en el cliente).
     /// </summary>
     private static readonly string[] MesesEsCo =
-        ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+    [
+        "ene",
+        "feb",
+        "mar",
+        "abr",
+        "may",
+        "jun",
+        "jul",
+        "ago",
+        "sep",
+        "oct",
+        "nov",
+        "dic",
+    ];
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto>> GetCoverageTrendAsync(
-        CancellationToken ct = default
-    )
+    public async Task<
+        IReadOnlyList<CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto>
+    > GetCoverageTrendAsync(CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
         var thisMonth = new DateOnly(now.Year, now.Month, 1);
@@ -1549,21 +1609,29 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         var totalPatients = await CountPatientsAsync(ct);
         var denominator = Math.Max(totalPatients, 1);
 
-        var byMonth = rows
-            .GroupBy(r => new DateOnly(r.MetricDate.Year, r.MetricDate.Month, 1))
+        var byMonth = rows.GroupBy(r => new DateOnly(r.MetricDate.Year, r.MetricDate.Month, 1))
             .ToDictionary(g => g.Key, g => g.Sum(x => x.TotalCount));
 
-        var months = new List<CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto>(12);
+        var months =
+            new List<CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto>(
+                12
+            );
         for (var i = 0; i < 12; i++)
         {
             var month = thisMonth.AddMonths(-11 + i);
             var completed = byMonth.GetValueOrDefault(month);
-            var coverage = Math.Round(completed / (double)denominator * 100, 0, MidpointRounding.AwayFromZero);
-            months.Add(new CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto(
-                MesesEsCo[month.Month - 1],
-                coverage,
-                (int)completed
-            ));
+            var coverage = Math.Round(
+                completed / (double)denominator * 100,
+                0,
+                MidpointRounding.AwayFromZero
+            );
+            months.Add(
+                new CoppAddresd.Application.Features.HealthTests.Alerts.HealthTestCoverageTrendPointDto(
+                    MesesEsCo[month.Month - 1],
+                    coverage,
+                    (int)completed
+                )
+            );
         }
 
         return months;
@@ -1608,7 +1676,11 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         var statusKey = status.ToString().ToLowerInvariant();
         var preAggSum = await dbContext
             .HealthTestDailyMetrics.AsNoTracking()
-            .Where(x => x.MetricKey == "assignments_count" && x.DimensionKey == statusKey && x.ClinicId == Guid.Empty)
+            .Where(x =>
+                x.MetricKey == "assignments_count"
+                && x.DimensionKey == statusKey
+                && x.ClinicId == Guid.Empty
+            )
             .SumAsync(x => (int?)x.TotalCount, ct);
 
         if (preAggSum.HasValue && preAggSum.Value > 0)
@@ -1638,7 +1710,11 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         var severityKey = severity.ToString().ToLowerInvariant();
         var preAggSum = await dbContext
             .HealthTestDailyMetrics.AsNoTracking()
-            .Where(x => x.MetricKey == "severity_count" && x.DimensionKey == severityKey && x.ClinicId == Guid.Empty)
+            .Where(x =>
+                x.MetricKey == "severity_count"
+                && x.DimensionKey == severityKey
+                && x.ClinicId == Guid.Empty
+            )
             .SumAsync(x => (int?)x.TotalCount, ct);
 
         if (preAggSum.HasValue && preAggSum.Value > 0)
@@ -1678,7 +1754,11 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         var statusKey = status.ToString().ToLowerInvariant();
         var preAggSum = await dbContext
             .HealthTestDailyMetrics.AsNoTracking()
-            .Where(x => x.MetricKey == "alerts_count" && x.DimensionKey == statusKey && x.ClinicId == Guid.Empty)
+            .Where(x =>
+                x.MetricKey == "alerts_count"
+                && x.DimensionKey == statusKey
+                && x.ClinicId == Guid.Empty
+            )
             .SumAsync(x => (int?)x.TotalCount, ct);
 
         if (preAggSum.HasValue && preAggSum.Value > 0)
@@ -1686,7 +1766,9 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             return preAggSum.Value;
         }
 
-        return await dbContext.HealthTestAlerts.AsNoTracking().CountAsync(x => x.Status == status, ct);
+        return await dbContext
+            .HealthTestAlerts.AsNoTracking()
+            .CountAsync(x => x.Status == status, ct);
     }
 
     public async Task<int> CountAlertsByStatusForPatientsAsync(
