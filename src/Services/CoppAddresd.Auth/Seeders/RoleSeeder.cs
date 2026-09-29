@@ -218,8 +218,10 @@ public static class RoleSeeder
         // "Role X does not exist". Solo completa los que falten.
         var normalizedBackfill = await dbContext
             .Roles.Where(r => r.NormalizedName == null)
-            .ExecuteUpdateAsync(s =>
-                s.SetProperty(r => r.NormalizedName, r => r.Name!.ToUpper()), ct);
+            .ExecuteUpdateAsync(
+                s => s.SetProperty(r => r.NormalizedName, r => r.Name!.ToUpper()),
+                ct
+            );
         if (normalizedBackfill > 0)
         {
             logger.LogInformation(
@@ -239,7 +241,8 @@ public static class RoleSeeder
     private static async Task CleanupLegacyRolesAsync(
         AuthDbContext dbContext,
         ILogger logger,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         foreach (var legacyName in LegacyRolesToDelete)
         {
@@ -248,16 +251,20 @@ public static class RoleSeeder
                 continue;
             }
 
-            var legacyRole = await dbContext.Roles
-                .FirstOrDefaultAsync(r => r.Name == legacyName, ct);
+            var legacyRole = await dbContext.Roles.FirstOrDefaultAsync(
+                r => r.Name == legacyName,
+                ct
+            );
             if (legacyRole is null)
             {
                 continue; // No existe → nada que limpiar.
             }
 
             // Obtener el rol destino (Professional o CareCoordinator).
-            var targetRole = await dbContext.Roles
-                .FirstOrDefaultAsync(r => r.Name == targetName, ct);
+            var targetRole = await dbContext.Roles.FirstOrDefaultAsync(
+                r => r.Name == targetName,
+                ct
+            );
             if (targetRole is null)
             {
                 // Crear el rol destino si no existe (raro, pero seguro).
@@ -275,8 +282,8 @@ public static class RoleSeeder
             }
 
             // Obtener todos los holders del rol legado (UserRoles).
-            var holderIds = await dbContext.UserRoles
-                .Where(ur => ur.RoleId == legacyRole.Id)
+            var holderIds = await dbContext
+                .UserRoles.Where(ur => ur.RoleId == legacyRole.Id)
                 .Select(ur => ur.UserId)
                 .ToListAsync(ct);
 
@@ -284,17 +291,16 @@ public static class RoleSeeder
             foreach (var userId in holderIds)
             {
                 // Verificar si el usuario ya tiene el rol destino.
-                var alreadyHasTarget = await dbContext.UserRoles
-                    .AnyAsync(ur => ur.UserId == userId && ur.RoleId == targetRole.Id, ct);
+                var alreadyHasTarget = await dbContext.UserRoles.AnyAsync(
+                    ur => ur.UserId == userId && ur.RoleId == targetRole.Id,
+                    ct
+                );
 
                 if (!alreadyHasTarget)
                 {
                     dbContext.UserRoles.Add(
-                        new IdentityUserRole<Guid>
-                        {
-                            UserId = userId,
-                            RoleId = targetRole.Id,
-                        });
+                        new IdentityUserRole<Guid> { UserId = userId, RoleId = targetRole.Id }
+                    );
                     convertedCount++;
                 }
             }
@@ -303,12 +309,13 @@ public static class RoleSeeder
             {
                 await dbContext.SaveChangesAsync(ct);
                 logger.LogWarning(
-                    "Rol legado {Legacy}: {Count} holder(s) convertido(s) a {Target}. " +
-                    "Usuarios afectados: {UserIds}",
+                    "Rol legado {Legacy}: {Count} holder(s) convertido(s) a {Target}. "
+                        + "Usuarios afectados: {UserIds}",
                     legacyName,
                     convertedCount,
                     targetName,
-                    string.Join(", ", holderIds));
+                    string.Join(", ", holderIds)
+                );
             }
 
             // Eliminar el rol legado: cascade limpia UserRoles, RolePermissions,
@@ -318,7 +325,8 @@ public static class RoleSeeder
             logger.LogInformation(
                 "Rol legado eliminado: {Legacy} (holders previamente transferidos a {Target})",
                 legacyName,
-                targetName);
+                targetName
+            );
         }
     }
 
@@ -473,6 +481,7 @@ public static class RoleSeeder
                 PermissionCodes.ProfessionalsView,
                 PermissionCodes.EmployeesView,
                 PermissionCodes.TelemedicineSessionsManage,
+                PermissionCodes.SosAlertsManage,
                 .. ProfessionalTelemedicinePermissions,
                 .. ModuleAdminPermissions,
                 .. PrescriberPermissions,
@@ -497,6 +506,7 @@ public static class RoleSeeder
                 PermissionCodes.HealthTestsViewOwn,
                 PermissionCodes.HealthTestsAssign,
                 PermissionCodes.HealthTestsReview,
+                PermissionCodes.SosAlertsManage,
                 .. PrescriberPermissions,
                 .. ProfessionalTelemedicinePermissions,
                 PermissionCodes.LegalDocumentsView,

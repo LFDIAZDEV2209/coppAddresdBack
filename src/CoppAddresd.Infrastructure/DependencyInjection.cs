@@ -12,6 +12,7 @@ using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using CoppAddresd.Infrastructure.Services;
 using CoppAddresd.Infrastructure.Services.Email;
+using CoppAddresd.Infrastructure.Sos;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -216,7 +217,29 @@ public static class DependencyInjection
 
         AddDistributedCache(services, configuration);
 
+        AddSosServices(services);
+
         return services;
+    }
+
+    /// <summary>
+    /// Módulo SOS real (change sos-panic-real): repositorio, rate-limiter
+    /// distribuido (Valkey vía ICacheService), despachadores de canales y
+    /// procesador en background (outbox durable sobre
+    /// app.notification_dedupe_keys). La respuesta al paciente nunca espera
+    /// a Twilio/FCM.
+    /// </summary>
+    private static void AddSosServices(IServiceCollection services)
+    {
+        services.AddScoped<ISosAlertRepository, SosAlertRepository>();
+        services.AddScoped<ISosRateLimiter, SosRateLimitingService>();
+        services.AddScoped<ISosSmsDispatcher, SosSmsDispatcher>();
+        services.AddScoped<ISosPushDispatcher, SosPushDispatcher>();
+
+        // Cola + procesador: el procesador crea su propio scope por mensaje
+        // (los dispatchers son scoped por sus dependencias scoped).
+        services.AddSingleton<ISosDispatchQueue, SosDispatchQueue>();
+        services.AddHostedService<SosDispatchProcessorHostedService>();
     }
 
     /// <summary>

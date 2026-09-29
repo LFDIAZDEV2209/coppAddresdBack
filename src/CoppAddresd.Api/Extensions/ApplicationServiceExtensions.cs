@@ -37,11 +37,9 @@ public static class ApplicationServiceExtensions
         );
 
         // Configuración de Firebase Cloud Messaging (pushes a dispositivos).
-        services.Configure<FcmSettings>(
-            configuration.GetSection(FcmSettings.SectionName));
+        services.Configure<FcmSettings>(configuration.GetSection(FcmSettings.SectionName));
 
-        services.Configure<FoodAiSettings>(
-            configuration.GetSection(FoodAiSettings.SectionName));
+        services.Configure<FoodAiSettings>(configuration.GetSection(FoodAiSettings.SectionName));
 
         // Controles proactivos del programa (días 7/14/21/45/60/90):
         // configuración + proveedor de plantillas (v1 estáticas por
@@ -50,8 +48,12 @@ public static class ApplicationServiceExtensions
         // SendPushNotificationCommand (FCM + inyección proactiva en el chat) +
         // job orquestador (lo consume ProgramControlHostedService).
         services.Configure<ProgramControlSettings>(
-            configuration.GetSection(ProgramControlSettings.SectionName));
-        services.AddScoped<IProgramControlTemplateProvider, PredefinedProgramControlTemplateProvider>();
+            configuration.GetSection(ProgramControlSettings.SectionName)
+        );
+        services.AddScoped<
+            IProgramControlTemplateProvider,
+            PredefinedProgramControlTemplateProvider
+        >();
         services.AddScoped<IProgramControlNotifier, ProgramControlNotifier>();
         services.AddScoped<ProgramControlJob>();
 
@@ -72,9 +74,9 @@ public static class ApplicationServiceExtensions
             .AddHttpClient<ICommunityMessageSender, CommunityMessageSender>(
                 (sp, client) =>
                 {
-                    var communitySettings = sp
-                        .GetRequiredService<IOptions<CommunityServiceSettings>>()
-                        .Value;
+                    var communitySettings = sp.GetRequiredService<
+                        IOptions<CommunityServiceSettings>
+                    >().Value;
                     client.BaseAddress = new Uri(communitySettings.BaseUrl);
                     client.Timeout = TimeSpan.FromSeconds(communitySettings.TimeoutSeconds);
                 }
@@ -97,7 +99,8 @@ public static class ApplicationServiceExtensions
             .AddResiliencePolicy()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
-services.AddHttpClient<IFoodAiClient, FoodAiClient>()
+        services
+            .AddHttpClient<IFoodAiClient, FoodAiClient>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddScoped<IImageStorage, LocalImageStorage>();
@@ -106,16 +109,21 @@ services.AddHttpClient<IFoodAiClient, FoodAiClient>()
         services.AddScoped<INutritionCalculator, NutritionCalculator>();
         services.AddScoped<IFoodAnalysisRepository, FoodAnalysisRepository>();
 
-        services.AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>((sp, client) =>
-        {
-            var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
-            client.BaseAddress = new Uri(aiSettings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
-        }).AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+        services
+            .AddHttpClient<IAgentRuntimeSyncService, AgentRuntimeSyncService>(
+                (sp, client) =>
+                {
+                    var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(aiSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
+                }
+            )
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         // FCM: mismo patrón que AiServiceClient (HttpClient tipado). El
         // cliente degrada a "disabled" sin credenciales, nunca lanza.
-        services.AddHttpClient<IFcmClient, FcmClient>()
+        services
+            .AddHttpClient<IFcmClient, FcmClient>()
             .AddResiliencePolicy()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
@@ -142,15 +150,20 @@ services.AddHttpClient<IFoodAiClient, FoodAiClient>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         // Introspección de permisos scoped hacia el Auth Service.
-        services.AddScoped<IProfessionalAccessProjectionRepository, CoppAddresd.Infrastructure.Repositories.ProfessionalAccessProjectionRepository>();
+        services.AddScoped<
+            IProfessionalAccessProjectionRepository,
+            CoppAddresd.Infrastructure.Repositories.ProfessionalAccessProjectionRepository
+        >();
         services.AddHostedService<ErpAccessProjectionWorker>();
-        services.AddHttpClient<IErpAccessClient, ErpAccessClient>((sp, client) =>
-        {
-            var settings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-            client.BaseAddress = new Uri(settings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
-            client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
-        });
+        services.AddHttpClient<IErpAccessClient, ErpAccessClient>(
+            (sp, client) =>
+            {
+                var settings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                client.BaseAddress = new Uri(settings.BaseUrl);
+                client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+                client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
+            }
+        );
         services.Configure<AuthServiceSettings>(
             configuration.GetSection(AuthServiceSettings.SectionName)
         );
@@ -217,6 +230,12 @@ services.AddHttpClient<IFoodAiClient, FoodAiClient>()
             .AddResiliencePolicy();
 
         services.AddScoped<ICurrentContext, CurrentContext>();
+
+        // Resolución del actor del módulo SOS (change sos-panic-real): el
+        // paciente se deriva SIEMPRE del JWT (claim patient_id o lookup por
+        // app.patient_profiles.user_id); el staff se resuelve con su identidad
+        // y el contexto activo (X-Clinic-Id / X-Organization-Id).
+        services.AddScoped<ISosActorContext, SosActorContext>();
 
         // Resolución del actor del módulo Progreso del Programa (SPEC §6.14 y
         // PLAN OQ-1): paciente derivado del JWT (claim patient_id o lookup por
@@ -299,6 +318,28 @@ services.AddHttpClient<IFoodAiClient, FoodAiClient>()
         // [RequirePermission("Patients.View")] sin registrar cada política.
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionHandler>();
+
+        // Políticas de audiencia del módulo SOS (change sos-panic-real, D8):
+        // activación/consulta/cancelación solo con JWT de la app móvil
+        // (aud=app); atención solo con JWT del ERP (aud=erp). El catch-all
+        // YARP del Gateway NO sustituye esta política: la aplica el API.
+        services.AddScoped<IAuthorizationHandler, AudienceAuthorizationHandler>();
+        services
+            .AddAuthorizationBuilder()
+            .AddPolicy(
+                SosPolicies.AppPatient,
+                policy =>
+                    policy
+                        .RequireAuthenticatedUser()
+                        .AddRequirements(new AudienceRequirement("app"))
+            )
+            .AddPolicy(
+                SosPolicies.ErpStaff,
+                policy =>
+                    policy
+                        .RequireAuthenticatedUser()
+                        .AddRequirements(new AudienceRequirement("erp"))
+            );
 
         return services;
     }

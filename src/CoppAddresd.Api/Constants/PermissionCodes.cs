@@ -67,6 +67,9 @@ public static class PermissionCodes
     // Mantenimiento y administración del sistema.
     public const string SystemAdminSettings = "System.AdminSettings";
 
+    // SOS real (change sos-panic-real): atención de alertas por staff ERP.
+    public const string SosAlertsManage = "Sos.Alerts.Manage";
+
     /// <summary>Nombres conocidos (para el policy provider que resuelve políticas por código).</summary>
     public static IReadOnlyList<string> All { get; } =
     [
@@ -112,5 +115,6 @@ public static class PermissionCodes
         WellnessView,
         WellnessManage,
         SystemAdminSettings,
+        SosAlertsManage,
     ];
 }

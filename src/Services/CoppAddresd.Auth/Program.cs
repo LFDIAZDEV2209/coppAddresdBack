@@ -29,17 +29,20 @@ var builder = WebApplication.CreateBuilder(args);
 // app code, Microsoft.AspNetCore lowered to Warning (same verbosity as
 // appsettings.Example.json Logging:LogLevel), and a template that includes
 // {Properties:j} so CorrelationId/RequestPath stay visible on console.
-builder.Host.UseSerilog((ctx, cfg) =>
-{
-    cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
-
-    if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+builder.Host.UseSerilog(
+    (ctx, cfg) =>
     {
-        cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-            .WriteTo.Console(outputTemplate:
-                "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}");
+        cfg.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext();
+
+        if (!ctx.Configuration.GetSection("Serilog:WriteTo").GetChildren().Any())
+        {
+            cfg.MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+                .WriteTo.Console(
+                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}"
+                );
+        }
     }
-});
+);
 
 ValidateConfiguration(builder.Configuration);
 
@@ -84,13 +87,27 @@ builder.Services.AddAuthCors(builder.Configuration);
 // docs/modules/cache/README.md.
 builder.Services.AddAuthCache(builder.Configuration);
 
-builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection(AuthSettings.SectionName));
-builder.Services.Configure<DevPatientSettings>(builder.Configuration.GetSection(DevPatientSettings.SectionName));
-builder.Services.Configure<CommunityDemoSettings>(builder.Configuration.GetSection(CommunityDemoSettings.SectionName));
-builder.Services.Configure<PatientAccountDemoSettings>(builder.Configuration.GetSection(PatientAccountDemoSettings.SectionName));
-builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
-builder.Services.Configure<TwilioSettings>(builder.Configuration.GetSection(TwilioSettings.SectionName));
-builder.Services.Configure<OtpSecuritySettings>(builder.Configuration.GetSection(OtpSecuritySettings.SectionName));
+builder.Services.Configure<AuthSettings>(
+    builder.Configuration.GetSection(AuthSettings.SectionName)
+);
+builder.Services.Configure<DevPatientSettings>(
+    builder.Configuration.GetSection(DevPatientSettings.SectionName)
+);
+builder.Services.Configure<CommunityDemoSettings>(
+    builder.Configuration.GetSection(CommunityDemoSettings.SectionName)
+);
+builder.Services.Configure<PatientAccountDemoSettings>(
+    builder.Configuration.GetSection(PatientAccountDemoSettings.SectionName)
+);
+builder.Services.Configure<EmailSettings>(
+    builder.Configuration.GetSection(EmailSettings.SectionName)
+);
+builder.Services.Configure<TwilioSettings>(
+    builder.Configuration.GetSection(TwilioSettings.SectionName)
+);
+builder.Services.Configure<OtpSecuritySettings>(
+    builder.Configuration.GetSection(OtpSecuritySettings.SectionName)
+);
 
 // Cliente Twilio (Singleton, stateless-safe). AutenticaciÃ³n por API Key
 // (ApiKeySid + ApiKeySecret, Basic Auth sobre el SDK) â€” nunca el Auth Token
@@ -127,8 +144,10 @@ builder.Services.AddScoped<IScopedPermissionService, ScopedPermissionService>();
 builder.Services.AddScoped<IInvitationService, InvitationService>();
 builder.Services.AddScoped<IDemoPatientSeedService, DemoPatientSeedService>();
 builder.Services.AddScoped<IUserPreferenceService, UserPreferenceService>();
-builder.Services.AddScoped<CoppAddresd.Auth.Avatar.Application.IAvatarPreferenceStore,
-    CoppAddresd.Auth.Infrastructure.Avatar.AvatarPreferenceStore>();
+builder.Services.AddScoped<
+    CoppAddresd.Auth.Avatar.Application.IAvatarPreferenceStore,
+    CoppAddresd.Auth.Infrastructure.Avatar.AvatarPreferenceStore
+>();
 builder.Services.AddScoped<CoppAddresd.Auth.Avatar.Application.AvatarConfigurationUseCases>();
 builder.Services.AddScoped<ITokenInvalidationService, TokenInvalidationService>();
 
@@ -197,44 +216,61 @@ var app = builder.Build();
 
 // Actualización de binarios sobre una BD ya preparada, sin migraciones ni seeders.
 if (!builder.Configuration.GetValue<bool>("SkipDatabaseInitialization"))
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    var dbContext = services.GetRequiredService<AuthDbContext>();
-    var logger = services.GetRequiredService<ILogger<Program>>();
+    using (var scope = app.Services.CreateScope())
+    {
+        var services = scope.ServiceProvider;
+        var dbContext = services.GetRequiredService<AuthDbContext>();
+        var logger = services.GetRequiredService<ILogger<Program>>();
 
-    // Recoloca el historial desde public."__EFMigrationsHistory" (compartido
-    // con el backend) hacia auth.__ef_migrations_history. Sin esto, en bases
-    // ya migradas EF reintenta InitialCreate y falla con 42P07.
-    await AuthMigrationHistoryRelocator.RelocateAsync(dbContext, logger);
+        // Recoloca el historial desde public."__EFMigrationsHistory" (compartido
+        // con el backend) hacia auth.__ef_migrations_history. Sin esto, en bases
+        // ya migradas EF reintenta InitialCreate y falla con 42P07.
+        await AuthMigrationHistoryRelocator.RelocateAsync(dbContext, logger);
 
-    await dbContext.Database.MigrateAsync();
+        await dbContext.Database.MigrateAsync();
 
-    await PermissionSeeder.SeedAsync(dbContext, logger);
+        await PermissionSeeder.SeedAsync(dbContext, logger);
 
-    // Permisos del mÃ³dulo Program Progress (Program.*). Debe correr ANTES de
-    // AdminSeeder para que el rol Admin reciba los 5 cÃ³digos por convenciÃ³n
-    // (AdminSeeder asigna todos los permisos existentes al rol Admin).
-    await ProgramProgressPermissionsSeeder.SeedAsync(dbContext, logger);
+        // Permisos del mÃ³dulo Program Progress (Program.*). Debe correr ANTES de
+        // AdminSeeder para que el rol Admin reciba los 5 cÃ³digos por convenciÃ³n
+        // (AdminSeeder asigna todos los permisos existentes al rol Admin).
+        await ProgramProgressPermissionsSeeder.SeedAsync(dbContext, logger);
 
-    // Permisos del mÃ³dulo Tests de Salud (HealthTests.*). Idem: antes de
-    // AdminSeeder para que el rol Admin reciba los cÃ³digos por convenciÃ³n.
-    await HealthTestsPermissionsSeeder.SeedAsync(dbContext, logger);
+        // Permisos del mÃ³dulo Tests de Salud (HealthTests.*). Idem: antes de
+        // AdminSeeder para que el rol Admin reciba los cÃ³digos por convenciÃ³n.
+        await HealthTestsPermissionsSeeder.SeedAsync(dbContext, logger);
 
-    var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-    var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
-    var authSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>().Value;
-    var devPatientSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DevPatientSettings>>().Value;
-    var communityDemoSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<CommunityDemoSettings>>().Value;
-    var patientAccountDemoSettings = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<PatientAccountDemoSettings>>().Value;
+        // Permiso del módulo SOS real (Sos.Alerts.Manage). Idem: antes de
+        // AdminSeeder para que el rol Admin reciba el código por convención.
+        await SosPermissionsSeeder.SeedAsync(dbContext, logger);
 
-    await AdminSeeder.SeedAsync(dbContext, userManager, roleManager, authSettings, logger);
-    await ApplicationSeeder.SeedAsync(dbContext, userManager, authSettings.AdminEmail, logger);
-    await DevPatientSeeder.SeedAsync(dbContext, userManager, devPatientSettings, logger);
-    await CommunityDemoSeeder.SeedAsync(dbContext, userManager, communityDemoSettings, logger);
-    await PatientAccountDemoSeeder.SeedAsync(dbContext, userManager, patientAccountDemoSettings, logger);
-    await RoleSeeder.SeedAsync(dbContext, logger);
-}
+        var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
+        var authSettings = services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthSettings>>()
+            .Value;
+        var devPatientSettings = services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<DevPatientSettings>>()
+            .Value;
+        var communityDemoSettings = services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<CommunityDemoSettings>>()
+            .Value;
+        var patientAccountDemoSettings = services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<PatientAccountDemoSettings>>()
+            .Value;
+
+        await AdminSeeder.SeedAsync(dbContext, userManager, roleManager, authSettings, logger);
+        await ApplicationSeeder.SeedAsync(dbContext, userManager, authSettings.AdminEmail, logger);
+        await DevPatientSeeder.SeedAsync(dbContext, userManager, devPatientSettings, logger);
+        await CommunityDemoSeeder.SeedAsync(dbContext, userManager, communityDemoSettings, logger);
+        await PatientAccountDemoSeeder.SeedAsync(
+            dbContext,
+            userManager,
+            patientAccountDemoSettings,
+            logger
+        );
+        await RoleSeeder.SeedAsync(dbContext, logger);
+    }
 
 if (app.Environment.IsDevelopment())
 {

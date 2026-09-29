@@ -92,7 +92,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<PlanSafetyRule> PlanSafetyRules => Set<PlanSafetyRule>();
     public DbSet<BiometriaDailyMetric> BiometriaDailyMetrics => Set<BiometriaDailyMetric>();
 
-// Food AI — Nutrición (schema foodai)
+    // Food AI — Nutrición (schema foodai)
     public DbSet<Food> Foods => Set<Food>();
     public DbSet<FoodNutrition> FoodNutritionEntries => Set<FoodNutrition>();
     public DbSet<FoodAlias> FoodAliases => Set<FoodAlias>();
@@ -174,6 +174,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     // Program Progress — Intervenciones derivadas de debilidades (SPEC §22, "Paso 7d")
     public DbSet<Intervention> Interventions => Set<Intervention>();
+
+    // SOS real — alertas del botón de pánico (change sos-panic-real)
+    public DbSet<SosAlert> SosAlerts => Set<SosAlert>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
