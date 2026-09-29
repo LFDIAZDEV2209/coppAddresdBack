@@ -57,6 +57,16 @@ public sealed class ConfirmTelemedicineRequestCommandHandler(
                 $"La solicitud no puede confirmarse en su estado actual ({entity.Status}).");
         }
 
+        // Pre-chequeo de doble confirmación con mensaje preciso: si la
+        // solicitud ya generó una cita —activa o terminal (p. ej. NoShow de un
+        // ciclo anterior)— el reintento se rechaza aquí en vez de fallar en el
+        // INSERT con el mensaje genérico. El índice único sobre request_id
+        // sigue siendo la garantía real ante carreras.
+        if (await appointments.GetByRequestIdAsync(request.RequestId, ct) is not null)
+        {
+            throw new BusinessRuleViolationException("La solicitud ya fue confirmada.");
+        }
+
         var patient = await ReferenceDataGuard.RequirePatientAsync(referenceData, entity.PatientId, ct);
         var professional = await ReferenceDataGuard.RequireProfessionalAsync(referenceData, request.ProfessionalId, ct);
         var specialty = await ReferenceDataGuard.RequireSpecialtyAsync(referenceData, entity.SpecialtyId, ct);

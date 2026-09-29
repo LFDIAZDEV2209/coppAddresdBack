@@ -331,6 +331,9 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
         return Task.FromResult(appointment);
     }
 
+    public Task<Appointment?> GetByRequestIdAsync(Guid requestId, CancellationToken ct = default) =>
+        Task.FromResult(Items.FirstOrDefault(a => a.RequestId == requestId));
+
     public Task UpdateAsync(Appointment appointment, CancellationToken ct = default) =>
         Task.CompletedTask;
 

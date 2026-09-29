@@ -64,6 +64,9 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         return appointment;
     }
 
+    public async Task<Appointment?> GetByRequestIdAsync(Guid requestId, CancellationToken ct = default) =>
+        await dbContext.Appointments.AsNoTracking().FirstOrDefaultAsync(a => a.RequestId == requestId, ct);
+
     public async Task UpdateAsync(Appointment appointment, CancellationToken ct = default)
     {
         // Historial append-only (cancelaciones/reprogramaciones): los hijos ya

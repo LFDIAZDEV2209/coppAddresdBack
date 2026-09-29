@@ -379,6 +379,10 @@ def create_appointments(
                 status = status_for(start, end)
 
                 # Algunas citas futuras nacen de solicitudes convertidas.
+                # El estado Converted SE PERSISTE en BD: si la solicitud quedara
+                # Pending con una cita colgada, el índice único
+                # ix_appointments_request_id bloquearía para siempre cualquier
+                # confirmación futura de esa solicitud (P1 Fase 3.1).
                 request_id = None
                 if status == "Confirmed" and start > now + timedelta(days=1):
                     converted = next(
@@ -393,6 +397,11 @@ def create_appointments(
                     if converted and random.random() < 0.5:
                         request_id = converted["id"]
                         converted["status"] = "Converted"
+                        conn.execute(
+                            "UPDATE tele.telemedicine_requests "
+                            "SET status = 'Converted' WHERE id = %s",
+                            (converted["id"],),
+                        )
 
                 appointment_id = uuid.uuid4()
                 cancelled_by = None

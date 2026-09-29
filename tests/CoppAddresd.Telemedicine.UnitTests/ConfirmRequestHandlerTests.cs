@@ -109,4 +109,42 @@ public class ConfirmRequestHandlerTests
 
         await Assert.ThrowsAsync<NotFoundException>(() => _handler.Handle(command, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task Handle_SolicitudConCitaTerminalColgada_LanzaYaConfirmada()
+    {
+        // P1 Fase 3.1: solicitud Pending con una cita NoShow colgada del mismo
+        // request_id (fixtures/seed sin Converted persistido). El reintento se
+        // rechaza con mensaje preciso, no con el de solapamiento.
+        var request = AddRequest();
+        var hanging = TestData.Appointment(
+            status: AppointmentStatus.NoShow,
+            start: DateTimeOffset.UtcNow.AddDays(-4));
+        hanging.RequestId = request.Id;
+        _appointments.Items.Add(hanging);
+        var command = new ConfirmTelemedicineRequestCommand(
+            request.Id, TestData.ProfessionalId, DateTimeOffset.UtcNow.AddDays(1), null, TestData.LocationId, TestData.UserId);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+        Assert.Equal("La solicitud ya fue confirmada.", ex.Message);
+        Assert.Equal(AppointmentRequestStatus.Pending, request.Status);
+        Assert.Single(_appointments.Items);
+    }
+
+    [Fact]
+    public async Task Handle_SolicitudConCitaActivaColgada_LanzaYaConfirmada()
+    {
+        var request = AddRequest();
+        var hanging = TestData.Appointment(start: DateTimeOffset.UtcNow.AddDays(1));
+        hanging.RequestId = request.Id;
+        _appointments.Items.Add(hanging);
+        var command = new ConfirmTelemedicineRequestCommand(
+            request.Id, TestData.ProfessionalId, DateTimeOffset.UtcNow.AddDays(2), null, TestData.LocationId, TestData.UserId);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+        Assert.Equal("La solicitud ya fue confirmada.", ex.Message);
+        Assert.Single(_appointments.Items);
+    }
 }

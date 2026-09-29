@@ -25,6 +25,15 @@ public interface IAppointmentRepository
     /// <summary>Crea la cita. Traduce conflictos de concurrencia (exclusión de solapamiento / request_id único) a una violación de regla de negocio.</summary>
     Task<Appointment> AddAsync(Appointment appointment, CancellationToken ct = default);
 
+    /// <summary>
+    /// Cita vinculada a una solicitud (índice único parcial sobre
+    /// <c>request_id</c>), lectura sin tracking. Base del pre-chequeo de doble
+    /// confirmación en <c>ConfirmTelemedicineRequestCommandHandler</c>: si la
+    /// solicitud ya generó una cita —activa o terminal— el reintento se
+    /// rechaza con mensaje preciso antes de llegar al INSERT.
+    /// </summary>
+    Task<Appointment?> GetByRequestIdAsync(Guid requestId, CancellationToken ct = default);
+
     /// <summary>Persiste cambios de una cita cargada con <see cref="GetForUpdateAsync"/> (con control de concurrencia xmin).</summary>
     Task UpdateAsync(Appointment appointment, CancellationToken ct = default);
 
