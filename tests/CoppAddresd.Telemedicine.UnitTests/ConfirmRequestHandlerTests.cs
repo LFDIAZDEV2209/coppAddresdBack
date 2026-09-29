@@ -133,6 +133,24 @@ public class ConfirmRequestHandlerTests
     }
 
     [Fact]
+    public async Task Handle_SolicitudConvertidaConCitaColgada_LanzaYaConfirmada()
+    {
+        // P1-menor 3.3: el pre-chequeo va ANTES de la validación de estado;
+        // re-confirmar una Converted con cita devuelve el mensaje preciso.
+        var request = AddRequest(AppointmentRequestStatus.Converted);
+        var hanging = TestData.Appointment(start: DateTimeOffset.UtcNow.AddDays(1));
+        hanging.RequestId = request.Id;
+        _appointments.Items.Add(hanging);
+        var command = new ConfirmTelemedicineRequestCommand(
+            request.Id, TestData.ProfessionalId, DateTimeOffset.UtcNow.AddDays(2), null, TestData.LocationId, TestData.UserId);
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+        Assert.Equal("La solicitud ya fue confirmada.", ex.Message);
+        Assert.Single(_appointments.Items);
+    }
+
+    [Fact]
     public async Task Handle_SolicitudConCitaActivaColgada_LanzaYaConfirmada()
     {
         var request = AddRequest();
