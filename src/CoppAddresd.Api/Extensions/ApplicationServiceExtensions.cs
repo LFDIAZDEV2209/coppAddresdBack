@@ -265,7 +265,11 @@ public static class ApplicationServiceExtensions
                         .WithOrigins(origins)
                         .AllowCredentials()
                         .AllowAnyMethod()
-                        .AllowAnyHeader();
+                        .AllowAnyHeader()
+                        // Headers no-simples que el navegador necesita leer en
+                        // respuestas de la API: Retry-After del 429 de SOS
+                        // (BUG-02 — cuenta atrás del rate-limit distribuido).
+                        .WithExposedHeaders("Retry-After");
                 }
             );
         });
