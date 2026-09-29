@@ -39,6 +39,12 @@ DEMO_PASSWORD = "Demo1234!"
 # Usuario del Auth que marca el origen del seed (created_by exige FK a auth.Users).
 SEED_USER_EMAIL = "admin@coppaddresd.com"
 
+# Clínica de asignación de los pacientes demo (Decisión 5, citas-e2e-app-erp):
+# el wizard de la app resuelve la organización desde la clínica del paciente
+# (telemedicine/me) y POST /telemedicine/requests la exige; sin clínica el
+# envío muere en 400 y /availability por especialidad queda sin candidatos.
+DEMO_CLINIC_NAME = "Clínica Principal"
+
 # Pacientes demo: documento, nombre, email, fecha de nacimiento.
 DEMO_PATIENTS = [
     {
@@ -130,8 +136,32 @@ def seed_user_id(conn: psycopg.Connection) -> uuid.UUID:
     return row[0]
 
 
+def demo_clinic_id(conn: psycopg.Connection) -> uuid.UUID:
+    """Clínica de asignación de los pacientes demo (creada por el seed del
+    directorio; fallback: primera clínica de la primera organización)."""
+    with conn.cursor() as cur:
+        row = cur.execute(
+            "SELECT id FROM erp.clinics WHERE name = %s ORDER BY created_at LIMIT 1",
+            (DEMO_CLINIC_NAME,),
+        ).fetchone()
+        if row is not None:
+            return row[0]
+        row = cur.execute(
+            "SELECT id FROM erp.clinics ORDER BY created_at LIMIT 1"
+        ).fetchone()
+    if row is None:
+        raise SystemExit(
+            "No hay clínicas en erp.clinics. Siembra el ERP (seed de "
+            "profesionales demo) antes del seed de pacientes."
+        )
+    return row[0]
+
+
 def seed_patient_profile(
-    conn: psycopg.Connection, patient: dict, created_by: uuid.UUID
+    conn: psycopg.Connection,
+    patient: dict,
+    created_by: uuid.UUID,
+    clinic_id: uuid.UUID,
 ) -> uuid.UUID:
     """Crea el perfil del paciente si no existe (idempotente por documento)."""
     with conn.cursor() as cur:
@@ -141,6 +171,17 @@ def seed_patient_profile(
         )
         row = cur.fetchone()
         if row is not None:
+            # Backfill idempotente: perfiles creados por corridas anteriores
+            # sin clínica (la resolución de organización del wizard la exige).
+            cur.execute(
+                """
+                UPDATE app.patient_profiles
+                SET clinic_id = %s, updated_at = now()
+                WHERE id = %s AND clinic_id IS NULL
+                """,
+                (clinic_id, row[0]),
+            )
+            conn.commit()
             return row[0]
 
         patient_id = stable_patient_id(patient["document"])
@@ -148,8 +189,8 @@ def seed_patient_profile(
             """
             INSERT INTO app.patient_profiles (
                 id, first_name, last_name, document_number, email,
-                date_of_birth, status, created_by, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, 'Activo', %s, now())
+                date_of_birth, status, clinic_id, created_by, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, 'Activo', %s, %s, now())
             ON CONFLICT (id) DO NOTHING
             """,
             (
@@ -159,6 +200,7 @@ def seed_patient_profile(
                 patient["document"],
                 patient["email"],
                 patient["birth"],
+                clinic_id,
                 created_by,
             ),
         )
@@ -204,8 +246,10 @@ def main() -> None:
     print(f"Seed de pacientes demo ({len(DEMO_PATIENTS)}):")
     with psycopg.connect(DB_DSN) as conn:
         created_by = seed_user_id(conn)
+        clinic_id = demo_clinic_id(conn)
+        print(f"  clínica demo: {DEMO_CLINIC_NAME}")
         for patient in DEMO_PATIENTS:
-            patient_id = seed_patient_profile(conn, patient, created_by)
+            patient_id = seed_patient_profile(conn, patient, created_by, clinic_id)
             seed_auth_account(patient, patient_id)
 
     print()

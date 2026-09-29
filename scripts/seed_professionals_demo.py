@@ -58,7 +58,10 @@ DEMO_PROFESSIONALS = [
         "Lucía",
         "Méndez",
         "PHYSICIAN",
-        ["OBESITY_MEDICINE", "FAMILY_MEDICINE", "PREVENTIVE_MEDICINE"],
+        # URGENT_CARE incluido (Decisión 5): entrada directa de Urgencia del
+        # wizard necesita al menos un profesional activo con esa especialidad
+        # para que /availability en modo especialidad devuelva slots.
+        ["OBESITY_MEDICINE", "FAMILY_MEDICINE", "URGENT_CARE", "PREVENTIVE_MEDICINE"],
         "Active",
         "Professional",
     ),
