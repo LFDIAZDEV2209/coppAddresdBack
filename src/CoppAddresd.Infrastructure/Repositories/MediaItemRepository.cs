@@ -280,6 +280,7 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
                 CROSS JOIN LATERAL jsonb_array_elements(pw.tasks_snapshot) AS t
                 WHERE jsonb_typeof(pw.tasks_snapshot) = 'array'
                   AND t ? 'media_id'
+                  AND length(t->>'media_id') = 36
                   AND t->>'media_id' IS NOT NULL
                 GROUP BY 1
                 """;
@@ -341,7 +342,11 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
                 CROSS JOIN LATERAL jsonb_array_elements(pw.tasks_snapshot) AS t
                 WHERE jsonb_typeof(pw.tasks_snapshot) = 'array'
                   AND t ? 'media_id'
-                  AND (t->>'media_id')::uuid = @mediaId
+                  -- Comparación textual SIN casteo forzado (review AGY H-02):
+                  -- un media_id malformado en el jsonb no lanza 22P02; y el
+                  -- Guid parametrizado de Npgsql viaja como uuid, por lo que
+                  -- se normaliza a texto para comparar 1:1 con la fila.
+                  AND t->>'media_id' = @mediaId::text
                 ORDER BY pw.week_number, weekday
                 """;
             EnrollInAmbientTransaction(command);
@@ -351,6 +356,9 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
             mediaIdParam.DbType = DbType.Guid;
             mediaIdParam.Value = mediaId;
             command.Parameters.Add(mediaIdParam);
+
+            // Comparación textual (review AGY H-02): el Guid viaja como uuid,
+            // PostgreSQL lo normaliza a texto canónico al castear @mediaId::text.
 
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
             var result = new List<MediaEnrollmentReferenceDto>();

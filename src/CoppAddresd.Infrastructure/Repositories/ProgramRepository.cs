@@ -11023,8 +11023,13 @@ public sealed class ProgramRepository(
     /// Actualiza las reglas podcast de los días indicados en la plantilla con
     /// el medio dado. Escritura tracked (no ExecuteUpdate) para que el
     /// interceptor de auditoría propague el actor vía GUC y el trigger
-    /// registre cada UPDATE con old/new data. Devuelve la cantidad de filas
-    /// actualizadas, o null si la plantilla no existe.
+    /// registre cada UPDATE con old/new data.
+    ///
+    /// Guardia (review AGY H-01): una plantilla Archived NO admite asignación
+    /// de contenido → <see cref="UnprocessableEntityException"/> (422). Al
+    /// actualizar filas hijas se sella la auditoría del agregado
+    /// (<c>UpdatedAt</c>/<c>UpdatedBy</c>) para trazabilidad del actor.
+    /// Devuelve la cantidad de filas actualizadas, o null si la plantilla no existe.
     /// </summary>
     public async Task<int?> AssignMediaToTemplateAsync(
         Guid templateId,
@@ -11034,14 +11039,23 @@ public sealed class ProgramRepository(
         CancellationToken ct = default
     )
     {
-        _ = actorId; // El actor viaja por los GUC del interceptor, no por la fila.
-
-        var exists = await dbContext
-            .ProgramTemplates.AsNoTracking()
-            .AnyAsync(t => t.Id == templateId, ct);
-        if (!exists)
+        var template = await dbContext.ProgramTemplates.FirstOrDefaultAsync(
+            t => t.Id == templateId,
+            ct
+        );
+        if (template is null)
         {
             return null;
+        }
+
+        // Review AGY H-01: el orden editorial es un recurso cerrado si la
+        // plantilla fue archivada; modificar sus reglas generaría contenido
+        // muerto que ninguna cohorte activa consume.
+        if (template.Status == TemplateStatus.Archived)
+        {
+            throw new UnprocessableEntityException(
+                "No se pueden modificar reglas de una plantilla archivada."
+            );
         }
 
         var rows = await dbContext
@@ -11059,6 +11073,9 @@ public sealed class ProgramRepository(
 
         if (rows.Count > 0)
         {
+            // Sella la auditoría del agregado plantilla (quién y cuándo).
+            template.UpdatedAt = DateTime.UtcNow;
+            template.UpdatedBy = actorId;
             await dbContext.SaveChangesAsync(ct);
         }
 
