@@ -46,14 +46,15 @@ namespace CoppAddresd.Application.Features.ProgramProgress.DTOs.Nutrition;
 /// =======================================================================================
 /// </summary>
 public sealed record NutritionIntakePayload(
-    [property: JsonPropertyName("calories")] int? Calories,
+    [property: JsonPropertyName("calories")] decimal? Calories,
     [property: JsonPropertyName("proteinG")] decimal? ProteinG,
     [property: JsonPropertyName("carbsG")] decimal? CarbsG,
     [property: JsonPropertyName("fatG")] decimal? FatG,
     [property: JsonPropertyName("fiberG")] decimal? FiberG,
     [property: JsonPropertyName("waterMl")] int? WaterMl,
     [property: JsonPropertyName("source")] string? Source,
-    [property: JsonPropertyName("foodAnalysisId")] Guid? FoodAnalysisId);
+    [property: JsonPropertyName("foodAnalysisId")] Guid? FoodAnalysisId
+);
 
 /// <summary>
 /// Respuesta de <c>POST /api/v1/program/nutrition/log</c> (SPEC §18, B): el
@@ -70,7 +71,8 @@ public sealed record NutritionLogResultDto(
     [property: JsonPropertyName("localDate")] DateOnly LocalDate,
     [property: JsonPropertyName("isDone")] bool IsDone,
     [property: JsonPropertyName("xpAwarded")] int XpAwarded,
-    [property: JsonPropertyName("xpBalanceAfter")] int XpBalanceAfter);
+    [property: JsonPropertyName("xpBalanceAfter")] int XpBalanceAfter
+);
 
 /// <summary>
 /// Resumen de los otorgamientos semanales de nutrición (SPEC §18, C) evaluados
@@ -81,7 +83,8 @@ public sealed record NutritionLogResultDto(
 /// </summary>
 public sealed record NutritionWeeklyAwardsResult(
     [property: JsonPropertyName("totalXpAwarded")] int TotalXpAwarded,
-    [property: JsonPropertyName("awardedRules")] IReadOnlyList<string> AwardedRules)
+    [property: JsonPropertyName("awardedRules")] IReadOnlyList<string> AwardedRules
+)
 {
     public static readonly NutritionWeeklyAwardsResult Empty = new(0, []);
 }

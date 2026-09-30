@@ -126,10 +126,12 @@ public sealed class ProgramSelfServicePermissionTests
         ) => Task.FromResult<IReadOnlyList<Guid>?>([TestPatientId]);
     }
 
-    private static WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> NewFactory()
+    private static WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> NewFactory(
+        HashSet<(MealCode Code, DateOnly Date)>? loggedMeals = null,
+        NutritionIntakePayload?[]? intakeCapture = null
+    )
     {
-        // Stub del repositorio: agua acumula (200), comidas dupliquean 409.
-        var loggedMeals = new HashSet<(MealCode Code, DateOnly Date)>();
+        var meals = loggedMeals ?? [];
         var repository = Substitute.For<IProgramRepository>();
         repository
             .LogNutritionAsync(
@@ -145,13 +147,19 @@ public sealed class ProgramSelfServicePermissionTests
                 var mealCode = callInfo.ArgAt<MealCode>(1);
                 var date = callInfo.ArgAt<DateOnly?>(2) ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
+                // Captura para asserts del binding (ej. calories decimal).
+                if (intakeCapture is not null)
+                {
+                    intakeCapture[0] = callInfo.ArgAt<NutritionIntakePayload?>(3);
+                }
+
                 if (mealCode == MealCode.agua)
                 {
                     // El agua acumula: repetición → 200 con XP 0 (SPEC §18).
                     return new NutritionLogResultDto(Guid.NewGuid(), "agua", date, true, 0, 42);
                 }
 
-                if (!loggedMeals.Add((mealCode, date)))
+                if (!meals.Add((mealCode, date)))
                 {
                     throw new BusinessRuleViolationException("HABIT_ALREADY_LOGGED");
                 }
@@ -273,5 +281,44 @@ public sealed class ProgramSelfServicePermissionTests
             new { mealCode = "des", localDate = (string?)null }
         );
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+    }
+
+    [Fact]
+    public async Task LogNutrition_CaloriasDecimalesDeFoodAI_Binding200()
+    {
+        // (BUG P1 #3) La FoodAI devuelve kcal decimales (113.36) y la app
+        // envía el valor crudo: con Calories int? el System.Text.Json
+        // rechazaba el binding → 400 SIEMPRE. Ahora es decimal? y el valor
+        // llega íntegro al repositorio.
+        var intakeCapture = new NutritionIntakePayload?[1];
+        await using var factory = NewFactory(intakeCapture: intakeCapture);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            MakePatientToken()
+        );
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/program/nutrition/log",
+            new
+            {
+                mealCode = "alm",
+                localDate = (string?)null,
+                intake = new
+                {
+                    calories = 113.36, // valor crudo de la FoodAI (num() sin redondear)
+                    proteinG = 12.75,
+                    source = "ai_photo",
+                },
+            }
+        );
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // El binding conservó la precisión decimal (sin truncar a 113).
+        var captured = intakeCapture[0];
+        Assert.NotNull(captured);
+        Assert.Equal(113.36m, captured!.Calories);
+        Assert.Equal(12.75m, captured.ProteinG);
     }
 }

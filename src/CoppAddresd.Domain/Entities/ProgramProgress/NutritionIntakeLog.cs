@@ -37,8 +37,11 @@ public sealed class NutritionIntakeLog
     /// <summary>Código de comida/hidratación (des/alm/mer/cen/agua).</summary>
     public MealCode MealCode { get; set; }
 
-    /// <summary>Calorías estimadas (kcal). Null si no se informaron.</summary>
-    public int? Calories { get; set; }
+    /// <summary>
+    /// Calorías estimadas (kcal, decimal — FoodAI devuelve valores con decimales
+    /// ej. 113.36). Null si no se informaron.
+    /// </summary>
+    public decimal? Calories { get; set; }
 
     /// <summary>Gramos de proteína. Null si no se informaron.</summary>
     public decimal? ProteinG { get; set; }

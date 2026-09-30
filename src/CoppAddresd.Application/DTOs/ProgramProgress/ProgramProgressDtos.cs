@@ -34,7 +34,8 @@ public sealed record VitalsPayload(
     DateTime? MeasuredAt,
     // Del wearable (device-metrics-tracking): pasos del día y sueño en minutos.
     decimal? Steps = null,
-    decimal? SleepMinutes = null);
+    decimal? SleepMinutes = null
+);
 
 /// <summary>
 /// Entrada de la persistencia de una tarea completada. Los FKs de contenido
@@ -60,7 +61,8 @@ public sealed record CompleteTaskInput(
     Guid? EmotionalRecordId = null,
     // vital-signs-tracking: payload opcional y actor que registra las mediciones.
     VitalsPayload? Vitals = null,
-    Guid? ActorId = null);
+    Guid? ActorId = null
+);
 
 /// <summary>
 /// Resultado tipado de <c>CompleteTaskAsync</c> (shape del response de
@@ -77,7 +79,8 @@ public sealed record CompleteTaskResult(
     int StreakCurrent,
     int FreezesRemaining,
     int DayPoints,
-    int DayPointsMax);
+    int DayPointsMax
+);
 
 /// <summary>
 /// Snapshot del programa para la home del móvil (SPEC §7.1).
@@ -107,7 +110,8 @@ public sealed record ProgramSnapshotDto(
     int NextMilestoneDays,
     IReadOnlyList<CalendarDayDto> Calendar,
     IReadOnlyList<StreakChestDto>? StreakChests = null,
-    int? DailyBonusAmount = null);
+    int? DailyBonusAmount = null
+);
 
 /// <summary>
 /// Bloque de plantilla/semana actual del snapshot. <c>StreakMinTasks</c> y
@@ -125,7 +129,8 @@ public sealed record ProgramSnapshotTemplateDto(
     DateOnly CurrentWeekStartDateLocal,
     DateOnly CurrentWeekEndDateLocal,
     int StreakMinTasks,
-    IReadOnlyList<string> EssentialTaskCodes);
+    IReadOnlyList<string> EssentialTaskCodes
+);
 
 /// <summary>
 /// Tarea de hoy del snapshot. <c>Content</c> trae el contenido multimedia
@@ -148,7 +153,8 @@ public sealed record TodayTaskDto(
     string Status,
     DateTime? CompletedAt,
     TodayTaskContentDto? Content,
-    bool ContentUnavailable = false);
+    bool ContentUnavailable = false
+);
 
 public sealed record PodcastChapterDto(int AtSeconds, string Label);
 
@@ -160,7 +166,8 @@ public sealed record RecentVitalsDto(
     decimal? Glucose,
     decimal? WeightKg,
     decimal? TemperatureC,
-    DateTime? RecordedAt);
+    DateTime? RecordedAt
+);
 
 public sealed record NutritionMealDto(
     string MealType,
@@ -173,7 +180,8 @@ public sealed record NutritionMealDto(
     decimal? FiberG,
     int? WaterMl,
     string? Notes,
-    int SortOrder);
+    int SortOrder
+);
 
 public sealed record ExerciseItemDto(
     string Name,
@@ -185,7 +193,8 @@ public sealed record ExerciseItemDto(
     string? TargetMuscle,
     string? Equipment,
     string? Tips,
-    int SortOrder);
+    int SortOrder
+);
 
 /// <summary>
 /// Log de intake nutricional de hoy expuesto en el snapshot del contenido
@@ -200,15 +209,17 @@ public sealed record ExerciseItemDto(
 public sealed record NutritionIntakeLogDto(
     [property: System.Text.Json.Serialization.JsonPropertyName("mealCode")] string MealCode,
     [property: System.Text.Json.Serialization.JsonPropertyName("localDate")] DateOnly LocalDate,
-    [property: System.Text.Json.Serialization.JsonPropertyName("calories")] int? Calories,
+    [property: System.Text.Json.Serialization.JsonPropertyName("calories")] decimal? Calories,
     [property: System.Text.Json.Serialization.JsonPropertyName("proteinG")] decimal? ProteinG,
     [property: System.Text.Json.Serialization.JsonPropertyName("carbsG")] decimal? CarbsG,
     [property: System.Text.Json.Serialization.JsonPropertyName("fatG")] decimal? FatG,
     [property: System.Text.Json.Serialization.JsonPropertyName("fiberG")] decimal? FiberG,
     [property: System.Text.Json.Serialization.JsonPropertyName("waterMl")] int? WaterMl,
     [property: System.Text.Json.Serialization.JsonPropertyName("source")] string Source,
-    [property: System.Text.Json.Serialization.JsonPropertyName("foodAnalysisId")] Guid? FoodAnalysisId,
-    [property: System.Text.Json.Serialization.JsonPropertyName("createdAt")] DateTime CreatedAt);
+    [property: System.Text.Json.Serialization.JsonPropertyName("foodAnalysisId")]
+        Guid? FoodAnalysisId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("createdAt")] DateTime CreatedAt
+);
 
 /// <summary>
 /// Contenido resuelto para las misiones del día (SPEC §R3.1, §4.2, §4.3).
@@ -241,7 +252,8 @@ public sealed record TodayTaskContentDto(
     IReadOnlyList<string>? Takeaways = null,
     bool ContentUnavailable = false,
     IReadOnlyList<ExerciseItemDto>? Exercises = null,
-    IReadOnlyList<NutritionIntakeLogDto>? NutritionIntakeLogs = null);
+    IReadOnlyList<NutritionIntakeLogDto>? NutritionIntakeLogs = null
+);
 
 /// <summary>XP + nivel de gamificación (nunca métrica clínica, SPEC §6.15).</summary>
 public sealed record XpInfoDto(int Balance, string Level, int NextLevelAt);
@@ -269,7 +281,8 @@ public sealed record StreakInfoDto(
     int NbStreak = 0,
     int NbLongestStreak = 0,
     NbNextMilestoneDto? NbNextMilestone = null,
-    IReadOnlyList<bool>? NbWeekDays = null);
+    IReadOnlyList<bool>? NbWeekDays = null
+);
 
 /// <summary>
 /// Próximo hito de la racha propia del nutracéutico (SPEC §19, D): días del
@@ -288,11 +301,7 @@ public sealed record NbNextMilestoneDto(int Days, int Xp, int DaysRemaining);
 /// que tras una rotura y regeneración de racha la derivación client-side
 /// mostraría como disponibles cofres ya pagados. Ordenado por <c>Days</c>.
 /// </summary>
-public sealed record StreakChestDto(
-    int Days,
-    int Xp,
-    bool Granted,
-    DateTime? GrantedAt = null);
+public sealed record StreakChestDto(int Days, int Xp, bool Granted, DateTime? GrantedAt = null);
 
 /// <summary>Día del mini calendario del snapshot (7 días).</summary>
 public sealed record CalendarDayDto(
@@ -300,14 +309,16 @@ public sealed record CalendarDayDto(
     short Weekday,
     bool IsPerfectDay,
     int Points,
-    string Status);
+    string Status
+);
 
 /// <summary>Calendario por día para una ventana (máx 92 días, SPEC §7.3).</summary>
 public sealed record ProgramCalendarDto(
     DateOnly From,
     DateOnly To,
     IReadOnlyList<CalendarDayDetailDto> Days,
-    CalendarSummaryDto Summary);
+    CalendarSummaryDto Summary
+);
 
 /// <summary>Rollup diario del calendario.</summary>
 public sealed record CalendarDayDetailDto(
@@ -317,7 +328,8 @@ public sealed record CalendarDayDetailDto(
     bool IsPerfectDay,
     int Points,
     int BonusAwarded,
-    IReadOnlyList<string> CompletedTaskCodes);
+    IReadOnlyList<string> CompletedTaskCodes
+);
 
 /// <summary>Resumen de la ventana del calendario.</summary>
 public sealed record CalendarSummaryDto(int PerfectDays, int MissedDays, int TotalXp);
@@ -335,7 +347,8 @@ public sealed record ProgramPathWeekDto(
     bool? IsPerfectWeek,
     int Points,
     DateOnly WeekStartDateLocal,
-    DateOnly WeekEndDateLocal);
+    DateOnly WeekEndDateLocal
+);
 
 /// <summary>Acción de decisión de una recomendación de adaptación (SPEC §5.6).</summary>
 public enum AdaptationDecisionAction
@@ -352,16 +365,17 @@ public enum AdaptationDecisionAction
 /// </summary>
 public static class ProgramTaskCatalog
 {
-    public static (string Title, string Short) For(TaskCode code) => code switch
-    {
-        TaskCode.podcast => ("Escuchar podcast", "Biohacking y metabolismo · 8 min"),
-        TaskCode.vitals => ("Medir signos vitales", "FC · SpO2 · Glucosa · Peso"),
-        TaskCode.nut => ("Cumplir plan nutricional", "Mediterráneo · 1,800 kcal"),
-        TaskCode.ejercicio => ("Hacer ejercicio del día", "Circuito 12 min · Semana 12"),
-        TaskCode.nutraceutico => ("Tomar nutracéutico", "Dosis diaria matutina"),
-        TaskCode.emocional => ("Evaluación emocional", "Estado psicológico · Semana 12"),
-        _ => ("Tarea", ""),
-    };
+    public static (string Title, string Short) For(TaskCode code) =>
+        code switch
+        {
+            TaskCode.podcast => ("Escuchar podcast", "Biohacking y metabolismo · 8 min"),
+            TaskCode.vitals => ("Medir signos vitales", "FC · SpO2 · Glucosa · Peso"),
+            TaskCode.nut => ("Cumplir plan nutricional", "Mediterráneo · 1,800 kcal"),
+            TaskCode.ejercicio => ("Hacer ejercicio del día", "Circuito 12 min · Semana 12"),
+            TaskCode.nutraceutico => ("Tomar nutracéutico", "Dosis diaria matutina"),
+            TaskCode.emocional => ("Evaluación emocional", "Estado psicológico · Semana 12"),
+            _ => ("Tarea", ""),
+        };
 }
 
 /// <summary>
@@ -414,18 +428,21 @@ public sealed record CompleteTaskResponseDto(
     int StreakCurrent,
     int FreezesRemaining,
     int DayPoints,
-    int DayPointsMax)
+    int DayPointsMax
+)
 {
-    public static CompleteTaskResponseDto FromResult(CompleteTaskResult r) => new(
-        r.TaskCompletionId,
-        r.PointsAwarded,
-        r.XpBalanceAfter,
-        r.IsPerfectDay,
-        r.DailyBonusAwarded,
-        r.StreakCurrent,
-        r.FreezesRemaining,
-        r.DayPoints,
-        r.DayPointsMax);
+    public static CompleteTaskResponseDto FromResult(CompleteTaskResult r) =>
+        new(
+            r.TaskCompletionId,
+            r.PointsAwarded,
+            r.XpBalanceAfter,
+            r.IsPerfectDay,
+            r.DailyBonusAwarded,
+            r.StreakCurrent,
+            r.FreezesRemaining,
+            r.DayPoints,
+            r.DayPointsMax
+        );
 }
 
 /// <summary>
@@ -440,7 +457,8 @@ public sealed record WeeklyDayTemplateRequest(
     int SortOrder = 0,
     Guid? MediaId = null,
     Guid? RoutineId = null,
-    Guid? NutritionPlanId = null);
+    Guid? NutritionPlanId = null
+);
 
 /// <summary>Fila por día de la semana de una plantilla (respuesta).</summary>
 public sealed record WeeklyDayTemplateDto(
@@ -450,10 +468,12 @@ public sealed record WeeklyDayTemplateDto(
     int Points,
     int SortOrder,
     Guid? MediaId,
-    DateTime CreatedAt)
+    DateTime CreatedAt
+)
 {
-    public static WeeklyDayTemplateDto FromEntity(Domain.Entities.ProgramProgress.WeeklyDayTemplate d) => new(
-        d.Id, d.Weekday, d.TaskCode, d.Points, d.SortOrder, d.MediaId, d.CreatedAt);
+    public static WeeklyDayTemplateDto FromEntity(
+        Domain.Entities.ProgramProgress.WeeklyDayTemplate d
+    ) => new(d.Id, d.Weekday, d.TaskCode, d.Points, d.SortOrder, d.MediaId, d.CreatedAt);
 }
 
 /// <summary>
@@ -473,12 +493,27 @@ public sealed record ProgramTemplateDto(
     DateTime CreatedAt,
     DateTime? UpdatedAt,
     DateTime? PublishedAt,
-    IReadOnlyList<WeeklyDayTemplateDto> Days)
+    IReadOnlyList<WeeklyDayTemplateDto> Days
+)
 {
-    public static ProgramTemplateDto FromEntity(Domain.Entities.ProgramProgress.ProgramTemplate t) => new(
-        t.Id, t.Code, t.Name, t.Description, t.TotalWeeks, t.Status, t.Version,
-        t.CreatedBy, t.UpdatedBy, t.CreatedAt, t.UpdatedAt, t.PublishedAt,
-        t.DayTemplates.Select(WeeklyDayTemplateDto.FromEntity).ToList());
+    public static ProgramTemplateDto FromEntity(
+        Domain.Entities.ProgramProgress.ProgramTemplate t
+    ) =>
+        new(
+            t.Id,
+            t.Code,
+            t.Name,
+            t.Description,
+            t.TotalWeeks,
+            t.Status,
+            t.Version,
+            t.CreatedBy,
+            t.UpdatedBy,
+            t.CreatedAt,
+            t.UpdatedAt,
+            t.PublishedAt,
+            t.DayTemplates.Select(WeeklyDayTemplateDto.FromEntity).ToList()
+        );
 }
 
 /// <summary>Ítem del listado de plantillas (sin días; el detalle va a <c>GET /templates/{id}</c>).</summary>
@@ -491,7 +526,8 @@ public sealed record ProgramTemplateListItemDto(
     TemplateStatus Status,
     int Version,
     DateTime CreatedAt,
-    DateTime? PublishedAt);
+    DateTime? PublishedAt
+);
 
 /// <summary>Resultado paginado del listado de plantillas (SPEC §7.6).</summary>
 public sealed record PaginatedTemplatesResult(
@@ -499,7 +535,8 @@ public sealed record PaginatedTemplatesResult(
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 /// <summary>
 /// Inscripción de un paciente al programa con su estado de gamificación
@@ -527,7 +564,8 @@ public sealed record ProgramEnrollmentDto(
     string? PatientFullName = null,
     string? PatientDocumentNumber = null,
     string? TemplateName = null,
-    string? CurrentLevel = null);
+    string? CurrentLevel = null
+);
 
 /// <summary>Resultado paginado del listado de inscripciones (SPEC §7.5).</summary>
 public sealed record PaginatedEnrollmentsResult(
@@ -535,7 +573,8 @@ public sealed record PaginatedEnrollmentsResult(
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 /// <summary>
 /// Recomendación de adaptación visible para el clínico (SPEC §7.7). El payload
@@ -557,14 +596,29 @@ public sealed record AdaptationRecommendationDto(
     DateTime? AppliedAt,
     DateTime CreatedAt,
     DateTime? UpdatedAt,
-    [property: JsonPropertyName("patient_name")] string? PatientName = null)
+    [property: JsonPropertyName("patient_name")] string? PatientName = null
+)
 {
     public static AdaptationRecommendationDto FromEntity(
-        Domain.Entities.ProgramProgress.AdaptationRecommendation a) => new(
-        a.Id, a.EnrollmentId, a.Kind, a.TargetEntityType, a.TargetEntityId,
-        a.Payload, a.Reason, a.Status, a.RequiresApproval,
-        a.RequestedBy, a.DecidedBy, a.DecidedAt, a.AppliedAt,
-        a.CreatedAt, a.UpdatedAt);
+        Domain.Entities.ProgramProgress.AdaptationRecommendation a
+    ) =>
+        new(
+            a.Id,
+            a.EnrollmentId,
+            a.Kind,
+            a.TargetEntityType,
+            a.TargetEntityId,
+            a.Payload,
+            a.Reason,
+            a.Status,
+            a.RequiresApproval,
+            a.RequestedBy,
+            a.DecidedBy,
+            a.DecidedAt,
+            a.AppliedAt,
+            a.CreatedAt,
+            a.UpdatedAt
+        );
 }
 
 /// <summary>Resultado paginado de recomendaciones de adaptación (SPEC §7.7).</summary>
@@ -573,7 +627,8 @@ public sealed record PaginatedAdaptationsResult(
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 /// <summary>
 /// Regla del catálogo de XP visible para el administrador (SPEC §14.5, ERP):
@@ -594,12 +649,26 @@ public sealed record XpRuleDto(
     DateOnly ValidFrom,
     DateOnly? ValidUntil,
     DateTime CreatedAt,
-    DateTime? UpdatedAt)
+    DateTime? UpdatedAt
+)
 {
-    public static XpRuleDto FromEntity(Domain.Entities.ProgramProgress.XpRule r) => new(
-        r.Id, r.Code, r.Name, r.Category, r.BaseXp, r.Multiplier,
-        r.MaxPerDay, r.MaxPerWeek, r.RequiresValidation, r.Active,
-        r.ValidFrom, r.ValidUntil, r.CreatedAt, r.UpdatedAt);
+    public static XpRuleDto FromEntity(Domain.Entities.ProgramProgress.XpRule r) =>
+        new(
+            r.Id,
+            r.Code,
+            r.Name,
+            r.Category,
+            r.BaseXp,
+            r.Multiplier,
+            r.MaxPerDay,
+            r.MaxPerWeek,
+            r.RequiresValidation,
+            r.Active,
+            r.ValidFrom,
+            r.ValidUntil,
+            r.CreatedAt,
+            r.UpdatedAt
+        );
 }
 
 // ===================== T-77: Endpoints del configurador =====================
@@ -614,7 +683,8 @@ public sealed record ProgramContentResponse(
     Guid TemplateId,
     int TotalWeeks,
     DateOnly StartLocalDate,
-    IReadOnlyList<ProgramContentWeekDto> Weeks);
+    IReadOnlyList<ProgramContentWeekDto> Weeks
+);
 
 /// <summary>
 /// Contenido configurado para una semana del programa (T-77): plan de
@@ -625,7 +695,8 @@ public sealed record ProgramContentWeekDto(
     DateOnly WeekStartDateLocal,
     DateOnly WeekEndDateLocal,
     ProgramContentPlanRef? NutritionPlan,
-    ProgramContentRoutineRef? ExerciseRoutine);
+    ProgramContentRoutineRef? ExerciseRoutine
+);
 
 /// <summary>Referencia a un plan de alimentación (T-77).</summary>
 public sealed record ProgramContentPlanRef(Guid Id, string Code, string Name);
@@ -640,7 +711,8 @@ public sealed record ProgramContentRoutineRef(Guid Id, string Code, string Name)
 /// </summary>
 public sealed record SetWeekContentRequest(
     Guid? NutritionPlanId = null,
-    Guid? ExerciseRoutineId = null);
+    Guid? ExerciseRoutineId = null
+);
 
 // ===================== GET /catalogs/clinical-metrics (catálogo ERP) =====================
 
@@ -656,7 +728,8 @@ public sealed record ClinicalMetricDto(
     string Code,
     string Name,
     Guid DefaultUnitId,
-    string DefaultUnitSymbol);
+    string DefaultUnitSymbol
+);
 
 // ===================== GET /enrollments/{id}/xp-ledger (TASK-04) =====================
 
@@ -679,7 +752,8 @@ public sealed record XpLedgerEntryDto(
     Guid? GrantedBy,
     Guid? ValidatedBy,
     DateTime? ValidatedAt,
-    decimal? MultiplierUsed);
+    decimal? MultiplierUsed
+);
 
 /// <summary>Resultado paginado del libro mayor de XP (orden descendente por <c>AwardedAt</c>).</summary>
 public sealed record PaginatedXpLedgerResult(
@@ -687,7 +761,8 @@ public sealed record PaginatedXpLedgerResult(
     int Total,
     int Page,
     int PageSize,
-    int TotalPages);
+    int TotalPages
+);
 
 // ===================== GET /enrollments/{id}/week/{weekNumber} =====================
 
@@ -701,7 +776,8 @@ public sealed record EnrollmentWeekDetailDto(
     DateOnly WeekEndDateLocal,
     EnrollmentWeekContentRef? NutritionPlan,
     EnrollmentWeekContentRef? ExerciseRoutine,
-    IReadOnlyList<EnrollmentWeekDayDto> Days);
+    IReadOnlyList<EnrollmentWeekDayDto> Days
+);
 
 /// <summary>Referencia a contenido activo de la semana (plan o rutina).</summary>
 public sealed record EnrollmentWeekContentRef(Guid Id, string Name);
@@ -715,7 +791,8 @@ public sealed record EnrollmentWeekDayDto(
     int TotalPoints,
     int MaxPoints,
     int BonusAwarded,
-    IReadOnlyList<EnrollmentWeekTaskDto> Tasks);
+    IReadOnlyList<EnrollmentWeekTaskDto> Tasks
+);
 
 /// <summary>Tarea individual de un día (completada o pendiente) con metadatos de contenido resuelto.</summary>
 public sealed record EnrollmentWeekTaskDto(
@@ -727,7 +804,8 @@ public sealed record EnrollmentWeekTaskDto(
     DateTime? CompletedAt,
     Guid? ContentRefId = null,
     string? ContentName = null,
-    string? DetailText = null);
+    string? DetailText = null
+);
 
 /// <summary>
 /// Etiquetas en español neutro de las tareas del programa (SPEC §7.1).
@@ -735,32 +813,36 @@ public sealed record EnrollmentWeekTaskDto(
 /// </summary>
 public static class EnrollmentWeekTaskLabels
 {
-    private static readonly IReadOnlyDictionary<string, string> Labels =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["podcast"] = "Podcast",
-            ["vitals"] = "Signos vitales",
-            ["nut"] = "Plan nutricional",
-            ["ejercicio"] = "Ejercicio",
-            ["nutraceutico"] = "Nutracéutico",
-            ["emocional"] = "Evaluación emocional",
-        };
+    private static readonly IReadOnlyDictionary<string, string> Labels = new Dictionary<
+        string,
+        string
+    >(StringComparer.OrdinalIgnoreCase)
+    {
+        ["podcast"] = "Podcast",
+        ["vitals"] = "Signos vitales",
+        ["nut"] = "Plan nutricional",
+        ["ejercicio"] = "Ejercicio",
+        ["nutraceutico"] = "Nutracéutico",
+        ["emocional"] = "Evaluación emocional",
+    };
 
-    private static readonly IReadOnlyDictionary<short, string> DayLabels =
-        new Dictionary<short, string>
-        {
-            [1] = "Lunes",
-            [2] = "Martes",
-            [3] = "Miércoles",
-            [4] = "Jueves",
-            [5] = "Viernes",
-            [6] = "Sábado",
-            [7] = "Domingo",
-        };
+    private static readonly IReadOnlyDictionary<short, string> DayLabels = new Dictionary<
+        short,
+        string
+    >
+    {
+        [1] = "Lunes",
+        [2] = "Martes",
+        [3] = "Miércoles",
+        [4] = "Jueves",
+        [5] = "Viernes",
+        [6] = "Sábado",
+        [7] = "Domingo",
+    };
 
-    public static string TaskLabel(string taskCode)
-        => Labels.TryGetValue(taskCode, out var label) ? label : taskCode;
+    public static string TaskLabel(string taskCode) =>
+        Labels.TryGetValue(taskCode, out var label) ? label : taskCode;
 
-    public static string DayLabel(short weekday)
-        => DayLabels.TryGetValue(weekday, out var label) ? label : $"Día {weekday}";
+    public static string DayLabel(short weekday) =>
+        DayLabels.TryGetValue(weekday, out var label) ? label : $"Día {weekday}";
 }
