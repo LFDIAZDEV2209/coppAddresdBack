@@ -1,8 +1,8 @@
 using System.Globalization;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
-using CoppAddresd.Api.Http;
 using CoppAddresd.Api.Context;
+using CoppAddresd.Api.Http;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.AcceptIntervention;
@@ -157,8 +157,8 @@ public sealed class ProgramController(
     /// body se valida contra el paciente autenticado (anti-IDOR AC-11): si no
     /// le pertenece → 404, sin distinguir si la inscripción existe (no filtra
     /// existencia). Replay idempotente → 200 con el body existente.
-/// Clave de reintento: <c>clientRequestId</c> del body o, si falta,
-/// header <c>X-Idempotency-Key</c> (Fase 12, cola offline del móvil).
+    /// Clave de reintento: <c>clientRequestId</c> del body o, si falta,
+    /// header <c>X-Idempotency-Key</c> (Fase 12, cola offline del móvil).
     /// </summary>
     [HttpPost("tasks/complete")]
     public async Task<ActionResult<CompleteTaskResponseDto>> CompleteTask(
@@ -1077,7 +1077,7 @@ public sealed class ProgramController(
     /// activa → 404. Cache 5 min por paciente (fail-open).
     /// </summary>
     [HttpPost("me/weight")]
-    [Authorize(Roles = "Admin")] // Rol global de acceso total existente (SuperAdmin).
+    [Authorize(Roles = "Admin")] // Rol global de acceso total existente (SuperAdmin). INTENCIONAL (WeightAuthorizationTests): Patient/ClinicAdmin → 403; el peso es medición clínica que solo el Admin global registra en self-service; el flujo ERP vive en erp/biometria con RequirePermission(Program.View).
     public async Task<ActionResult<RecordedWeightDto>> RecordWeight(
         [FromBody] RecordWeightRequest request,
         CancellationToken ct
@@ -1323,7 +1323,11 @@ public sealed class ProgramController(
     /// paciente → 404 (anti-IDOR AC-11).
     /// </summary>
     [HttpPost("nutrition/log")]
-    [RequirePermission("Program.View")]
+    // Self-service del paciente (convención me/*-like): el patientId sale
+    // SIEMPRE del JWT (anti-IDOR AC-11) y los JWT de la app móvil no llevan
+    // claims de permiso — el RequirePermission(Program.View) respondía 403 en
+    // TODOS los entornos (bug P1). Sin permiso, solo autenticación; el handler
+    // nunca acepta patientId del body.
     public async Task<ActionResult<NutritionLogResultDto>> LogNutrition(
         [FromBody] LogNutritionRequest request,
         CancellationToken ct
@@ -1366,7 +1370,8 @@ public sealed class ProgramController(
     /// que el POST.
     /// </summary>
     [HttpPut("nutrition/log/{mealCode}")]
-    [RequirePermission("Program.View")]
+    // Mismo criterio que POST nutrition/log: self-service del paciente
+    // (patientId del JWT), sin permiso granular (bug P1).
     public async Task<ActionResult<NutritionLogResultDto>> UpdateNutritionLog(
         string mealCode,
         [FromBody] UpdateNutritionIntakeRequest? request,
