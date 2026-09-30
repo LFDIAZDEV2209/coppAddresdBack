@@ -28,16 +28,43 @@ public class MediaController(
     StorageSignatureService? signatureService = null
 ) : ControllerBase
 {
+    /// <summary>
+    /// Listado paginado server-side de la biblioteca (REQ-PCA-06): búsqueda
+    /// textual, filtros combinados (mediaType/category/status/usage) y
+    /// ordenación con whitelist. Envelope estándar
+    /// <c>{ items, totalCount, page, pageSize, totalPages }</c> con
+    /// <c>usageCount</c> por fila.
+    /// </summary>
     [HttpGet]
     [RequirePermission(PermissionCodes.MediaView)]
-    public async Task<ActionResult<IReadOnlyList<MediaItemDto>>> List(
-        [FromQuery] MediaType? mediaType,
-        [FromQuery] MediaStatus? status,
-        CancellationToken ct
+    public async Task<ActionResult<PagedMediaItemsResult>> List(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] MediaType? mediaType = null,
+        [FromQuery] MediaCategory? category = null,
+        [FromQuery] MediaStatus? status = null,
+        [FromQuery] string? usage = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortDirection = null,
+        CancellationToken ct = default
     )
     {
-        var items = await mediator.Send(new ListMediaItemsQuery(mediaType, status), ct);
-        return Ok(items);
+        var result = await mediator.Send(
+            new GetMediaItemsQuery(
+                page,
+                pageSize,
+                search,
+                mediaType,
+                category,
+                status,
+                usage,
+                sortBy,
+                sortDirection
+            ),
+            ct
+        );
+        return Ok(result);
     }
 
     [HttpGet("{id:guid}")]
@@ -198,6 +225,49 @@ public class MediaController(
 
         return NoContent();
     }
+
+    // ===================== Acciones semánticas (REQ-PCA-03) =====================
+
+    /// <summary>
+    /// Publica un medio (Draft → Published) tras la validación técnica
+    /// estricta del blob (REQ-PCA-02): existencia física, MIME permitido,
+    /// tamaño y duración. Inconsistencia → 422 con ProblemDetails detallado.
+    /// </summary>
+    [HttpPost("{id:guid}/publish")]
+    [RequirePermission(PermissionCodes.MediaPublish)]
+    public async Task<ActionResult<PublishMediaItemResult>> Publish(
+        Guid id,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(new PublishMediaItemCommand(id), ct));
+
+    /// <summary>
+    /// Despublica un medio (Published → Draft) con registro auditable.
+    /// Un medio Archived no se puede despublicar (422).
+    /// </summary>
+    [HttpPost("{id:guid}/unpublish")]
+    [RequirePermission(PermissionCodes.MediaPublish)]
+    public async Task<ActionResult<MediaItemDto>> Unpublish(Guid id, CancellationToken ct) =>
+        Ok(await mediator.Send(new UnpublishMediaItemCommand(id), ct));
+
+    /// <summary>
+    /// Archiva un medio (cualquier estado → Archived): sale de los selectores
+    /// de nuevas asignaciones pero conserva su reproducción histórica.
+    /// </summary>
+    [HttpPost("{id:guid}/archive")]
+    [RequirePermission(PermissionCodes.MediaArchive)]
+    public async Task<ActionResult<MediaItemDto>> Archive(Guid id, CancellationToken ct) =>
+        Ok(await mediator.Send(new ArchiveMediaItemCommand(id), ct));
+
+    /// <summary>
+    /// Reordenamiento en lote del catálogo (SortOrder), en una única
+    /// escritura atómica. Body: <c>{ items: [{ id, sortOrder }] }</c>.
+    /// </summary>
+    [HttpPost("reorder")]
+    [RequirePermission(PermissionCodes.MediaEdit)]
+    public async Task<ActionResult<ReorderMediaItemsResult>> Reorder(
+        [FromBody] ReorderMediaItemsCommand command,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(command, ct));
 
     private Guid? CurrentUserId()
     {
