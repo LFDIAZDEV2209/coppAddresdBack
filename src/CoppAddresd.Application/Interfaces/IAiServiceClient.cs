@@ -114,4 +114,16 @@ public interface IAiServiceClient
         string? language,
         CancellationToken ct = default
     );
+
+    /// <summary>
+    /// Emite una sesión temporal de voz (ElevenLabs Agents) para un paciente
+    /// autenticado. Canal interno (X-Internal-Key): la API key de ElevenLabs
+    /// vive solo en el ai-service y el cliente recibe un signed URL de vida
+    /// corta. Los identificadores provienen del JWT del backend, nunca del
+    /// cliente.
+    /// </summary>
+    Task<VoiceSessionResponseDto> CreateVoiceSessionAsync(
+        VoiceSessionInternalRequest request,
+        CancellationToken ct = default
+    );
 }

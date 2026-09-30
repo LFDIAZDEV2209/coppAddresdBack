@@ -355,6 +355,60 @@ public class AiServiceClient : IAiServiceClient
         throw new AiServiceException((int)response.StatusCode, detail);
     }
 
+    /// <summary>
+    /// Emite una sesión de voz (ElevenLabs) vía canal interno. El payload viaja
+    /// snake_case (contrato pydantic del ai-service) y la respuesta se mapea al
+    /// DTO de Application. Nunca se loguea el signed URL (credencial temporal
+    /// del paciente).
+    /// </summary>
+    public async Task<VoiceSessionResponseDto> CreateVoiceSessionAsync(
+        VoiceSessionInternalRequest request,
+        CancellationToken ct = default
+    )
+    {
+        _logger.LogDebug(
+            "Solicitando sesión de voz al AI service: UserId={UserId} ThreadId={ThreadId}",
+            request.UserId,
+            request.ThreadId
+        );
+
+        var payload = new
+        {
+            user_id = request.UserId,
+            patient_id = request.PatientId,
+            thread_id = request.ThreadId,
+        };
+
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            _settings.VoiceSessionEndpoint
+        )
+        {
+            Content = JsonContent.Create(payload, options: JsonOpts),
+        };
+        AddInternalKeyHeader(httpRequest);
+
+        using var response = await _httpClient.SendAsync(httpRequest, ct);
+        if (!response.IsSuccessStatusCode)
+            await ThrowForResponseAsync(response, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<VoiceSessionResponseJson>(
+            JsonOpts,
+            cancellationToken: ct
+        );
+        if (result?.SignedUrl is null)
+            throw new AiServiceException(
+                (int)response.StatusCode,
+                "El AI Service no devolvió un signed URL válido para la sesión de voz."
+            );
+
+        return new VoiceSessionResponseDto(
+            result.SignedUrl,
+            result.AgentId ?? string.Empty,
+            result.ConversationId
+        );
+    }
+
     public async Task<ThreadStateResult> GetThreadStateAsync(
         string threadId,
         string userId,
@@ -642,5 +696,13 @@ public class AiServiceClient : IAiServiceClient
     // ambos casos degradan a cadena vacía en NarrateLabExamAsync.
     private sealed record NarrateResponseJson(
         [property: JsonPropertyName("empathetic_message")] string? EmpatheticMessage = null
+    );
+
+    // Contrato del endpoint de sesiones de voz: signed_url + agent_id +
+    // conversation_id opcional (snake_case, contrato pydantic del ai-service).
+    private sealed record VoiceSessionResponseJson(
+        [property: JsonPropertyName("signed_url")] string? SignedUrl,
+        [property: JsonPropertyName("agent_id")] string? AgentId,
+        [property: JsonPropertyName("conversation_id")] string? ConversationId = null
     );
 }

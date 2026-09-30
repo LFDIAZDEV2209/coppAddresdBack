@@ -116,6 +116,90 @@ public class ChatController : ControllerBase
     }
 
     /// <summary>
+    /// Abre una sesión de voz conversacional (ElevenLabs) para el paciente
+    /// autenticado. La identidad proviene SOLO del JWT; el backend valida,
+    /// audita y devuelve un signed URL de vida corta (la API key nunca sale
+    /// del ai-service). Ante indisponibilidad del ai-service responde
+    /// 502/503 con mensaje amigable, sin filtrar trazas internas.
+    /// </summary>
+    [HttpPost("voice/session")]
+    [ProducesResponseType(typeof(VoiceSessionResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status502BadGateway)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<VoiceSessionResponseDto>> CreateVoiceSession(
+        [FromBody] VoiceSessionRequestDto request,
+        CancellationToken ct
+    )
+    {
+        var userId = AuthenticatedUserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized(new { message = "Usuario no identificado." });
+
+        try
+        {
+            var command = new VoiceSessionCommand(
+                userId,
+                PatientId: null,
+                ThreadId: request.ThreadId
+            );
+            var result = await _mediator.Send(command, ct);
+            return Ok(result);
+        }
+        catch (AiServiceException ex)
+        {
+            // El ai-service (o ElevenLabs) rechazó la emisión: detalle interno
+            // en log, al paciente un mensaje amigable sin trazas.
+            _logger.LogError(
+                ex,
+                "AI Service rechazó la sesión de voz (status {Status}): {Detail}",
+                ex.StatusCode,
+                ex.Detail
+            );
+            var status = ex.StatusCode is 503
+                ? StatusCodes.Status503ServiceUnavailable
+                : StatusCodes.Status502BadGateway;
+            return StatusCode(
+                status,
+                new ProblemDetails
+                {
+                    Type = $"https://httpstatuses.io/{status}",
+                    Title =
+                        status == StatusCodes.Status503ServiceUnavailable
+                            ? "Service Unavailable"
+                            : "Bad Gateway",
+                    Status = status,
+                    Detail =
+                        "No pudimos iniciar el asistente de voz en este momento. Intenta de nuevo en unos minutos.",
+                    Instance = HttpContext.Request.Path,
+                }
+            );
+        }
+        catch (HttpRequestException ex)
+        {
+            // ai-service offline o red caída: 503 sin exponer el destino.
+            _logger.LogError(ex, "AI Service no alcanzable al abrir sesión de voz");
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new ProblemDetails
+                {
+                    Type = "https://httpstatuses.io/503",
+                    Title = "Service Unavailable",
+                    Status = StatusCodes.Status503ServiceUnavailable,
+                    Detail =
+                        "No pudimos iniciar el asistente de voz en este momento. Intenta de nuevo en unos minutos.",
+                    Instance = HttpContext.Request.Path,
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Voice session request failed");
+            return StatusCode(500, new { error = "No fue posible procesar la solicitud." });
+        }
+    }
+
+    /// <summary>
     /// Registra la retroalimentación del paciente sobre una respuesta del chat
     /// (rating 1-5 + comentario). La identidad (<c>user_id</c>) proviene
     /// exclusivamente del JWT; el body nunca define quién califica.

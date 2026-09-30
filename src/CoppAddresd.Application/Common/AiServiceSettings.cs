@@ -47,6 +47,13 @@ public class AiServiceSettings
     public string NarrateEndpoint { get; set; } = "/chat/lab-exam/narrate";
 
     /// <summary>
+    /// Endpoint interno de sesiones de voz conversacional (ElevenLabs Agents).
+    /// El ai-service administra la API key y devuelve un signed URL de vida
+    /// corta; el backend valida JWT/paciente/auditoría antes de llamarlo.
+    /// </summary>
+    public string VoiceSessionEndpoint { get; set; } = "/internal/voice/session";
+
+    /// <summary>
     /// Timeout (segundos) de la llamada de narración. Best-effort: al vencer, el
     /// handler cae al summary técnico sin romper el upload.
     /// </summary>

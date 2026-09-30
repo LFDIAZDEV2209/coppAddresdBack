@@ -91,6 +91,11 @@ public class ChatCommandHandlerTests
             string userId,
             CancellationToken ct = default
         ) => throw new NotImplementedException();
+
+        public Task<VoiceSessionResponseDto> CreateVoiceSessionAsync(
+            VoiceSessionInternalRequest request,
+            CancellationToken ct = default
+        ) => throw new NotImplementedException();
     }
 
     private sealed class FakeRuntimeSync : IAgentRuntimeSyncService
