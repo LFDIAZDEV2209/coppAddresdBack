@@ -40,6 +40,21 @@ public static class RoleSeeder
         PermissionCodes.SystemAdminSettings,
     ];
 
+    /// <summary>
+    /// Gestión editorial de la biblioteca de medios (podcasts del programa de
+    /// 83 días): ClinicalDirector crea/edita/publica/archiva; la eliminación
+    /// física (<c>Media.Delete</c>) queda reservada al Admin. El rol
+    /// Professional solo recibe <c>Media.View</c> (directo, ver DefaultRoles).
+    /// </summary>
+    private static readonly string[] MediaManagementPermissions =
+    [
+        PermissionCodes.MediaView,
+        PermissionCodes.MediaCreate,
+        PermissionCodes.MediaEdit,
+        PermissionCodes.MediaPublish,
+        PermissionCodes.MediaArchive,
+    ];
+
     /// <summary>Recetario (solo pacientes del ámbito propio del profesional).</summary>
     private static readonly string[] PrescriberPermissions =
     [
@@ -484,6 +499,7 @@ public static class RoleSeeder
                 PermissionCodes.SosAlertsManage,
                 .. ProfessionalTelemedicinePermissions,
                 .. ModuleAdminPermissions,
+                .. MediaManagementPermissions,
                 .. PrescriberPermissions,
                 PermissionCodes.LegalDocumentsView,
                 PermissionCodes.WellnessView,
@@ -507,6 +523,10 @@ public static class RoleSeeder
                 PermissionCodes.HealthTestsAssign,
                 PermissionCodes.HealthTestsReview,
                 PermissionCodes.SosAlertsManage,
+                // Biblioteca de medios: el profesional consulta el catálogo de
+                // podcasts (Media.View); la edición editorial es de dirección
+                // clínica/Admin.
+                PermissionCodes.MediaView,
                 .. PrescriberPermissions,
                 .. ProfessionalTelemedicinePermissions,
                 PermissionCodes.LegalDocumentsView,

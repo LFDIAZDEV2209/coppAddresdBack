@@ -1,3 +1,6 @@
+using System.Security.Claims;
+using CoppAddresd.Api.Authorization;
+using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Security;
 using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Interfaces;
@@ -5,29 +8,40 @@ using CoppAddresd.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace CoppAddresd.Api.Controllers;
 
+/// <summary>
+/// Biblioteca de medios (podcasts del programa de 83 días) administrada desde
+/// el ERP. [Authorize] a nivel de controlador; cada acción declara su permiso
+/// con <c>[RequirePermission("Media.X")]</c> (matriz de autorización del change
+/// erp-program-content-admin: ver medios → Media.View, crear/subir →
+/// Media.Create, editar/reordenar → Media.Edit, publicar → Media.Publish,
+/// archivar → Media.Archive, eliminar → Media.Delete).
+/// </summary>
 [ApiController]
 [Route("api/v1/[controller]")]
 [Authorize]
 public class MediaController(
     IMediator mediator,
     IObjectStorageService objectStorage,
-    StorageSignatureService? signatureService = null) : ControllerBase
+    StorageSignatureService? signatureService = null
+) : ControllerBase
 {
     [HttpGet]
+    [RequirePermission(PermissionCodes.MediaView)]
     public async Task<ActionResult<IReadOnlyList<MediaItemDto>>> List(
         [FromQuery] MediaType? mediaType,
         [FromQuery] MediaStatus? status,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var items = await mediator.Send(new ListMediaItemsQuery(mediaType, status), ct);
         return Ok(items);
     }
 
     [HttpGet("{id:guid}")]
+    [RequirePermission(PermissionCodes.MediaView)]
     public async Task<ActionResult<MediaItemDto>> GetById(Guid id, CancellationToken ct)
     {
         var item = await mediator.Send(new GetMediaItemQuery(id), ct);
@@ -38,9 +52,11 @@ public class MediaController(
     }
 
     [HttpPost]
+    [RequirePermission(PermissionCodes.MediaCreate)]
     public async Task<ActionResult<MediaItemDto>> Create(
         [FromBody] CreateMediaItemRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var command = new CreateMediaItemCommand(
             request.Title,
@@ -59,7 +75,8 @@ public class MediaController(
             request.Month,
             CurrentUserId(),
             request.Chapters,
-            request.Takeaways);
+            request.Takeaways
+        );
 
         var item = await mediator.Send(command, ct);
         return CreatedAtAction(nameof(GetById), new { id = item.Id }, item);
@@ -74,9 +91,11 @@ public class MediaController(
     /// audio/video.
     /// </summary>
     [HttpPost("upload-intent")]
+    [RequirePermission(PermissionCodes.MediaCreate)]
     public async Task<ActionResult<UploadIntentResponse>> CreateUploadIntent(
         [FromBody] CreateUploadIntentRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         if (string.IsNullOrWhiteSpace(request.FileName))
             return BadRequest(new { message = "El nombre del archivo es requerido." });
@@ -89,14 +108,22 @@ public class MediaController(
         if (purpose == "thumbnail")
         {
             if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-                return BadRequest(new { message = "La miniatura debe ser una imagen (Content-Type image/*)." });
+                return BadRequest(
+                    new { message = "La miniatura debe ser una imagen (Content-Type image/*)." }
+                );
             folder = "thumbnails";
         }
         else
         {
             if (contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-                return BadRequest(new { message = "El contenido principal debe ser audio o video; las imágenes solo se admiten como miniatura." });
-            folder = contentType.StartsWith("audio", StringComparison.OrdinalIgnoreCase) ? "audio"
+                return BadRequest(
+                    new
+                    {
+                        message = "El contenido principal debe ser audio o video; las imágenes solo se admiten como miniatura.",
+                    }
+                );
+            folder =
+                contentType.StartsWith("audio", StringComparison.OrdinalIgnoreCase) ? "audio"
                 : contentType.StartsWith("video", StringComparison.OrdinalIgnoreCase) ? "videos"
                 : "podcasts";
         }
@@ -107,7 +134,12 @@ public class MediaController(
         var expiresIn = (int)TimeSpan.FromMinutes(15).TotalSeconds;
 
         var presignedUrl = await objectStorage.GetPreSignedUploadUrlAsync(
-            storageKey, contentType, TimeSpan.FromSeconds(expiresIn), publicBaseUrl, ct);
+            storageKey,
+            contentType,
+            TimeSpan.FromSeconds(expiresIn),
+            publicBaseUrl,
+            ct
+        );
 
         if (!objectStorage.IsCloudStorage && signatureService is not null)
         {
@@ -121,10 +153,12 @@ public class MediaController(
     }
 
     [HttpPut("{id:guid}")]
+    [RequirePermission(PermissionCodes.MediaEdit)]
     public async Task<IActionResult> Update(
         Guid id,
         [FromBody] UpdateMediaItemRequest request,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var command = new UpdateMediaItemCommand(
             id,
@@ -144,7 +178,8 @@ public class MediaController(
             request.Month,
             CurrentUserId(),
             request.Chapters,
-            request.Takeaways);
+            request.Takeaways
+        );
 
         var updated = await mediator.Send(command, ct);
         if (updated is null)
@@ -154,6 +189,7 @@ public class MediaController(
     }
 
     [HttpDelete("{id:guid}")]
+    [RequirePermission(PermissionCodes.MediaDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         var deleted = await mediator.Send(new DeleteMediaItemCommand(id), ct);

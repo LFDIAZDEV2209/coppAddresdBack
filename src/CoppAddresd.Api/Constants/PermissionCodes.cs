@@ -60,6 +60,14 @@ public static class PermissionCodes
     public const string StoreView = "Store.View";
     public const string StoreManage = "Store.Manage";
 
+    // Medios multimedia (biblioteca de podcasts del ERP, change erp-program-content-admin).
+    public const string MediaView = "Media.View";
+    public const string MediaCreate = "Media.Create";
+    public const string MediaEdit = "Media.Edit";
+    public const string MediaPublish = "Media.Publish";
+    public const string MediaArchive = "Media.Archive";
+    public const string MediaDelete = "Media.Delete";
+
     // Wellness
     public const string WellnessView = "Wellness.View";
     public const string WellnessManage = "Wellness.Manage";
@@ -112,6 +120,12 @@ public static class PermissionCodes
         LegalDocumentsManage,
         StoreView,
         StoreManage,
+        MediaView,
+        MediaCreate,
+        MediaEdit,
+        MediaPublish,
+        MediaArchive,
+        MediaDelete,
         WellnessView,
         WellnessManage,
         SystemAdminSettings,

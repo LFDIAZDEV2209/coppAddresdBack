@@ -113,8 +113,15 @@ public static class PermissionCodes
     // acceso futuro de sus endpoints): el profesional clínico no los tiene.
     public const string InventoryView = "Inventory.View";
     public const string StoreView = "Store.View";
-    public const string MediaView = "Media.View";
     public const string AuditView = "Audit.View";
+
+    // Medios multimedia (biblioteca de podcasts/lecciones del ERP).
+    public const string MediaView = "Media.View";
+    public const string MediaCreate = "Media.Create";
+    public const string MediaEdit = "Media.Edit";
+    public const string MediaPublish = "Media.Publish";
+    public const string MediaArchive = "Media.Archive";
+    public const string MediaDelete = "Media.Delete";
 
     /// <summary>Configuraciones administrativas del módulo Sistema (IA, integraciones, etc.).</summary>
     public const string SystemAdminSettings = "System.AdminSettings";
@@ -232,6 +239,11 @@ public static class PermissionCodes
         yield return StoreView;
         yield return StoreManage;
         yield return MediaView;
+        yield return MediaCreate;
+        yield return MediaEdit;
+        yield return MediaPublish;
+        yield return MediaArchive;
+        yield return MediaDelete;
         yield return AuditView;
         yield return SystemAdminSettings;
         yield return CommunityView;
