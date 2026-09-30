@@ -20,7 +20,8 @@ namespace CoppAddresd.Api.Seeders;
 /// </summary>
 public sealed class AgentCatalogSeeder(
     IServiceScopeFactory scopeFactory,
-    ILogger<AgentCatalogSeeder> logger) : IHostedService
+    ILogger<AgentCatalogSeeder> logger
+) : IHostedService
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -34,7 +35,10 @@ public sealed class AgentCatalogSeeder(
         + "Tu propósito es ayudar a los usuarios de la plataforma (clientes, pacientes y "
         + "profesionales como doctores y psicólogos) de forma clara, segura y confiable.\n\n"
         + "Reglas de comportamiento:\n"
-        + "1. Responde en el mismo idioma que use el usuario.\n"
+        + "1. Responde SIEMPRE en el mismo idioma que use el usuario (español o inglés): "
+        + "si el usuario cambia de idioma, cambia tú también en la siguiente respuesta. "
+        + "Nunca mezcles idiomas en la misma respuesta ni cambies de idioma sin que "
+        + "el usuario lo haga primero.\n"
         + "2. Usa las herramientas disponibles solo cuando sea necesario para responder "
         + "con precisión. Nunca inventes datos, cifras ni fuentes.\n"
         + "3. Si usas información recuperada de documentación (RAG), cita la fuente.\n"
@@ -59,53 +63,63 @@ public sealed class AgentCatalogSeeder(
         $"{BasePrompt}\n\nTu rol actual dentro de CoppAddresd es: {rol}.\n\n"
         + $"Reglas de {rol}:\n{reglas}{HealthDisclaimer}";
 
-    private static string NutritionPrompt() => SpecializedPrompt(
-        "especialista en nutrición y alimentación",
-        "1. Responde sobre alimentación, planes dietéticos, calorías, porciones, "
-        + "macronutrientes, conceptos de nutrición e IMC.\n"
-        + "2. Ajustate al plan de alimentación del usuario si lo conocés (contexto o "
-        + "memoria); no inventes un plan que no figure.\n"
-        + "3. Nunca prescribas dietas estrictas ni suplementos; sugerí opciones saludables "
-        + "y aclará que el plan debe validarlo un nutricionista.\n");
+    private static string NutritionPrompt() =>
+        SpecializedPrompt(
+            "especialista en nutrición y alimentación",
+            "1. Responde sobre alimentación, planes dietéticos, calorías, porciones, "
+                + "macronutrientes, conceptos de nutrición e IMC.\n"
+                + "2. Ajustate al plan de alimentación del usuario si lo conocés (contexto o "
+                + "memoria); no inventes un plan que no figure.\n"
+                + "3. Nunca prescribas dietas estrictas ni suplementos; sugerí opciones saludables "
+                + "y aclará que el plan debe validarlo un nutricionista.\n"
+        );
 
-    private static string MedicalPrompt() => SpecializedPrompt(
-        "especialista en salud general",
-        "1. Responde sobre síntomas, medicamentos (sin recetar), condiciones de salud, "
-        + "signos vitales y orientación general clínica.\n"
-        + "2. Ante un síntoma de alarma posible (dolor de pecho, dificultad para respirar, "
-        + "sangrado, pérdida de conocimiento), recomendá buscar atención de emergencia o "
-        + "activar SOS.\n"
-        + "3. Nunca diagnostiques, recetes ni modifiques tratamientos. Deriva a un "
-        + "profesional de la salud.\n");
+    private static string MedicalPrompt() =>
+        SpecializedPrompt(
+            "especialista en salud general",
+            "1. Responde sobre síntomas, medicamentos (sin recetar), condiciones de salud, "
+                + "signos vitales y orientación general clínica.\n"
+                + "2. Ante un síntoma de alarma posible (dolor de pecho, dificultad para respirar, "
+                + "sangrado, pérdida de conocimiento), recomendá buscar atención de emergencia o "
+                + "activar SOS.\n"
+                + "3. Nunca diagnostiques, recetes ni modifiques tratamientos. Deriva a un "
+                + "profesional de la salud.\n"
+        );
 
-    private static string PsychologyPrompt() => SpecializedPrompt(
-        "especialista en salud mental y bienestar emocional",
-        "1. Responde sobre ansiedad, estrés, estado de ánimo, hábitos de alimentación "
-        + "emocional y técnicas de bienestar (respiración, mindfulness).\n"
-        + "2. Usá un tono empático y sin juicios; ofrecé herramientas de regulación.\n"
-        + "3. Ante ideación de daño o crisis, recomendá contactar a un profesional o un "
-        + "servicio de emergencia de salud mental de inmediato.\n");
+    private static string PsychologyPrompt() =>
+        SpecializedPrompt(
+            "especialista en salud mental y bienestar emocional",
+            "1. Responde sobre ansiedad, estrés, estado de ánimo, hábitos de alimentación "
+                + "emocional y técnicas de bienestar (respiración, mindfulness).\n"
+                + "2. Usá un tono empático y sin juicios; ofrecé herramientas de regulación.\n"
+                + "3. Ante ideación de daño o crisis, recomendá contactar a un profesional o un "
+                + "servicio de emergencia de salud mental de inmediato.\n"
+        );
 
-    private static string BuildConfigJson(string systemPrompt) => JsonSerializer.Serialize(new
-    {
-        system_prompt = systemPrompt,
-        temperature = 0.2,
-        max_tokens = 4096,
-        tools = Array.Empty<string>(),
-        retrieval_config = new
-        {
-            enabled = false,
-            knowledge_base_ids = Array.Empty<string>(),
-            top_k = 5,
-        },
-        memory_config = new
-        {
-            enabled = true,
-            categories = new[] { "preferencias", "datos_personales" },
-        },
-        max_tool_calls = 8,
-        recursion_limit = 25,
-    }, JsonOpts);
+    private static string BuildConfigJson(string systemPrompt) =>
+        JsonSerializer.Serialize(
+            new
+            {
+                system_prompt = systemPrompt,
+                temperature = 0.2,
+                max_tokens = 4096,
+                tools = Array.Empty<string>(),
+                retrieval_config = new
+                {
+                    enabled = false,
+                    knowledge_base_ids = Array.Empty<string>(),
+                    top_k = 5,
+                },
+                memory_config = new
+                {
+                    enabled = true,
+                    categories = new[] { "preferencias", "datos_personales" },
+                },
+                max_tool_calls = 8,
+                recursion_limit = 25,
+            },
+            JsonOpts
+        );
 
     private sealed record AgentSeed(
         string Name,
@@ -113,34 +127,43 @@ public sealed class AgentCatalogSeeder(
         string Specialty,
         string IconKey,
         string ConfigJson,
-        string Notes);
+        string Notes
+    );
 
     private static readonly IReadOnlyList<AgentSeed> Seeds =
     [
-        new("Asistente general",
+        new(
+            "Asistente general",
             "Agente base de conversación con herramientas genéricas.",
             "general",
             "Sparkles",
             BuildConfigJson(BasePrompt),
-            "Seed inicial (v1)"),
-        new("Especialista en Nutrición",
+            "Seed inicial (v1)"
+        ),
+        new(
+            "Especialista en Nutrición",
             "Responde consultas sobre alimentación, dietas y nutrición.",
             "nutrición",
             "Apple",
             BuildConfigJson(NutritionPrompt()),
-            "Seed inicial (v1)"),
-        new("Especialista en Salud",
+            "Seed inicial (v1)"
+        ),
+        new(
+            "Especialista en Salud",
             "Responde consultas generales de salud y síntomas.",
             "salud",
             "HeartPulse",
             BuildConfigJson(MedicalPrompt()),
-            "Seed inicial (v1)"),
-        new("Especialista en Salud Mental",
+            "Seed inicial (v1)"
+        ),
+        new(
+            "Especialista en Salud Mental",
             "Responde consultas de bienestar emocional y salud mental.",
             "salud mental",
             "Brain",
             BuildConfigJson(PsychologyPrompt()),
-            "Seed inicial (v1)"),
+            "Seed inicial (v1)"
+        ),
     ];
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -169,7 +192,9 @@ public sealed class AgentCatalogSeeder(
             // el repositorio de un DbContext distinto, evitando conflictos de
             // tracking EF (una entidad trackeada por Add + Update con la misma key).
             var existing = await WithRepository(
-                async repo => await repo.AgentTypeNameExistsAsync(seed.Name, null, ct), ct);
+                async repo => await repo.AgentTypeNameExistsAsync(seed.Name, null, ct),
+                ct
+            );
 
             if (existing)
             {
@@ -178,20 +203,54 @@ public sealed class AgentCatalogSeeder(
             }
 
             var type = await WithMediator(
-                mediator => mediator.Send(new CreateAgentTypeCommand(
-                    seed.Name, seed.Description, seed.Specialty, seed.IconKey, null, null), ct), ct);
+                mediator =>
+                    mediator.Send(
+                        new CreateAgentTypeCommand(
+                            seed.Name,
+                            seed.Description,
+                            seed.Specialty,
+                            seed.IconKey,
+                            null,
+                            null
+                        ),
+                        ct
+                    ),
+                ct
+            );
 
             await WithMediator(
-                mediator => mediator.Send(new UpdateAgentTypeCommand(
-                    type.Id, seed.Name, null, null, null, null, AgentStatus.Activo.ToString(), null), ct), ct);
+                mediator =>
+                    mediator.Send(
+                        new UpdateAgentTypeCommand(
+                            type.Id,
+                            seed.Name,
+                            null,
+                            null,
+                            null,
+                            null,
+                            AgentStatus.Activo.ToString(),
+                            null
+                        ),
+                        ct
+                    ),
+                ct
+            );
 
             var version = await WithMediator(
-                mediator => mediator.Send(new CreateAgentTypeVersionCommand(
-                    type.Id, seed.ConfigJson, seed.Notes), ct), ct);
+                mediator =>
+                    mediator.Send(
+                        new CreateAgentTypeVersionCommand(type.Id, seed.ConfigJson, seed.Notes),
+                        ct
+                    ),
+                ct
+            );
 
             logger.LogInformation(
                 "Agente sembrado: {Name} ({Id}) v{Version} — sync al AI Service",
-                seed.Name, type.Id, version.VersionNumber);
+                seed.Name,
+                type.Id,
+                version.VersionNumber
+            );
         }
     }
 
@@ -206,25 +265,51 @@ public sealed class AgentCatalogSeeder(
             {
                 var list = await repo.ListAgentTypesAsync(1, 1000, seed.Name, ct);
                 return list.FirstOrDefault(x => x.Name == seed.Name);
-            }, ct);
+            },
+            ct
+        );
 
         if (match is null || match.ActiveVersionId is not null)
             return;
 
         logger.LogWarning(
             "Agente {Name} ({Id}) sin versión activa — reparando con v1",
-            seed.Name, match.Id);
+            seed.Name,
+            match.Id
+        );
 
         await WithMediator(
-            mediator => mediator.Send(new UpdateAgentTypeCommand(
-                match.Id, seed.Name, null, null, null, null, AgentStatus.Activo.ToString(), null), ct), ct);
+            mediator =>
+                mediator.Send(
+                    new UpdateAgentTypeCommand(
+                        match.Id,
+                        seed.Name,
+                        null,
+                        null,
+                        null,
+                        null,
+                        AgentStatus.Activo.ToString(),
+                        null
+                    ),
+                    ct
+                ),
+            ct
+        );
 
         var version = await WithMediator(
-            mediator => mediator.Send(new CreateAgentTypeVersionCommand(
-                match.Id, seed.ConfigJson, seed.Notes), ct), ct);
+            mediator =>
+                mediator.Send(
+                    new CreateAgentTypeVersionCommand(match.Id, seed.ConfigJson, seed.Notes),
+                    ct
+                ),
+            ct
+        );
 
         logger.LogInformation(
-            "Agente reparado: {Name} v{Version}", seed.Name, version.VersionNumber);
+            "Agente reparado: {Name} v{Version}",
+            seed.Name,
+            version.VersionNumber
+        );
     }
 
     private async Task<T> WithMediator<T>(Func<IMediator, Task<T>> action, CancellationToken ct)
@@ -234,7 +319,10 @@ public sealed class AgentCatalogSeeder(
         return await action(mediator);
     }
 
-    private async Task<T> WithRepository<T>(Func<IAgentCatalogRepository, Task<T>> action, CancellationToken ct)
+    private async Task<T> WithRepository<T>(
+        Func<IAgentCatalogRepository, Task<T>> action,
+        CancellationToken ct
+    )
     {
         using var scope = scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IAgentCatalogRepository>();
