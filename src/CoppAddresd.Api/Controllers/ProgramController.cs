@@ -7,6 +7,7 @@ using CoppAddresd.Api.Security;
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.AcceptIntervention;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ArchiveTemplate;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkEnrollPatients;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.CalculateScores;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.CompleteTask;
@@ -712,6 +713,33 @@ public sealed class ProgramController(
                     request.ExerciseRoutineId,
                     actorContext.UserId
                 ),
+                ct
+            )
+        );
+
+    /// <summary>
+    /// Asignación masiva de lecciones/podcasts del programa (change
+    /// erp-program-content-admin, REQ-PCA-04): aplica un medio publicado sobre
+    /// un rango de semanas y días, contra una plantilla (targetType
+    /// "Template") o una inscripción ("Enrollment"). Las semanas congeladas
+    /// (Completed o con fecha de cierre ya ocurrida) NO se mutan salvo la
+    /// bandera explícita <c>forceFrozen</c> (evento crítico en auditoría).
+    /// La respuesta desglosa <c>{ totalWeeksTargeted, updatedWeeks,
+    /// frozenWeeksSkipped, affectedEnrollments }</c>. Requiere
+    /// <c>Program.Edit</c>.
+    /// </summary>
+    [HttpPost("content/bulk-assign")]
+    [RequirePermission("Program.Edit")]
+    public async Task<ActionResult<BulkAssignProgramContentResult>> BulkAssignProgramContent(
+        [FromBody] BulkAssignProgramContentCommand command,
+        CancellationToken ct
+    ) =>
+        Ok(
+            await mediator.Send(
+                command with
+                {
+                    ActorId = command.ActorId ?? actorContext.UserId,
+                },
                 ct
             )
         );

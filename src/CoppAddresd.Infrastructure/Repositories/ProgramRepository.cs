@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
@@ -8326,8 +8327,13 @@ public sealed class ProgramRepository(
                 : 0m;
 
         // XP semana (Fast-path CQRS desde app.program_daily_metrics acotado por fecha con fallback OLTP)
-        var xpSemanaRollup = await dbContext.ProgramDailyMetrics.AsNoTracking()
-            .Where(m => (m.MetricKey == "xp_total_daily" || m.MetricKey == "xp_awarded_by_reason") && m.MetricDate >= weekStart && m.MetricDate <= today)
+        var xpSemanaRollup = await dbContext
+            .ProgramDailyMetrics.AsNoTracking()
+            .Where(m =>
+                (m.MetricKey == "xp_total_daily" || m.MetricKey == "xp_awarded_by_reason")
+                && m.MetricDate >= weekStart
+                && m.MetricDate <= today
+            )
             .SumAsync(m => (long?)m.TotalValue, ct);
 
         int xpSemana;
@@ -8337,8 +8343,12 @@ public sealed class ProgramRepository(
         }
         else
         {
-            var weekStartUtc = DateTime.SpecifyKind(weekStart.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-            xpSemana = await dbContext.XpLedgerEntries.AsNoTracking()
+            var weekStartUtc = DateTime.SpecifyKind(
+                weekStart.ToDateTime(TimeOnly.MinValue),
+                DateTimeKind.Utc
+            );
+            xpSemana = await dbContext
+                .XpLedgerEntries.AsNoTracking()
                 .Where(x => enrollmentIds.Contains(x.EnrollmentId) && x.AwardedAt >= weekStartUtc)
                 .SumAsync(x => x.Amount, ct);
         }
@@ -8409,10 +8419,15 @@ public sealed class ProgramRepository(
         }
 
         // XP por categoría (Fast-path CQRS desde app.program_daily_metrics con fallback OLTP)
-        var rollupXpCategoryData = await dbContext.ProgramDailyMetrics.AsNoTracking()
+        var rollupXpCategoryData = await dbContext
+            .ProgramDailyMetrics.AsNoTracking()
             .Where(m => m.MetricKey == "xp_awarded_by_reason")
             .GroupBy(m => m.DimensionKey)
-            .Select(g => new { Reason = g.Key ?? string.Empty, Total = (int)g.Sum(m => m.TotalValue) })
+            .Select(g => new
+            {
+                Reason = g.Key ?? string.Empty,
+                Total = (int)g.Sum(m => m.TotalValue),
+            })
             .ToListAsync(ct);
 
         List<ErpXpByCategory> xpByCategory;
@@ -8425,7 +8440,8 @@ public sealed class ProgramRepository(
         }
         else
         {
-            var xpByCategoryRaw = await dbContext.XpLedgerEntries.AsNoTracking()
+            var xpByCategoryRaw = await dbContext
+                .XpLedgerEntries.AsNoTracking()
                 .Where(x => enrollmentIds.Contains(x.EnrollmentId))
                 .GroupBy(x => x.Reason)
                 .Select(g => new { Reason = g.Key, Total = g.Sum(x => x.Amount) })
@@ -10798,11 +10814,32 @@ public sealed class ProgramRepository(
             : null;
 
         // Weekly history (all weeks with measurements, up to 12)
-        var biometriaMetrics = new[] { "bmi", BodyFatMetricCode, GlucoseMetricCode, "weight", "height", WaistMetricCode, HipMetricCode, WristMetricCode };
-        var patientMeasurements = await dbContext.ClinicalMeasurements.AsNoTracking()
-            .Join(dbContext.MeasurementMetrics.AsNoTracking(),
-                m => m.MetricId, metric => metric.Id,
-                (m, metric) => new { m.PatientId, metric.Code, m.Value, m.ObservedAt })
+        var biometriaMetrics = new[]
+        {
+            "bmi",
+            BodyFatMetricCode,
+            GlucoseMetricCode,
+            "weight",
+            "height",
+            WaistMetricCode,
+            HipMetricCode,
+            WristMetricCode,
+        };
+        var patientMeasurements = await dbContext
+            .ClinicalMeasurements.AsNoTracking()
+            .Join(
+                dbContext.MeasurementMetrics.AsNoTracking(),
+                m => m.MetricId,
+                metric => metric.Id,
+                (m, metric) =>
+                    new
+                    {
+                        m.PatientId,
+                        metric.Code,
+                        m.Value,
+                        m.ObservedAt,
+                    }
+            )
             .Where(x => x.PatientId == patientId && biometriaMetrics.Contains(x.Code))
             .OrderByDescending(x => x.ObservedAt)
             .Take(250) // enough for 12 weeks × 8 metrics
@@ -10978,5 +11015,142 @@ public sealed class ProgramRepository(
         if (Enum.TryParse<TaskCode>(value, ignoreCase: true, out var result))
             return result;
         return TaskCode.nutraceutico;
+    }
+
+    // --- Asignación masiva de contenido (change erp-program-content-admin) ---
+
+    /// <summary>
+    /// Actualiza las reglas podcast de los días indicados en la plantilla con
+    /// el medio dado. Escritura tracked (no ExecuteUpdate) para que el
+    /// interceptor de auditoría propague el actor vía GUC y el trigger
+    /// registre cada UPDATE con old/new data. Devuelve la cantidad de filas
+    /// actualizadas, o null si la plantilla no existe.
+    /// </summary>
+    public async Task<int?> AssignMediaToTemplateAsync(
+        Guid templateId,
+        short[] weekdays,
+        Guid mediaId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
+    {
+        _ = actorId; // El actor viaja por los GUC del interceptor, no por la fila.
+
+        var exists = await dbContext
+            .ProgramTemplates.AsNoTracking()
+            .AnyAsync(t => t.Id == templateId, ct);
+        if (!exists)
+        {
+            return null;
+        }
+
+        var rows = await dbContext
+            .WeeklyDayTemplates.Where(d =>
+                d.TemplateId == templateId
+                && weekdays.Contains(d.Weekday)
+                && d.TaskCode == TaskCode.podcast
+            )
+            .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            row.MediaId = mediaId;
+        }
+
+        if (rows.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(ct);
+        }
+
+        return rows.Count;
+    }
+
+    /// <summary>
+    /// Semanas de la inscripción en <c>[fromWeek..toWeek]</c> con su snapshot
+    /// parseado (shape canónico §3.4, misma gramática que ParseSnapshot).
+    /// Devuelve null si la inscripción no existe.
+    /// </summary>
+    public async Task<EnrollmentMediaAssignmentContext?> GetEnrollmentForMediaAssignmentAsync(
+        Guid enrollmentId,
+        int fromWeek,
+        int toWeek,
+        CancellationToken ct = default
+    )
+    {
+        var exists = await dbContext
+            .ProgramEnrollments.AsNoTracking()
+            .AnyAsync(e => e.Id == enrollmentId, ct);
+        if (!exists)
+        {
+            return null;
+        }
+
+        var weeks = await dbContext
+            .ProgramWeeks.AsNoTracking()
+            .Where(w =>
+                w.EnrollmentId == enrollmentId && w.WeekNumber >= fromWeek && w.WeekNumber <= toWeek
+            )
+            .OrderBy(w => w.WeekNumber)
+            .Select(w => new
+            {
+                w.WeekNumber,
+                w.Status,
+                w.WeekEndDateLocal,
+                w.TasksSnapshot,
+            })
+            .ToListAsync(ct);
+
+        return new EnrollmentMediaAssignmentContext(
+            weeks
+                .Select(w => new EnrollmentMediaWeek(
+                    w.WeekNumber,
+                    w.Status,
+                    w.WeekEndDateLocal,
+                    WeekSnapshotJson.Parse(w.TasksSnapshot)
+                ))
+                .ToList()
+        );
+    }
+
+    /// <summary>
+    /// Persiste los snapshots actualizados en una única escritura atómica
+    /// (un SaveChangesAsync = transacción implícita atómica; skill
+    /// transactions: una sola escritura no necesita transacción explícita).
+    /// Las semanas inexistentes se ignoran: el móvil las genera al activar.
+    /// </summary>
+    public async Task SaveEnrollmentWeekSnapshotsAsync(
+        Guid enrollmentId,
+        IReadOnlyList<WeekSnapshotUpdate> updates,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
+    {
+        _ = actorId; // El actor viaja por los GUC del interceptor.
+
+        if (updates.Count == 0)
+        {
+            return;
+        }
+
+        var weekNumbers = updates.Select(u => u.WeekNumber).ToList();
+        var weeks = await dbContext
+            .ProgramWeeks.Where(w =>
+                w.EnrollmentId == enrollmentId && weekNumbers.Contains(w.WeekNumber)
+            )
+            .ToListAsync(ct);
+
+        var byWeek = updates.ToDictionary(u => u.WeekNumber);
+        foreach (var week in weeks)
+        {
+            if (!byWeek.TryGetValue(week.WeekNumber, out var update))
+            {
+                continue;
+            }
+
+            week.TasksSnapshot = update.Snapshot;
+            week.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await dbContext.SaveChangesAsync(ct);
     }
 }

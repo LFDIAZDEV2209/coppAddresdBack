@@ -456,6 +456,15 @@ public sealed class MediaLifecycleTests
             CancellationToken ct = default
         ) => Task.FromResult(0);
 
+        public Task<MediaReferencesDto?> GetReferencesAsync(
+            Guid mediaId,
+            CancellationToken ct = default
+        ) => Task.FromResult<MediaReferencesDto?>(null);
+
+        public Task<IReadOnlyCollection<string>> GetAllStorageKeysAsync(
+            CancellationToken ct = default
+        ) => Task.FromResult<IReadOnlyCollection<string>>([]);
+
         public Task<MediaItem> AddAsync(MediaItem item, CancellationToken ct = default)
         {
             Items.Add(item);

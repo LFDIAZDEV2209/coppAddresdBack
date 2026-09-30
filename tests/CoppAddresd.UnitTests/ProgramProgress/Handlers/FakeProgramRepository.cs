@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
@@ -1397,6 +1398,111 @@ internal sealed class FakeProgramRepository : IProgramRepository
                 []
             )
         );
+
+    // ---- Asignación masiva de contenido (change erp-program-content-admin) ----
+
+    /// <summary>
+    /// Filas snapshot por (enrollmentId, weekNumber) que devuelve
+    /// <c>GetEnrollmentForMediaAssignmentAsync</c>. El test las siembra y el
+    /// handler las muta vía <c>SaveEnrollmentWeekSnapshotsAsync</c>.
+    /// </summary>
+    public Dictionary<
+        (Guid EnrollmentId, int WeekNumber),
+        (ProgramWeekStatus Status, DateOnly WeekEndDateLocal, List<WeekSnapshotTaskRow> Rows)
+    > MediaAssignmentWeeks { get; } = [];
+
+    /// <summary>Snapshots persistidos por <c>SaveEnrollmentWeekSnapshotsAsync</c>.</summary>
+    public List<WeekSnapshotUpdate> SavedWeekSnapshots { get; } = [];
+
+    /// <summary>Asignaciones de plantilla aplicadas por <c>AssignMediaToTemplateAsync</c>.</summary>
+    public List<(Guid TemplateId, short Weekday, Guid MediaId)> TemplateMediaAssignments { get; } =
+    [];
+
+    public Task<int?> AssignMediaToTemplateAsync(
+        Guid templateId,
+        short[] weekdays,
+        Guid mediaId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
+    {
+        if (!Templates.TryGetValue(templateId, out var template))
+        {
+            return Task.FromResult<int?>(null);
+        }
+
+        var count = 0;
+        foreach (
+            var row in template.DayTemplates.Where(d =>
+                weekdays.Contains(d.Weekday) && d.TaskCode == TaskCode.podcast
+            )
+        )
+        {
+            row.MediaId = mediaId;
+            TemplateMediaAssignments.Add((templateId, row.Weekday, mediaId));
+            count++;
+        }
+
+        return Task.FromResult<int?>(count);
+    }
+
+    public Task<EnrollmentMediaAssignmentContext?> GetEnrollmentForMediaAssignmentAsync(
+        Guid enrollmentId,
+        int fromWeek,
+        int toWeek,
+        CancellationToken ct = default
+    )
+    {
+        if (!Enrollments.ContainsKey(enrollmentId))
+        {
+            return Task.FromResult<EnrollmentMediaAssignmentContext?>(null);
+        }
+
+        var weeks = MediaAssignmentWeeks
+            .Where(kv =>
+                kv.Key.EnrollmentId == enrollmentId
+                && kv.Key.WeekNumber >= fromWeek
+                && kv.Key.WeekNumber <= toWeek
+            )
+            .OrderBy(kv => kv.Key.WeekNumber)
+            .Select(kv => new EnrollmentMediaWeek(
+                kv.Key.WeekNumber,
+                kv.Value.Status,
+                kv.Value.WeekEndDateLocal,
+                kv.Value.Rows
+            ))
+            .ToList();
+
+        return Task.FromResult<EnrollmentMediaAssignmentContext?>(
+            new EnrollmentMediaAssignmentContext(weeks)
+        );
+    }
+
+    public Task SaveEnrollmentWeekSnapshotsAsync(
+        Guid enrollmentId,
+        IReadOnlyList<WeekSnapshotUpdate> updates,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    )
+    {
+        foreach (var update in updates)
+        {
+            SavedWeekSnapshots.Add(update);
+            var key = (enrollmentId, update.WeekNumber);
+            if (!MediaAssignmentWeeks.TryGetValue(key, out var week))
+            {
+                continue;
+            }
+
+            MediaAssignmentWeeks[key] = (
+                week.Status,
+                week.WeekEndDateLocal,
+                WeekSnapshotJson.Parse(update.Snapshot).ToList()
+            );
+        }
+
+        return Task.CompletedTask;
+    }
 
     // --- ERP gamificación (SPEC §23) ---
 

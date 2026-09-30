@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
@@ -189,6 +190,46 @@ public interface IProgramRepository
         Guid enrollmentId,
         int weekNumber,
         IReadOnlyList<WeeklyDayTemplate> tasks,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    );
+
+    // --- Asignación masiva de contenido (change erp-program-content-admin) ---
+
+    /// <summary>
+    /// Actualiza las reglas podcast (<c>WeeklyDayTemplate</c>) de los días
+    /// indicados en una plantilla con el <paramref name="mediaId"/>. Devuelve
+    /// la cantidad de filas actualizadas, o null si la plantilla no existe.
+    /// </summary>
+    Task<int?> AssignMediaToTemplateAsync(
+        Guid templateId,
+        short[] weekdays,
+        Guid mediaId,
+        Guid? actorId = null,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Semanas de la inscripción en <c>[fromWeek..toWeek]</c> con su snapshot
+    /// parseado (shape canónico §3.4), para que el handler decida la
+    /// propagación (congeladas vs futuras). Devuelve null si la inscripción
+    /// no existe.
+    /// </summary>
+    Task<EnrollmentMediaAssignmentContext?> GetEnrollmentForMediaAssignmentAsync(
+        Guid enrollmentId,
+        int fromWeek,
+        int toWeek,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Persiste los snapshots actualizados de las semanas indicadas en una
+    /// única escritura atómica (un <c>SaveChangesAsync</c>). Las semanas
+    /// inexistentes se ignoran (el móvil genera semanas al activarlas).
+    /// </summary>
+    Task SaveEnrollmentWeekSnapshotsAsync(
+        Guid enrollmentId,
+        IReadOnlyList<WeekSnapshotUpdate> updates,
         Guid? actorId = null,
         CancellationToken ct = default
     );
