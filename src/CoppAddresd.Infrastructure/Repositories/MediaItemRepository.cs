@@ -5,6 +5,7 @@ using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace CoppAddresd.Infrastructure.Repositories;
 
@@ -165,6 +166,92 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
         return new MediaUsageSnapshot(counts, new HashSet<Guid>(counts.Keys));
     }
 
+    public async Task<MediaReferencesDto?> GetReferencesAsync(
+        Guid mediaId,
+        CancellationToken ct = default
+    )
+    {
+        var exists = await dbContext.MediaItems.AsNoTracking().AnyAsync(m => m.Id == mediaId, ct);
+        if (!exists)
+        {
+            return null;
+        }
+
+        // Referencias a nivel plantilla, con el nombre de la plantilla. La
+        // proyección usa la navegación Template (traducible a SQL) y el
+        // mapeo al DTO es client-side después de materializar.
+        var templateRows = await dbContext
+            .WeeklyDayTemplates.AsNoTracking()
+            .Where(d => d.MediaId == mediaId)
+            .Select(d => new
+            {
+                TemplateId = d.TemplateId,
+                TemplateName = d.Template!.Name,
+                d.Weekday,
+                d.Points,
+            })
+            .OrderBy(r => r.Weekday)
+            .ToListAsync(ct);
+
+        var templateRefs = templateRows
+            .Select(r => new MediaTemplateReferenceDto(
+                r.TemplateId,
+                r.TemplateName,
+                r.Weekday,
+                r.Points
+            ))
+            .ToList();
+
+        var enrollmentRefs = await QuerySnapshotMediaReferencesAsync(mediaId, ct);
+
+        return new MediaReferencesDto(
+            mediaId,
+            templateRefs.Count + enrollmentRefs.Count,
+            templateRefs,
+            enrollmentRefs
+        );
+    }
+
+    public async Task<IReadOnlyCollection<string>> GetAllStorageKeysAsync(
+        CancellationToken ct = default
+    )
+    {
+        var rows = await dbContext
+            .MediaItems.AsNoTracking()
+            .Select(m => new { m.StorageKey, m.ThumbnailKey })
+            .ToListAsync(ct);
+
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in rows)
+        {
+            if (!string.IsNullOrWhiteSpace(row.StorageKey))
+            {
+                keys.Add(row.StorageKey);
+            }
+
+            if (!string.IsNullOrWhiteSpace(row.ThumbnailKey))
+            {
+                keys.Add(row.ThumbnailKey);
+            }
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    /// Enrola un comando ADO crudo en la transacción activa de EF (si existe):
+    /// las pruebas de integración corren dentro de una transacción revertida,
+    /// y en producción garantiza que la lectura vea los cambios no confirmados
+    /// de la misma unidad de trabajo.
+    /// </summary>
+    private void EnrollInAmbientTransaction(System.Data.Common.DbCommand command)
+    {
+        if (dbContext.Database.CurrentTransaction?.GetDbTransaction() is { } currentTx)
+        {
+            command.Transaction = currentTx;
+        }
+    }
+
     /// <summary>
     /// Referencias por medio dentro de <c>app.program_weeks.tasks_snapshot</c>
     /// (jsonb): una sola pasada con <c>jsonb_array_elements</c> lateral sobre
@@ -196,12 +283,109 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
                   AND t->>'media_id' IS NOT NULL
                 GROUP BY 1
                 """;
+            EnrollInAmbientTransaction(command);
 
             var result = new List<(Guid, int)>();
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
                 result.Add((reader.GetGuid(0), reader.GetInt32(1)));
+            }
+
+            return result;
+        }
+        finally
+        {
+            if (ownsOpen)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Referencias exactas de un medio dentro de
+    /// <c>app.program_weeks.tasks_snapshot</c> (jsonb lateral, parametrizado):
+    /// una sola pasada sobre PostgreSQL que resuelve semana, día, nombre del
+    /// paciente y la marca de semana congelada (Completed o con fecha de
+    /// cierre ya ocurrida). El conteo de semanas congeladas del recolector de
+    /// uso queda cubierto por <see cref="QuerySnapshotMediaUsageAsync"/>.
+    /// </summary>
+    private async Task<List<MediaEnrollmentReferenceDto>> QuerySnapshotMediaReferencesAsync(
+        Guid mediaId,
+        CancellationToken ct
+    )
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        var ownsOpen = false;
+        try
+        {
+            if (connection.State != ConnectionState.Open)
+            {
+                await connection.OpenAsync(ct);
+                ownsOpen = true;
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT pw.enrollment_id
+                     , pw.week_number
+                     , (t->>'weekday')::int AS weekday
+                     , pw.status
+                     , pw.week_end_date_local
+                     , p.first_name
+                     , p.last_name
+                FROM app.program_weeks pw
+                JOIN app.program_enrollments e ON e.id = pw.enrollment_id
+                JOIN app.patient_profiles p ON p.id = e.patient_id
+                CROSS JOIN LATERAL jsonb_array_elements(pw.tasks_snapshot) AS t
+                WHERE jsonb_typeof(pw.tasks_snapshot) = 'array'
+                  AND t ? 'media_id'
+                  AND (t->>'media_id')::uuid = @mediaId
+                ORDER BY pw.week_number, weekday
+                """;
+            EnrollInAmbientTransaction(command);
+
+            var mediaIdParam = command.CreateParameter();
+            mediaIdParam.ParameterName = "@mediaId";
+            mediaIdParam.DbType = DbType.Guid;
+            mediaIdParam.Value = mediaId;
+            command.Parameters.Add(mediaIdParam);
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var result = new List<MediaEnrollmentReferenceDto>();
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var weekNumber = reader.GetInt32(1);
+                var weekday = (short)reader.GetInt32(2);
+                var status = reader.IsDBNull(3) ? string.Empty : reader.GetString(3);
+                var weekEndDate = reader.IsDBNull(4)
+                    ? (DateOnly?)null
+                    : reader.GetFieldValue<DateOnly>(4);
+                var firstName = reader.IsDBNull(5) ? null : reader.GetString(5);
+                var lastName = reader.IsDBNull(6) ? null : reader.GetString(6);
+
+                // Congelada (design D2): completada o con fecha de cierre ya
+                // ocurrida — su snapshot es histórico y no se debe mutar.
+                var isFrozen =
+                    string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase)
+                    || (weekEndDate.HasValue && weekEndDate.Value < today);
+
+                var name = string.Join(
+                    " ",
+                    new[] { firstName, lastName }.Where(part => !string.IsNullOrWhiteSpace(part))
+                );
+
+                result.Add(
+                    new MediaEnrollmentReferenceDto(
+                        reader.GetGuid(0),
+                        name.Length > 0 ? name : null,
+                        weekNumber,
+                        weekday,
+                        isFrozen
+                    )
+                );
             }
 
             return result;

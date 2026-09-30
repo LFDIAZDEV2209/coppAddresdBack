@@ -44,6 +44,20 @@ public interface IMediaItemRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// "Dónde se usa" el medio (REQ-PCA-07): referencias en
+    /// <c>WeeklyDayTemplate</c> y en los snapshots jsonb de las semanas de
+    /// pacientes, con el total consolidado. Devuelve null si el medio no existe.
+    /// </summary>
+    Task<MediaReferencesDto?> GetReferencesAsync(Guid mediaId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Conjunto de todas las claves en uso del catálogo (StorageKey +
+    /// ThumbnailKey). Alimenta el contraste del recolector de huérfanos
+    /// (REQ-PCA-08) en una sola consulta.
+    /// </summary>
+    Task<IReadOnlyCollection<string>> GetAllStorageKeysAsync(CancellationToken ct = default);
+
     Task<MediaItem> AddAsync(MediaItem item, CancellationToken ct = default);
 
     Task UpdateAsync(MediaItem item, CancellationToken ct = default);

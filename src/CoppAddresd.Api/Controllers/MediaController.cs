@@ -219,9 +219,25 @@ public class MediaController(
     [RequirePermission(PermissionCodes.MediaDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
-        var deleted = await mediator.Send(new DeleteMediaItemCommand(id), ct);
-        if (!deleted)
+        var result = await mediator.Send(new DeleteMediaItemCommand(id), ct);
+        if (result.NotFound)
             return NotFound(new { message = "Medio no encontrado" });
+
+        // Guardia de integridad (REQ-PCA-07): con referencias activas → 409
+        // Conflict con el detalle de las dependencias que bloquean la
+        // eliminación (el front sugiere archivar en vez de eliminar).
+        if (result.Blocked)
+            return Conflict(
+                new
+                {
+                    type = "https://httpstatuses.io/409",
+                    title = "Conflict",
+                    status = 409,
+                    detail = "El medio no puede eliminarse porque tiene referencias activas "
+                        + "(plantillas o semanas de pacientes). Sugerencia: archivar en lugar de eliminar.",
+                    references = result.BlockingReferences,
+                }
+            );
 
         return NoContent();
     }
@@ -266,6 +282,37 @@ public class MediaController(
     [RequirePermission(PermissionCodes.MediaEdit)]
     public async Task<ActionResult<ReorderMediaItemsResult>> Reorder(
         [FromBody] ReorderMediaItemsCommand command,
+        CancellationToken ct
+    ) => Ok(await mediator.Send(command, ct));
+
+    // ===================== Referencias y mantenimiento =====================
+
+    /// <summary>
+    /// "Dónde se usa" el medio (REQ-PCA-07): plantillas y semanas de pacientes
+    /// que lo referencian. Lo consume el diálogo de dependencias del ERP y el
+    /// manejo del 409 al eliminar.
+    /// </summary>
+    [HttpGet("{id:guid}/references")]
+    [RequirePermission(PermissionCodes.MediaView)]
+    public async Task<ActionResult<MediaReferencesDto>> GetReferences(Guid id, CancellationToken ct)
+    {
+        var references = await mediator.Send(new GetMediaReferencesQuery(id), ct);
+        if (references is null)
+            return NotFound(new { message = "Medio no encontrado" });
+
+        return Ok(references);
+    }
+
+    /// <summary>
+    /// Limpieza de huérfanos del storage (REQ-PCA-08): detecta (y con
+    /// <c>dryRun=false</c> purga) los blobs bajo <c>media/</c> que no
+    /// pertenecen a ningún medio registrado y superan la ventana de
+    /// retención. Solo administradores (<c>System.AdminSettings</c>).
+    /// </summary>
+    [HttpPost("maintenance/cleanup-orphaned-blobs")]
+    [RequirePermission(PermissionCodes.SystemAdminSettings)]
+    public async Task<ActionResult<CleanupOrphanedBlobsResult>> CleanupOrphanedBlobs(
+        [FromBody] CleanupOrphanedBlobsCommand command,
         CancellationToken ct
     ) => Ok(await mediator.Send(command, ct));
 
