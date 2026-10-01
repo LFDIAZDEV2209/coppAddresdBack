@@ -111,3 +111,22 @@ NO tienen relación con device-metrics/vitals: `ScoresContractTests.GetScoresHis
 `ProgramRepositoryTests.GetSnapshot_RecentVitals_PobladoTrasVitals` y
 `HealthTests.NotifyAlertsCommandHandlerTests.Auto_selecciona_la_plantilla_...`.
 Base sana para comparar: 883 pasan / 10 fallan (total 893).
+
+
+## Telemedicine — profesionales con cupo + seeds tolerantes (2026-10-01)
+
+`GET /api/v1/appointments/availability/professionals?specialtyId&organizationId&from&to`
+reutiliza horarios + citas activas + anticipación mínima y agrega por
+profesional en una ventana (default hoy+13, máx 31). Anti-N+1:
+`IAppointmentRepository.ListByProfessionalsAsync` (una query con
+`professionalIds.Contains`). El picker de la app lo consume antes de elegir
+fecha. Ojo: el modo especialidad exige `organizationId`; si el paciente no
+resuelve organización, el handler responde 400 (validator).
+
+`seed_professionals_demo.py`: la limpieza idempotente ahora usa SAVEPOINT y
+tolera referencias externas RESTRICT (`agents.documents` del servicio IA
+referencia `erp.professionals`): conserva el profesional y omite su recreación
+en vez de tumbar el seed. Además no duplica `employee_clinics` cuando la clínica
+primaria y la secundaria coinciden (índices %3 y %4). `URGENT_CARE` puede faltar
+en una BD ya migrada: aplicar `scripts/apply_seed_sql.py` con
+`AddProfessionalCatalogs.sql` antes de correr el seed.
