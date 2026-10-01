@@ -32,7 +32,8 @@ public sealed record CreateTelemedicineRequestCommand(
     DateTimeOffset? PreferredStart,
     string Reason,
     Guid CreatedBy,
-    bool ErpMode
+    bool ErpMode,
+    AppointmentRequestPriority Priority = AppointmentRequestPriority.Normal
 ) : IRequest<TelemedicineRequestDto>;
 
 public sealed class CreateTelemedicineRequestCommandValidator
@@ -154,6 +155,7 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             PreferredStart = request.PreferredStart?.ToUniversalTime(),
             Reason = request.Reason,
             Status = AppointmentRequestStatus.Pending,
+            Priority = request.Priority,
             CreatedBy = request.CreatedBy,
         };
 
@@ -173,7 +175,8 @@ public sealed class CreateTelemedicineRequestCommandHandler(
                     entity.Id,
                     entity.SpecialtyId,
                     patient.FullName,
-                    specialty.Name
+                    specialty.Name,
+                    entity.Priority
                 ) is
                 { } alert
             )
@@ -189,8 +192,12 @@ public sealed class CreateTelemedicineRequestCommandHandler(
                     logger,
                     new TelemedicineNotification(
                         professionalUserId,
-                        $"Nueva solicitud de {patient.FullName}",
-                        $"{patient.FullName} solicitó una cita de {specialty.Name}.",
+                        entity.Priority == AppointmentRequestPriority.Urgent
+                            ? $"URGENTE — Nueva solicitud de {patient.FullName}"
+                            : $"Nueva solicitud de {patient.FullName}",
+                        entity.Priority == AppointmentRequestPriority.Urgent
+                            ? $"{patient.FullName} solicitó una cita prioritaria de {specialty.Name}."
+                            : $"{patient.FullName} solicitó una cita de {specialty.Name}.",
                         [TelemedicineNotificationChannel.Push],
                         NotificationSupport.Data(requestId: entity.Id, screen: "requests"),
                         $"request:{entity.Id:N}:new"
@@ -214,7 +221,8 @@ public sealed class CreateTelemedicineRequestCommandHandler(
             entity.Reason,
             entity.Status,
             entity.CreatedAt,
-            entity.RejectionReason
+            entity.RejectionReason,
+            entity.Priority
         );
     }
 }

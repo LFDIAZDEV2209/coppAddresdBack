@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Domain.Entities;
+using CoppAddresd.Telemedicine.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -20,6 +21,11 @@ public sealed class RequestConfiguration : IEntityTypeConfiguration<Telemedicine
         builder.Property(x => x.RejectionReason).HasMaxLength(500);
         builder.Property(x => x.Notes).HasMaxLength(2000);
         builder.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
+        builder
+            .Property(x => x.Priority)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .HasDefaultValue(AppointmentRequestPriority.Normal);
 
         builder.HasIndex(x => x.PatientId);
         builder.HasIndex(x => x.ProfessionalId);

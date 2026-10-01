@@ -18,7 +18,8 @@ public sealed record TelemedicineRequestDto(
     string? Reason,
     AppointmentRequestStatus Status,
     DateTime CreatedAt,
-    string? RejectionReason
+    string? RejectionReason,
+    AppointmentRequestPriority Priority
 );
 
 /// <summary>DTO de una cita de telemedicina (fila de agenda/calendario y detalle).</summary>

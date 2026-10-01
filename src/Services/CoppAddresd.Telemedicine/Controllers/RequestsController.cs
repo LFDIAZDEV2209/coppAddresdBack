@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using CoppAddresd.Telemedicine.Application.Constants;
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
+using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Authorization;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -35,7 +36,8 @@ public class RequestsController(IMediator mediator) : ControllerBase
             request.PreferredStart,
             request.Reason,
             CurrentUserId(),
-            HasPermission(AppointmentPermissionCodes.RequestsCreate)
+            HasPermission(AppointmentPermissionCodes.RequestsCreate),
+            request.Priority
         );
 
         var result = await mediator.Send(command, ct);
@@ -166,7 +168,8 @@ public sealed record CreateTelemedicineRequestDto(
     Guid? ClinicId,
     Guid? LocationId,
     DateTimeOffset? PreferredStart,
-    string Reason
+    string Reason,
+    AppointmentRequestPriority Priority = AppointmentRequestPriority.Normal
 );
 
 public sealed record ConfirmTelemedicineRequestDto(

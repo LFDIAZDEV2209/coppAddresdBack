@@ -43,7 +43,8 @@ public sealed class GetTelemedicineRequestQueryHandler(
             entity.Reason,
             entity.Status,
             entity.CreatedAt,
-            entity.RejectionReason
+            entity.RejectionReason,
+            entity.Priority
         );
     }
 }

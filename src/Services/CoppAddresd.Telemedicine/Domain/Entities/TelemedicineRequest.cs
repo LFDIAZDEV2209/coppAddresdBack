@@ -39,6 +39,13 @@ public sealed class TelemedicineRequest
     public AppointmentRequestStatus Status { get; set; } = AppointmentRequestStatus.Pending;
 
     /// <summary>
+    /// Prioridad de la solicitud ("Urgencia" de la app = <c>Urgent</c>). No
+    /// cambia el ciclo de vida: es señal de triage para la bandeja del
+    /// profesional y el ERP.
+    /// </summary>
+    public AppointmentRequestPriority Priority { get; set; } = AppointmentRequestPriority.Normal;
+
+    /// <summary>
     /// Motivo del rechazo (obligatorio al rechazar). Visible para el paciente en
     /// el detalle de la solicitud; <c>null</c> salvo que la solicitud esté <c>Rejected</c>.
     /// </summary>

@@ -186,6 +186,7 @@ public sealed class ReviewTelemedicineRequestCommandHandler(
             entity.Reason,
             status,
             entity.CreatedAt,
-            rejectionReason
+            rejectionReason,
+            entity.Priority
         );
 }

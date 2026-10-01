@@ -99,6 +99,8 @@ POST /api/v1/appointments/{id}/reschedule# Reprogramación inmediata [Telemedici
 
 ```
 
+**Prioridad de solicitud (`priority`)**: la entrada "Urgencia" de la app (`URGENT_CARE`) crea la solicitud con `priority: "Urgent"` (`Normal` por defecto). No cambia el ciclo de vida (`Pending` → aprobación/confirmación); escala el triage: la alerta de nueva solicitud nace `Critical` con prefijo "URGENTE" y el push al profesional usa el mismo prefijo. El campo viaja en `TelemedicineRequestDto` para que el ERP priorice la bandeja.
+
 **Profesionales con cupo (`availability/professionals`)**: mismo cómputo que `/availability` (horario semanal + citas activas + anticipación mínima de `telemedicine_settings`) pero agregado por profesional en una ventana de días (default: hoy + 13; máx. 31, una sola query de citas para todos los candidatos). Devuelve `professionalId`, `nextAvailableStart` (UTC) y `availableDays`; la identidad/nombre sale del catálogo (`/api/v1/professionals-catalog`). Lo consume el picker de profesional de la app, que vive antes de elegir fecha. Autorización dual sin permiso específico (paciente `aud: app` y ERP).
 
 **Reglas de negocio** (todas parametrizadas en `tele.telemedicine_settings`): duración (default 30 min, máx 240), anticipación mínima, ventana máxima, límite de reprogramaciones (default 2). La reprogramación es inmediata y registra `appointment_reschedules` (historial append-only); la cita vuelve a `Confirmed` con la nueva hora.

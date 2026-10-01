@@ -130,3 +130,21 @@ en vez de tumbar el seed. Además no duplica `employee_clinics` cuando la clíni
 primaria y la secundaria coinciden (índices %3 y %4). `URGENT_CARE` puede faltar
 en una BD ya migrada: aplicar `scripts/apply_seed_sql.py` con
 `AddProfessionalCatalogs.sql` antes de correr el seed.
+
+
+## Telemedicine — caché de referencia vs seeds locales (2026-10-01)
+
+La caché de datos de referencia vive en **Valkey** (`ConnectionStrings:Valkey`,
+`Cache:KeyPrefix=tele`, TTL 10 min) y **cachea también listas vacías** de
+horarios ("sin cupo"). Al re-sembrar `erp.professional_schedules` o recrear
+profesionales (`seed_professionals_demo.py` borra y recrea: los horarios se van
+con el CASCADE), hay que invalidar `tele:ref*` o esperar el TTL; si no, la
+disponibilidad sigue devolviendo 0 slots. El contenedor es `coppAddresd-valkey`
+(capital A) y exige password — un `--scan` sin `-a` devuelve vacío y engaña.
+
+```bash
+docker exec coppAddresd-valkey redis-cli -a CoppAddresdValkey2026 --no-auth-warning   --scan --pattern "tele:ref*" | xargs -I{} docker exec coppAddresd-valkey   redis-cli -a CoppAddresdValkey2026 --no-auth-warning DEL {}
+```
+
+Además: re-ejecutar `seed_professionals_demo.py` **recrea** los profesionales con
+ids nuevos, así que hay que correr `seed_professional_schedules.py` después.

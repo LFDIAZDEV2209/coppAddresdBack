@@ -14,6 +14,18 @@ public enum AppointmentRequestStatus
 }
 
 /// <summary>
+/// Prioridad de la solicitud de telemedicina. <c>Urgent</c> nace de la entrada
+/// directa "Urgencia" (URGENT_CARE): la solicitud sigue el flujo normal, pero
+/// se marca para que la bandeja del profesional la vea primero (alerta
+/// <c>Critical</c> + prefijo URGENTE) y el ERP pueda triagearla.
+/// </summary>
+public enum AppointmentRequestPriority
+{
+    Normal,
+    Urgent,
+}
+
+/// <summary>
 /// Ciclo de vida de una cita de telemedicina (agregado raíz del módulo).
 /// La reprogramación NO es un estado persistente: se refleja en
 /// <see cref="CoppAddresd.Telemedicine.Domain.Entities.AppointmentReschedule"/>

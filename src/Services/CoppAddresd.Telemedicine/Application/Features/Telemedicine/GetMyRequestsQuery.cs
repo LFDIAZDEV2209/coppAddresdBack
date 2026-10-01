@@ -83,7 +83,8 @@ public sealed class GetMyRequestsQueryHandler(
                 r.Reason,
                 r.Status,
                 r.CreatedAt,
-                r.RejectionReason
+                r.RejectionReason,
+                r.Priority
             ))
             .ToList();
     }

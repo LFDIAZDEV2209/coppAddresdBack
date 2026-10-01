@@ -21,14 +21,21 @@ internal static class AlertMaterializer
         Guid requestId,
         Guid specialtyId,
         string patientName,
-        string specialtyName
+        string specialtyName,
+        AppointmentRequestPriority priority = AppointmentRequestPriority.Normal
     ) =>
         Build(
             professionalUserId,
             AlertType.NewRequest,
-            AlertSeverity.Info,
-            "Nueva solicitud de telemedicina",
-            $"{patientName} solicitó una cita de {specialtyName}.",
+            priority == AppointmentRequestPriority.Urgent
+                ? AlertSeverity.Critical
+                : AlertSeverity.Info,
+            priority == AppointmentRequestPriority.Urgent
+                ? "URGENTE — Nueva solicitud de telemedicina"
+                : "Nueva solicitud de telemedicina",
+            priority == AppointmentRequestPriority.Urgent
+                ? $"{patientName} solicitó una cita prioritaria de {specialtyName}."
+                : $"{patientName} solicitó una cita de {specialtyName}.",
             relatedAppointmentId: null
         );
 

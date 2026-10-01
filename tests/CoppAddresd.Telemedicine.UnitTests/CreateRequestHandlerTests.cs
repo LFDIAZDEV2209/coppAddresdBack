@@ -54,6 +54,8 @@ public class CreateRequestHandlerTests
         var entity = Assert.Single(_requests.Items);
         Assert.Equal(TestData.PatientId, entity.PatientId);
         Assert.Null(entity.ProfessionalId);
+        Assert.Equal(AppointmentRequestPriority.Normal, entity.Priority);
+        Assert.Equal(AppointmentRequestPriority.Normal, dto.Priority);
         // Sin profesional elegido → no hay destinatario → sin alerta ni notificación.
         Assert.Empty(_alerts.Items);
         Assert.Empty(_notifier.Sent);
@@ -116,6 +118,40 @@ public class CreateRequestHandlerTests
             new[] { TelemedicineNotificationChannel.Push },
             notification.Channels
         );
+    }
+
+    [Fact]
+    public async Task Handle_Urgente_PersistePrioridadYEscalaAlertaYPush()
+    {
+        _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(
+            userId: TestData.UserId
+        );
+
+        var command = new CreateTelemedicineRequestCommand(
+            TestData.PatientId,
+            TestData.Org,
+            TestData.SpecialtyId,
+            TestData.ProfessionalId,
+            TestData.Clinic,
+            TestData.LocationId,
+            null,
+            "Dolor abdominal",
+            TestData.UserId,
+            ErpMode: true,
+            Priority: AppointmentRequestPriority.Urgent
+        );
+
+        var dto = await _handler.Handle(command, CancellationToken.None);
+
+        var entity = Assert.Single(_requests.Items);
+        Assert.Equal(AppointmentRequestPriority.Urgent, entity.Priority);
+        Assert.Equal(AppointmentRequestPriority.Urgent, dto.Priority);
+        var alert = Assert.Single(_alerts.Items);
+        Assert.Equal(AlertSeverity.Critical, alert.Severity);
+        Assert.StartsWith("URGENTE", alert.Title);
+        var notification = Assert.Single(_notifier.Sent);
+        Assert.StartsWith("URGENTE", notification.Title);
+        Assert.Contains("prioritaria", notification.Body);
     }
 
     [Fact]
