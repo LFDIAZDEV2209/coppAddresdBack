@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace CoppAddresd.Infrastructure.Sos;
 
 /// <summary>
-/// Procesador del despacho de canales SOS (SMS + push) en segundo plano:
+/// Procesador del despacho de canales SOS (SMS + voz + push) en segundo plano:
 /// la respuesta al paciente (201) jamás espera a Twilio/FCM (D3/D4). Dos
 /// fuentes de trabajo:
 /// <list type="bullet">
@@ -36,7 +36,7 @@ public sealed class SosDispatchProcessorHostedService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Iniciando procesador de despacho SOS (SMS + push).");
+        logger.LogInformation("Iniciando procesador de despacho SOS (SMS + voz + push).");
 
         var lastSweep = DateTimeOffset.UtcNow - SweepInterval;
 
@@ -61,12 +61,13 @@ public sealed class SosDispatchProcessorHostedService(
         }
     }
 
-    /// <summary>Despacha SMS + push de una alerta (cada canal con su outbox).</summary>
+    /// <summary>Despacha SMS + voz + push de una alerta (cada canal con su outbox).</summary>
     private async Task DispatchAsync(Guid alertId, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<ISosAlertRepository>();
         var smsDispatcher = scope.ServiceProvider.GetRequiredService<ISosSmsDispatcher>();
+        var voiceDispatcher = scope.ServiceProvider.GetRequiredService<ISosVoiceDispatcher>();
         var pushDispatcher = scope.ServiceProvider.GetRequiredService<ISosPushDispatcher>();
 
         var alert = await repository.GetByIdAsync(alertId, ct);
@@ -76,17 +77,18 @@ public sealed class SosDispatchProcessorHostedService(
             return;
         }
 
-        // Ambos canales corren en serie con su propio presupuesto de error:
-        // el fallo de uno no aborta al otro (el estado final se registra en
-        // la alerta y en el outbox).
+        // Los canales corren en serie con su propio presupuesto de error:
+        // el fallo de uno no aborta a los otros (el estado final se registra
+        // en la alerta y en el outbox).
         await smsDispatcher.DispatchAsync(alert, ct);
+        await voiceDispatcher.DispatchAsync(alert, ct);
         await pushDispatcher.DispatchAsync(alert, ct);
     }
 
     /// <summary>
-    /// Outbox durable: re-encola alertas cuya dedupe fila SMS sigue
-    /// <c>pendiente</c> y fueron creadas hace &gt; 2 min (el drop de la cola o
-    /// una caída del proceso las habría saltado). Idempotente.
+    /// Outbox durable: re-encola alertas cuya dedupe fila de canal (SMS o voz)
+    /// sigue <c>pendiente</c> y fueron creadas hace &gt; 2 min (el drop de la
+    /// cola o una caída del proceso las habría saltado). Idempotente.
     /// </summary>
     private async Task SweepStaleAlertsAsync(CancellationToken ct)
     {
@@ -96,30 +98,42 @@ public sealed class SosDispatchProcessorHostedService(
             using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var staleAlertIds = await (
+            var staleKeys = await (
                 from dedupe in dbContext.NotificationDedupeKeys.AsNoTracking()
                 where
-                    dedupe.DedupeKey.StartsWith("sos:sms:", StringComparison.Ordinal)
-                    && dedupe.SmsStatus == nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
+                    (
+                        (
+                            dedupe.DedupeKey.StartsWith("sos:sms:", StringComparison.Ordinal)
+                            && dedupe.SmsStatus == nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
+                        )
+                        || (
+                            dedupe.DedupeKey.StartsWith("sos:voice:", StringComparison.Ordinal)
+                            && dedupe.VoiceStatus == nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
+                        )
+                    )
                     && dedupe.CreatedAt < threshold
                 select dedupe.DedupeKey
             )
                 .Take(100)
                 .ToListAsync(ct);
 
-            foreach (var key in staleAlertIds)
+            foreach (var key in staleKeys)
             {
-                if (Guid.TryParse(key["sos:sms:".Length..], out var alertId))
+                var alertIdText = key.StartsWith("sos:sms:", StringComparison.Ordinal)
+                    ? key["sos:sms:".Length..]
+                    : key["sos:voice:".Length..];
+
+                if (Guid.TryParse(alertIdText, out var alertId))
                 {
                     await queue.EnqueueAsync(alertId, ct);
                 }
             }
 
-            if (staleAlertIds.Count > 0)
+            if (staleKeys.Count > 0)
             {
                 logger.LogInformation(
                     "SOS sweep: {Count} alertas con outbox pendiente re-encoladas.",
-                    staleAlertIds.Count
+                    staleKeys.Count
                 );
             }
         }

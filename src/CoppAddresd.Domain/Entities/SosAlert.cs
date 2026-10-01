@@ -71,6 +71,23 @@ public sealed class SosAlert
     /// </summary>
     public string? SmsDetail { get; set; }
 
+    // --- Canal voz (llamada TTS al contacto de emergencia) ---
+
+    /// <summary>
+    /// Estado de la llamada de voz al mismo teléfono de destino del SMS
+    /// (contacto de emergencia). Mismo ciclo de vida que los demás canales.
+    /// </summary>
+    public SosChannelStatus VoiceChannelStatus { get; set; } = SosChannelStatus.Pendiente;
+
+    /// <summary>Última actualización del canal de voz (UTC).</summary>
+    public DateTime? VoiceUpdatedAt { get; set; }
+
+    /// <summary>
+    /// Código corto del resultado del canal SIN PII (ej. <c>twilio:21210</c>,
+    /// <c>network</c>, <c>timeout</c>). Nunca contiene teléfono ni guion TTS.
+    /// </summary>
+    public string? VoiceDetail { get; set; }
+
     // --- Canal push (staff asignado) ---
 
     public SosChannelStatus PushChannelStatus { get; set; } = SosChannelStatus.Pendiente;

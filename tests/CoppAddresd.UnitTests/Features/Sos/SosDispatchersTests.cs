@@ -75,6 +75,7 @@ public sealed class SosDispatchersTests
                 Arg.Any<Guid>(),
                 Arg.Any<string?>(),
                 "enviado",
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -143,6 +144,7 @@ public sealed class SosDispatchersTests
                 Arg.Any<Guid>(),
                 Arg.Any<string?>(),
                 "noconfigurado",
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -177,6 +179,185 @@ public sealed class SosDispatchersTests
         // sin excepción (la alerta permanece Activa y el 201 ya fue entregado).
         Assert.Equal(SosChannelStatus.Timeout, status);
         await sms.Received(3).SendAsync(PhoneE164, Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // ===================== Voz (Twilio Calls) =====================
+
+    [Fact]
+    public async Task Voz_Exitoso_MarcaEnviadoYDedupePersistente()
+    {
+        var voice = Substitute.For<IVoiceCaller>();
+        voice.IsConfigured.Returns(true);
+        voice.CallAsync(PhoneE164, Arg.Any<string>(), "es-US", Arg.Any<CancellationToken>())
+            .Returns(new VoiceCallResult(true, "CA123", null));
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var alert = NewAlert();
+        var dispatcher = new SosVoiceDispatcher(
+            voice,
+            _dedupe,
+            CreateDbContext(),
+            NullLogger<SosVoiceDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // (REQ-SOS-03) Canal marcado Enviado y guion 100% server-side.
+        Assert.Equal(SosChannelStatus.Enviado, status);
+        await voice
+            .Received(1)
+            .CallAsync(
+                PhoneE164,
+                Arg.Is<string>(s => s.Contains("Sofía", StringComparison.Ordinal)),
+                "es-US",
+                Arg.Any<CancellationToken>()
+            );
+
+        // Outbox: el estado final queda durable (sent = pegajoso).
+        await _dedupe
+            .Received(1)
+            .UpsertAsync(
+                $"sos:voice:{alert.Id}",
+                Arg.Any<Guid>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                "enviado",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task Voz_YaEnviadoNoSeRellamaAunqueElProcesadorReintente()
+    {
+        var voice = Substitute.For<IVoiceCaller>();
+        voice.IsConfigured.Returns(true);
+
+        var alert = NewAlert();
+        _dedupe
+            .GetByKeyAsync($"sos:voice:{alert.Id}", Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationDedupeKey
+                {
+                    DedupeKey = $"sos:voice:{alert.Id}",
+                    VoiceStatus = "enviado",
+                }
+            );
+
+        var dispatcher = new SosVoiceDispatcher(
+            voice,
+            _dedupe,
+            CreateDbContext(),
+            NullLogger<SosVoiceDispatcher>.Instance
+        );
+
+        await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // (D2) Los reintentos jamás rellaman a un contacto ya notificado.
+        await voice
+            .DidNotReceive()
+            .CallAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task Voz_SinCredenciales_DegradaANoConfiguradoSinLlamar()
+    {
+        var voice = Substitute.For<IVoiceCaller>();
+        voice.IsConfigured.Returns(false);
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var dispatcher = new SosVoiceDispatcher(
+            voice,
+            _dedupe,
+            CreateDbContext(),
+            NullLogger<SosVoiceDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(NewAlert(), CancellationToken.None);
+
+        // Sin credenciales → canal NoConfigurado, la alerta permanece Activa.
+        Assert.Equal(SosChannelStatus.NoConfigurado, status);
+        await voice
+            .DidNotReceive()
+            .CallAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _dedupe
+            .Received(1)
+            .UpsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<Guid>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                "noconfigurado",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task Voz_FalloTransitorio_ReintentaUnaVezYDegradaSinLanzar()
+    {
+        var voice = Substitute.For<IVoiceCaller>();
+        voice.IsConfigured.Returns(true);
+        // Error de transporte (sin prefijo twilio:): se reintenta 1 vez (2 intentos).
+        voice.CallAsync(PhoneE164, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new VoiceCallResult(false, null, "voice:transport"));
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var dispatcher = new SosVoiceDispatcher(
+            voice,
+            _dedupe,
+            CreateDbContext(),
+            NullLogger<SosVoiceDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(NewAlert(), CancellationToken.None);
+
+        Assert.Equal(SosChannelStatus.Fallido, status);
+        await voice
+            .Received(2)
+            .CallAsync(PhoneE164, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Voz_RechazoDeterministaTwilio_NoReintenta()
+    {
+        var voice = Substitute.For<IVoiceCaller>();
+        voice.IsConfigured.Returns(true);
+        // Rechazo determinista del proveedor (número inválido/credenciales):
+        // reintentar no cambia el resultado → un único intento.
+        voice.CallAsync(PhoneE164, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new VoiceCallResult(false, null, "twilio:21211"));
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var dispatcher = new SosVoiceDispatcher(
+            voice,
+            _dedupe,
+            CreateDbContext(),
+            NullLogger<SosVoiceDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(NewAlert(), CancellationToken.None);
+
+        Assert.Equal(SosChannelStatus.Fallido, status);
+        await voice
+            .Received(1)
+            .CallAsync(PhoneE164, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // ===================== Push FCM =====================
@@ -370,6 +551,20 @@ public sealed class SosDispatchersTests
 
         await smsDispatcher.DispatchAsync(alert, CancellationToken.None);
 
+        var voice = Substitute.For<IVoiceCaller>();
+        voice.IsConfigured.Returns(true);
+        voice.CallAsync(PhoneE164, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new VoiceCallResult(true, "CA1", null));
+        var voiceScript = SosVoiceTemplate.Build(alert.Patient!.FirstName);
+        var voiceDispatcher = new SosVoiceDispatcher(
+            voice,
+            _dedupe,
+            CreateDbContext(),
+            collector.For<SosVoiceDispatcher>()
+        );
+
+        await voiceDispatcher.DispatchAsync(alert, CancellationToken.None);
+
         // (REQ-SOS-06) Ninguna línea de log contiene el teléfono completo, las
         // coordenadas GPS ni el cuerpo del SMS: solo alertId/canal/estado.
         foreach (var line in collector.Lines)
@@ -387,6 +582,10 @@ public sealed class SosDispatchersTests
             Assert.False(
                 line.Contains(smsBody, StringComparison.Ordinal),
                 $"Cuerpo de SMS en log: {line}"
+            );
+            Assert.False(
+                line.Contains(voiceScript, StringComparison.Ordinal),
+                $"Guion de voz en log: {line}"
             );
         }
 

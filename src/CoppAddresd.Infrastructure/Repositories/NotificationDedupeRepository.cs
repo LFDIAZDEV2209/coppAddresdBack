@@ -28,6 +28,7 @@ public sealed class NotificationDedupeRepository(AppDbContext dbContext)
         Guid userId,
         string? pushStatus,
         string? smsStatus,
+        string? voiceStatus,
         CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
@@ -43,6 +44,7 @@ public sealed class NotificationDedupeRepository(AppDbContext dbContext)
                 UserId = userId,
                 PushStatus = pushStatus,
                 SmsStatus = smsStatus,
+                VoiceStatus = voiceStatus,
                 CreatedAt = now,
             };
 
@@ -76,6 +78,11 @@ public sealed class NotificationDedupeRepository(AppDbContext dbContext)
         if (entry.SmsStatus != TelemedicineNotificationStatus.Sent && smsStatus is not null)
         {
             entry.SmsStatus = smsStatus;
+        }
+
+        if (entry.VoiceStatus != TelemedicineNotificationStatus.Sent && voiceStatus is not null)
+        {
+            entry.VoiceStatus = voiceStatus;
         }
 
         entry.UpdatedAt = now;

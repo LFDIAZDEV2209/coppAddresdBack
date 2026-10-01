@@ -387,7 +387,7 @@ public sealed class SendTelemedicineNotificationCommandHandlerTests
         await f.Sms.Received(1).SendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         await f.Dedupe.Received(1).UpsertAsync(
-            "appointment:1:reminder_1h", Arg.Any<Guid>(), "sent", "sent", Arg.Any<CancellationToken>());
+            "appointment:1:reminder_1h", Arg.Any<Guid>(), "sent", "sent", Arg.Any<string?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -402,7 +402,7 @@ public sealed class SendTelemedicineNotificationCommandHandlerTests
 
         Assert.Equal("sent", result.Push);
         await f.Dedupe.Received(1).UpsertAsync(
-            "appointment:1:reminder_1h", userId, "sent", "skipped", Arg.Any<CancellationToken>());
+            "appointment:1:reminder_1h", userId, "sent", "skipped", Arg.Any<string?>(), Arg.Any<CancellationToken>());
         await f.Fcm.Received(1).SendAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
             Arg.Any<Dictionary<string, string>?>(), Arg.Any<CancellationToken>());
@@ -417,6 +417,6 @@ public sealed class SendTelemedicineNotificationCommandHandlerTests
 
         await f.Dedupe.DidNotReceiveWithAnyArgs().GetByKeyAsync(default!, default);
         await f.Dedupe.DidNotReceiveWithAnyArgs()
-            .UpsertAsync(default!, default, default, default, default);
+            .UpsertAsync(default!, default, default, default, default, default);
     }
 }

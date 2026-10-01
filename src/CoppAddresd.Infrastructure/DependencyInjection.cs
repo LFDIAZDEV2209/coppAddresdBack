@@ -214,6 +214,7 @@ public static class DependencyInjection
         AddObjectStorage(services, configuration);
         AddEmailServices(services, configuration);
         AddSmsSender(services, configuration);
+        AddVoiceCaller(services, configuration);
 
         AddDistributedCache(services, configuration);
 
@@ -234,6 +235,7 @@ public static class DependencyInjection
         services.AddScoped<ISosAlertRepository, SosAlertRepository>();
         services.AddScoped<ISosRateLimiter, SosRateLimitingService>();
         services.AddScoped<ISosSmsDispatcher, SosSmsDispatcher>();
+        services.AddScoped<ISosVoiceDispatcher, SosVoiceDispatcher>();
         services.AddScoped<ISosPushDispatcher, SosPushDispatcher>();
 
         // Cola + procesador: el procesador crea su propio scope por mensaje
@@ -323,6 +325,63 @@ public static class DependencyInjection
             }
 
             return ActivatorUtilities.CreateInstance<NoOpSmsSender>(serviceProvider);
+        });
+    }
+
+    /// <summary>
+    /// Registra la implementación de <see cref="IVoiceCaller"/> según
+    /// <c>Voice:Provider</c>: <c>Noop</c> (default, log en desarrollo) o
+    /// <c>Twilio</c> (llamadas TTS reales al contacto de emergencia SOS).
+    /// Contrato fail-soft: con <c>Provider=Twilio</c> pero credenciales
+    /// incompletas se registra el Noop (Warning en el primer uso) y el arranque
+    /// NUNCA falla por voz.
+    /// </summary>
+    private static void AddVoiceCaller(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<VoiceSettings>(configuration.GetSection(VoiceSettings.SectionName));
+
+        var provider = (configuration["Voice:Provider"] ?? "Noop").Trim();
+        var isTwilio = provider.Equals("Twilio", StringComparison.OrdinalIgnoreCase);
+
+        // Lectura directa por clave (no se materializa VoiceSettings): el
+        // registro no depende de credenciales para arrancar.
+        var isConfigured =
+            configuration.GetValue("Voice:IsEnabled", false)
+            && !string.IsNullOrWhiteSpace(configuration["Voice:AccountSid"])
+            && !string.IsNullOrWhiteSpace(configuration["Voice:AuthToken"])
+            && !string.IsNullOrWhiteSpace(configuration["Voice:FromNumber"]);
+
+        if (isTwilio && isConfigured)
+        {
+            // El cliente Twilio lo construye el propio caller (Lazy) con las
+            // credenciales de voz: no comparte el ITwilioRestClient de SMS.
+            services.AddScoped<IVoiceCaller, TwilioVoiceCaller>();
+            return;
+        }
+
+        services.AddScoped<IVoiceCaller>(serviceProvider =>
+        {
+            if (isTwilio)
+            {
+                serviceProvider
+                    .GetRequiredService<ILogger<TwilioVoiceCaller>>()
+                    .LogWarning(
+                        "Voice:Provider=Twilio sin configuración completa "
+                            + "(Voice:IsEnabled/AccountSid/AuthToken/FromNumber) "
+                            + "— se usa NoOpVoiceCaller (el canal de voz se reporta como disabled)."
+                    );
+            }
+            else if (!provider.Equals("Noop", StringComparison.OrdinalIgnoreCase))
+            {
+                serviceProvider
+                    .GetRequiredService<ILogger<NoOpVoiceCaller>>()
+                    .LogWarning(
+                        "Voice:Provider desconocido '{Provider}' — se usa NoOpVoiceCaller (valores soportados: Noop, Twilio).",
+                        provider
+                    );
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpVoiceCaller>(serviceProvider);
         });
     }
 

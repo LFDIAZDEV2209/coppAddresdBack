@@ -37,6 +37,10 @@ public sealed class NotificationDedupeKeyConfiguration : IEntityTypeConfiguratio
             .HasColumnName("sms_status")
             .HasMaxLength(20);
 
+        builder.Property(x => x.VoiceStatus)
+            .HasColumnName("voice_status")
+            .HasMaxLength(20);
+
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")
             .HasColumnType("timestamptz")

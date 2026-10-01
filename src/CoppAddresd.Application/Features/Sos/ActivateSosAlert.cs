@@ -235,13 +235,17 @@ public sealed class ActivateSosAlertHandler(
         );
     }
 
-    /// <summary>Claves de outbox: una por canal (sms) y una por destinatario push.</summary>
+    /// <summary>Claves de outbox: una por canal (sms, voz) y una por destinatario push.</summary>
     public static IReadOnlyList<string> BuildDedupeKeys(
         Guid alertId,
         IReadOnlyList<Guid> staffUserIds
     )
     {
-        var keys = new List<string>(1 + staffUserIds.Count) { $"sos:sms:{alertId}" };
+        var keys = new List<string>(2 + staffUserIds.Count)
+        {
+            $"sos:sms:{alertId}",
+            $"sos:voice:{alertId}",
+        };
         keys.AddRange(staffUserIds.Distinct().Select(userId => $"sos:push:{alertId}:{userId}"));
         return keys;
     }

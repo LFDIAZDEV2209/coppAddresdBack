@@ -375,18 +375,26 @@ public sealed class SosIntegrationTests : IAsyncLifetime
 
         await repository.AddWithOutboxAsync(
             alert,
-            [$"sos:sms:{alert.Id}", $"sos:push:{alert.Id}:{staffUserId}"],
+            [
+                $"sos:sms:{alert.Id}",
+                $"sos:voice:{alert.Id}",
+                $"sos:push:{alert.Id}:{staffUserId}",
+            ],
             CancellationToken.None
         );
 
         var smsRow = await _db.NotificationDedupeKeys.SingleAsync(k =>
             k.DedupeKey == $"sos:sms:{alert.Id}"
         );
+        var voiceRow = await _db.NotificationDedupeKeys.SingleAsync(k =>
+            k.DedupeKey == $"sos:voice:{alert.Id}"
+        );
         var pushRow = await _db.NotificationDedupeKeys.SingleAsync(k =>
             k.DedupeKey == $"sos:push:{alert.Id}:{staffUserId}"
         );
 
         Assert.Equal(SosChannelStatus.Pendiente.ToString().ToLowerInvariant(), smsRow.SmsStatus);
+        Assert.Equal(SosChannelStatus.Pendiente.ToString().ToLowerInvariant(), voiceRow.VoiceStatus);
         Assert.Equal(SosChannelStatus.Pendiente.ToString().ToLowerInvariant(), pushRow.PushStatus);
     }
 

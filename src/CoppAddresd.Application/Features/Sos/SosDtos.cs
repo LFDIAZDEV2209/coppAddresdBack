@@ -19,6 +19,7 @@ public record SosAlertDto(
     DateTime? LocationCapturedAt,
     string MaskedDestinationPhone,
     string SmsChannelStatus,
+    string VoiceChannelStatus,
     string PushChannelStatus,
     int? PushRecipients,
     DateTime CreatedAt,
@@ -41,6 +42,7 @@ public record SosAlertDto(
             alert.LocationCapturedAt,
             maskedPhone,
             alert.SmsChannelStatus.ToString(),
+            alert.VoiceChannelStatus.ToString(),
             alert.PushChannelStatus.ToString(),
             alert.PushRecipients,
             alert.CreatedAt,
@@ -139,6 +141,7 @@ public record SosAlertListItemDto(
     Guid? CancelledBy,
     DateTime? CancelledAt,
     string SmsChannelStatus,
+    string VoiceChannelStatus,
     string PushChannelStatus
 );
 

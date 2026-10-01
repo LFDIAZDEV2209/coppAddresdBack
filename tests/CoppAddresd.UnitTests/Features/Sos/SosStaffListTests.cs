@@ -219,6 +219,7 @@ public sealed class SosStaffListTests
                                 null,
                                 null,
                                 "Pendiente",
+                                "Pendiente",
                                 "Pendiente"
                             ),
                         },

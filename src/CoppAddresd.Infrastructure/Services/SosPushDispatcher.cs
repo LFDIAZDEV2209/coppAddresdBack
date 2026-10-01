@@ -123,7 +123,8 @@ public sealed class SosPushDispatcher(
                 staffUserId,
                 pushStatus: userResult.ToString().ToLowerInvariant(),
                 smsStatus: null,
-                ct
+                voiceStatus: null,
+                ct: ct
             );
         }
 

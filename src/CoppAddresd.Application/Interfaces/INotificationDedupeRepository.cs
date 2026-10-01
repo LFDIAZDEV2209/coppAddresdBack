@@ -25,5 +25,6 @@ public interface INotificationDedupeRepository
         Guid userId,
         string? pushStatus,
         string? smsStatus,
+        string? voiceStatus,
         CancellationToken ct = default);
 }

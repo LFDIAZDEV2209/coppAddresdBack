@@ -72,6 +72,19 @@ public sealed class SosAlertConfiguration : IEntityTypeConfiguration<SosAlert>
         builder.Property(x => x.SmsDetail).HasColumnName("sms_detail").HasMaxLength(100);
 
         builder
+            .Property(x => x.VoiceChannelStatus)
+            .HasColumnName("voice_channel_status")
+            .HasMaxLength(20)
+            .HasConversion<string>();
+
+        builder
+            .Property(x => x.VoiceUpdatedAt)
+            .HasColumnName("voice_updated_at")
+            .HasColumnType("timestamptz");
+
+        builder.Property(x => x.VoiceDetail).HasColumnName("voice_detail").HasMaxLength(100);
+
+        builder
             .Property(x => x.PushChannelStatus)
             .HasColumnName("push_channel_status")
             .HasMaxLength(20)

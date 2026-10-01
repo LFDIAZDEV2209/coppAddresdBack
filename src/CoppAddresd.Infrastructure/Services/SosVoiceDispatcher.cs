@@ -10,61 +10,61 @@ using Npgsql;
 namespace CoppAddresd.Infrastructure.Services;
 
 /// <summary>
-/// Despacho del canal SMS de una alerta SOS (REQ-SOS-03, D3): plantilla fija
-/// 100% server-side (el cliente jamás envía texto ni destino), timeout de 5 s
-/// por intento y hasta 2 reintentos con backoff exponencial. Deduplicación
-/// durable vía <c>app.notification_dedupe_keys</c> con clave
-/// <c>sos:sms:{alertId}</c>: un canal ya <c>Enviado</c> jamás se reenvía y
-/// los reintentos del sistema no duplican. Degradación: sin credenciales o
-/// ante timeout el canal queda registrado y la alerta permanece Activa —
-/// nunca se propaga un 500.
-/// (REQ-SOS-06) Los logs NO incluyen teléfono, coordenadas ni cuerpo del SMS:
-/// solo alertId, canal, estado y latencia.
+/// Despacho del canal de voz de una alerta SOS: llamada TTS al contacto de
+/// emergencia con plantilla fija 100% server-side (el cliente jamás envía
+/// texto ni destino), timeout de 5 s por intento y UN reintento (decisión de
+/// producto: evitar llamadas duplicadas al contacto). Deduplicación durable
+/// vía <c>app.notification_dedupe_keys</c> con clave <c>sos:voice:{alertId}</c>:
+/// un canal ya <c>Enviado</c> jamás se rellama y los reintentos del sistema no
+/// duplican. Degradación: sin credenciales o ante timeout el canal queda
+/// registrado y la alerta permanece Activa — nunca se propaga un 500.
+/// Los logs NO incluyen teléfono, coordenadas ni el guion: solo alertId, canal,
+/// estado y latencia.
 /// </summary>
-public sealed class SosSmsDispatcher(
-    ISmsSender smsSender,
+public sealed class SosVoiceDispatcher(
+    IVoiceCaller voiceCaller,
     INotificationDedupeRepository dedupe,
     AppDbContext dbContext,
-    ILogger<SosSmsDispatcher> logger
-) : ISosSmsDispatcher
+    ILogger<SosVoiceDispatcher> logger
+) : ISosVoiceDispatcher
 {
-    /// <summary>Timeout estricto por intento (D3): 5 segundos.</summary>
+    /// <summary>Timeout estricto por intento: 5 segundos.</summary>
     private static readonly TimeSpan AttemptTimeout = TimeSpan.FromSeconds(5);
 
-    /// <summary>Hasta 2 reintentos tras el primer intento (3 intentos totales).</summary>
-    private const int MaxRetries = 2;
+    /// <summary>Un único reintento tras el primer intento (2 intentos totales).</summary>
+    private const int MaxRetries = 1;
 
     public async Task<SosChannelStatus> DispatchAsync(
         SosAlert alert,
         CancellationToken ct = default
     )
     {
-        var dedupeKey = $"sos:sms:{alert.Id}";
+        var dedupeKey = $"sos:voice:{alert.Id}";
         var existing = await dedupe.GetByKeyAsync(dedupeKey, ct);
         if (
-            existing?.SmsStatus is not null
-            && existing.SmsStatus != nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
+            existing?.VoiceStatus is not null
+            && existing.VoiceStatus != nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
         )
         {
             // El canal ya fue procesado (sent/failed/timeout/disabled): el
-            // outbox evita reenvíos dobles aunque el procesador reintente.
+            // outbox evita rellamar aunque el procesador reintente.
             logger.LogInformation(
-                "SOS SMS ya procesado (estado={Status}): alertId={AlertId}.",
-                existing.SmsStatus,
+                "SOS voz ya procesado (estado={Status}): alertId={AlertId}.",
+                existing.VoiceStatus,
                 alert.Id
             );
-            return alert.SmsChannelStatus;
+            return alert.VoiceChannelStatus;
         }
 
-        var body = SosSmsTemplate.Build(alert.Patient?.FirstName, alert.Id);
+        var sayText = SosVoiceTemplate.Build(alert.Patient?.FirstName);
 
         var finalStatus = SosChannelStatus.Fallido;
         string? detail = null;
 
-        if (!smsSender.IsConfigured)
+        if (!voiceCaller.IsConfigured)
         {
             finalStatus = SosChannelStatus.NoConfigurado;
-            detail = "sms:not_configured";
+            detail = "voice:not_configured";
         }
         else
         {
@@ -80,9 +80,10 @@ public sealed class SosSmsDispatcher(
 
                 try
                 {
-                    var result = await smsSender.SendAsync(
+                    var result = await voiceCaller.CallAsync(
                         alert.DestinationPhoneE164,
-                        body,
+                        sayText,
+                        "es-US",
                         attemptCts.Token
                     );
 
@@ -106,15 +107,15 @@ public sealed class SosSmsDispatcher(
                     }
 
                     finalStatus = SosChannelStatus.Fallido;
-                    detail = "sms:provider";
+                    detail = "voice:provider";
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
                     // Timeout del intento (el token global sigue activo).
                     finalStatus = SosChannelStatus.Timeout;
-                    detail = "sms:timeout";
+                    detail = "voice:timeout";
                     logger.LogWarning(
-                        "SOS SMS timeout en intento {Attempt}: alertId={AlertId}.",
+                        "SOS voz timeout en intento {Attempt}: alertId={AlertId}.",
                         attempt + 1,
                         alert.Id
                     );
@@ -122,15 +123,15 @@ public sealed class SosSmsDispatcher(
 
                 if (attempt < MaxRetries)
                 {
-                    // Backoff exponencial corto (1s, 2s) con el token global:
-                    // el procesador nunca queda colgado.
+                    // Backoff corto (1s) con el token global: el procesador
+                    // nunca queda colgado.
                     await Task.Delay(TimeSpan.FromSeconds(1 << attempt), ct);
                 }
             }
 
             stopwatch.Stop();
             logger.LogInformation(
-                "SOS SMS despachado: alertId={AlertId}, status={Status}, latencyMs={LatencyMs}.",
+                "SOS voz despachado: alertId={AlertId}, status={Status}, latencyMs={LatencyMs}.",
                 alert.Id,
                 finalStatus,
                 stopwatch.ElapsedMilliseconds
@@ -142,16 +143,16 @@ public sealed class SosSmsDispatcher(
             dedupeKey,
             Guid.Empty,
             pushStatus: null,
-            smsStatus: finalStatus.ToString().ToLowerInvariant(),
-            voiceStatus: null,
+            smsStatus: null,
+            voiceStatus: finalStatus.ToString().ToLowerInvariant(),
             ct: ct
         );
 
         await UpdateAlertChannelAsync(
             alert,
-            a => a.SmsChannelStatus = finalStatus,
-            a => a.SmsUpdatedAt = DateTime.UtcNow,
-            a => a.SmsDetail = detail,
+            a => a.VoiceChannelStatus = finalStatus,
+            a => a.VoiceUpdatedAt = DateTime.UtcNow,
+            a => a.VoiceDetail = detail,
             ct
         );
 
@@ -186,7 +187,7 @@ public sealed class SosSmsDispatcher(
             // tumbar el procesador ni la respuesta ya dada al paciente.
             logger.LogWarning(
                 ex,
-                "No se pudo persistir el estado del canal SMS: alertId={AlertId}.",
+                "No se pudo persistir el estado del canal de voz: alertId={AlertId}.",
                 alert.Id
             );
         }
@@ -194,12 +195,23 @@ public sealed class SosSmsDispatcher(
 }
 
 /// <summary>
-/// Plantilla fija del SMS de SOS (D3): 100% server-side. Contiene el nombre
-/// del paciente, la indicación de urgencia y la referencia correlacionada.
-/// El cuerpo NUNCA se registra en logs (REQ-SOS-06).
+/// Plantilla fija de la llamada de voz SOS: 100% server-side, en español, sin
+/// URLs ni datos clínicos. Contiene el nombre del paciente, la indicación de
+/// urgencia y la recomendación de llamar al 911; el mensaje completo se repite
+/// una vez. El guion NUNCA se registra en logs.
 /// </summary>
-public static class SosSmsTemplate
+public static class SosVoiceTemplate
 {
-    public static string Build(string? patientFirstName, Guid alertId) =>
-        $"URGENTE: {patientFirstName ?? "Tu contacto"} activó su alerta SOS de emergencia en CoppAddresd. Por favor contáctalo de inmediato. (Ref: {alertId.ToString()[..8]})";
+    public static string Build(string? patientFirstName)
+    {
+        var name = string.IsNullOrWhiteSpace(patientFirstName)
+            ? "Un paciente"
+            : patientFirstName.Trim();
+
+        var message =
+            $"Alerta de emergencia de Copp Adresd. {name} activó una alerta SOS y necesita ayuda inmediata. "
+            + "Si usted es su contacto de emergencia, por favor comuníquese de inmediato y, de ser necesario, llame al 911.";
+
+        return $"{message} Repito: {message}";
+    }
 }
