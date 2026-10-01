@@ -64,8 +64,13 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         return appointment;
     }
 
-    public async Task<Appointment?> GetByRequestIdAsync(Guid requestId, CancellationToken ct = default) =>
-        await dbContext.Appointments.AsNoTracking().FirstOrDefaultAsync(a => a.RequestId == requestId, ct);
+    public async Task<Appointment?> GetByRequestIdAsync(
+        Guid requestId,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
+            .FirstOrDefaultAsync(a => a.RequestId == requestId, ct);
 
     public async Task UpdateAsync(Appointment appointment, CancellationToken ct = default)
     {
@@ -152,6 +157,22 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .Appointments.AsNoTracking()
             .Where(a =>
                 a.ProfessionalId == professionalId
+                && a.ScheduledStart >= from
+                && a.ScheduledStart < to
+            )
+            .OrderBy(a => a.ScheduledStart)
+            .ToListAsync(ct);
+
+    public async Task<IReadOnlyList<Appointment>> ListByProfessionalsAsync(
+        IReadOnlyList<Guid> professionalIds,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .Appointments.AsNoTracking()
+            .Where(a =>
+                professionalIds.Contains(a.ProfessionalId)
                 && a.ScheduledStart >= from
                 && a.ScheduledStart < to
             )
@@ -669,12 +690,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
 
         var chatRows = await dbContext
             .ChatMessages.AsNoTracking()
-            .Join(
-                appointments,
-                m => m.AppointmentId,
-                a => a.Id,
-                (m, _) => new { m.SenderRole }
-            )
+            .Join(appointments, m => m.AppointmentId, a => a.Id, (m, _) => new { m.SenderRole })
             .GroupBy(m => m.SenderRole)
             .Select(g => new { Role = g.Key, Count = g.Count() })
             .ToListAsync(ct);

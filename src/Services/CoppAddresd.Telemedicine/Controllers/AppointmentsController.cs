@@ -116,6 +116,44 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
             )
         );
 
+    /// <summary>
+    /// Profesionales de una especialidad con al menos una ranura libre dentro
+    /// de una ventana de días (máx. 31). Alimenta el badge "Con cupo" del
+    /// picker de profesional de la app, que vive antes de elegir fecha.
+    /// Autorización dual sin permiso específico: paciente (`aud: app`) y ERP.
+    /// Ventana por defecto: hoy + 13 días. Tiempos en UTC.
+    /// </summary>
+    [HttpGet("availability/professionals")]
+    [ProducesResponseType(typeof(AvailableProfessionalsResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<AvailableProfessionalsResult>> AvailabilityProfessionals(
+        [FromQuery] Guid specialtyId,
+        [FromQuery] Guid? organizationId,
+        [FromQuery] Guid? clinicId,
+        [FromQuery] Guid? locationId,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
+        CancellationToken ct
+    )
+    {
+        var start = from ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        var end = to ?? start.AddDays(13);
+        return Ok(
+            await mediator.Send(
+                new GetAvailableProfessionalsQuery(
+                    specialtyId,
+                    organizationId,
+                    clinicId,
+                    locationId,
+                    start,
+                    end
+                ),
+                ct
+            )
+        );
+    }
+
     [HttpPost("{id:guid}/cancel")]
     [ProducesResponseType(typeof(AppointmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]

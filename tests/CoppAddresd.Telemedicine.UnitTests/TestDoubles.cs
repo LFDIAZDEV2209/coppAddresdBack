@@ -374,6 +374,23 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .ToList()
         );
 
+    public Task<IReadOnlyList<Appointment>> ListByProfessionalsAsync(
+        IReadOnlyList<Guid> professionalIds,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    ) =>
+        Task.FromResult<IReadOnlyList<Appointment>>(
+            Items
+                .Where(a =>
+                    professionalIds.Contains(a.ProfessionalId)
+                    && a.ScheduledStart >= from
+                    && a.ScheduledStart < to
+                )
+                .OrderBy(a => a.ScheduledStart)
+                .ToList()
+        );
+
     public Task<IReadOnlyList<Appointment>> ListByPatientAsync(
         Guid patientId,
         CancellationToken ct = default

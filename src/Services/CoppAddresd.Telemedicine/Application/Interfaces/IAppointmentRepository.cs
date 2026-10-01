@@ -60,6 +60,17 @@ public interface IAppointmentRepository
     );
 
     /// <summary>
+    /// Citas de varios profesionales en el rango, ordenadas por inicio. Una sola
+    /// query (evita N+1) para cómputos de disponibilidad multi-profesional.
+    /// </summary>
+    Task<IReadOnlyList<Appointment>> ListByProfessionalsAsync(
+        IReadOnlyList<Guid> professionalIds,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
     /// Citas de un paciente, de más reciente a más antigua (historial del paciente).
     /// </summary>
     Task<IReadOnlyList<Appointment>> ListByPatientAsync(
