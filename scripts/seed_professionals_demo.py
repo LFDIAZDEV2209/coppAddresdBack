@@ -23,12 +23,16 @@ Cobertura del demo:
 
 from __future__ import annotations
 
+import os
+import sys
+
 import uuid
 from datetime import datetime, timezone
 
 import psycopg
 
-DB_DSN = "host=localhost port=5432 dbname=coppaddresd user=app_user password=CoppAddresdDev!2026"
+DB_DSN_DEFAULT = "host=localhost port=5432 dbname=coppaddresd user=app_user password=CoppAddresdDev!2026"
+DB_DSN = DB_DSN_DEFAULT
 
 SEED_MARK = "seed-professionals-demo"
 DEMO_PASSWORD_HASH = None  # los usuarios demo no tienen password (solo enlazados)
@@ -158,6 +162,23 @@ DEMO_PROFESSIONALS += [
 ]
 
 
+def resolve_dsn() -> str:
+    """DSN local por defecto; override con la env DB_DSN (p. ej. RDS vía túnel).
+
+    Guard de seguridad: si el host no es local y no se pasa --yes-remote, el
+    script se niega a correr (evita escrituras accidentales fuera de dev).
+    """
+    dsn = os.environ.get("DB_DSN", DB_DSN_DEFAULT)
+    if not sys.argv[1:] or "--yes-remote" not in sys.argv:
+        host = dsn.split("host=")[-1].split(" ")[0] if "host=" in dsn else ""
+        if host and host not in {"localhost", "127.0.0.1"}:
+            raise SystemExit(
+                f"DB_DSN apunta a un host remoto ({host}); "
+                "repite con --yes-remote si es intencional."
+            )
+    return dsn
+
+
 def esc(value: str) -> str:
     return value.replace("'", "''")
 
@@ -204,7 +225,7 @@ def ensure_location(conn, clinic_id: uuid.UUID, name: str) -> uuid.UUID:
 
 
 def main() -> None:
-    with psycopg.connect(DB_DSN) as conn:
+    with psycopg.connect(resolve_dsn()) as conn:
         with conn.cursor() as cur:
             org = cur.execute(
                 "SELECT id, name FROM erp.organizations ORDER BY created_at LIMIT 1"

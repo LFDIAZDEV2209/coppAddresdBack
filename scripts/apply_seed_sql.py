@@ -16,12 +16,30 @@ Ejemplo:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import psycopg
 
-DB_DSN = "host=localhost port=5432 dbname=coppaddresd user=app_user password=CoppAddresdDev!2026"
+DB_DSN_DEFAULT = "host=localhost port=5432 dbname=coppaddresd user=app_user password=CoppAddresdDev!2026"
+
+
+def resolve_dsn() -> str:
+    """DSN local por defecto; override con la env DB_DSN (p. ej. RDS vía túnel).
+
+    Guard de seguridad: si el host no es local y no se pasa --yes-remote, el
+    script se niega a correr (evita escrituras accidentales fuera de dev).
+    """
+    dsn = os.environ.get("DB_DSN", DB_DSN_DEFAULT)
+    if "--yes-remote" not in sys.argv:
+        host = dsn.split("host=")[-1].split(" ")[0] if "host=" in dsn else ""
+        if host and host not in {"localhost", "127.0.0.1"}:
+            raise SystemExit(
+                f"DB_DSN apunta a un host remoto ({host}); "
+                "repite con --yes-remote si es intencional."
+            )
+    return dsn
 
 
 def main() -> None:
@@ -35,7 +53,7 @@ def main() -> None:
         raise SystemExit(2)
 
     sql = path.read_text(encoding="utf-8")
-    with psycopg.connect(DB_DSN) as conn:
+    with psycopg.connect(resolve_dsn()) as conn:
         conn.execute(sql)
 
     print(f"Aplicado (idempotente) {path.name}")
