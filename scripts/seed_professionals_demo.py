@@ -112,6 +112,51 @@ DEMO_PROFESSIONALS = [
     ),
 ]
 
+# Bulk demo: 25 médicos de Medicina General (FAMILY_MEDICINE) para ejercitar el
+# picker de profesional de la app con lista larga y búsqueda (el demo tenía 1).
+# Los primeros 5 atienden además Urgencia (URGENT_CARE), la otra entrada directa.
+# Los horarios semanales de estos profesionales los siembra
+# scripts/seed_professional_schedules.py (les asigna L-V + sábado por ser Physician).
+_FAMILY_MEDICINE_NAMES = [
+    ("Andrés", "Molina"),
+    ("Beatriz", "Salazar"),
+    ("Camilo", "Restrepo"),
+    ("Diana", "Ospina"),
+    ("Esteban", "Cardona"),
+    ("Fernanda", "Ríos"),
+    ("Gabriel", "Peña"),
+    ("Helena", "Quintero"),
+    ("Ignacio", "Vélez"),
+    ("Juliana", "Arango"),
+    ("Kevin", "Zapata"),
+    ("Lorena", "Cifuentes"),
+    ("Mauricio", "Tobón"),
+    ("Natalia", "Bedoya"),
+    ("Óscar", "Herrera"),
+    ("Paula", "Villegas"),
+    ("Rodrigo", "Castaño"),
+    ("Sofía", "Lopera"),
+    ("Tomás", "Betancur"),
+    ("Valentina", "Giraldo"),
+    ("William", "Osorio"),
+    ("Ximena", "Duque"),
+    ("Yuliana", "Pineda"),
+    ("Álvaro", "Ramírez"),
+    ("Bibiana", "Torres"),
+]
+DEMO_PROFESSIONALS += [
+    (
+        f"demo.fm{index:02d}@coppaddresd.com",
+        first,
+        last,
+        "PHYSICIAN",
+        ["FAMILY_MEDICINE"] + (["URGENT_CARE"] if index <= 5 else []),
+        "Active",
+        "Professional",
+    )
+    for index, (first, last) in enumerate(_FAMILY_MEDICINE_NAMES, start=1)
+]
+
 
 def esc(value: str) -> str:
     return value.replace("'", "''")
@@ -188,27 +233,45 @@ def main() -> None:
             ).fetchone()[0]
 
         # --- Limpieza idempotente (solo lo que creó el seed) ---
+        # Si un profesional tiene referencias externas con RESTRICT (p. ej.
+        # agents.documents del servicio de IA), se conserva tal cual y se omite
+        # su recreación: el seed nunca borra datos que no sembró.
+        skipped: set[str] = set()
         with conn.cursor() as cur:
             for email, *_ in DEMO_PROFESSIONALS:
-                cur.execute(
-                    'SELECT "Id" FROM auth."Users" WHERE "Email" = %s', (email,)
-                )
-                user = cur.fetchone()
-                if user:
+                try:
+                    cur.execute("SAVEPOINT seed_cleanup")
                     cur.execute(
-                        'DELETE FROM auth."ScopedRoleAssignments" WHERE "UserId" = %s',
-                        (user[0],),
+                        'SELECT "Id" FROM auth."Users" WHERE "Email" = %s', (email,)
                     )
+                    user = cur.fetchone()
+                    if user:
+                        cur.execute(
+                            'DELETE FROM auth."ScopedRoleAssignments" WHERE "UserId" = %s',
+                            (user[0],),
+                        )
+                        cur.execute(
+                            'DELETE FROM auth."UserApplications" WHERE "UserId" = %s',
+                            (user[0],),
+                        )
+                        cur.execute(
+                            'DELETE FROM auth."Users" WHERE "Id" = %s', (user[0],)
+                        )
                     cur.execute(
-                        'DELETE FROM auth."UserApplications" WHERE "UserId" = %s',
-                        (user[0],),
+                        "SELECT id FROM erp.employees WHERE email = %s", (email,)
                     )
-                    cur.execute('DELETE FROM auth."Users" WHERE "Id" = %s', (user[0],))
-                cur.execute("SELECT id FROM erp.employees WHERE email = %s", (email,))
-                employee = cur.fetchone()
-                if employee:
-                    cur.execute(
-                        "DELETE FROM erp.employees WHERE id = %s", (employee[0],)
+                    employee = cur.fetchone()
+                    if employee:
+                        cur.execute(
+                            "DELETE FROM erp.employees WHERE id = %s", (employee[0],)
+                        )
+                    cur.execute("RELEASE SAVEPOINT seed_cleanup")
+                except psycopg.errors.RestrictViolation:
+                    cur.execute("ROLLBACK TO SAVEPOINT seed_cleanup")
+                    skipped.add(email)
+                    print(
+                        f"[seed] {email}: referencias externas (RESTRICT); "
+                        "se conserva sin recrear."
                     )
 
         # --- Creación ---
@@ -221,6 +284,8 @@ def main() -> None:
             status,
             role_name,
         ) in enumerate(DEMO_PROFESSIONALS):
+            if email in skipped:
+                continue
             with conn.cursor() as cur:
                 # Usuario de Auth (sin password: solo para probar el filtro por rol
                 # y el vínculo; los invitados reales usan el flujo de invitación).
@@ -321,7 +386,7 @@ def main() -> None:
                     """,
                     (employee_id, clinic_id),
                 )
-                if index % 4 == 0:
+                if index % 4 == 0 and clinic_secundaria != clinic_id:
                     cur.execute(
                         """
                         INSERT INTO erp.employee_clinics (employee_id, clinic_id, is_primary, status, created_at)
