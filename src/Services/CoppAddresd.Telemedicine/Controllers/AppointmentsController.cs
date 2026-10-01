@@ -3,6 +3,7 @@ using CoppAddresd.Telemedicine.Application.Constants;
 using CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 using CoppAddresd.Telemedicine.Authorization;
 using CoppAddresd.Telemedicine.Domain.Enums;
+using CoppAddresd.Telemedicine.Domain.Exceptions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -83,26 +84,59 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
     ) => Ok(await mediator.Send(new GetProfessionalAgendaQuery(professionalId, from, to), ct));
 
     /// <summary>
-    /// Ranuras disponibles de un día: por profesional concreto o por
-    /// especialidad (el modo specialty agrega los slots de los profesionales
-    /// elegibles con su conteo de libres, sin asignar ni reservar).
+    /// Ranuras disponibles de un día o de un rango: por profesional concreto o
+    /// por especialidad (el modo specialty agrega los slots de los
+    /// profesionales elegibles con su conteo de libres, sin asignar ni
+    /// reservar). Exactamente un modo: rango (par <c>from</c>/<c>to</c>,
+    /// inclusive, máx. 14 días → <c>AvailabilityRangeResult</c>) o un día
+    /// (<c>date</c> → <c>AvailabilitySlotsResult</c>).
     /// Autorización dual sin permiso específico: paciente (`aud: app`) y ERP
     /// (`aud: erp`). Tiempos en UTC (`timezoneOffset: "+00:00"`).
     /// </summary>
     [HttpGet("availability")]
     [ProducesResponseType(typeof(AvailabilitySlotsResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(AvailabilityRangeResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<AvailabilitySlotsResult>> Availability(
+    public async Task<IActionResult> Availability(
         [FromQuery] Guid? professionalId,
         [FromQuery] Guid? specialtyId,
         [FromQuery] Guid? organizationId,
         [FromQuery] Guid? clinicId,
         [FromQuery] Guid? locationId,
-        [FromQuery] DateOnly date,
+        [FromQuery] DateOnly? date,
+        [FromQuery] DateOnly? from,
+        [FromQuery] DateOnly? to,
         CancellationToken ct
-    ) =>
-        Ok(
+    )
+    {
+        if (from.HasValue || to.HasValue)
+        {
+            if (!from.HasValue || !to.HasValue || date.HasValue)
+                throw new DomainValidationException(
+                    "El modo rango requiere exactamente 'from' y 'to' (sin 'date')."
+                );
+            return Ok(
+                await mediator.Send(
+                    new GetAvailabilityRangeSlotsQuery(
+                        professionalId,
+                        specialtyId,
+                        organizationId,
+                        clinicId,
+                        locationId,
+                        from.Value,
+                        to.Value
+                    ),
+                    ct
+                )
+            );
+        }
+
+        if (!date.HasValue)
+            throw new DomainValidationException(
+                "Se requiere 'date' (un día) o el par 'from'/'to' (rango)."
+            );
+        return Ok(
             await mediator.Send(
                 new GetAvailabilitySlotsQuery(
                     professionalId,
@@ -110,11 +144,12 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
                     organizationId,
                     clinicId,
                     locationId,
-                    date
+                    date.Value
                 ),
                 ct
             )
         );
+    }
 
     /// <summary>
     /// Profesionales de una especialidad con al menos una ranura libre dentro

@@ -1,4 +1,5 @@
 using CoppAddresd.Telemedicine.Application.Interfaces;
+using CoppAddresd.Telemedicine.Application.ReferenceData;
 using CoppAddresd.Telemedicine.Domain.Enums;
 using CoppAddresd.Telemedicine.Domain.Exceptions;
 using FluentValidation;
@@ -148,13 +149,24 @@ public sealed class GetAvailabilitySlotsQueryHandler(
             return new AvailabilitySlotsResult(null, specialtyId, request.Date, UtcOffset, []);
         }
 
-        var appointmentsByProfessional =
-            new Dictionary<Guid, IReadOnlyList<Domain.Entities.Appointment>>();
-        foreach (var entry in withSchedule)
-        {
-            appointmentsByProfessional[entry.Candidate.ProfessionalId] =
-                await ActiveAppointmentsOnDayAsync(entry.Candidate.ProfessionalId, dayStart, ct);
-        }
+        // Una sola query de citas para todos los candidatos con horario ese día
+        // (evita N+1): mismo criterio de ventana que el modo rango y el
+        // endpoint availability/professionals.
+        var activeAppointments = await appointments.ListByProfessionalsAsync(
+            withSchedule.Select(x => x.Candidate.ProfessionalId).Distinct().ToList(),
+            dayStart.AddMinutes(-SchedulingRules.MaxDurationMinutes),
+            dayStart.AddDays(1),
+            ct
+        );
+        var appointmentsByProfessional = activeAppointments
+            .Where(a =>
+                a.Status
+                    is AppointmentStatus.Requested
+                        or AppointmentStatus.Confirmed
+                        or AppointmentStatus.InProgress
+            )
+            .GroupBy(a => a.ProfessionalId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<Domain.Entities.Appointment>)g.ToList());
 
         var slotsByStart =
             new Dictionary<(DateTimeOffset Start, DateTimeOffset End), HashSet<Guid>>();
@@ -162,7 +174,8 @@ public sealed class GetAvailabilitySlotsQueryHandler(
         {
             var freeStarts = AvailabilitySlotBuilder.FreeSlotKeys(
                 entry.DaySchedules,
-                appointmentsByProfessional[entry.Candidate.ProfessionalId],
+                appointmentsByProfessional.GetValueOrDefault(entry.Candidate.ProfessionalId)
+                    ?? (IReadOnlyList<Domain.Entities.Appointment>)[],
                 dayStart,
                 settings.DefaultAppointmentDurationMinutes,
                 now.AddHours(settings.MinAdvanceBookingHours)
@@ -221,6 +234,262 @@ public sealed class GetAvailabilitySlotsQueryHandler(
             )
             .ToList();
     }
+}
+
+/// <summary>Disponibilidad de un día dentro de un rango (slots ya filtrados B4).</summary>
+public sealed record AvailabilityDayDto(DateOnly Date, IReadOnlyList<AvailabilitySlotDto> Slots);
+
+/// <summary>
+/// Disponibilidad de un RANGO en una sola llamada (modo profesional o
+/// especialidad): <c>days</c> incluye todos los días del rango, con
+/// <c>slots</c> vacíos cuando el día no tiene cupo. Mismas reglas B4 y de
+/// anticipación que el modo de un día.
+/// </summary>
+public sealed record AvailabilityRangeResult(
+    Guid? ProfessionalId,
+    Guid? SpecialtyId,
+    string TimezoneOffset,
+    IReadOnlyList<AvailabilityDayDto> Days
+);
+
+/// <summary>
+/// Calcula los slots libres de un rango de fechas (máx. 14 días) cruzando el
+/// horario semanal de los profesionales contra las citas activas del rango y
+/// las reglas de <c>TelemedicineSettings</c>. Con batching obligatorio: 1
+/// consulta de candidatos (modo especialidad) + 1 consulta de citas para todo
+/// el rango; el cálculo de slots es en memoria — nunca 1 query por día ni por
+/// profesional-día.
+/// </summary>
+public sealed record GetAvailabilityRangeSlotsQuery(
+    Guid? ProfessionalId,
+    Guid? SpecialtyId,
+    Guid? OrganizationId,
+    Guid? ClinicId,
+    Guid? LocationId,
+    DateOnly From,
+    DateOnly To
+) : IRequest<AvailabilityRangeResult>;
+
+public sealed class GetAvailabilityRangeSlotsQueryValidator
+    : AbstractValidator<GetAvailabilityRangeSlotsQuery>
+{
+    /// <summary>Tope del rango: 14 días inclusive (horizonte del wizard de la app).</summary>
+    public const int MaxRangeDays = 14;
+
+    public GetAvailabilityRangeSlotsQueryValidator()
+    {
+        RuleFor(x => x)
+            .Must(x => x.ProfessionalId.HasValue || x.SpecialtyId.HasValue)
+            .WithMessage("Se requiere ProfessionalId o SpecialtyId.");
+        RuleFor(x => x)
+            .Must(x => x.ProfessionalId.HasValue || x.OrganizationId.HasValue)
+            .WithMessage("El modo por especialidad requiere OrganizationId.");
+        RuleFor(x => x.From)
+            .Must(d => d != default)
+            .WithMessage("La fecha 'from' es requerida (formato YYYY-MM-DD).");
+        RuleFor(x => x.To)
+            .Must(d => d != default)
+            .WithMessage("La fecha 'to' es requerida (formato YYYY-MM-DD).");
+        RuleFor(x => x)
+            .Must(x => x.To >= x.From)
+            .WithMessage("El rango es inválido: 'to' no puede ser anterior a 'from'.");
+        RuleFor(x => x)
+            .Must(x => x.To.DayNumber - x.From.DayNumber < MaxRangeDays)
+            .WithMessage($"El rango máximo es {MaxRangeDays} días.");
+    }
+}
+
+public sealed class GetAvailabilityRangeSlotsQueryHandler(
+    IAppointmentRepository appointments,
+    IAppointmentReferenceDataService referenceData,
+    ITelemedicineSettingsProvider settingsProvider
+) : IRequestHandler<GetAvailabilityRangeSlotsQuery, AvailabilityRangeResult>
+{
+    /// <summary>Las franjas <c>HH:mm</c> del ERP se interpretan en UTC del día pedido.</summary>
+    private const string UtcOffset = "+00:00";
+
+    public async Task<AvailabilityRangeResult> Handle(
+        GetAvailabilityRangeSlotsQuery request,
+        CancellationToken ct
+    )
+    {
+        var now = DateTimeOffset.UtcNow;
+        var settings = await settingsProvider.GetSettingsAsync(
+            request.OrganizationId ?? Guid.Empty,
+            request.ClinicId,
+            ct
+        );
+
+        var from = request.From;
+        var to = request.To;
+        // Rango absoluto de citas: ventana completa, con margen hacia atrás por
+        // la duración máxima de slot (una cita del día anterior puede
+        // solaparse con los primeros slots de 'from').
+        var rangeEndUtc = new DateTimeOffset(
+            to.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+        ).AddDays(1);
+        var days = new List<AvailabilityDayDto>(to.DayNumber - from.DayNumber + 1);
+
+        if (request.ProfessionalId is { } professionalId)
+        {
+            await ReferenceDataGuard.RequireProfessionalAsync(referenceData, professionalId, ct);
+            var schedules = await referenceData.GetProfessionalSchedulesAsync(professionalId, ct);
+            var rangeAppointments = await appointments.ListByProfessionalAsync(
+                professionalId,
+                new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).AddMinutes(
+                    -SchedulingRules.MaxDurationMinutes
+                ),
+                rangeEndUtc,
+                ct
+            );
+            var active = rangeAppointments
+                .Where(a =>
+                    a.Status
+                        is AppointmentStatus.Requested
+                            or AppointmentStatus.Confirmed
+                            or AppointmentStatus.InProgress
+                )
+                .ToList();
+
+            for (var date = from; date <= to; date = date.AddDays(1))
+            {
+                days.Add(
+                    new AvailabilityDayDto(
+                        date,
+                        SlotsDelProfesionalEn(
+                            schedules,
+                            date,
+                            active,
+                            settings.DefaultAppointmentDurationMinutes,
+                            now.AddHours(settings.MinAdvanceBookingHours)
+                        )
+                    )
+                );
+            }
+            return new AvailabilityRangeResult(professionalId, null, UtcOffset, days);
+        }
+
+        var specialtyId = request.SpecialtyId!.Value;
+        await ReferenceDataGuard.RequireSpecialtyAsync(referenceData, specialtyId, ct);
+        var candidates =
+            await referenceData.GetProfessionalCandidatesAsync(
+                specialtyId,
+                request.OrganizationId,
+                request.ClinicId,
+                request.LocationId,
+                ct
+            ) ?? throw new NotFoundException("Especialidad", specialtyId);
+
+        // Aunque no haya candidatos, todos los días del rango aparecen con
+        // slots vacíos (contrato: days[] completo).
+        if (candidates.Count == 0)
+        {
+            for (var date = from; date <= to; date = date.AddDays(1))
+            {
+                days.Add(new AvailabilityDayDto(date, []));
+            }
+            return new AvailabilityRangeResult(null, specialtyId, UtcOffset, days);
+        }
+
+        var minStart = now.AddHours(settings.MinAdvanceBookingHours);
+        var rangeStartUtc = new DateTimeOffset(
+            from.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+        );
+        // Una sola query de citas para todo el rango y todos los candidatos
+        // (evita N+1); el conteo por slot se resuelve en memoria.
+        var batchedAppointments = await appointments.ListByProfessionalsAsync(
+            candidates.Select(c => c.ProfessionalId).Distinct().ToList(),
+            rangeStartUtc.AddMinutes(-SchedulingRules.MaxDurationMinutes),
+            rangeEndUtc,
+            ct
+        );
+        var activeByProfessional = batchedAppointments
+            .Where(a =>
+                a.Status
+                    is AppointmentStatus.Requested
+                        or AppointmentStatus.Confirmed
+                        or AppointmentStatus.InProgress
+            )
+            .GroupBy(a => a.ProfessionalId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<Domain.Entities.Appointment>)g.ToList());
+
+        for (var date = from; date <= to; date = date.AddDays(1))
+        {
+            var isoWeekday = ((int)date.DayOfWeek + 6) % 7 + 1;
+            var dayStart = new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+            var slotsByStart =
+                new Dictionary<(DateTimeOffset Start, DateTimeOffset End), HashSet<Guid>>();
+            foreach (var candidate in candidates)
+            {
+                var daySchedules = candidate.Schedules.Where(s => s.Weekday == isoWeekday).ToList();
+                if (daySchedules.Count == 0)
+                {
+                    continue;
+                }
+
+                var dayAppointments =
+                    activeByProfessional.GetValueOrDefault(candidate.ProfessionalId)
+                    ?? (IReadOnlyList<Domain.Entities.Appointment>)[];
+                foreach (
+                    var key in AvailabilitySlotBuilder.FreeSlotKeys(
+                        daySchedules,
+                        dayAppointments,
+                        dayStart,
+                        settings.DefaultAppointmentDurationMinutes,
+                        minStart
+                    )
+                )
+                {
+                    if (!slotsByStart.TryGetValue(key, out var set))
+                    {
+                        set = [];
+                        slotsByStart[key] = set;
+                    }
+                    set.Add(candidate.ProfessionalId);
+                }
+            }
+
+            days.Add(
+                new AvailabilityDayDto(
+                    date,
+                    slotsByStart
+                        .OrderBy(kv => kv.Key.Start)
+                        .Select(kv => new AvailabilitySlotDto(
+                            kv.Key.Start,
+                            kv.Key.End,
+                            settings.DefaultAppointmentDurationMinutes,
+                            true,
+                            null,
+                            kv.Value.Count
+                        ))
+                        .ToList()
+                )
+            );
+        }
+
+        return new AvailabilityRangeResult(null, specialtyId, UtcOffset, days);
+    }
+
+    /// <summary>Slots libres del profesional en un día del rango (regla B4: solo libres).</summary>
+    private static List<AvailabilitySlotDto> SlotsDelProfesionalEn(
+        IReadOnlyList<ProfessionalScheduleRefDto> schedules,
+        DateOnly date,
+        IReadOnlyList<Domain.Entities.Appointment> activeAppointments,
+        int durationMinutes,
+        DateTimeOffset minStart
+    ) =>
+        AvailabilitySlotBuilder
+            .BuildProfessionalSlots(
+                schedules.Where(s => s.Weekday == IsoWeekdayOf(date)),
+                activeAppointments,
+                new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)),
+                durationMinutes,
+                minStart
+            )
+            .Where(s => s.IsAvailable)
+            .ToList();
+
+    private static int IsoWeekdayOf(DateOnly date) => ((int)date.DayOfWeek + 6) % 7 + 1;
 }
 
 /// <summary>

@@ -291,6 +291,53 @@ jobs:
             sleep 15
           done
 
+      - name: Warmup post-deploy (JIT/pool)
+        # Arranque en frío: tras el restart, el primer minuto de requests paga
+        # JIT/DI/pools (evidencia 2026-10-01: p99 5-8 s). Los runners de GH
+        # salen por US → pasan la geo-policy del WAF. Rutas por servicio desde
+        # el borde (los /health de raíz enrutan al frontend por el default del
+        # ALB); el objetivo es activar el host, no validar la respuesta.
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          BASE="https://erp.coppadresd.com"
+          case "${{ matrix.service }}" in
+            auth)
+              WARM_PATH="/api/auth/login"
+              METHOD="POST"
+              BODY='{"email":"warmup@coppaddresd.com","password":"warmup-inexistente","application":"erp"}'
+              ;;
+            api)
+              WARM_PATH="/api/v1/foodai/health"
+              METHOD="GET"
+              BODY=""
+              ;;
+            telemedicine)
+              WARM_PATH="/api/v1/telemedicine/webhooks/health"
+              METHOD="GET"
+              BODY=""
+              ;;
+            community)
+              WARM_PATH="/api/v1/community/health"
+              METHOD="GET"
+              BODY=""
+              ;;
+            *)
+              WARM_PATH="/login"
+              METHOD="GET"
+              BODY=""
+              ;;
+          esac
+          echo "warmup $METHOD $BASE$WARM_PATH"
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" -X "$METHOD" \
+              -H "Content-Type: application/json" \
+              ${BODY:+-d "$BODY"} \
+              --max-time 15 "$BASE$WARM_PATH" || true)
+            echo "warmup[$i/5] -> HTTP $CODE"
+            sleep 2
+          done
+
       - name: Diagnóstico en fallo
         if: failure()
         shell: bash

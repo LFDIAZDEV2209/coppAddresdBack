@@ -383,6 +383,246 @@ public class AvailabilitySlotsTests
 }
 
 /// <summary>
+/// Modo rango de availability (nueva llamada única para la ventana del wizard):
+/// contrato days[] completo, tope de 14 días, exclusión de parámetros y
+/// batching (consultas de BD constantes, no 1 por día/profesional).
+/// </summary>
+public class AvailabilityRangeSlotsTests
+{
+    private readonly FakeReferenceDataService _referenceData = new();
+    private readonly FakeAppointmentRepository _appointments = new();
+    private readonly FakeSettingsProvider _settings = new();
+    private readonly GetAvailabilityRangeSlotsQueryHandler _handler;
+    private readonly GetAvailabilityRangeSlotsQueryValidator _validator = new();
+
+    public AvailabilityRangeSlotsTests()
+    {
+        _handler = new GetAvailabilityRangeSlotsQueryHandler(
+            _appointments,
+            _referenceData,
+            _settings
+        );
+        _referenceData.Professionals[TestData.ProfessionalId] = TestData.Professional(
+            userId: TestData.UserId
+        );
+        _referenceData.Specialties[TestData.SpecialtyId] = TestData.Specialty();
+    }
+
+    private static int IsoWeekday(DateOnly date) => ((int)date.DayOfWeek + 6) % 7 + 1;
+
+    private static DateTimeOffset UtcOf(DateOnly date, int hour, int minute = 0) =>
+        new(date.ToDateTime(new TimeOnly(hour, minute), DateTimeKind.Utc));
+
+    [Fact]
+    public async Task Handle_Rango7Dias_DiasCompletosYSoloPrimerDiaConCupo()
+    {
+        // Lunes de la semana siguiente: garante de franja 09:00-10:00 solo 1 día.
+        var monday = NextAvailableWeekday(DayOfWeek.Monday);
+        _referenceData.Schedules[TestData.ProfessionalId] =
+        [
+            new ProfessionalScheduleRefDto(IsoWeekday(monday), "09:00", "10:00"),
+        ];
+        var from = monday.AddDays(-2); // sábado (sin franja)
+        var query = RangoProfesional(from, 7);
+
+        var result = await _handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(TestData.ProfessionalId, result.ProfessionalId);
+        Assert.Null(result.SpecialtyId);
+        Assert.Equal(7, result.Days.Count);
+        // Days[] completo: 7 entradas en orden, la del lunes con 2 slots libres.
+        var conCupo = result.Days.Where(d => d.Slots.Count > 0).ToList();
+        var dia = Assert.Single(conCupo);
+        Assert.Equal(monday, dia.Date);
+        Assert.All(
+            dia.Slots,
+            s =>
+            {
+                Assert.True(s.IsAvailable);
+                Assert.Null(s.ConflictReason);
+            }
+        );
+        Assert.Equal(UtcOf(monday, 9), dia.Slots[0].Start);
+        Assert.Equal(UtcOf(monday, 9, 30), dia.Slots[1].Start);
+    }
+
+    [Fact]
+    public async Task Handle_ModoEspecialidadRango_UneSlotsYBatcheaCitas()
+    {
+        var monday = NextAvailableWeekday(DayOfWeek.Monday);
+        var weekday = IsoWeekday(monday);
+        var otherProfessional = Guid.NewGuid();
+        _referenceData.Candidates =
+        [
+            new ProfessionalCandidateRefDto(
+                TestData.ProfessionalId,
+                Guid.NewGuid(),
+                TestData.UserId,
+                "Dra. Ana Pérez",
+                [TestData.Clinic],
+                [TestData.LocationId],
+                [new ProfessionalScheduleRefDto(weekday, "09:00", "10:00")]
+            ),
+            new ProfessionalCandidateRefDto(
+                otherProfessional,
+                Guid.NewGuid(),
+                null,
+                "Dr. Luis Gómez",
+                [TestData.Clinic],
+                [TestData.LocationId],
+                [new ProfessionalScheduleRefDto(weekday, "09:00", "10:00")]
+            ),
+        ];
+        _appointments.Items.Add(
+            TestData.Appointment(professionalId: TestData.ProfessionalId, start: UtcOf(monday, 9))
+        );
+
+        var result = await _handler.Handle(RangoEspecialidad(monday, 7), CancellationToken.None);
+
+        var dia = Assert.Single(result.Days.Where(d => d.Slots.Count > 0));
+        // 09:00 solo con 1 profesional libre (Ana tiene cita), 09:30 con 2.
+        Assert.Equal(UtcOf(monday, 9), dia.Slots[0].Start);
+        Assert.Equal(1, dia.Slots[0].AvailableProfessionalCount);
+        Assert.Equal(2, dia.Slots[1].AvailableProfessionalCount);
+    }
+
+    [Fact]
+    public async Task Handle_ModoEspecialidadRango_ConsultasConstantes()
+    {
+        // Batching (MUST del spec): 1 candidates + 1 citas batcheada, sin
+        // importar días ni profesionales — el fake cuenta las llamadas.
+        var monday = NextAvailableWeekday(DayOfWeek.Monday);
+        var weekday = IsoWeekday(monday);
+        _referenceData.Candidates = Enumerable
+            .Range(0, 5)
+            .Select(i => new ProfessionalCandidateRefDto(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                null,
+                $"Médico {i}",
+                [TestData.Clinic],
+                [TestData.LocationId],
+                new List<ProfessionalScheduleRefDto>
+                {
+                    new(weekday, "09:00", "10:00"),
+                    new((weekday % 7) + 1, "09:00", "10:00"),
+                }
+            ))
+            .ToList();
+        _appointments.Items.Clear();
+
+        var antes = _appointments.LlamadasListado;
+        await _handler.Handle(RangoEspecialidad(monday, 14), CancellationToken.None);
+
+        Assert.Equal(1, _appointments.LlamadasListado - antes);
+    }
+
+    [Fact]
+    public async Task Handle_ModoEspecialidadSinCandidatos_DaysCompletosVacios()
+    {
+        _referenceData.Candidates = [];
+        var from = NextAvailableWeekday(DayOfWeek.Friday);
+
+        var result = await _handler.Handle(RangoEspecialidad(from, 5), CancellationToken.None);
+
+        Assert.Equal(5, result.Days.Count);
+        Assert.All(result.Days, d => Assert.Empty(d.Slots));
+    }
+
+    [Fact]
+    public void Validate_RangoMayorA14Dias_Invalido()
+    {
+        Assert.False(
+            _validator
+                .Validate(RangoProfesional(DateOnly.FromDateTime(DateTime.UtcNow), 15))
+                .IsValid
+        );
+    }
+
+    [Fact]
+    public void Validate_Rango14Dias_Valido()
+    {
+        Assert.True(
+            _validator
+                .Validate(RangoProfesional(DateOnly.FromDateTime(DateTime.UtcNow), 14))
+                .IsValid
+        );
+    }
+
+    [Fact]
+    public void Validate_FechasDefault_Invalido()
+    {
+        var query = new GetAvailabilityRangeSlotsQuery(
+            TestData.ProfessionalId,
+            null,
+            TestData.Org,
+            null,
+            null,
+            default,
+            default
+        );
+
+        Assert.False(_validator.Validate(query).IsValid);
+    }
+
+    [Fact]
+    public void Validate_OrdenInvertido_Invalido()
+    {
+        var query = new GetAvailabilityRangeSlotsQuery(
+            TestData.ProfessionalId,
+            null,
+            TestData.Org,
+            null,
+            null,
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(5),
+            DateOnly.FromDateTime(DateTime.UtcNow)
+        );
+
+        Assert.False(_validator.Validate(query).IsValid);
+    }
+
+    [Fact]
+    public void Validate_EspecialidadSinOrganizacion_Invalido()
+    {
+        var query = new GetAvailabilityRangeSlotsQuery(
+            null,
+            TestData.SpecialtyId,
+            null,
+            null,
+            null,
+            DateOnly.FromDateTime(DateTime.UtcNow),
+            DateOnly.FromDateTime(DateTime.UtcNow).AddDays(6)
+        );
+
+        Assert.False(_validator.Validate(query).IsValid);
+    }
+
+    private static GetAvailabilityRangeSlotsQuery RangoProfesional(DateOnly from, int dias) =>
+        new(TestData.ProfessionalId, null, TestData.Org, null, null, from, from.AddDays(dias - 1));
+
+    private static GetAvailabilityRangeSlotsQuery RangoEspecialidad(DateOnly from, int dias) =>
+        new(
+            null,
+            TestData.SpecialtyId,
+            TestData.Org,
+            TestData.Clinic,
+            TestData.LocationId,
+            from,
+            from.AddDays(dias - 1)
+        );
+
+    private static DateOnly NextAvailableWeekday(DayOfWeek day)
+    {
+        var date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1));
+        while (date.DayOfWeek != day)
+        {
+            date = date.AddDays(1);
+        }
+        return date;
+    }
+}
+
+/// <summary>
 /// Reprogramación directa por paciente (Decisión 2, Opción A): propiedad vía
 /// perfil resuelto por usuario Auth, forzado de <c>RequestedBy.Patient</c> y
 /// ventana de anticipación de la cita original.

@@ -319,6 +319,9 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
 {
     public List<Appointment> Items { get; } = [];
 
+    /// <summary>Llamadas acumuladas a listados por rango (verificación de batching).</summary>
+    public int LlamadasListado { get; private set; }
+
     public Task<Appointment?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         Task.FromResult(Items.FirstOrDefault(a => a.Id == id));
 
@@ -362,8 +365,10 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
         DateTimeOffset from,
         DateTimeOffset to,
         CancellationToken ct = default
-    ) =>
-        Task.FromResult<IReadOnlyList<Appointment>>(
+    )
+    {
+        LlamadasListado++;
+        return Task.FromResult<IReadOnlyList<Appointment>>(
             Items
                 .Where(a =>
                     a.ProfessionalId == professionalId
@@ -373,14 +378,17 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .OrderBy(a => a.ScheduledStart)
                 .ToList()
         );
+    }
 
     public Task<IReadOnlyList<Appointment>> ListByProfessionalsAsync(
         IReadOnlyList<Guid> professionalIds,
         DateTimeOffset from,
         DateTimeOffset to,
         CancellationToken ct = default
-    ) =>
-        Task.FromResult<IReadOnlyList<Appointment>>(
+    )
+    {
+        LlamadasListado++;
+        return Task.FromResult<IReadOnlyList<Appointment>>(
             Items
                 .Where(a =>
                     professionalIds.Contains(a.ProfessionalId)
@@ -390,6 +398,7 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .OrderBy(a => a.ScheduledStart)
                 .ToList()
         );
+    }
 
     public Task<IReadOnlyList<Appointment>> ListByPatientAsync(
         Guid patientId,
