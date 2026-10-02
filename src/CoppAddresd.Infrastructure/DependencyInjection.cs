@@ -249,6 +249,10 @@ public static class DependencyInjection
         // (los dispatchers son scoped por sus dependencias scoped).
         services.AddSingleton<ISosDispatchQueue, SosDispatchQueue>();
         services.AddHostedService<SosDispatchProcessorHostedService>();
+
+        // Reconciliador de estado de llamada: recupera callbacks perdidos de
+        // Twilio consultando la API cuando una llamada queda "en curso".
+        services.AddHostedService<SosCallStatusReconciliationService>();
     }
 
     /// <summary>

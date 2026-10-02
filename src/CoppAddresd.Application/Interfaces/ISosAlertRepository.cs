@@ -62,6 +62,16 @@ public interface ISosAlertRepository
     Task UpdateAsync(SosAlert alert, CancellationToken ct = default);
 
     /// <summary>
+    /// Alertas cuyo canal de voz quedó en un estado no final (initiated/ringing/
+    /// in-progress) y superaron <paramref name="updatedBeforeUtc"/>: insumo del
+    /// reconciliador que consulta Twilio cuando un callback se pierde.
+    /// </summary>
+    Task<IReadOnlyList<SosAlert>> ListStuckVoiceCallsAsync(
+        DateTime updatedBeforeUtc,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
     /// Transición terminal atómica Activa → Atendida (compare-and-set en SQL:
     /// <c>UPDATE ... WHERE id = @id AND status = 'Activa'</c>). Devuelve false
     /// si otra transición ganó la carrera (el caller responde 409). Registra

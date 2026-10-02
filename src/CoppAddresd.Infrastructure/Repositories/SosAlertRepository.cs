@@ -144,6 +144,26 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
         await dbContext.SaveChangesAsync(ct);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<SosAlert>> ListStuckVoiceCallsAsync(
+        DateTime updatedBeforeUtc,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .SosAlerts.AsNoTracking()
+            .Where(x =>
+                x.VoiceChannelStatus == SosChannelStatus.Enviado
+                && x.VoiceProviderCallId != null
+                && x.VoiceCallStatus != null
+                && (x.VoiceCallStatus == "initiated"
+                    || x.VoiceCallStatus == "ringing"
+                    || x.VoiceCallStatus == "in-progress")
+                && (x.VoiceUpdatedAt ?? x.CreatedAt) < updatedBeforeUtc
+            )
+            .OrderBy(x => x.CreatedAt)
+            .Take(50)
+            .ToListAsync(ct);
+
     public async Task<bool> AttendAsync(
         Guid alertId,
         Guid staffUserId,
