@@ -103,11 +103,11 @@ public sealed class SosDispatchProcessorHostedService(
                 where
                     (
                         (
-                            dedupe.DedupeKey.StartsWith("sos:sms:", StringComparison.Ordinal)
+                            dedupe.DedupeKey.StartsWith("sos:sms:")
                             && dedupe.SmsStatus == nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
                         )
                         || (
-                            dedupe.DedupeKey.StartsWith("sos:voice:", StringComparison.Ordinal)
+                            dedupe.DedupeKey.StartsWith("sos:voice:")
                             && dedupe.VoiceStatus == nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
                         )
                     )

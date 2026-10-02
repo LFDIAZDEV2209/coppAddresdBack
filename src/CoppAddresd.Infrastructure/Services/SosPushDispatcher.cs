@@ -23,6 +23,7 @@ public sealed class SosPushDispatcher(
     IDeviceTokenRepository deviceTokens,
     IFcmClient fcmClient,
     INotificationDedupeRepository dedupe,
+    AppDbContext dbContext,
     ILogger<SosPushDispatcher> logger
 ) : ISosPushDispatcher
 {
@@ -164,7 +165,15 @@ public sealed class SosPushDispatcher(
     {
         try
         {
-            var tracked = await alerts.GetByIdAsync(alert.Id, ct);
+            // El DbContext del scope ya rastrea la alerta (los canales SMS y
+            // voz la actualizaron antes): se muta la MISMA instancia rastreada
+            // en vez de hacer Update() sobre una copia AsNoTracking, que
+            // provocaba InvalidOperationException al haber dos instancias con
+            // la misma clave en el change tracker.
+            var tracked = await dbContext.SosAlerts.FirstOrDefaultAsync(
+                x => x.Id == alert.Id,
+                ct
+            );
             if (tracked is null)
             {
                 return;
@@ -174,7 +183,7 @@ public sealed class SosPushDispatcher(
             tracked.PushUpdatedAt = DateTime.UtcNow;
             tracked.PushRecipients = recipients;
             tracked.PushDetail = detail;
-            await alerts.UpdateAsync(tracked, ct);
+            await dbContext.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
         {
