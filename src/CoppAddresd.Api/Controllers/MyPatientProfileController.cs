@@ -11,9 +11,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace CoppAddresd.Api.Controllers;
 
 /// <summary>
-/// Perfil autogestionado del PACIENTE (APP mÃ³vil, aud=app). El perfil se
-/// resolviÃ³ por JWT: sin ids en la ruta/cuerpo (anti-IDOR). La creaciÃ³n de
-/// pacientes sigue viviendo en el ERP â€” la APP solo completa/edita su perfil.
+/// Perfil autogestionado del PACIENTE (APP móvil, aud=app). El perfil se
+/// resolvió por JWT: sin ids en la ruta/cuerpo (anti-IDOR). La creación de
+/// pacientes sigue viviendo en el ERP — la APP solo completa/edita su perfil.
 /// </summary>
 [ApiController]
 [Route("api/v1/me")]
@@ -186,7 +186,7 @@ public class MyPatientProfileController(IMediator mediator, ICurrentContext curr
     }
 }
 
-/// <summary>Solicitud de actualizaciÃ³n del perfil del paciente (APP mÃ³vil).</summary>
+/// <summary>Solicitud de actualización del perfil del paciente (APP móvil).</summary>
 public sealed record UpdateMyPatientProfileRequest(
     DateTime? DateOfBirth,
     string? Email,

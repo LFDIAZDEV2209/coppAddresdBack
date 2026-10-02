@@ -6,9 +6,9 @@ using CoppAddresd.Telemedicine.Domain.Exceptions;
 namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
-/// Alcance dual de los handlers con el paciente de la app mÃ³vil (identidad del
-/// JWT, sin permisos ERP): creaciÃ³n de solicitudes, "mis solicitudes",
-/// "mis citas" y cancelaciÃ³n como paciente. Cierra el IDOR de
+/// Alcance dual de los handlers con el paciente de la app móvil (identidad del
+/// JWT, sin permisos ERP): creación de solicitudes, "mis solicitudes",
+/// "mis citas" y cancelación como paciente. Cierra el IDOR de
 /// <c>requests/mine</c> y garantiza que el paciente solo opera sobre su perfil.
 /// </summary>
 public class PatientScopeTests
@@ -28,11 +28,11 @@ public class PatientScopeTests
             userId: TestData.UserId
         );
         _referenceData.Locations[TestData.LocationId] = TestData.Location();
-        // El usuario del JWT es el paciente (vinculaciÃ³n app.patient_profiles.user_id).
+        // El usuario del JWT es el paciente (vinculación app.patient_profiles.user_id).
         _referenceData.UserToPatient[TestData.PatientUserId] = TestData.PatientId;
     }
 
-    // â”€â”€ CreaciÃ³n de solicitudes (POST /requests) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Creación de solicitudes (POST /requests) ─────────────────────────
 
     [Fact]
     public async Task Create_PacientePropio_CreaSolicitudPending()
@@ -133,7 +133,7 @@ public class PatientScopeTests
         Assert.Empty(_requests.Items);
     }
 
-    // â”€â”€ Mis solicitudes (GET /requests/mine) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Mis solicitudes (GET /requests/mine) ─────────────────────────────
 
     [Fact]
     public async Task Mine_PacienteSinParam_DevuelveSoloLasSuyas()
@@ -213,7 +213,7 @@ public class PatientScopeTests
         Assert.Equal(targetPatient, request.PatientId);
     }
 
-    // â”€â”€ Mis citas (GET /appointments/mine) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Mis citas (GET /appointments/mine) ───────────────────────────────
 
     [Fact]
     public async Task MyAppointments_Paciente_ListaSoloSusCitas()
@@ -383,7 +383,7 @@ public class PatientScopeTests
         );
     }
 
-    // â”€â”€ CancelaciÃ³n como paciente (POST /appointments/{id}/cancel) â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Cancelación como paciente (POST /appointments/{id}/cancel) ────────
 
     [Fact]
     public async Task Cancel_PacienteDeLaCita_CancelaConHistorial()
@@ -426,7 +426,7 @@ public class PatientScopeTests
             handler.Handle(
                 new CancelAppointmentCommand(
                     appointment.Id,
-                    "RazÃ³n",
+                    "Razón",
                     CancelledBy.Patient,
                     TestData.PatientUserId,
                     PatientUserId: TestData.PatientUserId
@@ -452,7 +452,7 @@ public class PatientScopeTests
             handler.Handle(
                 new CancelAppointmentCommand(
                     appointment.Id,
-                    "RazÃ³n",
+                    "Razón",
                     CancelledBy.Patient,
                     TestData.PatientUserId,
                     PatientUserId: TestData.PatientUserId
@@ -471,12 +471,12 @@ public class PatientScopeTests
 
         var handler = new CancelAppointmentCommandHandler(_appointments, _referenceData, _alerts);
 
-        // Usuario sin UserToPatient: no es paciente â†’ 403.
+        // Usuario sin UserToPatient: no es paciente → 403.
         await Assert.ThrowsAsync<ForbiddenException>(() =>
             handler.Handle(
                 new CancelAppointmentCommand(
                     appointment.Id,
-                    "RazÃ³n",
+                    "Razón",
                     CancelledBy.Patient,
                     TestData.UserId,
                     PatientUserId: TestData.UserId

@@ -1,4 +1,4 @@
-"""Genera volumen sintÃ©tico para el mÃ³dulo Tests de Salud en la BD de
+"""Genera volumen sintético para el módulo Tests de Salud en la BD de
 rendimiento (coppaddresd_vol_test): 50k pacientes, 450k evaluaciones
 completadas, ~5M respuestas, ~2.7M resultados y ~50k alertas.
 
@@ -41,7 +41,7 @@ def psql(sql: str) -> None:
 
 
 def main() -> None:
-    print("Pacientes sintÃ©ticos...")
+    print("Pacientes sintéticos...")
     psql(f"""
     INSERT INTO app.patient_profiles (id, first_name, last_name, document_number,
         status, created_at, updated_at)
@@ -89,7 +89,7 @@ def main() -> None:
     ON CONFLICT (id) DO NOTHING;
     """)
 
-    print("Respuestas sintÃ©ticas (una por pregunta)...")
+    print("Respuestas sintéticas (una por pregunta)...")
     psql("""
     INSERT INTO app.health_test_responses (id, evaluation_id, question_id,
         answer_option_id, created_at)
@@ -105,7 +105,7 @@ def main() -> None:
     ON CONFLICT (id) DO NOTHING;
     """)
 
-    print("Resultados sintÃ©ticos (score + subescalas)...")
+    print("Resultados sintéticos (score + subescalas)...")
     psql("""
     INSERT INTO app.health_test_results (id, evaluation_id, result_type, code,
         label, value, qualifier, severity, created_at)
@@ -125,13 +125,13 @@ def main() -> None:
     ON CONFLICT (id) DO NOTHING;
     """)
 
-    print("Alertas sintÃ©ticas (20% de evaluaciones con score alto)...")
+    print("Alertas sintéticas (20% de evaluaciones con score alto)...")
     psql("""
     INSERT INTO app.health_test_alerts (id, patient_id, result_id, rule_id,
         severity, title, body, status, created_at)
     SELECT gen_random_uuid(), e.patient_id, r.id,
            (SELECT ar.id FROM app.health_test_alert_rules ar LIMIT 1),
-           'high', 'Alerta sintÃ©tica ORP', 'Riesgo elevado sintÃ©tico', 'active',
+           'high', 'Alerta sintética ORP', 'Riesgo elevado sintético', 'active',
            e.completed_at
     FROM app.health_test_evaluations e
     JOIN app.health_test_results r ON r.evaluation_id = e.id

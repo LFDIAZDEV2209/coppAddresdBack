@@ -7,9 +7,9 @@ using Microsoft.Extensions.Logging;
 namespace CoppAddresd.Application.Features.Patients;
 
 /// <summary>
-/// Perfil autogestionado del PACIENTE (APP mÃƒÂ³vil, aud=app). Resuelto por JWT
+/// Perfil autogestionado del PACIENTE (APP móvil, aud=app). Resuelto por JWT
 /// (anti-IDOR: nunca acepta ids en la ruta/cuerpo). Dominio separado del
-/// perfil profesional (/me/profile Ã¢â€ â€™ EmployeeDto).
+/// perfil profesional (/me/profile → EmployeeDto).
 /// </summary>
 public record PatientSelfProfileDto(
     Guid PatientId,
@@ -43,8 +43,8 @@ public sealed class GetMyPatientProfileQueryHandler(IPatientRepository patients)
 }
 
 /// <summary>
-/// EdiciÃƒÂ³n self-service: solo campos permitidos (dob, email, celular, contacto
-/// de emergencia, seguro/pÃƒÂ³liza). Nombre/documento/ÃƒÂ³rdenes de ERP no se tocan.
+/// Edición self-service: solo campos permitidos (dob, email, celular, contacto
+/// de emergencia, seguro/póliza). Nombre/documento/órdenes de ERP no se tocan.
 /// </summary>
 public record UpdateMyPatientProfileCommand(
     Guid UserId,
@@ -75,17 +75,17 @@ public sealed class UpdateMyPatientProfileCommandHandler(
         CancellationToken ct
     )
     {
-        // ValidaciÃƒÂ³n de frontera (el ERP mantiene la autoridad sobre identidad;
-        // aquÃƒÂ­ solo se editan datos de contacto y clÃƒÂ­nicos bÃƒÂ¡sicos).
+        // Validación de frontera (el ERP mantiene la autoridad sobre identidad;
+        // aquí solo se editan datos de contacto y clínicos básicos).
         if (request.DateOfBirth is { } dob && dob > DateTime.UtcNow)
             return new(false, "La fecha de nacimiento no puede ser futura.", null);
         if (!string.IsNullOrWhiteSpace(request.Email) && !request.Email.Contains('@'))
-            return new(false, "Correo electrÃƒÂ³nico invÃƒÂ¡lido.", null);
+            return new(false, "Correo electrónico inválido.", null);
         if (
             request.EmergencyName is { Length: > 0 }
             && string.IsNullOrWhiteSpace(request.EmergencyPhone)
         )
-            return new(false, "El contacto de emergencia requiere telÃƒÂ©fono.", null);
+            return new(false, "El contacto de emergencia requiere teléfono.", null);
 
         var patient = await patients.GetByUserIdAsync(request.UserId, ct);
         if (patient is null)
@@ -103,7 +103,7 @@ public sealed class UpdateMyPatientProfileCommandHandler(
             patient.MemberId = request.MemberId.Trim();
 
         // Contacto de emergencia: JSON en emergency_contact (varchar). Al menos
-        // nombre o telÃƒÂ©fono; null explÃƒÂ­cito borra el contacto.
+        // nombre o teléfono; null explícito borra el contacto.
         if (
             request.EmergencyName is not null
             || request.EmergencyRelationship is not null
@@ -135,10 +135,10 @@ public sealed class UpdateMyPatientProfileCommandHandler(
         {
             logger.LogError(
                 ex,
-                "ActualizaciÃƒÂ³n de perfil de paciente {PatientId} fallÃƒÂ³",
+                "Actualización de perfil de paciente {PatientId} falló",
                 patient.Id
             );
-            return new(false, "No se pudo actualizar el perfil (datos invÃƒÂ¡lidos).", null);
+            return new(false, "No se pudo actualizar el perfil (datos inválidos).", null);
         }
 
         logger.LogInformation(
