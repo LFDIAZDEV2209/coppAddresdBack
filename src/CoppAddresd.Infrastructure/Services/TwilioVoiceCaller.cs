@@ -91,6 +91,13 @@ public sealed class TwilioVoiceCaller : IVoiceCaller
         {
             options.StatusCallback = new Uri(statusCallbackUrl);
             options.StatusCallbackEvent = ["initiated", "ringing", "answered", "completed"];
+
+            // AMD asíncrono: la llamada suena y reproduce el mensaje de inmediato;
+            // Twilio reporta human/machine_start/unknown en un callback aparte
+            // (mismo endpoint de voz) para no retrasar la alerta.
+            options.AsyncAmd = "true";
+            options.AsyncAmdStatusCallback = new Uri(statusCallbackUrl);
+            options.AsyncAmdStatusCallbackMethod = Twilio.Http.HttpMethod.Post;
         }
 
         try
