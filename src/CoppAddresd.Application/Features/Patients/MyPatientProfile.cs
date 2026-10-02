@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CoppAddresd.Application.Features.Patients.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using MediatR;
@@ -67,7 +68,8 @@ public record UpdateMyPatientProfileResult(
 
 public sealed class UpdateMyPatientProfileCommandHandler(
     IPatientRepository patients,
-    ILogger<UpdateMyPatientProfileCommandHandler> logger
+    ILogger<UpdateMyPatientProfileCommandHandler> logger,
+    IPatientMetricsQueue? metricsQueue = null
 ) : IRequestHandler<UpdateMyPatientProfileCommand, UpdateMyPatientProfileResult>
 {
     public async Task<UpdateMyPatientProfileResult> Handle(
@@ -127,6 +129,17 @@ public sealed class UpdateMyPatientProfileCommandHandler(
                 : null;
         }
 
+        // Onboarding self-service completado: un registro provisional del ERP
+        // (Pendiente) se promueve a Activo al guardar el perfil en la app.
+        var previousStatus = patient.Status;
+        var promotedFromPending = string.Equals(
+            previousStatus,
+            "Pendiente",
+            StringComparison.Ordinal
+        );
+        if (promotedFromPending)
+            patient.Status = "Activo";
+
         try
         {
             await patients.UpdateAsync(patient, ct);
@@ -139,6 +152,21 @@ public sealed class UpdateMyPatientProfileCommandHandler(
                 patient.Id
             );
             return new(false, "No se pudo actualizar el perfil (datos inválidos).", null);
+        }
+
+        // Métrica de cambio de estado (misma señal que el toggle del ERP):
+        // ajusta los contadores status_count por clínica.
+        if (promotedFromPending && metricsQueue is not null)
+        {
+            await metricsQueue.EnqueueAsync(
+                new PatientStatusChangedMetricEvent(
+                    patient.Id,
+                    patient.ClinicId,
+                    previousStatus,
+                    "Activo",
+                    DateTime.UtcNow
+                )
+            );
         }
 
         logger.LogInformation(

@@ -10,7 +10,7 @@ namespace CoppAddresd.Application.Features.Patients;
 /// Activo↔Inactivo). Endpoint dedicado: el comando de actualización de
 /// agregado reemplaza las colecciones hijas (diagnósticos, medicamentos,
 /// alergias, vitales) y no sirve como actualización parcial. Solo se permite
-/// <c>Activo</c>/<c>Inactivo</c> (<see cref="PatientOptions.Statuses"/>);
+/// <c>Activo</c>/<c>Inactivo</c> (<see cref="PatientOptions.ToggleStatuses"/>);
 /// cualquier otro valor se rechaza con 400 en la validación.
 /// </summary>
 public record UpdatePatientStatusCommand(Guid Id, string Status, Guid? UpdatedBy)
@@ -26,7 +26,7 @@ public sealed class UpdatePatientStatusCommandValidator
     {
         RuleFor(x => x.Status)
             .NotEmpty()
-            .Must(status => PatientOptions.Statuses.Contains(status))
+            .Must(status => PatientOptions.ToggleStatuses.Contains(status))
             .WithMessage("El estado debe ser Activo o Inactivo.");
     }
 }

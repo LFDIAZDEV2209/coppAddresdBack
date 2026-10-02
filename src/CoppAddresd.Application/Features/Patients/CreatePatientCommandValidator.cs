@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using FluentValidation;
 
 namespace CoppAddresd.Application.Features.Patients;
@@ -21,14 +22,24 @@ public sealed class CreatePatientCommandValidator : AbstractValidator<CreatePati
             .MaximumLength(100);
 
         RuleFor(x => x.MiddleName).MaximumLength(100);
-        RuleFor(x => x.DocumentNumber).MaximumLength(50);
-        RuleFor(x => x.Gender).MaximumLength(10);
+        RuleFor(x => x.DocumentNumber)
+            .NotEmpty().WithMessage("El número de documento es requerido.")
+            .MaximumLength(50);
+        RuleFor(x => x.DateOfBirth)
+            .NotNull().WithMessage("La fecha de nacimiento es requerida.");
+        RuleFor(x => x.Gender)
+            .NotEmpty().WithMessage("El género es requerido.")
+            .MaximumLength(10);
         RuleFor(x => x.PhoneCountryCode).MaximumLength(10);
-        RuleFor(x => x.PhoneNumber).MaximumLength(20);
+        RuleFor(x => x.PhoneNumber)
+            .NotEmpty().WithMessage("El teléfono es requerido.")
+            .MaximumLength(20);
         RuleFor(x => x.Email).MaximumLength(320);
         RuleFor(x => x.Address).MaximumLength(200);
         RuleFor(x => x.PostalCode).MaximumLength(10);
         RuleFor(x => x.Status).MaximumLength(20);
+
+        RuleFor(x => x.EmergencyContact).SetValidator(new EmergencyContactValidator()!);
 
         RuleFor(x => x.Email)
             .EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email))
@@ -65,50 +76,51 @@ public sealed class CreatePatientCommandValidator : AbstractValidator<CreatePati
 
     /// <summary>
     /// Reglas de whitelist compartidas por creación y actualización. Cada
-    /// <paramref name="selector"/> apunta a la propiedad del vocabulario en el
-    /// tipo del comando (create/update tienen los mismos campos).
+    /// <paramref name="selector"/> es una expresión de miembro (p. ej.
+    /// <c>x => x.Status</c>) para que FluentValidation resuelva el nombre real
+    /// de la propiedad y el error llegue al frontend con su campo.
     /// </summary>
     internal static void AddClosedVocabularyRules<T>(
         AbstractValidator<T> validator,
-        Func<T, string?> maritalStatus,
-        Func<T, string?> smokingStatus,
-        Func<T, string?> alcoholStatus,
-        Func<T, string?> exerciseLevel,
-        Func<T, string?> disability,
-        Func<T, string?> hospitalizationHistory,
-        Func<T, string?> surgeryHistory,
-        Func<T, string?> status)
+        Expression<Func<T, string?>> maritalStatus,
+        Expression<Func<T, string?>> smokingStatus,
+        Expression<Func<T, string?>> alcoholStatus,
+        Expression<Func<T, string?>> exerciseLevel,
+        Expression<Func<T, string?>> disability,
+        Expression<Func<T, string?>> hospitalizationHistory,
+        Expression<Func<T, string?>> surgeryHistory,
+        Expression<Func<T, string?>> status)
         where T : class
     {
-        validator.RuleFor(x => maritalStatus(x))
+        validator.RuleFor(maritalStatus)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.MaritalStatuses, v))
             .WithMessage("El estado civil no es un valor válido.");
 
-        validator.RuleFor(x => smokingStatus(x))
+        validator.RuleFor(smokingStatus)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.SmokingStatuses, v))
             .WithMessage("El estado de tabaquismo no es un valor válido.");
 
-        validator.RuleFor(x => alcoholStatus(x))
+        validator.RuleFor(alcoholStatus)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.AlcoholStatuses, v))
             .WithMessage("El consumo de alcohol no es un valor válido.");
 
-        validator.RuleFor(x => exerciseLevel(x))
+        validator.RuleFor(exerciseLevel)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.ExerciseLevels, v))
             .WithMessage("El nivel de ejercicio no es un valor válido.");
 
-        validator.RuleFor(x => disability(x))
+        validator.RuleFor(disability)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.Disabilities, v))
             .WithMessage("La discapacidad no es un valor válido.");
 
-        validator.RuleFor(x => hospitalizationHistory(x))
+        validator.RuleFor(hospitalizationHistory)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.HospitalizationHistories, v))
             .WithMessage("El historial de hospitalizaciones no es un valor válido.");
 
-        validator.RuleFor(x => surgeryHistory(x))
+        validator.RuleFor(surgeryHistory)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.SurgeryHistories, v))
             .WithMessage("El historial de cirugías no es un valor válido.");
 
-        validator.RuleFor(x => status(x))
+        validator.RuleFor(status)
             .Must(v => PatientOptions.IsAllowed(PatientOptions.Statuses, v))
             .WithMessage("El estado del paciente no es un valor válido.");
     }

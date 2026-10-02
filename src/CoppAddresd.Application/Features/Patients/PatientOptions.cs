@@ -54,8 +54,16 @@ public static class PatientOptions
     public static readonly IReadOnlyList<string> MaritalStatuses =
         ["Single", "Married", "Divorced", "Widowed", "Separated", "Domestic Partnership", "Prefer Not to Say"];
 
-    /// <summary>Estados del paciente.</summary>
+    /// <summary>
+    /// Estados del paciente para creación/edición. <c>Pendiente</c> es el
+    /// registro provisional creado por el wizard (el paciente aún no activó su
+    /// cuenta en la app); el onboarding self-service lo promueve a <c>Activo</c>.
+    /// </summary>
     public static readonly IReadOnlyList<string> Statuses =
+        ["Activo", "Inactivo", "Pendiente"];
+
+    /// <summary>Estados conmutables desde el toggle Activo↔Inactivo del ERP.</summary>
+    public static readonly IReadOnlyList<string> ToggleStatuses =
         ["Activo", "Inactivo"];
 
     public static bool IsAllowed(IReadOnlyList<string> allowed, string? value)

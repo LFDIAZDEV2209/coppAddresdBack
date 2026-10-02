@@ -35,6 +35,8 @@ public sealed class UpdatePatientCommandValidator : AbstractValidator<UpdatePati
             .EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email))
             .WithMessage("El correo electrónico no tiene un formato válido.");
 
+        RuleFor(x => x.EmergencyContact).SetValidator(new EmergencyContactValidator()!);
+
         CreatePatientCommandValidator.AddClosedVocabularyRules(
             this,
             x => x.MaritalStatus,

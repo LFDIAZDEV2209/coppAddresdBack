@@ -128,9 +128,11 @@ public sealed class PatientDirectoryIntegrationTests : IAsyncLifetime
         );
 
         _db.PatientProfiles.AddRange(
-            NewPatient(clinicId, "Ana", "Activo", DateTime.UtcNow.AddDays(-2)),
+            // Fechas ancladas al inicio del mes para no depender del día en que
+            // se ejecute la suite (AddDays(-2) cruzaba de mes a principios de mes).
+            NewPatient(clinicId, "Ana", "Activo", monthStart.AddMinutes(1)),
             NewPatient(clinicId, "Luis", "Activo", DateTime.UtcNow.AddMonths(-3)),
-            NewPatient(clinicId, "Sara", "Inactivo", DateTime.UtcNow.AddDays(-1))
+            NewPatient(clinicId, "Sara", "Inactivo", monthStart.AddMinutes(2))
         );
         await _db.SaveChangesAsync();
 

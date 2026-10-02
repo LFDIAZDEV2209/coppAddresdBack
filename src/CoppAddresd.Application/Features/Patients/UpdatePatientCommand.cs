@@ -30,7 +30,7 @@ public record UpdatePatientCommand(
     Guid? StateId,
     Guid? CountryId,
     string? PostalCode,
-    string? EmergencyContact,
+    EmergencyContactDto? EmergencyContact,
     Guid? InsurerId,
     string? MemberId,
     string? MaritalStatus,
@@ -98,7 +98,7 @@ public sealed class UpdatePatientCommandHandler(
         entity.StateId = request.StateId;
         entity.CountryId = request.CountryId;
         entity.PostalCode = PatientOptions.Normalize(request.PostalCode);
-        entity.EmergencyContact = PatientOptions.Normalize(request.EmergencyContact);
+        entity.EmergencyContact = EmergencyContactCodec.Serialize(request.EmergencyContact);
         entity.InsurerId = request.InsurerId;
         entity.MemberId = PatientOptions.Normalize(request.MemberId);
         entity.MaritalStatus = PatientOptions.Normalize(request.MaritalStatus);
