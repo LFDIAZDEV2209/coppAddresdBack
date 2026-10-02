@@ -22,7 +22,8 @@ public sealed class NoOpSmsSender(ILogger<NoOpSmsSender> logger) : ISmsSender
     public Task<SmsSendResult> SendAsync(
         string phoneNumber,
         string body,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? statusCallbackUrl = null)
     {
         logger.LogInformation(
             "[SMS Noop] Envío simulado a {PhoneNumber}: {Body}",

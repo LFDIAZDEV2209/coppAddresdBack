@@ -23,7 +23,8 @@ public sealed class NoOpVoiceCaller(ILogger<NoOpVoiceCaller> logger) : IVoiceCal
         string phoneNumber,
         string sayText,
         string language,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? statusCallbackUrl = null
     )
     {
         logger.LogInformation(

@@ -32,6 +32,7 @@ public interface IVoiceCaller
         string phoneNumber,
         string sayText,
         string language,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? statusCallbackUrl = null
     );
 }

@@ -82,6 +82,12 @@ public sealed class SosAlert
     /// </summary>
     public string? SmsDetail { get; set; }
 
+    /// <summary>
+    /// Estado de entrega reportado por Twilio vía webhook (queued/sent/
+    /// delivered/undelivered/failed). Null = sin callback aún.
+    /// </summary>
+    public string? SmsDeliveryStatus { get; set; }
+
     // --- Canal voz (llamada TTS al contacto de emergencia) ---
 
     /// <summary>
@@ -98,6 +104,24 @@ public sealed class SosAlert
     /// <c>network</c>, <c>timeout</c>). Nunca contiene teléfono ni guion TTS.
     /// </summary>
     public string? VoiceDetail { get; set; }
+
+    /// <summary>Sid de la llamada Twilio (CA...) para soporte/trazabilidad.</summary>
+    public string? VoiceProviderCallId { get; set; }
+
+    /// <summary>
+    /// Estado de la llamada reportado por Twilio vía webhook
+    /// (queued/initiated/ringing/in-progress/completed/busy/no-answer/failed/canceled).
+    /// </summary>
+    public string? VoiceCallStatus { get; set; }
+
+    /// <summary>
+    /// Quién contestó según Twilio (human/machine_start/...), solo si se
+    /// habilitó detección de contestador. Null = desconocido.
+    /// </summary>
+    public string? VoiceAnsweredBy { get; set; }
+
+    /// <summary>Duración de la llamada en segundos (reportada al completar).</summary>
+    public int? VoiceDurationSeconds { get; set; }
 
     // --- Canal push (staff asignado) ---
 

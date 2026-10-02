@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace CoppAddresd.Infrastructure.Services;
@@ -25,6 +27,7 @@ public sealed class SosSmsDispatcher(
     ISmsSender smsSender,
     INotificationDedupeRepository dedupe,
     AppDbContext dbContext,
+    IOptions<SosWebhookSettings> webhookSettings,
     ILogger<SosSmsDispatcher> logger
 ) : ISosSmsDispatcher
 {
@@ -57,6 +60,7 @@ public sealed class SosSmsDispatcher(
         }
 
         var body = SosSmsTemplate.Build(alert);
+        var callbackUrl = BuildStatusCallbackUrl(alert.Id);
 
         var finalStatus = SosChannelStatus.Fallido;
         string? detail = null;
@@ -83,7 +87,8 @@ public sealed class SosSmsDispatcher(
                     var result = await smsSender.SendAsync(
                         alert.DestinationPhoneE164,
                         body,
-                        attemptCts.Token
+                        attemptCts.Token,
+                        callbackUrl
                     );
 
                     if (result.Success)
@@ -156,6 +161,18 @@ public sealed class SosSmsDispatcher(
         );
 
         return finalStatus;
+    }
+
+    /// <summary>
+    /// URL pública de callback de Twilio para el canal SMS. Null cuando no hay
+    /// <c>SosWebhook:BaseUrl</c> configurado (sin seguimiento de entrega).
+    /// </summary>
+    private string? BuildStatusCallbackUrl(Guid alertId)
+    {
+        var baseUrl = webhookSettings.Value.NormalizedBaseUrl;
+        return baseUrl is null
+            ? null
+            : $"{baseUrl}/api/v1/sos/webhooks/twilio/sms?alertId={alertId}";
     }
 
     /// <summary>Actualiza el estado del canal en <c>app.sos_alerts</c> (transacción corta).</summary>

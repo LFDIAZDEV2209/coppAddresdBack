@@ -26,7 +26,11 @@ public record SosAlertDto(
     Guid? AttendedBy,
     DateTime? AttendedAt,
     Guid? CancelledBy,
-    DateTime? CancelledAt
+    DateTime? CancelledAt,
+    string? SmsDeliveryStatus = null,
+    string? VoiceCallStatus = null,
+    string? VoiceAnsweredBy = null,
+    int? VoiceDurationSeconds = null
 )
 {
     public static SosAlertDto FromEntity(SosAlert alert)
@@ -49,7 +53,11 @@ public record SosAlertDto(
             alert.AttendedBy,
             alert.AttendedAt,
             alert.CancelledBy,
-            alert.CancelledAt
+            alert.CancelledAt,
+            alert.SmsDeliveryStatus,
+            alert.VoiceCallStatus,
+            alert.VoiceAnsweredBy,
+            alert.VoiceDurationSeconds
         );
     }
 

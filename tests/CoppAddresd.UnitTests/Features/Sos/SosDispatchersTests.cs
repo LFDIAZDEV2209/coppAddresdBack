@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Common;
+using Microsoft.Extensions.Options;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
@@ -58,6 +59,7 @@ public sealed class SosDispatchersTests
             sms,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosSmsDispatcher>.Instance
         );
 
@@ -104,6 +106,7 @@ public sealed class SosDispatchersTests
             sms,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosSmsDispatcher>.Instance
         );
 
@@ -127,6 +130,7 @@ public sealed class SosDispatchersTests
             sms,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosSmsDispatcher>.Instance
         );
 
@@ -170,6 +174,7 @@ public sealed class SosDispatchersTests
             sms,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosSmsDispatcher>.Instance
         );
 
@@ -199,6 +204,7 @@ public sealed class SosDispatchersTests
             voice,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosVoiceDispatcher>.Instance
         );
 
@@ -249,6 +255,7 @@ public sealed class SosDispatchersTests
             voice,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosVoiceDispatcher>.Instance
         );
 
@@ -278,6 +285,7 @@ public sealed class SosDispatchersTests
             voice,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosVoiceDispatcher>.Instance
         );
 
@@ -321,6 +329,7 @@ public sealed class SosDispatchersTests
             voice,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosVoiceDispatcher>.Instance
         );
 
@@ -349,6 +358,7 @@ public sealed class SosDispatchersTests
             voice,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             NullLogger<SosVoiceDispatcher>.Instance
         );
 
@@ -549,6 +559,7 @@ public sealed class SosDispatchersTests
             sms,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             collector.For<SosSmsDispatcher>()
         );
 
@@ -563,6 +574,7 @@ public sealed class SosDispatchersTests
             voice,
             _dedupe,
             CreateDbContext(),
+            Options.Create(new SosWebhookSettings()),
             collector.For<SosVoiceDispatcher>()
         );
 

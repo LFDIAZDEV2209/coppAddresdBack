@@ -218,7 +218,7 @@ public static class DependencyInjection
 
         AddDistributedCache(services, configuration);
 
-        AddSosServices(services);
+        AddSosServices(services, configuration);
 
         return services;
     }
@@ -230,13 +230,20 @@ public static class DependencyInjection
     /// app.notification_dedupe_keys). La respuesta al paciente nunca espera
     /// a Twilio/FCM.
     /// </summary>
-    private static void AddSosServices(IServiceCollection services)
+    private static void AddSosServices(
+        IServiceCollection services,
+        IConfiguration configuration
+    )
     {
         services.AddScoped<ISosAlertRepository, SosAlertRepository>();
         services.AddScoped<ISosRateLimiter, SosRateLimitingService>();
         services.AddScoped<ISosSmsDispatcher, SosSmsDispatcher>();
         services.AddScoped<ISosVoiceDispatcher, SosVoiceDispatcher>();
         services.AddScoped<ISosPushDispatcher, SosPushDispatcher>();
+        services.Configure<SosWebhookSettings>(
+            configuration.GetSection(SosWebhookSettings.SectionName)
+        );
+        services.AddScoped<ISosWebhookProcessor, SosWebhookProcessor>();
 
         // Cola + procesador: el procesador crea su propio scope por mensaje
         // (los dispatchers son scoped por sus dependencias scoped).

@@ -55,7 +55,8 @@ public sealed class TwilioVoiceCaller : IVoiceCaller
         string phoneNumber,
         string sayText,
         string language,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? statusCallbackUrl = null
     )
     {
         if (!IsConfigured)
@@ -85,6 +86,12 @@ public sealed class TwilioVoiceCaller : IVoiceCaller
         {
             Twiml = BuildTwiml(sayText, normalizedLanguage, voice),
         };
+
+        if (!string.IsNullOrWhiteSpace(statusCallbackUrl))
+        {
+            options.StatusCallback = new Uri(statusCallbackUrl);
+            options.StatusCallbackEvent = ["initiated", "ringing", "answered", "completed"];
+        }
 
         try
         {

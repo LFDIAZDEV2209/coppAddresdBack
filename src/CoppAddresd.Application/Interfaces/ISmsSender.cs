@@ -21,5 +21,9 @@ public interface ISmsSender
     /// <summary>Indica si el canal está configurado para enviar realmente.</summary>
     bool IsConfigured { get; }
 
-    Task<SmsSendResult> SendAsync(string phoneNumber, string body, CancellationToken ct = default);
+    Task<SmsSendResult> SendAsync(
+        string phoneNumber,
+        string body,
+        CancellationToken ct = default,
+        string? statusCallbackUrl = null);
 }

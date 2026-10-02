@@ -1,10 +1,12 @@
 using System.Diagnostics;
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace CoppAddresd.Infrastructure.Services;
@@ -25,6 +27,7 @@ public sealed class SosVoiceDispatcher(
     IVoiceCaller voiceCaller,
     INotificationDedupeRepository dedupe,
     AppDbContext dbContext,
+    IOptions<SosWebhookSettings> webhookSettings,
     ILogger<SosVoiceDispatcher> logger
 ) : ISosVoiceDispatcher
 {
@@ -57,9 +60,11 @@ public sealed class SosVoiceDispatcher(
         }
 
         var sayText = SosVoiceTemplate.Build(alert);
+        var callbackUrl = BuildStatusCallbackUrl(alert.Id);
 
         var finalStatus = SosChannelStatus.Fallido;
         string? detail = null;
+        string? providerCallId = null;
 
         if (!voiceCaller.IsConfigured)
         {
@@ -84,12 +89,14 @@ public sealed class SosVoiceDispatcher(
                         alert.DestinationPhoneE164,
                         sayText,
                         "es-US",
-                        attemptCts.Token
+                        attemptCts.Token,
+                        callbackUrl
                     );
 
                     if (result.Success)
                     {
                         finalStatus = SosChannelStatus.Enviado;
+                        providerCallId = result.ProviderCallId;
                         detail = null;
                         break;
                     }
@@ -153,10 +160,23 @@ public sealed class SosVoiceDispatcher(
             a => a.VoiceChannelStatus = finalStatus,
             a => a.VoiceUpdatedAt = DateTime.UtcNow,
             a => a.VoiceDetail = detail,
+            a => a.VoiceProviderCallId = providerCallId,
             ct
         );
 
         return finalStatus;
+    }
+
+    /// <summary>
+    /// URL pública de callback de Twilio (null = sin seguimiento de entrega).
+    /// Incluye el alertId para correlacionar el webhook sin PII.
+    /// </summary>
+    private string? BuildStatusCallbackUrl(Guid alertId)
+    {
+        var baseUrl = webhookSettings.Value.NormalizedBaseUrl;
+        return baseUrl is null
+            ? null
+            : $"{baseUrl}/api/v1/sos/webhooks/twilio/voice?alertId={alertId}";
     }
 
     /// <summary>Actualiza el estado del canal en <c>app.sos_alerts</c> (transacción corta).</summary>
@@ -165,6 +185,7 @@ public sealed class SosVoiceDispatcher(
         Action<SosAlert> setStatus,
         Action<SosAlert> setTimestamp,
         Action<SosAlert> setDetail,
+        Action<SosAlert> setProviderCallId,
         CancellationToken ct
     )
     {
@@ -179,6 +200,7 @@ public sealed class SosVoiceDispatcher(
             setStatus(tracked);
             setTimestamp(tracked);
             setDetail(tracked);
+            setProviderCallId(tracked);
             await dbContext.SaveChangesAsync(ct);
         }
         catch (DbUpdateException ex) when (ex.InnerException is NpgsqlException)
