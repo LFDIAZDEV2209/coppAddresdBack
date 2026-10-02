@@ -311,6 +311,7 @@ public sealed class InvalidationVerificationTests
             Substitute.For<ITokenService>(),
             Substitute.For<IPermissionService>(),
             Substitute.For<IPatientLookupService>(),
+            Substitute.For<IPatientAccessGuard>(),
             seed.Db,
             Options.Create(new JwtSettings { AccessTokenExpirationMinutes = 15 }),
             NullLogger<AuthService>.Instance);

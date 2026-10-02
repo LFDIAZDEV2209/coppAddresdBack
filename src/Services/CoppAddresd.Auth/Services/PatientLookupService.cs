@@ -31,7 +31,9 @@ public class PatientLookupService : IPatientLookupService
         // SQL crudo (no mapeado al modelo EF): el Auth Service lee
         // app.patient_profiles sin reclamar propiedad del esquema. La
         // comparación con LOWER() tolera diferencias de mayúsculas/minúsculas
-        // en identificadores alfanuméricos (pasaportes, etc.).
+        // en identificadores alfanuméricos (pasaportes, etc.). Los pacientes
+        // con estado explícitamente "Inactivo" no se resuelven (null/otros
+        // estados se permiten para no bloquear filas legadas).
         const string sql = """
             SELECT
                 pp.id            AS "Id",
@@ -46,6 +48,7 @@ public class PatientLookupService : IPatientLookupService
             WHERE LOWER(pp.document_number) = LOWER({0})
               AND pp.document_number IS NOT NULL
               AND pp.document_number <> ''
+              AND (pp.status IS NULL OR pp.status <> 'Inactivo')
             ORDER BY pp.created_at
             LIMIT 1
             """;

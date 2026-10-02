@@ -17,6 +17,7 @@ public class AuthService : IAuthService
     private readonly ITokenService _tokenService;
     private readonly IPermissionService _permissionService;
     private readonly IPatientLookupService _patientLookup;
+    private readonly IPatientAccessGuard _patientAccessGuard;
     private readonly AuthDbContext _dbContext;
     private readonly JwtSettings _jwtSettings;
     private readonly ILogger<AuthService> _logger;
@@ -27,6 +28,7 @@ public class AuthService : IAuthService
         ITokenService tokenService,
         IPermissionService permissionService,
         IPatientLookupService patientLookup,
+        IPatientAccessGuard patientAccessGuard,
         AuthDbContext dbContext,
         IOptions<JwtSettings> jwtSettings,
         ILogger<AuthService> logger)
@@ -36,6 +38,7 @@ public class AuthService : IAuthService
         _tokenService = tokenService;
         _permissionService = permissionService;
         _patientLookup = patientLookup;
+        _patientAccessGuard = patientAccessGuard;
         _dbContext = dbContext;
         _jwtSettings = jwtSettings.Value;
         _logger = logger;
@@ -86,6 +89,14 @@ public class AuthService : IAuthService
         if (!user.IsActive)
         {
             _logger.LogWarning("Login failed: user {UserId} is disabled", user.Id);
+            return null;
+        }
+
+        // Un paciente con perfil explícitamente "Inactivo" no puede entrar a la
+        // app móvil. El staff no tiene perfil de paciente, así que no se afecta.
+        if (await _patientAccessGuard.IsBlockedAsync(user.Id, ct))
+        {
+            _logger.LogWarning("Login failed: patient profile for user {UserId} is inactive", user.Id);
             return null;
         }
 
@@ -168,6 +179,14 @@ public class AuthService : IAuthService
         if (!storedToken.User.IsActive)
         {
             _logger.LogWarning("Refresh failed: user {UserId} is disabled", storedToken.UserId);
+            return null;
+        }
+
+        // Se evalúa ANTES de la reclamación atómica: un paciente inactivo no
+        // debe quemar (rotar) su refresh token ni recibir tokens nuevos.
+        if (await _patientAccessGuard.IsBlockedAsync(storedToken.UserId, ct))
+        {
+            _logger.LogWarning("Refresh failed: patient profile for user {UserId} is inactive", storedToken.UserId);
             return null;
         }
 

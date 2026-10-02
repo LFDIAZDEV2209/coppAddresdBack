@@ -75,6 +75,7 @@ public sealed class ErpAccessIntegrationTests : IAsyncLifetime
             .Returns(Array.Empty<string>());
         services.AddSingleton(permissions);
         services.AddSingleton(Substitute.For<IPatientLookupService>());
+        services.AddSingleton(Substitute.For<IPatientAccessGuard>());
         services.AddScoped<ITokenService, TokenService>();
         services.AddScoped<AuthService>();
         services.AddScoped<ErpAccessService>();
