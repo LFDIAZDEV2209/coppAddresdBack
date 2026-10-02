@@ -1,6 +1,6 @@
 # CoppAddresd Backend — Agent Guide
 
-> **Contexto compartido del workspace**: lee `../.coppadresd-context/` (estado actual, arquitectura, decisiones, ítems abiertos, runbook) ANTES de modificar código. Última verificación: 2026-09-30.
+> **Contexto compartido del workspace**: usa el sistema `.ai/` (recuperación bajo demanda) ANTES de modificar código: MCP `context-broker` (`workspace_overview`, `get_dependencies`, `search_knowledge`...) o lectura directa — `../.ai/workspace/OVERVIEW.md` (estado), `../.ai/workspace/OPEN-ITEMS.md` (backlog), `../.ai/knowledge/` (decisiones/lessons/incidents). Última verificación: 2026-10-02.
 
 .NET 10 / C# 13 backend, Clean Architecture. **Estado actual**: Auth Service completo (OTP por identificación con Twilio Verify SMS + protección OtpSecurity), integración AI Chat, sistema de auditoría PostgreSQL.
 

@@ -1,8 +1,8 @@
-"""Seed de pacientes demo para la app mÃ³vil ANTARES (telemedicina).
+"""Seed de pacientes demo para la app móvil ANTARES (telemedicina).
 
 Crea perfiles de paciente demo en app.patient_profiles (si no existen) y
 aprovisiona su cuenta en el Auth Service (usuario con password conocida +
-acceso a la aplicaciÃ³n 'app' + vÃ­nculo app.patient_profiles.user_id) a travÃ©s
+acceso a la aplicación 'app' + vínculo app.patient_profiles.user_id) a través
 del endpoint interno POST /api/auth/internal/seed-patient-demo.
 
 Uso (desde ai-service, donde hay venv/uv):
@@ -93,7 +93,7 @@ DEMO_PATIENTS = [
 
 
 def stable_patient_id(document: str) -> uuid.UUID:
-    """Id determinista por documento: misma corrida â†’ mismo uuid."""
+    """Id determinista por documento: misma corrida → mismo uuid."""
     return uuid.uuid5(uuid.NAMESPACE_DNS, f"demo-patient:{document}")
 
 
@@ -115,7 +115,7 @@ def auth_internal_key() -> str:
             return key
 
     raise SystemExit(
-        "No se encontrÃ³ la clave interna del Auth Service. Configura AUTH_INTERNAL_KEY "
+        "No se encontró la clave interna del Auth Service. Configura AUTH_INTERNAL_KEY "
         "o crea src/Services/CoppAddresd.Auth/appsettings.json desde appsettings.Example.json."
     )
 
@@ -206,13 +206,13 @@ def seed_patient_profile(
         )
         conn.commit()
         print(
-            f"  âœ“ perfil creado: {patient['first_name']} {patient['last_name']} ({patient['document']})"
+            f"  ✓ perfil creado: {patient['first_name']} {patient['last_name']} ({patient['document']})"
         )
         return patient_id
 
 
 def seed_auth_account(patient: dict, patient_id: uuid.UUID) -> None:
-    """Aprovisiona usuario + password + acceso 'app' + vÃ­nculo del perfil."""
+    """Aprovisiona usuario + password + acceso 'app' + vínculo del perfil."""
     payload = json.dumps(
         {
             "patientId": str(patient_id),
@@ -237,9 +237,9 @@ def seed_auth_account(patient: dict, patient_id: uuid.UUID) -> None:
         with request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             status = "creado" if result.get("created") else "reutilizado"
-            print(f"  âœ“ cuenta {status}: {result.get('email')}")
-    except Exception as exc:  # noqa: BLE001 â€” el seed reporta y sigue
-        print(f"  âœ— error Auth para {patient['email']}: {exc}")
+            print(f"  ✓ cuenta {status}: {result.get('email')}")
+    except Exception as exc:  # noqa: BLE001 — el seed reporta y sigue
+        print(f"  ✗ error Auth para {patient['email']}: {exc}")
 
 
 def main() -> None:

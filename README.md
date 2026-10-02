@@ -46,7 +46,7 @@ El repositorio contiene:
 | **Servicio de autenticación** (`CoppAddresd.Auth`) | Servicio independiente para identidad, login y JWT |
 | **Pruebas** (`UnitTests` e `IntegrationTests`)     | Suites de tests xUnit                              |
 
-> ⚠️ **Estado actual:** el proyecto está en fase de **esqueleto inicial** — la arquitectura, los paquetes y la estructura de carpetas están preparados, pero los módulos de negocio aún no se han implementado.
+> ✅ **Estado actual:** producción activa — Auth Service (OTP/Twilio), Telemedicine, ERP (pacientes, profesionales, citas), Tests de Salud, Programas, Comunidad, Storage, Food AI y auditoría PostgreSQL operativos. Detalle y comandos: `AGENTS.md` y `docs/modules/`; backlog vivo: `.ai/workspace/OPEN-ITEMS.md`.
 
 ---
 
@@ -365,13 +365,12 @@ dotnet run --project src/Services/CoppAddresd.Auth
 
 ## 🗺️ Próximos pasos
 
-- [ ] Configurar `DbContext` y migraciones de EF Core (PostgreSQL)
-- [ ] Implementar ASP.NET Identity + JWT en el servicio de autenticación
-- [ ] Desarrollar los primeros módulos de negocio en `Features/` (CQRS)
-- [ ] Crear `appsettings.Example.json` como plantilla versionada
-- [ ] Añadir Dockerfile / docker-compose para el backend
-- [ ] Configurar CI/CD (GitHub Actions)
-- [ ] Migrar el endpoint `/weatherforecast` de plantilla a endpoints reales
+El esqueleto ya es historia: los módulos de negocio están implementados y en producción
+(ver `AGENTS.md`, `docs/modules/` y el historial del workspace). Los próximos pasos viven
+centralizados en:
+
+- `.ai/workspace/OPEN-ITEMS.md` — backlog vivo (deuda técnica O05-O12, bloqueos P0)
+- `openspec/changes/` — changes activos de features en curso
 
 ---
 
