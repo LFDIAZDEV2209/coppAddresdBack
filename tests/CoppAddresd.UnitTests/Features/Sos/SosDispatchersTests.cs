@@ -401,6 +401,7 @@ public sealed class SosDispatchersTests
             tokens,
             fcm,
             _dedupe,
+            CreateDbContext(),
             NullLogger<SosPushDispatcher>.Instance
         );
 
@@ -452,6 +453,7 @@ public sealed class SosDispatchersTests
             tokens,
             fcm,
             _dedupe,
+            CreateDbContext(),
             NullLogger<SosPushDispatcher>.Instance
         );
 
@@ -509,6 +511,7 @@ public sealed class SosDispatchersTests
             tokens,
             fcm,
             _dedupe,
+            CreateDbContext(),
             NullLogger<SosPushDispatcher>.Instance
         );
 
@@ -540,7 +543,7 @@ public sealed class SosDispatchersTests
 
         var collector = new SosLogCollector();
         var alert = NewAlert();
-        var smsBody = SosSmsTemplate.Build(alert.Patient!.FirstName, alert.Id);
+        var smsBody = SosSmsTemplate.Build(alert);
 
         var smsDispatcher = new SosSmsDispatcher(
             sms,
@@ -555,7 +558,7 @@ public sealed class SosDispatchersTests
         voice.IsConfigured.Returns(true);
         voice.CallAsync(PhoneE164, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new VoiceCallResult(true, "CA1", null));
-        var voiceScript = SosVoiceTemplate.Build(alert.Patient!.FirstName);
+        var voiceScript = SosVoiceTemplate.Build(alert);
         var voiceDispatcher = new SosVoiceDispatcher(
             voice,
             _dedupe,

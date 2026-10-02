@@ -24,6 +24,7 @@ public record ActivateSosAlertCommand(
     double? Longitude = null,
     double? AccuracyMeters = null,
     DateTime? LocationCapturedAt = null,
+    SosVitalsDto? Vitals = null,
     string? DeviceId = null
 ) : IRequest<ActivateSosAlertResult>;
 
@@ -55,6 +56,22 @@ public sealed class ActivateSosAlertValidator : AbstractValidator<ActivateSosAle
             .InclusiveBetween(0, 100_000)
             .When(x => x.AccuracyMeters.HasValue)
             .WithMessage("La precisión de la ubicación es inválida.");
+
+        // Signos vitales opcionales (demo): rangos fisiológicos razonables.
+        RuleFor(x => x.Vitals!.HeartRate)
+            .InclusiveBetween(20, 300)
+            .When(x => x.Vitals?.HeartRate.HasValue == true)
+            .WithMessage("La frecuencia cardíaca es inválida.");
+
+        RuleFor(x => x.Vitals!.Spo2)
+            .InclusiveBetween(50, 100)
+            .When(x => x.Vitals?.Spo2.HasValue == true)
+            .WithMessage("La saturación de oxígeno es inválida.");
+
+        RuleFor(x => x.Vitals!.BloodPressure)
+            .MaximumLength(20)
+            .When(x => !string.IsNullOrWhiteSpace(x.Vitals?.BloodPressure))
+            .WithMessage("La presión arterial es inválida.");
 
         RuleFor(x => x.DeviceId)
             .MaximumLength(64)
@@ -163,6 +180,9 @@ public sealed class ActivateSosAlertHandler(
             LocationCapturedAt = request.LocationCapturedAt is null
                 ? null
                 : DateTime.SpecifyKind(request.LocationCapturedAt.Value, DateTimeKind.Utc),
+            HeartRate = request.Vitals?.HeartRate,
+            Spo2 = request.Vitals?.Spo2,
+            BloodPressure = request.Vitals?.BloodPressure,
             DestinationPhoneE164 = e164,
         };
 

@@ -56,7 +56,7 @@ public sealed class SosVoiceDispatcher(
             return alert.VoiceChannelStatus;
         }
 
-        var sayText = SosVoiceTemplate.Build(alert.Patient?.FirstName);
+        var sayText = SosVoiceTemplate.Build(alert);
 
         var finalStatus = SosChannelStatus.Fallido;
         string? detail = null;
@@ -195,22 +195,34 @@ public sealed class SosVoiceDispatcher(
 }
 
 /// <summary>
-/// Plantilla fija de la llamada de voz SOS: 100% server-side, en español, sin
-/// URLs ni datos clínicos. Contiene el nombre del paciente, la indicación de
-/// urgencia y la recomendación de llamar al 911; el mensaje completo se repite
-/// una vez. El guion NUNCA se registra en logs.
+/// Plantilla de la llamada de voz SOS enriquecida: 100% server-side, en
+/// español, sin URLs ni coordenadas (la ubicación se indica por SMS). Incluye
+/// nombre completo, edad, documento y signos vitales (demo); recomienda
+/// revisar el mensaje de texto y llamar al 911. El guion se repite una vez y
+/// NUNCA se registra en logs.
 /// </summary>
 public static class SosVoiceTemplate
 {
-    public static string Build(string? patientFirstName)
+    public static string Build(SosAlert alert)
     {
-        var name = string.IsNullOrWhiteSpace(patientFirstName)
-            ? "Un paciente"
-            : patientFirstName.Trim();
+        var patient = alert.Patient;
+        var name = SosMessageFormatting.FullName(patient);
+        var age = SosMessageFormatting.Age(patient?.DateOfBirth);
+        var document = string.IsNullOrWhiteSpace(patient?.DocumentNumber)
+            ? null
+            : patient!.DocumentNumber!.Trim();
+
+        var identity = name
+            + (age is null ? string.Empty : $", {age} años")
+            + (document is null ? string.Empty : $", documento {document}");
+
+        var vitals = SosMessageFormatting.VoiceVitals(alert);
 
         var message =
-            $"Alerta de emergencia de Copp Adresd. {name} activó una alerta SOS y necesita ayuda inmediata. "
-            + "Si usted es su contacto de emergencia, por favor comuníquese de inmediato y, de ser necesario, llame al 911.";
+            $"Alerta de emergencia de Copp Adresd. {identity} activó una alerta SOS y necesita ayuda inmediata. "
+            + (vitals is null ? string.Empty : vitals + " ")
+            + "Revisa el mensaje de texto con su ubicación. "
+            + "Comuníquese de inmediato y, de ser necesario, llame al 911.";
 
         return $"{message} Repito: {message}";
     }

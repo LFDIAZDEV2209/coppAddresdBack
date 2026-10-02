@@ -70,12 +70,24 @@ public record SosAlertDto(
     }
 }
 
+/// <summary>
+/// Signos vitales reportados por la app al activar el SOS. Opcionales:
+/// la app envía valores demo por ahora; el backend los persiste y los usa
+/// en los mensajes al contacto de emergencia (SMS y voz).
+/// </summary>
+public record SosVitalsDto(
+    int? HeartRate = null,
+    int? Spo2 = null,
+    string? BloodPressure = null
+);
+
 /// <summary>Cuerpo de <c>POST /api/v1/sos/alerts</c>. El número de destino y el texto del SMS NUNCA viajan en el body (D3).</summary>
 public record ActivateSosAlertRequest(
     double? Latitude = null,
     double? Longitude = null,
     double? AccuracyMeters = null,
-    DateTime? LocationCapturedAt = null
+    DateTime? LocationCapturedAt = null,
+    SosVitalsDto? Vitals = null
 );
 
 /// <summary>Resultado de la activación para el controller (mapeo exacto a HTTP).</summary>

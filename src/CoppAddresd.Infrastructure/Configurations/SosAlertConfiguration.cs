@@ -53,6 +53,12 @@ public sealed class SosAlertConfiguration : IEntityTypeConfiguration<SosAlert>
             .HasColumnName("location_captured_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(x => x.HeartRate).HasColumnName("heart_rate");
+
+        builder.Property(x => x.Spo2).HasColumnName("spo2");
+
+        builder.Property(x => x.BloodPressure).HasColumnName("blood_pressure").HasMaxLength(20);
+
         builder
             .Property(x => x.DestinationPhoneE164)
             .HasColumnName("destination_phone_e164")

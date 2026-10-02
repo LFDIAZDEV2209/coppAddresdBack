@@ -56,7 +56,7 @@ public sealed class SosSmsDispatcher(
             return alert.SmsChannelStatus;
         }
 
-        var body = SosSmsTemplate.Build(alert.Patient?.FirstName, alert.Id);
+        var body = SosSmsTemplate.Build(alert);
 
         var finalStatus = SosChannelStatus.Fallido;
         string? detail = null;
@@ -194,12 +194,43 @@ public sealed class SosSmsDispatcher(
 }
 
 /// <summary>
-/// Plantilla fija del SMS de SOS (D3): 100% server-side. Contiene el nombre
-/// del paciente, la indicación de urgencia y la referencia correlacionada.
-/// El cuerpo NUNCA se registra en logs (REQ-SOS-06).
+/// Plantilla del SMS de SOS enriquecido: 100% server-side. Incluye nombre
+/// completo, edad, documento, signos vitales (demo), ubicación con enlace a
+/// Maps y referencia correlacionada. El cuerpo NUNCA se registra en logs
+/// (REQ-SOS-06).
 /// </summary>
 public static class SosSmsTemplate
 {
-    public static string Build(string? patientFirstName, Guid alertId) =>
-        $"URGENTE: {patientFirstName ?? "Tu contacto"} activó su alerta SOS de emergencia en CoppAddresd. Por favor contáctalo de inmediato. (Ref: {alertId.ToString()[..8]})";
+    public static string Build(SosAlert alert)
+    {
+        var patient = alert.Patient;
+        var name = SosMessageFormatting.FullName(patient, "Tu contacto");
+        var age = SosMessageFormatting.Age(patient?.DateOfBirth);
+        var document = string.IsNullOrWhiteSpace(patient?.DocumentNumber)
+            ? null
+            : patient!.DocumentNumber!.Trim();
+
+        var lines = new List<string>
+        {
+            $"🚨 SOS CoppAdresd — {name}"
+                + (age is null ? string.Empty : $", {age} años")
+                + (document is null ? string.Empty : $", doc {document}")
+                + $", activó una emergencia el {SosMessageFormatting.FormatAlertTime(alert.CreatedAt)}.",
+        };
+
+        var vitals = SosMessageFormatting.SmsVitals(alert);
+        if (vitals is not null)
+        {
+            lines.Add(vitals);
+        }
+
+        var maps = SosMessageFormatting.MapsLink(alert);
+        lines.Add(maps is null ? "Ubicación no disponible" : $"Ubicación: {maps}");
+
+        lines.Add(
+            $"Contacta a {SosMessageFormatting.FirstName(patient, name)} de inmediato. Ref {alert.Id.ToString()[..8]}."
+        );
+
+        return string.Join("\n", lines);
+    }
 }

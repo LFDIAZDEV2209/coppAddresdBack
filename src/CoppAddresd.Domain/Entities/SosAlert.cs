@@ -50,6 +50,17 @@ public sealed class SosAlert
     /// <summary>Instante de la captura GPS reportado por la app (UTC).</summary>
     public DateTime? LocationCapturedAt { get; set; }
 
+    // --- Signos vitales (opcional, demo) ---
+
+    /// <summary>Frecuencia cardíaca en lpm reportada al activar (demo por ahora).</summary>
+    public int? HeartRate { get; set; }
+
+    /// <summary>Saturación de oxígeno en porcentaje reportada al activar (demo por ahora).</summary>
+    public int? Spo2 { get; set; }
+
+    /// <summary>Presión arterial reportada al activar, formato "160/110" (demo por ahora).</summary>
+    public string? BloodPressure { get; set; }
+
     // --- Canal SMS (principal: contacto de emergencia) ---
 
     /// <summary>
