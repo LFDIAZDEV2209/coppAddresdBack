@@ -105,7 +105,7 @@ public sealed class SendTelemedicineNotificationCommandHandler(
         if (dedupeKey is not null)
         {
             await dedupeRepository.UpsertAsync(
-                dedupeKey, request.UserId, pushStatus, smsStatus, ct);
+                dedupeKey, request.UserId, pushStatus, smsStatus, voiceStatus: null, ct: ct);
         }
 
         logger.LogInformation(

@@ -378,10 +378,11 @@ public sealed class SosActivateTests
         Assert.Equal("+573053924819", persisted.DestinationPhoneE164); // normalizado server-side
         Assert.Equal(4.7110, persisted.Latitude);
 
-        // Outbox: 1 fila SMS + 2 push (uno por profesional asignado).
+        // Outbox: 1 fila SMS + 1 voz + 2 push (uno por profesional asignado).
         Assert.NotNull(outboxKeys);
-        Assert.Equal(3, outboxKeys!.Count);
+        Assert.Equal(4, outboxKeys!.Count);
         Assert.Contains($"sos:sms:{persisted.Id}", outboxKeys);
+        Assert.Contains($"sos:voice:{persisted.Id}", outboxKeys);
         Assert.Contains(
             outboxKeys,
             k => k.StartsWith($"sos:push:{persisted.Id}:", StringComparison.Ordinal)

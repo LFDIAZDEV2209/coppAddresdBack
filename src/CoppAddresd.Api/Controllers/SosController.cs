@@ -88,6 +88,7 @@ public class SosController(
                 request.Longitude,
                 request.AccuracyMeters,
                 request.LocationCapturedAt,
+                request.Vitals,
                 deviceId
             ),
             ct

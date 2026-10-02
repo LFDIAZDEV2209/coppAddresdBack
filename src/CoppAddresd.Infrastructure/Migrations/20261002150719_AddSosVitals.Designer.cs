@@ -5,6 +5,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002150719_AddSosVitals")]
+    partial class AddSosVitals
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -8200,11 +8203,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("sms_channel_status");
 
-                    b.Property<string>("SmsDeliveryStatus")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("sms_delivery_status");
-
                     b.Property<string>("SmsDetail")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -8224,16 +8222,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
 
-                    b.Property<string>("VoiceAnsweredBy")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("voice_answered_by");
-
-                    b.Property<string>("VoiceCallStatus")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("voice_call_status");
-
                     b.Property<string>("VoiceChannelStatus")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -8244,15 +8232,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("voice_detail");
-
-                    b.Property<int?>("VoiceDurationSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("voice_duration_seconds");
-
-                    b.Property<string>("VoiceProviderCallId")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("voice_provider_call_id");
 
                     b.Property<DateTime?>("VoiceUpdatedAt")
                         .HasColumnType("timestamptz")

@@ -19,13 +19,18 @@ public record SosAlertDto(
     DateTime? LocationCapturedAt,
     string MaskedDestinationPhone,
     string SmsChannelStatus,
+    string VoiceChannelStatus,
     string PushChannelStatus,
     int? PushRecipients,
     DateTime CreatedAt,
     Guid? AttendedBy,
     DateTime? AttendedAt,
     Guid? CancelledBy,
-    DateTime? CancelledAt
+    DateTime? CancelledAt,
+    string? SmsDeliveryStatus = null,
+    string? VoiceCallStatus = null,
+    string? VoiceAnsweredBy = null,
+    int? VoiceDurationSeconds = null
 )
 {
     public static SosAlertDto FromEntity(SosAlert alert)
@@ -41,13 +46,18 @@ public record SosAlertDto(
             alert.LocationCapturedAt,
             maskedPhone,
             alert.SmsChannelStatus.ToString(),
+            alert.VoiceChannelStatus.ToString(),
             alert.PushChannelStatus.ToString(),
             alert.PushRecipients,
             alert.CreatedAt,
             alert.AttendedBy,
             alert.AttendedAt,
             alert.CancelledBy,
-            alert.CancelledAt
+            alert.CancelledAt,
+            alert.SmsDeliveryStatus,
+            alert.VoiceCallStatus,
+            alert.VoiceAnsweredBy,
+            alert.VoiceDurationSeconds
         );
     }
 
@@ -68,12 +78,24 @@ public record SosAlertDto(
     }
 }
 
+/// <summary>
+/// Signos vitales reportados por la app al activar el SOS. Opcionales:
+/// la app envía valores demo por ahora; el backend los persiste y los usa
+/// en los mensajes al contacto de emergencia (SMS y voz).
+/// </summary>
+public record SosVitalsDto(
+    int? HeartRate = null,
+    int? Spo2 = null,
+    string? BloodPressure = null
+);
+
 /// <summary>Cuerpo de <c>POST /api/v1/sos/alerts</c>. El número de destino y el texto del SMS NUNCA viajan en el body (D3).</summary>
 public record ActivateSosAlertRequest(
     double? Latitude = null,
     double? Longitude = null,
     double? AccuracyMeters = null,
-    DateTime? LocationCapturedAt = null
+    DateTime? LocationCapturedAt = null,
+    SosVitalsDto? Vitals = null
 );
 
 /// <summary>Resultado de la activación para el controller (mapeo exacto a HTTP).</summary>
@@ -139,6 +161,7 @@ public record SosAlertListItemDto(
     Guid? CancelledBy,
     DateTime? CancelledAt,
     string SmsChannelStatus,
+    string VoiceChannelStatus,
     string PushChannelStatus
 );
 

@@ -39,7 +39,8 @@ public sealed class TwilioSmsSender(
     public async Task<SmsSendResult> SendAsync(
         string phoneNumber,
         string body,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? statusCallbackUrl = null)
     {
         if (!IsConfigured)
         {
@@ -69,6 +70,11 @@ public sealed class TwilioSmsSender(
         if (!string.IsNullOrWhiteSpace(_settings.FromNumber))
         {
             options.From = new PhoneNumber(_settings.FromNumber);
+        }
+
+        if (!string.IsNullOrWhiteSpace(statusCallbackUrl))
+        {
+            options.StatusCallback = new Uri(statusCallbackUrl);
         }
 
         try

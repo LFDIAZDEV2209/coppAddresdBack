@@ -30,6 +30,18 @@ public interface ISosSmsDispatcher
     Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default);
 }
 
+/// <summary>Despacha el canal de voz (llamada TTS al contacto de emergencia).</summary>
+public interface ISosVoiceDispatcher
+{
+    /// <summary>
+    /// Procesa el canal de voz: respeta la fila de dedupe
+    /// <c>sos:voice:{alertId}</c> (un canal <c>Enviado</c> jamás se rellama),
+    /// aplica timeout acotado por intento con un reintento, y actualiza el
+    /// estado del canal en la alerta. Nunca lanza: devuelve el estado final.
+    /// </summary>
+    Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default);
+}
+
 /// <summary>Despacha el canal push FCM al staff asignado (D4).</summary>
 public interface ISosPushDispatcher
 {

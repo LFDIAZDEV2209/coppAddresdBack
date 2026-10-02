@@ -50,6 +50,17 @@ public sealed class SosAlert
     /// <summary>Instante de la captura GPS reportado por la app (UTC).</summary>
     public DateTime? LocationCapturedAt { get; set; }
 
+    // --- Signos vitales (opcional, demo) ---
+
+    /// <summary>Frecuencia cardíaca en lpm reportada al activar (demo por ahora).</summary>
+    public int? HeartRate { get; set; }
+
+    /// <summary>Saturación de oxígeno en porcentaje reportada al activar (demo por ahora).</summary>
+    public int? Spo2 { get; set; }
+
+    /// <summary>Presión arterial reportada al activar, formato "160/110" (demo por ahora).</summary>
+    public string? BloodPressure { get; set; }
+
     // --- Canal SMS (principal: contacto de emergencia) ---
 
     /// <summary>
@@ -70,6 +81,47 @@ public sealed class SosAlert
     /// <c>network</c>, <c>timeout</c>). Nunca contiene teléfono ni cuerpo.
     /// </summary>
     public string? SmsDetail { get; set; }
+
+    /// <summary>
+    /// Estado de entrega reportado por Twilio vía webhook (queued/sent/
+    /// delivered/undelivered/failed). Null = sin callback aún.
+    /// </summary>
+    public string? SmsDeliveryStatus { get; set; }
+
+    // --- Canal voz (llamada TTS al contacto de emergencia) ---
+
+    /// <summary>
+    /// Estado de la llamada de voz al mismo teléfono de destino del SMS
+    /// (contacto de emergencia). Mismo ciclo de vida que los demás canales.
+    /// </summary>
+    public SosChannelStatus VoiceChannelStatus { get; set; } = SosChannelStatus.Pendiente;
+
+    /// <summary>Última actualización del canal de voz (UTC).</summary>
+    public DateTime? VoiceUpdatedAt { get; set; }
+
+    /// <summary>
+    /// Código corto del resultado del canal SIN PII (ej. <c>twilio:21210</c>,
+    /// <c>network</c>, <c>timeout</c>). Nunca contiene teléfono ni guion TTS.
+    /// </summary>
+    public string? VoiceDetail { get; set; }
+
+    /// <summary>Sid de la llamada Twilio (CA...) para soporte/trazabilidad.</summary>
+    public string? VoiceProviderCallId { get; set; }
+
+    /// <summary>
+    /// Estado de la llamada reportado por Twilio vía webhook
+    /// (queued/initiated/ringing/in-progress/completed/busy/no-answer/failed/canceled).
+    /// </summary>
+    public string? VoiceCallStatus { get; set; }
+
+    /// <summary>
+    /// Quién contestó según Twilio (human/machine_start/...), solo si se
+    /// habilitó detección de contestador. Null = desconocido.
+    /// </summary>
+    public string? VoiceAnsweredBy { get; set; }
+
+    /// <summary>Duración de la llamada en segundos (reportada al completar).</summary>
+    public int? VoiceDurationSeconds { get; set; }
 
     // --- Canal push (staff asignado) ---
 

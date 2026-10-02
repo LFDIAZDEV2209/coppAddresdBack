@@ -5,6 +5,7 @@ using System.Text.Json;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -13,9 +14,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261001172314_AddSosVoiceChannel")]
+    partial class AddSosVoiceChannel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -8118,11 +8121,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("attended_by");
 
-                    b.Property<string>("BloodPressure")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("blood_pressure");
-
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("cancelled_at");
@@ -8142,10 +8140,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("destination_phone_e164");
-
-                    b.Property<int?>("HeartRate")
-                        .HasColumnType("integer")
-                        .HasColumnName("heart_rate");
 
                     b.Property<string>("IdempotencyKey")
                         .IsRequired()
@@ -8200,11 +8194,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("sms_channel_status");
 
-                    b.Property<string>("SmsDeliveryStatus")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("sms_delivery_status");
-
                     b.Property<string>("SmsDetail")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -8214,25 +8203,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("timestamptz")
                         .HasColumnName("sms_updated_at");
 
-                    b.Property<int?>("Spo2")
-                        .HasColumnType("integer")
-                        .HasColumnName("spo2");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
-
-                    b.Property<string>("VoiceAnsweredBy")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("voice_answered_by");
-
-                    b.Property<string>("VoiceCallStatus")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("voice_call_status");
 
                     b.Property<string>("VoiceChannelStatus")
                         .IsRequired()
@@ -8244,15 +8219,6 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("voice_detail");
-
-                    b.Property<int?>("VoiceDurationSeconds")
-                        .HasColumnType("integer")
-                        .HasColumnName("voice_duration_seconds");
-
-                    b.Property<string>("VoiceProviderCallId")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("voice_provider_call_id");
 
                     b.Property<DateTime?>("VoiceUpdatedAt")
                         .HasColumnType("timestamptz")

@@ -21,7 +21,12 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
     private const string ActiveUniqueIndex = "uq_sos_alerts_patient_active";
 
     public Task<SosAlert?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
-        dbContext.SosAlerts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        // Include del paciente: las plantillas server-side (SMS/voz) usan su
+        // nombre de pila; sin el join caerían al fallback genérico.
+        dbContext
+            .SosAlerts.AsNoTracking()
+            .Include(x => x.Patient)
+            .FirstOrDefaultAsync(x => x.Id == id, ct);
 
     public Task<SosAlert?> GetByPatientAndKeyAsync(
         Guid patientId,
@@ -69,13 +74,18 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
                     // (el destinatario es el contacto externo del perfil).
                     UserId = Guid.Empty,
                     // Solo el canal que representa la clave queda 'pendiente'
-                    // (el otro canal de la fila es null, nunca ambos).
+                    // (los otros canales de la fila son null, nunca varios).
                     SmsStatus = dedupeKey.StartsWith("sos:sms:", StringComparison.Ordinal)
                         ? SosChannelStatus.Pendiente.ToString().ToLowerInvariant()
                         : null,
-                    PushStatus = dedupeKey.StartsWith("sos:sms:", StringComparison.Ordinal)
-                        ? null
-                        : SosChannelStatus.Pendiente.ToString().ToLowerInvariant(),
+                    VoiceStatus = dedupeKey.StartsWith("sos:voice:", StringComparison.Ordinal)
+                        ? SosChannelStatus.Pendiente.ToString().ToLowerInvariant()
+                        : null,
+                    PushStatus =
+                        dedupeKey.StartsWith("sos:sms:", StringComparison.Ordinal)
+                        || dedupeKey.StartsWith("sos:voice:", StringComparison.Ordinal)
+                            ? null
+                            : SosChannelStatus.Pendiente.ToString().ToLowerInvariant(),
                 }
             );
         }
@@ -133,6 +143,26 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
         dbContext.SosAlerts.Update(alert);
         await dbContext.SaveChangesAsync(ct);
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<SosAlert>> ListStuckVoiceCallsAsync(
+        DateTime updatedBeforeUtc,
+        CancellationToken ct = default
+    ) =>
+        await dbContext
+            .SosAlerts.AsNoTracking()
+            .Where(x =>
+                x.VoiceChannelStatus == SosChannelStatus.Enviado
+                && x.VoiceProviderCallId != null
+                && x.VoiceCallStatus != null
+                && (x.VoiceCallStatus == "initiated"
+                    || x.VoiceCallStatus == "ringing"
+                    || x.VoiceCallStatus == "in-progress")
+                && (x.VoiceUpdatedAt ?? x.CreatedAt) < updatedBeforeUtc
+            )
+            .OrderBy(x => x.CreatedAt)
+            .Take(50)
+            .ToListAsync(ct);
 
     public async Task<bool> AttendAsync(
         Guid alertId,
@@ -217,6 +247,7 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
                 x.CancelledBy,
                 x.CancelledAt,
                 x.SmsChannelStatus.ToString(),
+                x.VoiceChannelStatus.ToString(),
                 x.PushChannelStatus.ToString()
             ))
             .ToListAsync(ct);
