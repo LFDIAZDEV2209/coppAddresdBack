@@ -266,6 +266,21 @@ public class AuthService : IAuthService
         return storedToken.UserId;
     }
 
+    public async Task<string?> GetRefreshTokenApplicationCodeAsync(string refreshToken, CancellationToken ct = default)
+    {
+        var storedToken = await _dbContext.RefreshTokens
+            .AsNoTracking()
+            .Include(rt => rt.Application)
+            .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
+
+        if (storedToken is null || !storedToken.IsActive)
+        {
+            return null;
+        }
+
+        return storedToken.Application?.Code;
+    }
+
     public async Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default)
     {
         var activeTokens = await _dbContext.RefreshTokens

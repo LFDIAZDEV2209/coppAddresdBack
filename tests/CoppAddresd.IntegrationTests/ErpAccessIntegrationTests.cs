@@ -158,6 +158,14 @@ public sealed class ErpAccessIntegrationTests : IAsyncLifetime
         return await scope.ServiceProvider.GetRequiredService<AuthService>().RefreshAsync(token);
     }
 
+    private async Task<string?> ApplicationOf(string token)
+    {
+        using var scope = _provider.CreateScope();
+        return await scope
+            .ServiceProvider.GetRequiredService<AuthService>()
+            .GetRefreshTokenApplicationCodeAsync(token);
+    }
+
     private async Task<ErpAccessOperation> Change(Guid id, string status)
     {
         using var scope = _provider.CreateScope();
@@ -211,6 +219,24 @@ public sealed class ErpAccessIntegrationTests : IAsyncLifetime
         Assert.NotNull(await Refresh(refreshedApp.RefreshToken));
         var newErp = Assert.IsType<TokenResult>(await Login("erp"));
         Assert.True(await ValidateErp(newErp.AccessToken));
+    }
+
+    [Fact]
+    public async Task RefreshToken_RecuerdaLaAplicacionConLaQueSeEmitio()
+    {
+        var erp = Assert.IsType<TokenResult>(await Login("erp"));
+        var app = Assert.IsType<TokenResult>(await Login("app"));
+
+        Assert.Equal("erp", await ApplicationOf(erp.RefreshToken));
+        Assert.Equal("app", await ApplicationOf(app.RefreshToken));
+        Assert.Null(await ApplicationOf("token-inexistente"));
+
+        // Tras rotar, el token anterior queda revocado y ya no resuelve aplicación;
+        // el nuevo conserva la misma.
+        var rotated = Assert.IsType<TokenResult>(await Refresh(erp.RefreshToken));
+        Assert.Null(await ApplicationOf(erp.RefreshToken));
+        Assert.Equal("erp", await ApplicationOf(rotated.RefreshToken));
+        Assert.Equal("app", await ApplicationOf(app.RefreshToken));
     }
 
     [Fact]

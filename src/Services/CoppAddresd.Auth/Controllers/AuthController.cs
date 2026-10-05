@@ -12,7 +12,14 @@ namespace CoppAddresd.Auth.Controllers;
 [EnableRateLimiting("auth")]
 public class AuthController : ControllerBase
 {
-    private const string RefreshTokenCookieName = "copp_refresh_token";
+    // Cookie de refresh por aplicacion: copp_refresh_token_{erp|app}. ERP y app
+    // del paciente comparten host en el navegador (las cookies no distinguen
+    // puertos), asi que cada aplicacion escribe y lee la suya. La cookie sin
+    // sufijo es la de los clientes anteriores: solo se lee como respaldo de
+    // transicion y nunca se vuelve a escribir cuando el cliente envia application.
+    public const string LegacyRefreshTokenCookieName = "copp_refresh_token";
+    public const string RefreshTokenCookiePrefix = LegacyRefreshTokenCookieName + "_";
+    private const int MaxApplicationCodeLength = 32;
     private const int RefreshTokenMaxAgeDays = 7;
     private const int SessionCookieMaxAgeHours = 8;
 
@@ -39,7 +46,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Credenciales inválidas" });
         }
 
-        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
+        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe, request.Application);
 
         return Ok(new LoginResponse(
             AccessToken: result.AccessToken,
@@ -103,7 +110,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Código inválido o expirado" });
         }
 
-        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
+        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe, request.Application);
 
         return Ok(new LoginResponse(
             AccessToken: result.AccessToken,
@@ -116,16 +123,25 @@ public class AuthController : ControllerBase
         [FromBody] RefreshTokenRequest? request,
         CancellationToken ct)
     {
-        var refreshToken = Request.Cookies[RefreshTokenCookieName]
-            ?? request?.RefreshToken;
+        var application = NormalizeApplication(request?.Application);
+        var (refreshToken, fromLegacyCookie) = ResolveRefreshToken(application, request?.RefreshToken);
 
         if (string.IsNullOrWhiteSpace(refreshToken))
         {
             // Sin cookie: visitante que nunca tuvo sesión. Se informa al
             // cliente para que NO muestre el banner de "sesión expirada".
             Response.Headers["X-Refresh-Status"] = "missing";
-            ClearRefreshTokenCookie();
+            ClearRefreshCookies(application, includeLegacy: application is null);
             return Unauthorized(new { message = "Refresh token inválido o expirado" });
+        }
+
+        // Un token emitido para otra aplicacion (p. ej. la cookie heredada del
+        // ERP llegando a la app del paciente) no es de este cliente: se trata
+        // como ausente, SIN rotarlo ni limpiar cookies ajenas.
+        if (application is not null && await BelongsToOtherApplicationAsync(refreshToken, application, ct))
+        {
+            Response.Headers["X-Refresh-Status"] = "missing";
+            return Unauthorized(new { message = "Refresh token no corresponde a la aplicacion" });
         }
 
         var result = await _authService.RefreshAsync(refreshToken, ct);
@@ -135,11 +151,18 @@ public class AuthController : ControllerBase
             // Cookie corrupta, expirada o revocada: se limpia para que el
             // cliente se recupere sin intervención manual del usuario.
             Response.Headers["X-Refresh-Status"] = "invalid";
-            ClearRefreshTokenCookie();
+            ClearRefreshCookies(application, includeLegacy: application is null || fromLegacyCookie);
             return Unauthorized(new { message = "Refresh token inválido o expirado" });
         }
 
-        SetRefreshTokenCookie(result.RefreshToken, rememberMe: true);
+        SetRefreshTokenCookie(result.RefreshToken, rememberMe: true, application);
+
+        // Migracion: la sesion heredada de la cookie sin sufijo pasa a la propia
+        // de la aplicacion y la antigua se retira.
+        if (application is not null && fromLegacyCookie)
+        {
+            ClearRefreshCookies(application: null, includeLegacy: true);
+        }
 
         return Ok(new RefreshTokenResponse(
             AccessToken: result.AccessToken,
@@ -148,22 +171,35 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout(CancellationToken ct)
+    public async Task<IActionResult> Logout(
+        [FromBody] RefreshTokenRequest? request,
+        CancellationToken ct)
     {
         // El logout se resuelve con la cookie de refresh, sin depender del
         // access token (que pudo haber expirado). Sin cookie: idempotente.
-        var refreshToken = Request.Cookies[RefreshTokenCookieName];
+        var application = NormalizeApplication(request?.Application);
+        var (refreshToken, fromLegacyCookie) = ResolveRefreshToken(application, bodyToken: null);
+        var clearLegacy = application is null;
 
         if (!string.IsNullOrWhiteSpace(refreshToken))
         {
-            var userId = await _authService.GetUserIdByRefreshTokenAsync(refreshToken, ct);
-            if (userId.HasValue)
+            // La cookie heredada puede ser de la otra aplicacion: ni se revoca
+            // ni se retira (seguiria siendo la sesion valida de esa app).
+            var otherApplication = application is not null
+                && await BelongsToOtherApplicationAsync(refreshToken, application, ct);
+
+            if (!otherApplication)
             {
-                await _authService.LogoutAsync(userId.Value, ct);
+                clearLegacy = clearLegacy || fromLegacyCookie;
+                var userId = await _authService.GetUserIdByRefreshTokenAsync(refreshToken, ct);
+                if (userId.HasValue)
+                {
+                    await _authService.LogoutAsync(userId.Value, ct);
+                }
             }
         }
 
-        ClearRefreshTokenCookie();
+        ClearRefreshCookies(application, clearLegacy);
 
         return Ok(new { message = "Sesión cerrada correctamente" });
     }
@@ -216,24 +252,117 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = error });
         }
 
-        ClearRefreshTokenCookie();
+        // Todos los refresh tokens del usuario quedaron revocados: se retiran la
+        // cookie heredada y la de la aplicacion con la que llego este access token.
+        ClearRefreshCookies(NormalizeApplication(User.FindFirst("aud")?.Value), includeLegacy: true);
 
         return Ok(new { message = "Contraseña cambiada correctamente. Debe iniciar sesión nuevamente." });
     }
 
-    private void SetRefreshTokenCookie(string refreshToken, bool rememberMe)
+    /// <summary>
+    /// Nombre de la cookie de refresh de una aplicacion (<c>copp_refresh_token_erp</c>).
+    /// Sin aplicacion valida devuelve el nombre heredado, que es lo que siguen
+    /// usando los clientes anteriores a la cookie por aplicacion.
+    /// </summary>
+    public static string RefreshCookieName(string? application)
+    {
+        var code = NormalizeApplication(application);
+        return code is null ? LegacyRefreshTokenCookieName : RefreshTokenCookiePrefix + code;
+    }
+
+    /// <summary>
+    /// Normaliza el codigo de aplicacion a minusculas y solo acepta
+    /// <c>[a-z0-9_-]</c> (maximo 32): el valor termina en el nombre de una
+    /// cookie, asi que cualquier otra cosa se descarta en lugar de escaparse.
+    /// </summary>
+    private static string? NormalizeApplication(string? application)
+    {
+        if (string.IsNullOrWhiteSpace(application))
+        {
+            return null;
+        }
+
+        var code = application.Trim().ToLowerInvariant();
+        if (code.Length > MaxApplicationCodeLength)
+        {
+            return null;
+        }
+
+        foreach (var c in code)
+        {
+            var valid = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+            if (!valid)
+            {
+                return null;
+            }
+        }
+
+        return code;
+    }
+
+    /// <summary>
+    /// Origen del refresh token: cookie de la aplicacion, cookie heredada
+    /// (solo como respaldo) o cuerpo de la peticion.
+    /// </summary>
+    private (string? Token, bool FromLegacyCookie) ResolveRefreshToken(string? application, string? bodyToken)
+    {
+        if (application is not null)
+        {
+            var named = Request.Cookies[RefreshCookieName(application)];
+            if (!string.IsNullOrWhiteSpace(named))
+            {
+                return (named, false);
+            }
+        }
+
+        var legacy = Request.Cookies[LegacyRefreshTokenCookieName];
+        if (!string.IsNullOrWhiteSpace(legacy))
+        {
+            return (legacy, true);
+        }
+
+        return (string.IsNullOrWhiteSpace(bodyToken) ? null : bodyToken, false);
+    }
+
+    /// <summary>
+    /// True si el token existe, esta activo y fue emitido para otra aplicacion.
+    /// Un token inexistente o inactivo devuelve false: lo resuelve el flujo normal.
+    /// </summary>
+    private async Task<bool> BelongsToOtherApplicationAsync(
+        string refreshToken, string application, CancellationToken ct)
+    {
+        var tokenApplication = await _authService.GetRefreshTokenApplicationCodeAsync(refreshToken, ct);
+        return tokenApplication is not null
+            && !string.Equals(tokenApplication, application, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void SetRefreshTokenCookie(string refreshToken, bool rememberMe, string? application)
     {
         var expires = rememberMe
             ? DateTimeOffset.UtcNow.AddDays(RefreshTokenMaxAgeDays)
             : DateTimeOffset.UtcNow.AddHours(SessionCookieMaxAgeHours);
 
-        Response.Cookies.Append(RefreshTokenCookieName, refreshToken, BuildCookieOptions(expires));
+        Response.Cookies.Append(RefreshCookieName(application), refreshToken, BuildCookieOptions(expires));
     }
 
-    private void ClearRefreshTokenCookie()
+    /// <summary>
+    /// Retira la cookie de la aplicacion (si hay) y, opcionalmente, la heredada.
+    /// La heredada solo se retira cuando es seguro: nunca por una peticion de
+    /// una aplicacion cuando esa cookie puede ser la sesion de la otra.
+    /// </summary>
+    private void ClearRefreshCookies(string? application, bool includeLegacy)
     {
-        Response.Cookies.Append(RefreshTokenCookieName, string.Empty,
-            BuildCookieOptions(DateTimeOffset.UtcNow.AddDays(-1)));
+        var expired = BuildCookieOptions(DateTimeOffset.UtcNow.AddDays(-1));
+
+        if (application is not null)
+        {
+            Response.Cookies.Append(RefreshCookieName(application), string.Empty, expired);
+        }
+
+        if (includeLegacy)
+        {
+            Response.Cookies.Append(LegacyRefreshTokenCookieName, string.Empty, expired);
+        }
     }
 
     private CookieOptions BuildCookieOptions(DateTimeOffset expires)
