@@ -1,6 +1,7 @@
 using CoppAddresd.Application.Features.Patients.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Exceptions;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -77,6 +78,22 @@ public sealed class UpdatePatientCommandHandler(
 
         var oldStatus = entity.Status;
         var newStatus = string.IsNullOrWhiteSpace(request.Status) ? entity.Status : request.Status.Trim();
+
+        // Unicidad de documento (case-insensitive, global): solo se verifica si
+        // el documento cambió; el propio paciente queda excluido por definición.
+        if (!string.IsNullOrWhiteSpace(request.DocumentNumber))
+        {
+            var documentNumber = request.DocumentNumber.Trim();
+            if (!string.Equals(documentNumber, entity.DocumentNumber?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                var existingDocuments = await repository.GetExistingDocumentNumbersAsync([documentNumber], ct);
+                if (existingDocuments is { Count: > 0 })
+                {
+                    throw new BusinessRuleViolationException(
+                        $"Ya existe un paciente con el documento '{documentNumber}'.");
+                }
+            }
+        }
 
         entity.MedicalRecordNumber = string.IsNullOrWhiteSpace(request.MedicalRecordNumber)
             ? entity.MedicalRecordNumber

@@ -85,6 +85,19 @@ public sealed class CreatePatientCommandHandler(
                 $"Ya existe un paciente con el número de historia clínica '{medicalRecordNumber}'.");
         }
 
+        // Unicidad de documento (case-insensitive, global): el índice único de
+        // la BD es la garantía final; esta validación devuelve 409 con mensaje.
+        if (!string.IsNullOrWhiteSpace(request.DocumentNumber))
+        {
+            var documentNumber = request.DocumentNumber.Trim();
+            var existingDocuments = await repository.GetExistingDocumentNumbersAsync([documentNumber], ct);
+            if (existingDocuments is { Count: > 0 })
+            {
+                throw new BusinessRuleViolationException(
+                    $"Ya existe un paciente con el documento '{documentNumber}'.");
+            }
+        }
+
         var entity = new PatientProfile
         {
             Id = Guid.NewGuid(),

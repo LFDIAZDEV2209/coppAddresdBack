@@ -502,14 +502,14 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
             return [];
         }
 
-        // Una sola query: LOWER(document_number) IN (...) para bulk duplicate check.
+        // Una sola query: LOWER(BTRIM(document_number)) IN (...) para bulk duplicate check.
         var lowered = documentNumbers.Select(d => d.Trim().ToLowerInvariant()).Distinct().ToList();
 
         return await dbContext
             .PatientProfiles.AsNoTracking()
             .Where(x => x.DeletedAt == null && x.DocumentNumber != null)
-            .Where(x => lowered.Contains(x.DocumentNumber!.ToLower()))
-            .Select(x => x.DocumentNumber!.ToLower())
+            .Where(x => lowered.Contains(x.DocumentNumber!.Trim().ToLower()))
+            .Select(x => x.DocumentNumber!.Trim().ToLower())
             .ToListAsync(ct);
     }
 }
