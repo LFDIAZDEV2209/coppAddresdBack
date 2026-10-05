@@ -119,6 +119,39 @@ public static class SosSupport
     }
 
     /// <summary>
+    /// Extrae el correo del JSON del contacto de emergencia
+    /// (<c>{name, relationship, phone, email}</c>). Formato legacy o JSON sin
+    /// correo devuelve null (el canal de correo se marca NoConfigurado).
+    /// </summary>
+    public static string? ExtractEmergencyContactEmail(string? emergencyContactJson)
+    {
+        if (string.IsNullOrWhiteSpace(emergencyContactJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(emergencyContactJson);
+            if (
+                document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("email", out var email)
+                && email.ValueKind == JsonValueKind.String
+            )
+            {
+                var value = email.GetString();
+                return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+            }
+
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Hash canónico SHA-256 del payload de activación (coords + precisión +
     /// instante de captura): distingue "misma Idempotency-Key + payload
     /// idéntico" (replay → 200) de "misma clave + payload distinto" (→ 409)

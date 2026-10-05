@@ -35,6 +35,9 @@ public sealed class NotificationDedupeKey
     /// <summary>Último estado del canal de voz para esta clave (null = nunca procesado).</summary>
     public string? VoiceStatus { get; set; }
 
+    /// <summary>Último estado del canal de correo para esta clave (null = nunca procesado).</summary>
+    public string? EmailStatus { get; set; }
+
     /// <summary>Instante UTC en que se registró la clave.</summary>
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 

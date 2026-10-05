@@ -42,6 +42,18 @@ public interface ISosVoiceDispatcher
     Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default);
 }
 
+/// <summary>Despacha el canal de correo al contacto de emergencia (mismo texto que el SMS).</summary>
+public interface ISosEmailDispatcher
+{
+    /// <summary>
+    /// Procesa el canal de correo: respeta la fila de dedupe
+    /// <c>sos:email:{alertId}</c> (un canal <c>Enviado</c> jamás se reenvía),
+    /// envía el mismo texto del SMS al correo del contacto de emergencia y
+    /// actualiza el outbox. Nunca lanza: devuelve el estado final.
+    /// </summary>
+    Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default);
+}
+
 /// <summary>Despacha el canal push FCM al staff asignado (D4).</summary>
 public interface ISosPushDispatcher
 {

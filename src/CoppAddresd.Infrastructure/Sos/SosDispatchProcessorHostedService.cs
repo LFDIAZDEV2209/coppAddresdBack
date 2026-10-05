@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace CoppAddresd.Infrastructure.Sos;
 
 /// <summary>
-/// Procesador del despacho de canales SOS (SMS + voz + push) en segundo plano:
+/// Procesador del despacho de canales SOS (SMS + voz + correo + push) en segundo plano:
 /// la respuesta al paciente (201) jamás espera a Twilio/FCM (D3/D4). Dos
 /// fuentes de trabajo:
 /// <list type="bullet">
@@ -36,7 +36,7 @@ public sealed class SosDispatchProcessorHostedService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("Iniciando procesador de despacho SOS (SMS + voz + push).");
+        logger.LogInformation("Iniciando procesador de despacho SOS (SMS + voz + correo + push).");
 
         var lastSweep = DateTimeOffset.UtcNow - SweepInterval;
 
@@ -61,13 +61,14 @@ public sealed class SosDispatchProcessorHostedService(
         }
     }
 
-    /// <summary>Despacha SMS + voz + push de una alerta (cada canal con su outbox).</summary>
+    /// <summary>Despacha SMS + voz + correo + push de una alerta (cada canal con su outbox).</summary>
     private async Task DispatchAsync(Guid alertId, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<ISosAlertRepository>();
         var smsDispatcher = scope.ServiceProvider.GetRequiredService<ISosSmsDispatcher>();
         var voiceDispatcher = scope.ServiceProvider.GetRequiredService<ISosVoiceDispatcher>();
+        var emailDispatcher = scope.ServiceProvider.GetRequiredService<ISosEmailDispatcher>();
         var pushDispatcher = scope.ServiceProvider.GetRequiredService<ISosPushDispatcher>();
 
         var alert = await repository.GetByIdAsync(alertId, ct);
@@ -82,11 +83,12 @@ public sealed class SosDispatchProcessorHostedService(
         // en la alerta y en el outbox).
         await smsDispatcher.DispatchAsync(alert, ct);
         await voiceDispatcher.DispatchAsync(alert, ct);
+        await emailDispatcher.DispatchAsync(alert, ct);
         await pushDispatcher.DispatchAsync(alert, ct);
     }
 
     /// <summary>
-    /// Outbox durable: re-encola alertas cuya dedupe fila de canal (SMS o voz)
+    /// Outbox durable: re-encola alertas cuya dedupe fila de canal (SMS, voz o correo)
     /// sigue <c>pendiente</c> y fueron creadas hace &gt; 2 min (el drop de la
     /// cola o una caída del proceso las habría saltado). Idempotente.
     /// </summary>
@@ -110,6 +112,10 @@ public sealed class SosDispatchProcessorHostedService(
                             dedupe.DedupeKey.StartsWith("sos:voice:")
                             && dedupe.VoiceStatus == nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
                         )
+                        || (
+                            dedupe.DedupeKey.StartsWith("sos:email:")
+                            && dedupe.EmailStatus == nameof(SosChannelStatus.Pendiente).ToLowerInvariant()
+                        )
                     )
                     && dedupe.CreatedAt < threshold
                 select dedupe.DedupeKey
@@ -121,7 +127,9 @@ public sealed class SosDispatchProcessorHostedService(
             {
                 var alertIdText = key.StartsWith("sos:sms:", StringComparison.Ordinal)
                     ? key["sos:sms:".Length..]
-                    : key["sos:voice:".Length..];
+                    : key.StartsWith("sos:voice:", StringComparison.Ordinal)
+                        ? key["sos:voice:".Length..]
+                        : key["sos:email:".Length..];
 
                 if (Guid.TryParse(alertIdText, out var alertId))
                 {

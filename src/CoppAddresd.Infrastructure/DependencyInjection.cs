@@ -239,6 +239,7 @@ public static class DependencyInjection
         services.AddScoped<ISosRateLimiter, SosRateLimitingService>();
         services.AddScoped<ISosSmsDispatcher, SosSmsDispatcher>();
         services.AddScoped<ISosVoiceDispatcher, SosVoiceDispatcher>();
+        services.AddScoped<ISosEmailDispatcher, SosEmailDispatcher>();
         services.AddScoped<ISosPushDispatcher, SosPushDispatcher>();
         services.Configure<SosWebhookSettings>(
             configuration.GetSection(SosWebhookSettings.SectionName)

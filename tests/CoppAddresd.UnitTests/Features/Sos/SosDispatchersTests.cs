@@ -78,6 +78,7 @@ public sealed class SosDispatchersTests
                 Arg.Any<string?>(),
                 "enviado",
                 Arg.Any<string?>(),
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -148,6 +149,7 @@ public sealed class SosDispatchersTests
                 Arg.Any<Guid>(),
                 Arg.Any<string?>(),
                 "noconfigurado",
+                Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
@@ -230,6 +232,7 @@ public sealed class SosDispatchersTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 "enviado",
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -309,6 +312,7 @@ public sealed class SosDispatchersTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 "noconfigurado",
+                Arg.Any<string?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -534,6 +538,157 @@ public sealed class SosDispatchersTests
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<Dictionary<string, string>?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    // ===================== Correo =====================
+
+    [Fact]
+    public async Task Correo_Exitoso_MarcaEnviadoYUsaElMismoTextoDelSms()
+    {
+        var email = Substitute.For<IEmailService>();
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var alert = NewAlert();
+        alert.Patient!.EmergencyContact =
+            "{\"name\":\"Ana\",\"relationship\":\"Madre\",\"phone\":\"+573053924819\",\"email\":\"correo@test.com\"}";
+        var dispatcher = new SosEmailDispatcher(
+            email,
+            _dedupe,
+            NullLogger<SosEmailDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // (REQ-SOS-03) Mismo texto que el SMS, al correo del contacto.
+        Assert.Equal(SosChannelStatus.Enviado, status);
+        await email
+            .Received(1)
+            .SendEmailAsync(
+                "correo@test.com",
+                Arg.Any<string>(),
+                SosSmsTemplate.Build(alert),
+                false,
+                Arg.Any<CancellationToken>()
+            );
+        await _dedupe
+            .Received(1)
+            .UpsertAsync(
+                $"sos:email:{alert.Id}",
+                Guid.Empty,
+                null,
+                null,
+                null,
+                "enviado",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task Correo_SinCorreoEnElContacto_MarcaNoConfigurado()
+    {
+        var email = Substitute.For<IEmailService>();
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var alert = NewAlert();
+        var dispatcher = new SosEmailDispatcher(
+            email,
+            _dedupe,
+            NullLogger<SosEmailDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // El contacto demo no tiene correo: canal NoConfigurado sin 500.
+        Assert.Equal(SosChannelStatus.NoConfigurado, status);
+        await email
+            .DidNotReceiveWithAnyArgs()
+            .SendEmailAsync(default!, default!, default!, default, default);
+        await _dedupe
+            .Received(1)
+            .UpsertAsync(
+                $"sos:email:{alert.Id}",
+                Guid.Empty,
+                null,
+                null,
+                null,
+                "noconfigurado",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task Correo_YaEnviadoNoSeReenviaAunqueElProcesadorReintente()
+    {
+        var email = Substitute.For<IEmailService>();
+        var alert = NewAlert();
+        _dedupe
+            .GetByKeyAsync($"sos:email:{alert.Id}", Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationDedupeKey
+                {
+                    DedupeKey = $"sos:email:{alert.Id}",
+                    EmailStatus = "enviado",
+                }
+            );
+
+        var dispatcher = new SosEmailDispatcher(
+            email,
+            _dedupe,
+            NullLogger<SosEmailDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // Outbox durable: un canal Enviado jamás se reenvía.
+        Assert.Equal(SosChannelStatus.Enviado, status);
+        await email
+            .DidNotReceiveWithAnyArgs()
+            .SendEmailAsync(default!, default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task Correo_FalloDelProveedor_MarcaFallidoSinLanzar()
+    {
+        var email = Substitute.For<IEmailService>();
+        email
+            .SendEmailAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromException(new InvalidOperationException("SMTP no disponible")));
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var alert = NewAlert();
+        alert.Patient!.EmergencyContact = "{\"email\":\"correo@test.com\"}";
+        var dispatcher = new SosEmailDispatcher(
+            email,
+            _dedupe,
+            NullLogger<SosEmailDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        Assert.Equal(SosChannelStatus.Fallido, status);
+        await _dedupe
+            .Received(1)
+            .UpsertAsync(
+                $"sos:email:{alert.Id}",
+                Guid.Empty,
+                null,
+                null,
+                null,
+                "fallido",
                 Arg.Any<CancellationToken>()
             );
     }
