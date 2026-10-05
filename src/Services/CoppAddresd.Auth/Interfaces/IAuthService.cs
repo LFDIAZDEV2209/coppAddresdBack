@@ -19,4 +19,19 @@ public interface IAuthService
 
     /// <summary>Define la primera contrasena de una cuenta OTP (sin password previo).</summary>
     Task<(bool Success, string? Error)> SetFirstPasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Solicita la eliminación de la cuenta: suspende el acceso a la aplicación
+    /// indicada, revoca sus sesiones y programa la purga tras la retención. Si
+    /// el usuario no conserva acceso a otra aplicación, además se desactiva.
+    /// </summary>
+    Task<(bool Success, string? Error, DateTime? PurgeAfter)> RequestAccountDeletionAsync(
+        Guid userId, string application, CancellationToken ct = default);
+
+    /// <summary>
+    /// Emite un código opaco de un solo uso (vida corta) para abrir la web de
+    /// eliminación de cuenta. Null si el usuario no tiene acceso activo a la aplicación.
+    /// </summary>
+    Task<AccountDeletionHandoffResponse?> CreateAccountDeletionHandoffAsync(
+        Guid userId, string application, CancellationToken ct = default);
 }

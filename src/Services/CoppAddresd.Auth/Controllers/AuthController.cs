@@ -233,6 +233,82 @@ public class AuthController : ControllerBase
 
         return Ok(new { message = "Contraseña establecida" });
     }
+    /// <summary>
+    /// Solicita la eliminación de la cuenta del usuario autenticado. El acceso se
+    /// bloquea de inmediato, los datos se conservan 90 días y luego se anonimizan.
+    /// </summary>
+    [HttpDelete("account")]
+    [Authorize]
+    public async Task<IActionResult> DeleteAccount(
+        [FromBody] DeleteAccountRequest request,
+        CancellationToken ct)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim is null || !Guid.TryParse(userIdClaim.Value, out var userId))
+        {
+            return Unauthorized(new { message = "Token invalido" });
+        }
+
+        if (!string.Equals(request.Confirmation?.Trim(), "ELIMINAR", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(new { message = "Confirmacion invalida" });
+        }
+
+        // La aplicacion sale del `aud` del token; el cuerpo solo es respaldo.
+        var application = NormalizeApplication(User.FindFirst("aud")?.Value)
+            ?? NormalizeApplication(request.Application);
+        if (application is null)
+        {
+            return BadRequest(new { message = "Aplicacion invalida" });
+        }
+
+        var (success, error, purgeAfter) = await _authService.RequestAccountDeletionAsync(userId, application, ct);
+        if (!success)
+        {
+            return BadRequest(new { message = error });
+        }
+
+        ClearRefreshCookies(application, includeLegacy: true);
+
+        return Ok(new
+        {
+            message = "Cuenta marcada para eliminacion",
+            purgeAfter,
+            retentionDays = Services.AuthService.AccountRetentionDays
+        });
+    }
+
+    /// <summary>
+    /// La app móvil pide un código opaco de un solo uso (vida de segundos) para abrir
+    /// la web de eliminación de cuenta. Ningún token viaja en la URL: solo este código.
+    /// </summary>
+    [HttpPost("account/deletion-handoff")]
+    [Authorize]
+    public async Task<ActionResult<AccountDeletionHandoffResponse>> CreateAccountDeletionHandoff(
+        CancellationToken ct)
+    {
+        var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim is null || !Guid.TryParse(userIdClaim.Value, out var userId))
+        {
+            return Unauthorized(new { message = "Token inválido" });
+        }
+
+        var application = NormalizeApplication(User.FindFirst("aud")?.Value);
+        if (application is null)
+        {
+            return BadRequest(new { message = "Aplicación inválida" });
+        }
+
+        var result = await _authService.CreateAccountDeletionHandoffAsync(userId, application, ct);
+        if (result is null)
+        {
+            return BadRequest(new { message = "La cuenta no tiene acceso activo a esta aplicación" });
+        }
+
+        Response.Headers.CacheControl = "no-store";
+        return Ok(result);
+    }
+
     [HttpPost("change-password")]
     [Authorize]
     public async Task<IActionResult> ChangePassword(

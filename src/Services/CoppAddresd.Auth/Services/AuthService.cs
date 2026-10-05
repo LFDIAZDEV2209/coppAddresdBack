@@ -12,6 +12,12 @@ namespace CoppAddresd.Auth.Services;
 
 public class AuthService : IAuthService
 {
+    /// <summary>Días que se conservan los datos tras pedir la eliminación.</summary>
+    public const int AccountRetentionDays = 90;
+
+    /// <summary>Vida del código de entrega app → web de eliminación de cuenta.</summary>
+    public const int AccountDeletionHandoffSeconds = 120;
+
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly ITokenService _tokenService;
@@ -332,6 +338,102 @@ public class AuthService : IAuthService
         await _userManager.UpdateSecurityStampAsync(user);
         _logger.LogInformation("First password set for user {UserId}", userId);
         return (true, null);
+    }
+
+    public async Task<(bool Success, string? Error, DateTime? PurgeAfter)> RequestAccountDeletionAsync(
+        Guid userId,
+        string application,
+        CancellationToken ct = default)
+    {
+        var user = await _userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return (false, "Usuario no encontrado", null);
+        }
+
+        var app = await _dbContext.Applications.FirstOrDefaultAsync(a => a.Code == application, ct);
+        var access = app is null
+            ? null
+            : await _dbContext.UserApplications
+                .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.ApplicationId == app.Id, ct);
+        if (app is null || access is null)
+        {
+            return (false, "La cuenta no tiene acceso a esta aplicación", null);
+        }
+
+        var now = DateTime.UtcNow;
+        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        access.IsSuspended = true;
+        access.SessionVersion++;
+
+        // Si conserva acceso a otra aplicación (p. ej. ERP) la cuenta global sigue activa.
+        var keepsOtherAccess = await _dbContext.UserApplications
+            .AnyAsync(ua => ua.UserId == userId && ua.ApplicationId != app.Id && !ua.IsSuspended, ct);
+
+        var tokens = await _dbContext.RefreshTokens
+            .Where(rt => rt.UserId == userId && rt.RevokedAt == null
+                && (!keepsOtherAccess || rt.ApplicationId == app.Id))
+            .ToListAsync(ct);
+        foreach (var token in tokens)
+        {
+            token.RevokedAt = now;
+        }
+
+        if (!keepsOtherAccess)
+        {
+            user.IsActive = false;
+            user.DeletionRequestedAt ??= now;
+            user.PurgeAfter ??= now.AddDays(AccountRetentionDays);
+            user.UpdatedAt = now;
+
+            // Esquema ajeno (app.*): SQL crudo, mismo patrón que PatientLookupService.
+            // Soft delete del perfil (los datos siguen en BD durante la retención, pero
+            // el paciente sale de los listados) y fin de las notificaciones push.
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                "UPDATE app.patient_profiles SET deleted_at = {0}, updated_at = {0} WHERE user_id = {1} AND deleted_at IS NULL",
+                [now, userId], ct);
+            await _dbContext.Database.ExecuteSqlRawAsync(
+                "DELETE FROM app.device_tokens WHERE user_id = {0}",
+                [userId], ct);
+        }
+
+        await _dbContext.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        _logger.LogInformation(
+            "Account deletion requested for user {UserId} (app {Application}, global={Global}, purge after {PurgeAfter})",
+            userId, application, !keepsOtherAccess, user.PurgeAfter);
+
+        return (true, null, user.PurgeAfter);
+    }
+
+    public async Task<AccountDeletionHandoffResponse?> CreateAccountDeletionHandoffAsync(
+        Guid userId,
+        string application,
+        CancellationToken ct = default)
+    {
+        var access = await _dbContext.UserApplications
+            .Include(ua => ua.Application)
+            .Include(ua => ua.User)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(ua => ua.UserId == userId && ua.Application.Code == application, ct);
+        if (access is null || access.IsSuspended || !access.Application.IsActive || !access.User.IsActive)
+        {
+            return null;
+        }
+
+        // 256 bits aleatorios: el código viaja en la URL, así que solo se guarda su hash.
+        var code = AccountDeletionSecrets.NewSecret();
+        _dbContext.AccountDeletionHandoffs.Add(new AccountDeletionHandoff
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            ApplicationId = access.ApplicationId,
+            CodeHash = AccountDeletionSecrets.Hash(code),
+            ExpiresAt = DateTime.UtcNow.AddSeconds(AccountDeletionHandoffSeconds),
+        });
+        await _dbContext.SaveChangesAsync(ct);
+
+        return new AccountDeletionHandoffResponse(code, AccountDeletionHandoffSeconds);
     }
 
     public async Task<(bool Success, string? Error)> ChangePasswordAsync(

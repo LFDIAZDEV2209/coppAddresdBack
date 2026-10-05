@@ -133,6 +133,10 @@ builder.Services.AddScoped<ITwilioOtpService, TwilioOtpService>();
 // daría a cada request su propio estado, inútil para rate limiting).
 builder.Services.AddSingleton<IOtpProtectionService, OtpProtectionService>();
 
+builder.Services.AddHostedService<CoppAddresd.Auth.Services.AccountPurgeService>();
+builder.Services.Configure<CoppAddresd.Auth.Configuration.AccountDeletionSettings>(
+    builder.Configuration.GetSection(CoppAddresd.Auth.Configuration.AccountDeletionSettings.SectionName));
+builder.Services.AddScoped<CoppAddresd.Auth.Services.IAccountDeletionSessionService, CoppAddresd.Auth.Services.AccountDeletionSessionService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOtpService, OtpService>();

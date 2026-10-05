@@ -3,6 +3,7 @@ using System;
 using CoppAddresd.Auth.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CoppAddresd.Auth.Migrations
 {
     [DbContext(typeof(AuthDbContext))]
-    partial class AuthDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261005190901_AddAccountDeletionHandoffs")]
+    partial class AddAccountDeletionHandoffs
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -60,46 +63,6 @@ namespace CoppAddresd.Auth.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("AccountDeletionHandoffs", "auth");
-                });
-
-            modelBuilder.Entity("CoppAddresd.Auth.Entities.AccountDeletionSession", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ApplicationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("SecretHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ApplicationId");
-
-                    b.HasIndex("ExpiresAt");
-
-                    b.HasIndex("SecretHash")
-                        .IsUnique();
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("AccountDeletionSessions", "auth");
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.Application", b =>
@@ -769,21 +732,6 @@ namespace CoppAddresd.Auth.Migrations
                 });
 
             modelBuilder.Entity("CoppAddresd.Auth.Entities.AccountDeletionHandoff", b =>
-                {
-                    b.HasOne("CoppAddresd.Auth.Entities.Application", null)
-                        .WithMany()
-                        .HasForeignKey("ApplicationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("CoppAddresd.Auth.Entities.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("CoppAddresd.Auth.Entities.AccountDeletionSession", b =>
                 {
                     b.HasOne("CoppAddresd.Auth.Entities.Application", null)
                         .WithMany()

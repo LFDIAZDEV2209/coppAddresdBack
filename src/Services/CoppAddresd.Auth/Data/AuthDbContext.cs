@@ -24,6 +24,8 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
     public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<OtpCode> OtpCodes => Set<OtpCode>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
+    public DbSet<AccountDeletionHandoff> AccountDeletionHandoffs => Set<AccountDeletionHandoff>();
+    public DbSet<AccountDeletionSession> AccountDeletionSessions => Set<AccountDeletionSession>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -46,6 +48,7 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
             b.ToTable("Users", "auth");
             b.Property(u => u.FirstName).HasMaxLength(100).IsRequired();
             b.Property(u => u.LastName).HasMaxLength(100).IsRequired();
+            b.HasIndex(u => u.PurgeAfter).HasFilter("\"PurgeAfter\" IS NOT NULL AND \"PurgedAt\" IS NULL");
         });
 
         builder.Entity<ApplicationRole>(b =>
@@ -250,6 +253,28 @@ public class AuthDbContext : IdentityDbContext<ApplicationUser, ApplicationRole,
                 .WithMany()
                 .HasForeignKey(i => i.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AccountDeletionHandoff>(b =>
+        {
+            b.ToTable("AccountDeletionHandoffs", "auth");
+            b.HasKey(h => h.Id);
+            b.Property(h => h.CodeHash).HasMaxLength(64).IsRequired();
+            b.HasIndex(h => h.CodeHash).IsUnique();
+            b.HasIndex(h => h.ExpiresAt);
+            b.HasOne<ApplicationUser>().WithMany().HasForeignKey(h => h.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<Application>().WithMany().HasForeignKey(h => h.ApplicationId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AccountDeletionSession>(b =>
+        {
+            b.ToTable("AccountDeletionSessions", "auth");
+            b.HasKey(s => s.Id);
+            b.Property(s => s.SecretHash).HasMaxLength(64).IsRequired();
+            b.HasIndex(s => s.SecretHash).IsUnique();
+            b.HasIndex(s => s.ExpiresAt);
+            b.HasOne<ApplicationUser>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<Application>().WithMany().HasForeignKey(s => s.ApplicationId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<OtpCode>(b =>
