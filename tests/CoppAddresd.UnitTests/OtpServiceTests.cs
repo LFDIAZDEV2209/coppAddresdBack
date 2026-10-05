@@ -215,6 +215,44 @@ public sealed class OtpServiceTests
     }
 
     [Fact]
+    public async Task SendOtp_Email_EnvíaElCódigoPorCorreoEnDesarrollo()
+    {
+        using var harness = new OtpTestHarness(Patient(email: "paciente@test.com"));
+
+        var (success, error, result) = await harness.Otp.SendOtpAsync(new SendOtpRequest
+        {
+            DocumentNumber = Document,
+            ContactId = "email",
+        });
+
+        Assert.True(success, error);
+        var message = Assert.Single(harness.Email.Messages);
+        Assert.Equal("paciente@test.com", message.To);
+        Assert.Contains(result!.DevCode!, message.HtmlBody);
+        Assert.Contains(result.DevCode!, message.PlainTextBody!);
+    }
+
+    [Fact]
+    public async Task SendOtp_Email_FalloDeEnvio_DevuelveErrorEInutilizaElCódigo()
+    {
+        using var harness = new OtpTestHarness(Patient(email: "paciente@test.com"));
+        harness.Email.ThrowOnSend = true;
+
+        var (success, error, result) = await harness.Otp.SendOtpAsync(new SendOtpRequest
+        {
+            DocumentNumber = Document,
+            ContactId = "email",
+        });
+
+        Assert.False(success);
+        Assert.Equal("No se pudo enviar el correo. Intenta de nuevo.", error);
+        Assert.Null(result);
+
+        var otp = Assert.Single(harness.Db.OtpCodes.AsNoTracking().ToList());
+        Assert.NotNull(otp.UsedAt);
+    }
+
+    [Fact]
     public async Task VerifyOtp_Email_StillWorksWithLocalHash()
     {
         using var harness = new OtpTestHarness(Patient(email: "paciente@test.com"));
@@ -515,6 +553,23 @@ public sealed class OtpServiceTests
     // Fakes
     // =====================================================================
 
+    private sealed class FakeEmailSender : IEmailSender
+    {
+        public List<EmailMessage> Messages { get; } = [];
+        public bool ThrowOnSend { get; set; }
+
+        public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+        {
+            if (ThrowOnSend)
+            {
+                throw new InvalidOperationException("SMTP no disponible");
+            }
+
+            Messages.Add(message);
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class FakeTwilioOtpService : ITwilioOtpService
     {
         public int SendCount { get; private set; }
@@ -726,6 +781,8 @@ public sealed class OtpServiceTests
             Twilio = new FakeTwilioOtpService();
             configureTwilio?.Invoke(Twilio);
             services.AddSingleton<ITwilioOtpService>(Twilio);
+            Email = new FakeEmailSender();
+            services.AddSingleton<IEmailSender>(Email);
 
             Protection = protection ?? new FakeOtpProtectionService();
             services.AddSingleton<IOtpProtectionService>(Protection);
@@ -757,6 +814,7 @@ public sealed class OtpServiceTests
         }
 
         public FakeTwilioOtpService Twilio { get; }
+        public FakeEmailSender Email { get; }
         public FakeTokenService Tokens { get; }
         public FakePatientLookup PatientLookup { get; }
         public IOtpProtectionService Protection { get; }

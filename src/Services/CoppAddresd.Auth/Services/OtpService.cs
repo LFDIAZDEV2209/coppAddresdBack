@@ -23,8 +23,9 @@ namespace CoppAddresd.Auth.Services;
 ///     el motor de protección (<see cref="IOtpProtectionService"/>) que limita
 ///     envíos por IP/teléfono/documento y cooldown; el envío solo se registra
 ///     si Twilio aceptó. Canal EMAIL → flujo local: código de 6 dígitos
-///     persistido solo como hash (SHA-256 + salt) en auth.otp_codes (sin motor
-///     de protección en esta fase).
+///     persistido solo como hash (SHA-256 + salt) en auth.otp_codes y enviado
+///     por correo con <see cref="IEmailSender"/> (sin motor de protección en
+///     esta fase).
 ///  3. <see cref="VerifyOtpAsync"/>: el canal PHONE también pasa por el motor
 ///     (límites por IP/teléfono + intentos fallidos con lockout) y registra el
 ///     resultado (fallo/éxito). Si el código es válido (Twilio approved o hash
@@ -51,6 +52,7 @@ public class OtpService : IOtpService
     private readonly ITokenService _tokenService;
     private readonly IPermissionService _permissionService;
     private readonly ITwilioOtpService _twilioOtpService;
+    private readonly IEmailSender _emailSender;
     private readonly IOtpProtectionService _otpProtection;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly JwtSettings _jwtSettings;
@@ -64,6 +66,7 @@ public class OtpService : IOtpService
         ITokenService tokenService,
         IPermissionService permissionService,
         ITwilioOtpService twilioOtpService,
+        IEmailSender emailSender,
         IOtpProtectionService otpProtection,
         IHttpContextAccessor httpContextAccessor,
         IOptions<JwtSettings> jwtSettings,
@@ -77,6 +80,7 @@ public class OtpService : IOtpService
         _tokenService = tokenService;
         _permissionService = permissionService;
         _twilioOtpService = twilioOtpService;
+        _emailSender = emailSender;
         _otpProtection = otpProtection;
         _httpContextAccessor = httpContextAccessor;
         _jwtSettings = jwtSettings.Value;
@@ -206,9 +210,51 @@ public class OtpService : IOtpService
         );
         await _dbContext.SaveChangesAsync(ct);
 
-        // "Envío" del código. En desarrollo se devuelve en la respuesta para
-        // habilitar pruebas end-to-end sin proveedor real; en producción se
-        // integraría un proveedor de correo/SMS. Nunca se loguea el código.
+        // Envío del código por correo: en producción SMTP; en desarrollo el
+        // proveedor configurado (Log o SMTP). Nunca se loguea el código.
+        try
+        {
+            var htmlBody =
+                $"""
+                <p>Hola {patient.FirstName},</p>
+                <p>Tu código de verificación es <strong>{code}</strong>.</p>
+                <p>Vence en {OtpLifetimeSeconds / 60} minutos. Si no solicitaste este código, ignora este correo.</p>
+                """;
+            var textBody =
+                $"Hola {patient.FirstName},\n\nTu código de verificación es {code}.\n\nVence en {OtpLifetimeSeconds / 60} minutos. Si no solicitaste este código, ignora este correo.";
+
+            await _emailSender.SendAsync(
+                new EmailMessage(
+                    target,
+                    "Tu código de verificación de CoppAddresd",
+                    htmlBody,
+                    textBody
+                ),
+                ct
+            );
+        }
+        catch (Exception ex)
+        {
+            // Si el correo no sale, el código se invalida para que no quede
+            // reutilizable y se informa al usuario.
+            _logger.LogError(
+                ex,
+                "OTP email send failed for document {Document}",
+                patient.DocumentNumber
+            );
+            await _dbContext
+                .OtpCodes.Where(o =>
+                    o.DocumentNumber == patient.DocumentNumber
+                    && o.Channel == channel
+                    && o.UsedAt == null
+                )
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.UsedAt, DateTime.UtcNow), ct);
+
+            return (false, "No se pudo enviar el correo. Intenta de nuevo.", null);
+        }
+
+        // En desarrollo se devuelve el código en la respuesta para habilitar
+        // pruebas end-to-end; en producción nunca se expone.
         var devCode = _environment.IsDevelopment() ? code : null;
 
         _logger.LogInformation(
