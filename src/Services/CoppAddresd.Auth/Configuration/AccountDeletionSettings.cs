@@ -14,6 +14,9 @@ public class AccountDeletionSettings
     /// <summary>Código de la aplicación cuya cuenta se elimina desde la web.</summary>
     public string Application { get; set; } = "app";
 
+    /// <summary>Vida del código de entrega app → web (handoff) en segundos.</summary>
+    public int HandoffSeconds { get; set; } = 600;
+
     /// <summary>Vida de la sesión de eliminación (cookie HttpOnly) en minutos.</summary>
     public int SessionMinutes { get; set; } = 10;
 }

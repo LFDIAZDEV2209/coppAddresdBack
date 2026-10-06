@@ -1,7 +1,7 @@
 using CoppAddresd.Auth.Configuration;
-using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Data;
 using CoppAddresd.Auth.Entities;
+using CoppAddresd.Auth.Interfaces;
 using CoppAddresd.Auth.Models;
 using CoppAddresd.Auth.Security;
 using Microsoft.AspNetCore.Identity;
@@ -15,9 +15,6 @@ public class AuthService : IAuthService
     /// <summary>Días que se conservan los datos tras pedir la eliminación.</summary>
     public const int AccountRetentionDays = 90;
 
-    /// <summary>Vida del código de entrega app → web de eliminación de cuenta.</summary>
-    public const int AccountDeletionHandoffSeconds = 120;
-
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly ITokenService _tokenService;
@@ -26,6 +23,7 @@ public class AuthService : IAuthService
     private readonly IPatientAccessGuard _patientAccessGuard;
     private readonly AuthDbContext _dbContext;
     private readonly JwtSettings _jwtSettings;
+    private readonly AccountDeletionSettings _accountDeletionSettings;
     private readonly ILogger<AuthService> _logger;
 
     public AuthService(
@@ -37,7 +35,9 @@ public class AuthService : IAuthService
         IPatientAccessGuard patientAccessGuard,
         AuthDbContext dbContext,
         IOptions<JwtSettings> jwtSettings,
-        ILogger<AuthService> logger)
+        IOptions<AccountDeletionSettings> accountDeletionSettings,
+        ILogger<AuthService> logger
+    )
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -47,6 +47,7 @@ public class AuthService : IAuthService
         _patientAccessGuard = patientAccessGuard;
         _dbContext = dbContext;
         _jwtSettings = jwtSettings.Value;
+        _accountDeletionSettings = accountDeletionSettings.Value;
         _logger = logger;
     }
 
@@ -54,17 +55,26 @@ public class AuthService : IAuthService
     /// Resuelve el usuario por correo (staff/ERP) o por número de identificación
     /// (pacientes, app móvil) viajando por <c>app.patient_profiles</c>.
     /// </summary>
-    private async Task<ApplicationUser?> ResolveUserAsync(LoginRequest request, CancellationToken ct)
+    private async Task<ApplicationUser?> ResolveUserAsync(
+        LoginRequest request,
+        CancellationToken ct
+    )
     {
         if (!string.IsNullOrWhiteSpace(request.DocumentNumber))
         {
-            var patient = await _patientLookup.FindByDocumentNumberAsync(request.DocumentNumber, ct);
+            var patient = await _patientLookup.FindByDocumentNumberAsync(
+                request.DocumentNumber,
+                ct
+            );
             if (patient?.UserId is Guid userId)
             {
                 return await _userManager.FindByIdAsync(userId.ToString());
             }
 
-            _logger.LogWarning("Login failed: no user linked to document {Document}", request.DocumentNumber);
+            _logger.LogWarning(
+                "Login failed: no user linked to document {Document}",
+                request.DocumentNumber
+            );
             return null;
         }
 
@@ -102,12 +112,19 @@ public class AuthService : IAuthService
         // app móvil. El staff no tiene perfil de paciente, así que no se afecta.
         if (await _patientAccessGuard.IsBlockedAsync(user.Id, ct))
         {
-            _logger.LogWarning("Login failed: patient profile for user {UserId} is inactive", user.Id);
+            _logger.LogWarning(
+                "Login failed: patient profile for user {UserId} is inactive",
+                user.Id
+            );
             return null;
         }
 
-        var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
-        
+        var result = await _signInManager.CheckPasswordSignInAsync(
+            user,
+            request.Password,
+            lockoutOnFailure: true
+        );
+
         if (!result.Succeeded)
         {
             if (result.IsLockedOut)
@@ -124,25 +141,34 @@ public class AuthService : IAuthService
         // La aplicación del login determina el `aud` del token. El acceso se
         // resuelve explícitamente por UserApplication: roles y permisos no
         // determinan a qué aplicaciones puede entrar el usuario.
-        var application = await _dbContext.Applications
-            .AsNoTracking()
+        var application = await _dbContext
+            .Applications.AsNoTracking()
             .FirstOrDefaultAsync(a => a.Code == request.Application, ct);
 
         if (application is null || !application.IsActive)
         {
-            _logger.LogWarning("Login failed: application {Application} not found or inactive for user {UserId}",
-                request.Application, user.Id);
+            _logger.LogWarning(
+                "Login failed: application {Application} not found or inactive for user {UserId}",
+                request.Application,
+                user.Id
+            );
             return null;
         }
 
-        var access = await _dbContext.UserApplications
-            .AsNoTracking()
-            .SingleOrDefaultAsync(ua => ua.UserId == user.Id && ua.ApplicationId == application.Id, ct);
+        var access = await _dbContext
+            .UserApplications.AsNoTracking()
+            .SingleOrDefaultAsync(
+                ua => ua.UserId == user.Id && ua.ApplicationId == application.Id,
+                ct
+            );
 
         if (access is null || access.IsSuspended)
         {
-            _logger.LogWarning("Login failed: user {UserId} has no access to application {Application}",
-                user.Id, application.Code);
+            _logger.LogWarning(
+                "Login failed: user {UserId} has no access to application {Application}",
+                user.Id,
+                application.Code
+            );
             return null;
         }
 
@@ -150,23 +176,41 @@ public class AuthService : IAuthService
         // Permisos actuales (directos + via rol) al momento del login: se emiten
         // como claims en el access token para que la autorización no consulte BD.
         var permissions = await _permissionService.GetUserAllPermissionCodesAsync(user.Id, ct);
-        var accessToken = _tokenService.GenerateAccessToken(user, roles, application.Code, permissions, access.SessionVersion);
-        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(user.Id, application.Id, ct, access.SessionVersion);
+        var accessToken = _tokenService.GenerateAccessToken(
+            user,
+            roles,
+            application.Code,
+            permissions,
+            access.SessionVersion
+        );
+        var refreshToken = await _tokenService.GenerateRefreshTokenAsync(
+            user.Id,
+            application.Id,
+            ct,
+            access.SessionVersion
+        );
 
-        _logger.LogInformation("User {UserId} logged in successfully to application {Application}",
-            user.Id, application.Code);
+        _logger.LogInformation(
+            "User {UserId} logged in successfully to application {Application}",
+            user.Id,
+            application.Code
+        );
 
         return new TokenResult(
             AccessToken: accessToken,
             RefreshToken: refreshToken,
             TokenType: "Bearer",
-            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60);
+            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60
+        );
     }
 
-    public async Task<TokenResult?> RefreshAsync(string refreshToken, CancellationToken ct = default)
+    public async Task<TokenResult?> RefreshAsync(
+        string refreshToken,
+        CancellationToken ct = default
+    )
     {
-        var storedToken = await _dbContext.RefreshTokens
-            .Include(rt => rt.User)
+        var storedToken = await _dbContext
+            .RefreshTokens.Include(rt => rt.User)
             .Include(rt => rt.Application)
             .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
 
@@ -178,7 +222,10 @@ public class AuthService : IAuthService
 
         if (!storedToken.IsActive)
         {
-            _logger.LogWarning("Refresh failed: token is not active (expired or revoked) for user {UserId}", storedToken.UserId);
+            _logger.LogWarning(
+                "Refresh failed: token is not active (expired or revoked) for user {UserId}",
+                storedToken.UserId
+            );
             return null;
         }
 
@@ -192,7 +239,10 @@ public class AuthService : IAuthService
         // debe quemar (rotar) su refresh token ni recibir tokens nuevos.
         if (await _patientAccessGuard.IsBlockedAsync(storedToken.UserId, ct))
         {
-            _logger.LogWarning("Refresh failed: patient profile for user {UserId} is inactive", storedToken.UserId);
+            _logger.LogWarning(
+                "Refresh failed: patient profile for user {UserId} is inactive",
+                storedToken.UserId
+            );
             return null;
         }
 
@@ -200,13 +250,24 @@ public class AuthService : IAuthService
         // original: el nuevo access token mantiene el mismo `aud`.
         if (storedToken.Application is null || !storedToken.Application.IsActive)
         {
-            _logger.LogWarning("Refresh failed: token {TokenId} has no valid application binding", storedToken.Id);
+            _logger.LogWarning(
+                "Refresh failed: token {TokenId} has no valid application binding",
+                storedToken.Id
+            );
             return null;
         }
 
-        var access = await _dbContext.UserApplications.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.UserId == storedToken.UserId && x.ApplicationId == storedToken.ApplicationId, ct);
-        if (access is null || access.IsSuspended || access.SessionVersion != storedToken.ApplicationSessionVersion)
+        var access = await _dbContext
+            .UserApplications.AsNoTracking()
+            .SingleOrDefaultAsync(
+                x => x.UserId == storedToken.UserId && x.ApplicationId == storedToken.ApplicationId,
+                ct
+            );
+        if (
+            access is null
+            || access.IsSuspended
+            || access.SessionVersion != storedToken.ApplicationSessionVersion
+        )
             return null;
 
         // Reclamación ATÓMICA del token: un solo UPDATE condicional revoca el
@@ -216,17 +277,19 @@ public class AuthService : IAuthService
         // fue reclamado y se rechaza SIN emitir una nueva familia. Antes era un
         // check-then-act (IsActive leído antes de escribir) que permitía minting
         // múltiple ante replay concurrente de un token robado.
-        var claimed = await _dbContext.RefreshTokens
-            .Where(rt => rt.Token == refreshToken && rt.RevokedAt == null)
+        var claimed = await _dbContext
+            .RefreshTokens.Where(rt => rt.Token == refreshToken && rt.RevokedAt == null)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(rt => rt.RevokedAt, DateTime.UtcNow),
-                ct);
+                ct
+            );
 
         if (claimed == 0)
         {
             _logger.LogWarning(
                 "Refresh failed: token already claimed (concurrent rotation or replay) for user {UserId}",
-                storedToken.UserId);
+                storedToken.UserId
+            );
             return null;
         }
 
@@ -236,32 +299,56 @@ public class AuthService : IAuthService
         storedToken.RevokedAt = DateTime.UtcNow;
 
         var newRefreshToken = await _tokenService.GenerateRefreshTokenAsync(
-            storedToken.UserId, storedToken.ApplicationId, ct, access.SessionVersion);
-        storedToken.ReplacedByTokenId = (await _dbContext.RefreshTokens
-            .FirstOrDefaultAsync(rt => rt.Token == newRefreshToken, ct))?.Id;
+            storedToken.UserId,
+            storedToken.ApplicationId,
+            ct,
+            access.SessionVersion
+        );
+        storedToken.ReplacedByTokenId = (
+            await _dbContext.RefreshTokens.FirstOrDefaultAsync(
+                rt => rt.Token == newRefreshToken,
+                ct
+            )
+        )?.Id;
 
         await _dbContext.SaveChangesAsync(ct);
 
         var roles = await _userManager.GetRolesAsync(storedToken.User);
         // Re-cálculo de permisos en cada refresh: el nuevo access token refleja
         // el estado ACTUAL (no copia claims del token anterior).
-        var permissions = await _permissionService.GetUserAllPermissionCodesAsync(storedToken.UserId, ct);
-        var newAccessToken = _tokenService.GenerateAccessToken(storedToken.User, roles, storedToken.Application.Code, permissions, access.SessionVersion);
+        var permissions = await _permissionService.GetUserAllPermissionCodesAsync(
+            storedToken.UserId,
+            ct
+        );
+        var newAccessToken = _tokenService.GenerateAccessToken(
+            storedToken.User,
+            roles,
+            storedToken.Application.Code,
+            permissions,
+            access.SessionVersion
+        );
 
-        _logger.LogInformation("Refreshed tokens for user {UserId} (application {Application})",
-            storedToken.UserId, storedToken.Application.Code);
+        _logger.LogInformation(
+            "Refreshed tokens for user {UserId} (application {Application})",
+            storedToken.UserId,
+            storedToken.Application.Code
+        );
 
         return new TokenResult(
             AccessToken: newAccessToken,
             RefreshToken: newRefreshToken,
             TokenType: "Bearer",
-            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60);
+            ExpiresIn: _jwtSettings.AccessTokenExpirationMinutes * 60
+        );
     }
 
-    public async Task<Guid?> GetUserIdByRefreshTokenAsync(string refreshToken, CancellationToken ct = default)
+    public async Task<Guid?> GetUserIdByRefreshTokenAsync(
+        string refreshToken,
+        CancellationToken ct = default
+    )
     {
-        var storedToken = await _dbContext.RefreshTokens
-            .AsNoTracking()
+        var storedToken = await _dbContext
+            .RefreshTokens.AsNoTracking()
             .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
 
         if (storedToken is null || !storedToken.IsActive)
@@ -272,10 +359,13 @@ public class AuthService : IAuthService
         return storedToken.UserId;
     }
 
-    public async Task<string?> GetRefreshTokenApplicationCodeAsync(string refreshToken, CancellationToken ct = default)
+    public async Task<string?> GetRefreshTokenApplicationCodeAsync(
+        string refreshToken,
+        CancellationToken ct = default
+    )
     {
-        var storedToken = await _dbContext.RefreshTokens
-            .AsNoTracking()
+        var storedToken = await _dbContext
+            .RefreshTokens.AsNoTracking()
             .Include(rt => rt.Application)
             .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
 
@@ -289,8 +379,8 @@ public class AuthService : IAuthService
 
     public async Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default)
     {
-        var activeTokens = await _dbContext.RefreshTokens
-            .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
+        var activeTokens = await _dbContext
+            .RefreshTokens.Where(rt => rt.UserId == userId && rt.RevokedAt == null)
             .ToListAsync(ct);
 
         foreach (var token in activeTokens)
@@ -300,11 +390,14 @@ public class AuthService : IAuthService
 
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("User {UserId} logged out, revoked {Count} refresh tokens", userId, activeTokens.Count);
+        _logger.LogInformation(
+            "User {UserId} logged out, revoked {Count} refresh tokens",
+            userId,
+            activeTokens.Count
+        );
 
         return true;
     }
-
 
     /// <summary>
     /// Define la PRIMERA contraseña de una cuenta OTP (solo si aún no tiene
@@ -313,7 +406,8 @@ public class AuthService : IAuthService
     public async Task<(bool Success, string? Error)> SetFirstPasswordAsync(
         Guid userId,
         ChangePasswordRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -331,7 +425,11 @@ public class AuthService : IAuthService
         if (!result.Succeeded)
         {
             var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogWarning("First password set failed for user {UserId}: {Errors}", userId, errors);
+            _logger.LogWarning(
+                "First password set failed for user {UserId}: {Errors}",
+                userId,
+                errors
+            );
             return (false, errors);
         }
 
@@ -340,10 +438,11 @@ public class AuthService : IAuthService
         return (true, null);
     }
 
-    public async Task<(bool Success, string? Error, DateTime? PurgeAfter)> RequestAccountDeletionAsync(
-        Guid userId,
-        string application,
-        CancellationToken ct = default)
+    public async Task<(
+        bool Success,
+        string? Error,
+        DateTime? PurgeAfter
+    )> RequestAccountDeletionAsync(Guid userId, string application, CancellationToken ct = default)
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -354,8 +453,10 @@ public class AuthService : IAuthService
         var app = await _dbContext.Applications.FirstOrDefaultAsync(a => a.Code == application, ct);
         var access = app is null
             ? null
-            : await _dbContext.UserApplications
-                .FirstOrDefaultAsync(ua => ua.UserId == userId && ua.ApplicationId == app.Id, ct);
+            : await _dbContext.UserApplications.FirstOrDefaultAsync(
+                ua => ua.UserId == userId && ua.ApplicationId == app.Id,
+                ct
+            );
         if (app is null || access is null)
         {
             return (false, "La cuenta no tiene acceso a esta aplicación", null);
@@ -367,12 +468,17 @@ public class AuthService : IAuthService
         access.SessionVersion++;
 
         // Si conserva acceso a otra aplicación (p. ej. ERP) la cuenta global sigue activa.
-        var keepsOtherAccess = await _dbContext.UserApplications
-            .AnyAsync(ua => ua.UserId == userId && ua.ApplicationId != app.Id && !ua.IsSuspended, ct);
+        var keepsOtherAccess = await _dbContext.UserApplications.AnyAsync(
+            ua => ua.UserId == userId && ua.ApplicationId != app.Id && !ua.IsSuspended,
+            ct
+        );
 
-        var tokens = await _dbContext.RefreshTokens
-            .Where(rt => rt.UserId == userId && rt.RevokedAt == null
-                && (!keepsOtherAccess || rt.ApplicationId == app.Id))
+        var tokens = await _dbContext
+            .RefreshTokens.Where(rt =>
+                rt.UserId == userId
+                && rt.RevokedAt == null
+                && (!keepsOtherAccess || rt.ApplicationId == app.Id)
+            )
             .ToListAsync(ct);
         foreach (var token in tokens)
         {
@@ -391,17 +497,25 @@ public class AuthService : IAuthService
             // el paciente sale de los listados) y fin de las notificaciones push.
             await _dbContext.Database.ExecuteSqlRawAsync(
                 "UPDATE app.patient_profiles SET deleted_at = {0}, updated_at = {0} WHERE user_id = {1} AND deleted_at IS NULL",
-                [now, userId], ct);
+                [now, userId],
+                ct
+            );
             await _dbContext.Database.ExecuteSqlRawAsync(
                 "DELETE FROM app.device_tokens WHERE user_id = {0}",
-                [userId], ct);
+                [userId],
+                ct
+            );
         }
 
         await _dbContext.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         _logger.LogInformation(
             "Account deletion requested for user {UserId} (app {Application}, global={Global}, purge after {PurgeAfter})",
-            userId, application, !keepsOtherAccess, user.PurgeAfter);
+            userId,
+            application,
+            !keepsOtherAccess,
+            user.PurgeAfter
+        );
 
         return (true, null, user.PurgeAfter);
     }
@@ -409,37 +523,51 @@ public class AuthService : IAuthService
     public async Task<AccountDeletionHandoffResponse?> CreateAccountDeletionHandoffAsync(
         Guid userId,
         string application,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var access = await _dbContext.UserApplications
-            .Include(ua => ua.Application)
+        var access = await _dbContext
+            .UserApplications.Include(ua => ua.Application)
             .Include(ua => ua.User)
             .AsNoTracking()
-            .SingleOrDefaultAsync(ua => ua.UserId == userId && ua.Application.Code == application, ct);
-        if (access is null || access.IsSuspended || !access.Application.IsActive || !access.User.IsActive)
+            .SingleOrDefaultAsync(
+                ua => ua.UserId == userId && ua.Application.Code == application,
+                ct
+            );
+        if (
+            access is null
+            || access.IsSuspended
+            || !access.Application.IsActive
+            || !access.User.IsActive
+        )
         {
             return null;
         }
 
         // 256 bits aleatorios: el código viaja en la URL, así que solo se guarda su hash.
+        // TTL holgado por defecto (600 s): la web tarda en cargar en redes móviles.
+        var handoffSeconds = _accountDeletionSettings.HandoffSeconds;
         var code = AccountDeletionSecrets.NewSecret();
-        _dbContext.AccountDeletionHandoffs.Add(new AccountDeletionHandoff
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            ApplicationId = access.ApplicationId,
-            CodeHash = AccountDeletionSecrets.Hash(code),
-            ExpiresAt = DateTime.UtcNow.AddSeconds(AccountDeletionHandoffSeconds),
-        });
+        _dbContext.AccountDeletionHandoffs.Add(
+            new AccountDeletionHandoff
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                ApplicationId = access.ApplicationId,
+                CodeHash = AccountDeletionSecrets.Hash(code),
+                ExpiresAt = DateTime.UtcNow.AddSeconds(handoffSeconds),
+            }
+        );
         await _dbContext.SaveChangesAsync(ct);
 
-        return new AccountDeletionHandoffResponse(code, AccountDeletionHandoffSeconds);
+        return new AccountDeletionHandoffResponse(code, handoffSeconds);
     }
 
     public async Task<(bool Success, string? Error)> ChangePasswordAsync(
         Guid userId,
         ChangePasswordRequest request,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());
         if (user is null)
@@ -447,18 +575,26 @@ public class AuthService : IAuthService
             return (false, "Usuario no encontrado");
         }
 
-        var result = await _userManager.ChangePasswordAsync(user, request.CurrentPassword, request.NewPassword);
+        var result = await _userManager.ChangePasswordAsync(
+            user,
+            request.CurrentPassword,
+            request.NewPassword
+        );
         if (!result.Succeeded)
         {
             var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogWarning("Password change failed for user {UserId}: {Errors}", userId, errors);
+            _logger.LogWarning(
+                "Password change failed for user {UserId}: {Errors}",
+                userId,
+                errors
+            );
             return (false, errors);
         }
 
         await _userManager.UpdateSecurityStampAsync(user);
 
-        var activeTokens = await _dbContext.RefreshTokens
-            .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
+        var activeTokens = await _dbContext
+            .RefreshTokens.Where(rt => rt.UserId == userId && rt.RevokedAt == null)
             .ToListAsync(ct);
 
         foreach (var token in activeTokens)
@@ -468,7 +604,10 @@ public class AuthService : IAuthService
 
         await _dbContext.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Password changed for user {UserId}, all tokens invalidated", userId);
+        _logger.LogInformation(
+            "Password changed for user {UserId}, all tokens invalidated",
+            userId
+        );
 
         return (true, null);
     }

@@ -44,16 +44,16 @@ Sistema completo de autenticación JWT con autorización basada en permisos gran
 
 ## Decisiones de diseño
 
-| Decisión | Razón |
-|----------|-------|
-| **Servicio standalone** | Auth no depende de otros proyectos. Puede desplegarse independientemente. |
-| **Permisos granulares** | `Users.View`, `Users.Create`, etc. Más flexible que solo roles. |
-| **Permisos directos + via rol** | Usuario puede tener permisos directos (excepciones) o via rol. |
-| **Refresh tokens en DB** | Rotación automática, revocación en logout/cambio password. |
+| Decisión                             | Razón                                                                                                                                                                                                 |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Servicio standalone**              | Auth no depende de otros proyectos. Puede desplegarse independientemente.                                                                                                                             |
+| **Permisos granulares**              | `Users.View`, `Users.Create`, etc. Más flexible que solo roles.                                                                                                                                       |
+| **Permisos directos + via rol**      | Usuario puede tener permisos directos (excepciones) o via rol.                                                                                                                                        |
+| **Refresh tokens en DB**             | Rotación automática, revocación en logout/cambio password.                                                                                                                                            |
 | **Refresh token en cookie HttpOnly** | `copp_refresh_token` (Path `/api/auth`, SameSite=Lax, Secure en prod). El JS del navegador nunca ve el token: inmune a XSS persistente. El access token viaja en header Bearer (memoria del cliente). |
-| **SecurityStamp invalidation** | Cambios de password/rol/permiso/desactivación invalidan tokens inmediatamente (validación por request SOLO para audiencia `erp`). |
-| **Schema `auth.` separado** | Consistencia con `audit.`. Previene contaminación de `public.` |
-| **CORS whitelist configurable** | `Cors:Origins` (default `http://localhost:3000`) con `AllowCredentials`; expone `X-Refresh-Status` para distinguir "sin cookie" de "token inválido". |
+| **SecurityStamp invalidation**       | Cambios de password/rol/permiso/desactivación invalidan tokens inmediatamente (validación por request SOLO para audiencia `erp`).                                                                     |
+| **Schema `auth.` separado**          | Consistencia con `audit.`. Previene contaminación de `public.`                                                                                                                                        |
+| **CORS whitelist configurable**      | `Cors:Origins` (default `http://localhost:3000`) con `AllowCredentials`; expone `X-Refresh-Status` para distinguir "sin cookie" de "token inválido".                                                  |
 
 ## Modelo de datos (Schema `auth.`)
 
@@ -91,6 +91,7 @@ auth.UserTokens               → Tokens 2FA (Identity)
 ## Flujo de autenticación
 
 ### Login
+
 ```
 1. POST /api/auth/login (documentNumber | email + password + rememberMe + application)
 2. Resolver el usuario: por número de identificación (viaja por
@@ -153,6 +154,7 @@ pendiente en `auth.otp_codes` (el canal PHONE nunca persiste filas): con fila
 pendiente → flujo EMAIL local; sin fila → verificación contra Twilio.
 
 **Canal PHONE — responsabilidades**:
+
 - **Twilio genera el OTP** (código de 6 dígitos), **lo envía por SMS**, **lo
   almacena** y **lo verifica** (Verification/VerificationCheck de Verify V2).
 - PHONE **no genera OTP local** (sin `GenerateOtp`, sin hash, sin salt), **no
@@ -165,10 +167,10 @@ país (`app.patient_profiles.phone_country_code`) con los dígitos del número
 (`phone_number`) y el prefijo `+`. No se agrega `+1` por defecto ni se adivina
 el país. Ejemplos documentales:
 
-| País | Teléfono | Country code | E.164 |
-|---|---|---|---|
-| Colombia | 3053924819 | 57 | +573053924819 |
-| Estados Unidos | 5765550100 | 1 | +15765550100 |
+| País           | Teléfono   | Country code | E.164         |
+| -------------- | ---------- | ------------ | ------------- |
+| Colombia       | 3053924819 | 57           | +573053924819 |
+| Estados Unidos | 5765550100 | 1            | +15765550100  |
 
 El Auth Service NO conoce el SDK de Twilio: `OtpService` solo usa
 `ITwilioOtpService` y `TwilioOtpService` es la única clase que conoce el SDK.
@@ -181,6 +183,7 @@ Los correos/teléfonos se devuelven enmascarados (`di•••••••@gmail
 propiedad del número.
 
 ### Request autorizado
+
 ```
 1. Request con Header: Authorization: Bearer <token>
 2. JwtBearer valida firma, issuer, audience (aud ∈ ValidAudiences), expiración
@@ -197,6 +200,7 @@ propiedad del número.
 ```
 
 ### Refresh token
+
 ```
 1. POST /api/auth/refresh (sin body — el token viene de la cookie HttpOnly)
 2. Buscar token en DB
@@ -221,6 +225,7 @@ inválido) — el frontend decide si muestra el banner de sesión expirada.
 ```
 
 ### Logout
+
 ```
 1. POST /api/auth/logout — se resuelve SOLO con la cookie de refresh
    (no requiere [Authorize]: funciona aunque el access token haya expirado)
@@ -230,6 +235,7 @@ inválido) — el frontend decide si muestra el banner de sesión expirada.
 ```
 
 ### Invalidación de tokens
+
 ```
 Cambio de password/rol/permiso/desactivación (IsActive → false) →
   TokenInvalidationService.InvalidateUserTokensAsync() (1 usuario) o
@@ -242,6 +248,7 @@ En la audiencia APP (pacientes, ~10M) el stamp NO se valida por request:
   los tokens viven hasta su expiración natural (≤ 15 min) — trade-off aceptado
   para mantener el hot path libre de queries a la BD.
 ```
+
 El CancellationToken del request se propaga a TODAS las invalidaciones; en el
 camino de usuario único UserManager no expone overloads con ct (limitación de
 la API Identity), por lo que la cancelación se verifica explícitamente antes
@@ -288,12 +295,14 @@ para ERP vía security stamp (validado por request) y ≤ 15 min para APP
 (expiración natural del token).
 
 ### Módulo Users
+
 - `Users.View` — Listar/obtener usuarios
 - `Users.Create` — Crear usuarios
 - `Users.Update` — Actualizar usuarios
 - `Users.Delete` — Eliminar usuarios
 
 ### Módulo Roles
+
 - `Roles.View` — Listar/obtener roles
 - `Roles.Create` — Crear roles
 - `Roles.Update` — Actualizar roles
@@ -301,10 +310,12 @@ para ERP vía security stamp (validado por request) y ≤ 15 min para APP
 - `Roles.Assign` — Asignar/quitar roles a usuarios
 
 ### Módulo Permissions
+
 - `Permissions.View` — Listar/obtener permisos
 - `Permissions.Assign` — Asignar/quitar permisos a roles/usuarios
 
 ### Módulo Agents
+
 - `Agents.View` — Ver agentes IA
 - `Agents.Create` — Crear agentes
 - `Agents.Update` — Actualizar agentes
@@ -372,6 +383,7 @@ tokens funcionen. El `aud` del token es el código de la aplicación (`erp`,
 `app`); `Jwt:ValidAudiences` (misma clave en ambos servicios) define qué
 audiencias acepta la validación. Si no se configura, se usan los códigos
 conocidos (`erp`, `app`).
+
 ## Startup
 
 Al iniciar, Auth Service automáticamente:
@@ -410,21 +422,21 @@ Check). Los bloqueos locales ocurren **siempre antes** de llamar a Twilio.
 
 ### Límites SEND (`send-otp`)
 
-| Dimensión | Límite |
-|---|---|
-| IP | 5/min y 30/hora |
-| Teléfono (E.164) | 3/min, 10/hora y 20/día |
-| Cooldown por teléfono | 60 segundos |
-| Documento | 5/hora |
+| Dimensión             | Límite                  |
+| --------------------- | ----------------------- |
+| IP                    | 5/min y 30/hora         |
+| Teléfono (E.164)      | 3/min, 10/hora y 20/día |
+| Cooldown por teléfono | 60 segundos             |
+| Documento             | 5/hora                  |
 
 ### Límites VERIFY (`verify-otp`)
 
-| Dimensión | Límite |
-|---|---|
-| IP | 30/min |
-| Teléfono | 10 intentos por ventana de 5 minutos |
-| Intentos fallidos PHONE | máximo 5 |
-| Lockout tras superar fallos | 300 segundos |
+| Dimensión                   | Límite                               |
+| --------------------------- | ------------------------------------ |
+| IP                          | 30/min                               |
+| Teléfono                    | 10 intentos por ventana de 5 minutos |
+| Intentos fallidos PHONE     | máximo 5                             |
+| Lockout tras superar fallos | 300 segundos                         |
 
 Los fallos se registran con `RegisterVerifyFailed`; el intento que alcanza el
 máximo activa el lockout y el siguiente `CheckCanVerify` lo detecta
@@ -465,13 +477,13 @@ Secret Manager. No poner credenciales reales en Git.
 
 ### Errores HTTP
 
-| Status | Caso |
-|---|---|
-| 400 | Teléfono inválido (no E.164), parámetros inválidos |
-| 401 | OTP incorrecto o expirado |
-| 429 | Rate limit local (IP/teléfono/documento), cooldown, lockout, o rate limit de Twilio (60203) |
-| 502 | Error genérico del proveedor |
-| 503 | Proveedor no disponible, configuración inválida, Twilio deshabilitado |
+| Status | Caso                                                                                        |
+| ------ | ------------------------------------------------------------------------------------------- |
+| 400    | Teléfono inválido (no E.164), parámetros inválidos                                          |
+| 401    | OTP incorrecto o expirado                                                                   |
+| 429    | Rate limit local (IP/teléfono/documento), cooldown, lockout, o rate limit de Twilio (60203) |
+| 502    | Error genérico del proveedor                                                                |
+| 503    | Proveedor no disponible, configuración inválida, Twilio deshabilitado                       |
 
 Nunca se exponen mensajes internos que revelen el límite exacto alcanzado, la
 razón del bloqueo (IP/teléfono/documento/lockout) ni información sensible.
@@ -493,7 +505,7 @@ con limpieza oportunista de estados expirados):
 - La API Key de Twilio **no se almacena en código** (solo appsettings locales
   gitignored o variables de entorno).
 - El SDK de Twilio está **encapsulado** en `TwilioOtpService` (único `using
-  Twilio.*` del proyecto).
+Twilio.*` del proyecto).
 - Los logs nuevos del flujo OTP usan **datos enmascarados** (teléfono
   `+********4819`, documento `32****34`); el OTP nunca se registra; los tokens
   nunca se registran completos; las credenciales no se exponen en respuestas
@@ -528,7 +540,7 @@ Configurado con `HealthChecks.NpgSql`.
 - **Aislamiento de audiencias**: los endpoints de administración ERP (Users/Roles/Permissions) exigen `aud == "erp"` (política ErpAudience → 403 para tokens `app`). El middleware JWT acepta ambas audiencias conocidas; la garantía cross-audience vive en la capa de autorización
 - **Cookie HttpOnly**: `copp_refresh_token` — invisible para JS, `SameSite=Lax` (mitiga CSRF: las peticiones cross-site no envían la cookie; el bearer es independiente)
 - **Rate limiting**: 100 requests/minuto por IP aplicado a `AuthController` (`[EnableRateLimiting("auth")]`)
-- **Protección OTP**: límites por IP/teléfono/documento + cooldown (SEND) y ventana/intentos/lockout (VERIFY) en `OtpProtectionService` — ver sección *Protección OTP (OtpSecurity)*
+- **Protección OTP**: límites por IP/teléfono/documento + cooldown (SEND) y ventana/intentos/lockout (VERIFY) en `OtpProtectionService` — ver sección _Protección OTP (OtpSecurity)_
 - **Twilio Verify encapsulado**: el SDK solo vive en `TwilioOtpService`; `OtpService` usa `ITwilioOtpService`; `OtpProtectionService` no depende de HttpContext ni Twilio
 - **Registro de bloqueos**: un OTP incorrecto se registra como fallo (no excepción); los límites/lockout responden 429 con el shape del rate limiter, sin revelar la razón interna
 - **CORS**: Whitelist configurable (`Cors:Origins`) con `AllowCredentials`; expone `X-Refresh-Status`
@@ -553,6 +565,56 @@ curl -b jar.txt -c jar.txt -X POST http://localhost:5058/api/auth/refresh \
 # Logout — revoca + limpia cookie
 curl -b jar.txt -c jar.txt -X POST http://localhost:5058/api/auth/logout
 ```
+
+## Eliminación de cuenta vía web (BFF, patrón micro-frontend)
+
+Flujo de auto-eliminación de la cuenta del paciente (GCPR/anonimización a 90 días).
+La app móvil inicia, la web pública `www.coppadresd.com/eliminar-cuenta` completa.
+Ningún token viaja en la URL: solo un código opaco de un solo uso.
+
+### Endpoints (app móvil → auth)
+
+```
+POST /api/auth/account/deletion-handoff   [Authorize]
+```
+
+Genera un código opaco (256 bits aleatorios; en BD solo `SHA-256`) y responde
+`{ code, expiresInSeconds }`. El código dura `AccountDeletion:HandoffSeconds`
+(**600 s por defecto**, configurable por env `AccountDeletion__HandoffSeconds`).
+
+### Endpoints (web pública → auth, patrón BFF)
+
+```
+POST   /api/auth/account/deletion-session            # canjea el código por cookie de sesión
+POST   /api/auth/account/deletion-session/password   # alternativa sin app: documento + contraseña
+POST   /api/auth/account/deletion-session/otp        # alternativa: documento + OTP
+GET    /api/auth/account/deletion-session            # sesión vigente (al recargar la página)
+POST   /api/auth/account/deletion-session/confirm    # confirma y solicita la eliminación
+DELETE /api/auth/account/deletion-session            # cancela sin eliminar nada
+```
+
+### Seguridad
+
+- Cookie de sesión: `copp_account_deletion` HttpOnly + `SameSite=Strict` +
+  `Path=/api/auth/account/deletion-session` (10 min, `AccountDeletion:SessionMinutes`).
+- **Validación de Origin por acción (falla cerrado)**: toda acción exige `Origin`
+  en `AccountDeletion:AllowedOrigins` (producción: `www.coppadresd.com` y
+  `coppadresd.com`). El GET same-origin sin Origin se acepta con
+  `Sec-Fetch-Site: same-origin` (Chromium) **o `Referer` del mismo origen**
+  (Safari/Firefox no implementan Sec-Fetch headers).
+- El rechazo de Origin responde **403** y queda logueado como
+  `WRN "Account deletion {Action} rejected..."` (diagnóstico desde CloudWatch).
+- Confirmación con palabra canónica `ELIMINAR` (independiente del idioma de la UI).
+- Al confirmar (UNA transacción): acceso de app suspendido + `SessionVersion+1`,
+  refresh revocados, usuario desactivado con `PurgeAfter = +90 días`, perfil de
+  paciente soft-delete y device tokens fuera. Email de aviso al titular.
+- `AccountPurgeService` (hosted service, cada 6 h): anonimiza `auth.Users` y
+  `app.patient_profiles` tras los 90 días; limpia códigos y sesiones vencidos.
+
+### Migraciones (schema `auth`)
+
+`AddAccountDeletion` (DeletionRequestedAt/PurgeAfter/SessionVersion),
+`AddAccountDeletionHandoffs`, `AddAccountDeletionSessions`.
 
 ## TODO / Mejoras futuras
 

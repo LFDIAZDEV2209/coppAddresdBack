@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using CoppAddresd.Auth.Configuration;
 using CoppAddresd.Auth.Models;
 using CoppAddresd.Auth.Services;
@@ -24,23 +25,30 @@ public class AccountDeletionController : ControllerBase
     private readonly IAccountDeletionSessionService _sessions;
     private readonly AccountDeletionSettings _settings;
     private readonly IHostEnvironment _environment;
+    private readonly ILogger<AccountDeletionController> _logger;
 
     public AccountDeletionController(
         IAccountDeletionSessionService sessions,
         IOptions<AccountDeletionSettings> settings,
-        IHostEnvironment environment)
+        IHostEnvironment environment,
+        ILogger<AccountDeletionController> logger
+    )
     {
         _sessions = sessions;
         _settings = settings.Value;
         _environment = environment;
+        _logger = logger;
     }
 
     /// <summary>Canjea el código de un solo uso que entrega la app por la cookie de sesión.</summary>
     [HttpPost]
     public async Task<ActionResult<DeletionSessionSummary>> StartFromCode(
-        [FromBody] StartDeletionSessionFromCodeRequest request, CancellationToken ct)
+        [FromBody] StartDeletionSessionFromCodeRequest request,
+        CancellationToken ct
+    )
     {
-        if (!IsAllowedOrigin(requireHeader: true)) return ForbiddenOrigin();
+        if (!IsAllowedOrigin(requireHeader: true))
+            return ForbiddenOrigin();
         var started = await _sessions.StartFromHandoffAsync(request.Code, ct);
         return started is null
             ? Unauthorized(new { message = "Código inválido o vencido" })
@@ -50,10 +58,17 @@ public class AccountDeletionController : ControllerBase
     /// <summary>Alternativa sin la app: documento + contraseña.</summary>
     [HttpPost("password")]
     public async Task<ActionResult<DeletionSessionSummary>> StartWithPassword(
-        [FromBody] StartDeletionSessionWithPasswordRequest request, CancellationToken ct)
+        [FromBody] StartDeletionSessionWithPasswordRequest request,
+        CancellationToken ct
+    )
     {
-        if (!IsAllowedOrigin(requireHeader: true)) return ForbiddenOrigin();
-        var started = await _sessions.StartWithPasswordAsync(request.DocumentNumber, request.Password, ct);
+        if (!IsAllowedOrigin(requireHeader: true))
+            return ForbiddenOrigin();
+        var started = await _sessions.StartWithPasswordAsync(
+            request.DocumentNumber,
+            request.Password,
+            ct
+        );
         return started is null
             ? Unauthorized(new { message = "Credenciales inválidas" })
             : Started(started.Value);
@@ -62,9 +77,12 @@ public class AccountDeletionController : ControllerBase
     /// <summary>Alternativa sin la app ni contraseña: documento + código OTP.</summary>
     [HttpPost("otp")]
     public async Task<ActionResult<DeletionSessionSummary>> StartWithOtp(
-        [FromBody] StartDeletionSessionWithOtpRequest request, CancellationToken ct)
+        [FromBody] StartDeletionSessionWithOtpRequest request,
+        CancellationToken ct
+    )
     {
-        if (!IsAllowedOrigin(requireHeader: true)) return ForbiddenOrigin();
+        if (!IsAllowedOrigin(requireHeader: true))
+            return ForbiddenOrigin();
         var started = await _sessions.StartWithOtpAsync(request.DocumentNumber, request.Otp, ct);
         return started is null
             ? Unauthorized(new { message = "Código inválido o expirado" })
@@ -75,7 +93,8 @@ public class AccountDeletionController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<DeletionSessionSummary>> Get(CancellationToken ct)
     {
-        if (!IsAllowedOrigin(requireHeader: false)) return ForbiddenOrigin();
+        if (!IsAllowedOrigin(requireHeader: false))
+            return ForbiddenOrigin();
         NoStore();
         var secret = Request.Cookies[SessionCookieName];
         var summary = secret is null ? null : await _sessions.GetAsync(secret, ct);
@@ -85,11 +104,20 @@ public class AccountDeletionController : ControllerBase
     /// <summary>Confirma y solicita la eliminación. Consume la sesión.</summary>
     [HttpPost("confirm")]
     public async Task<ActionResult<DeletionSessionConfirmed>> Confirm(
-        [FromBody] ConfirmDeletionSessionRequest request, CancellationToken ct)
+        [FromBody] ConfirmDeletionSessionRequest request,
+        CancellationToken ct
+    )
     {
-        if (!IsAllowedOrigin(requireHeader: true)) return ForbiddenOrigin();
+        if (!IsAllowedOrigin(requireHeader: true))
+            return ForbiddenOrigin();
         NoStore();
-        if (!string.Equals(request.Confirmation.Trim(), ConfirmationWord, StringComparison.OrdinalIgnoreCase))
+        if (
+            !string.Equals(
+                request.Confirmation.Trim(),
+                ConfirmationWord,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
             return BadRequest(new { message = "Confirmación inválida" });
         }
@@ -116,7 +144,8 @@ public class AccountDeletionController : ControllerBase
     [HttpDelete]
     public async Task<IActionResult> Cancel(CancellationToken ct)
     {
-        if (!IsAllowedOrigin(requireHeader: true)) return ForbiddenOrigin();
+        if (!IsAllowedOrigin(requireHeader: true))
+            return ForbiddenOrigin();
         var secret = Request.Cookies[SessionCookieName];
         if (secret is not null)
         {
@@ -127,10 +156,16 @@ public class AccountDeletionController : ControllerBase
         return NoContent();
     }
 
-    private ActionResult<DeletionSessionSummary> Started((string Secret, DeletionSessionSummary Summary) started)
+    private ActionResult<DeletionSessionSummary> Started(
+        (string Secret, DeletionSessionSummary Summary) started
+    )
     {
         NoStore();
-        Response.Cookies.Append(SessionCookieName, started.Secret, CookieOptions(started.Summary.ExpiresAt));
+        Response.Cookies.Append(
+            SessionCookieName,
+            started.Secret,
+            CookieOptions(started.Summary.ExpiresAt)
+        );
         return Ok(started.Summary);
     }
 
@@ -139,41 +174,103 @@ public class AccountDeletionController : ControllerBase
     /// Sin lista configurada el flujo queda deshabilitado (falla cerrado). Solo las
     /// lecturas aceptan peticiones same-origin sin cabecera Origin.
     /// </summary>
-    private bool IsAllowedOrigin(bool requireHeader)
+    private bool IsAllowedOrigin(bool requireHeader, [CallerMemberName] string action = "")
     {
         if (_settings.AllowedOrigins.Length == 0)
         {
+            _logger.LogWarning(
+                "Account deletion {Action} rejected: no AllowedOrigins configured (flujo deshabilitado)",
+                action
+            );
             return false;
         }
 
         var origin = Request.Headers.Origin.ToString();
         if (string.IsNullOrEmpty(origin))
         {
-            return !requireHeader && Request.Headers["Sec-Fetch-Site"].ToString() == "same-origin";
+            if (requireHeader)
+            {
+                _logger.LogWarning(
+                    "Account deletion {Action} rejected: POST sin cabecera Origin",
+                    action
+                );
+                return false;
+            }
+
+            // Sin Origin (GET same-origin): Chromium manda Sec-Fetch-Site; Safari y
+            // Firefox no lo implementan, asi que el mismo sitio se confirma con Referer.
+            if (Request.Headers["Sec-Fetch-Site"].ToString() == "same-origin")
+            {
+                return true;
+            }
+
+            var referer = Request.Headers.Referer.ToString();
+            if (
+                !string.IsNullOrEmpty(referer)
+                && Uri.TryCreate(referer, UriKind.Absolute, out var uri)
+                && Matches($"{uri.Scheme}://{uri.Authority}")
+            )
+            {
+                return true;
+            }
+
+            _logger.LogWarning(
+                "Account deletion {Action} rejected: sin Origin, sin Sec-Fetch-Site same-origin y Referer no permitido (Referer={Referer})",
+                action,
+                referer
+            );
+            return false;
         }
 
-        return _settings.AllowedOrigins.Any(o =>
-            string.Equals(o.TrimEnd('/'), origin, StringComparison.OrdinalIgnoreCase));
+        if (Matches(origin))
+        {
+            return true;
+        }
+
+        _logger.LogWarning(
+            "Account deletion {Action} rejected: origin not allowed (Origin={Origin}, permitidos={Allowed})",
+            action,
+            origin,
+            string.Join(", ", _settings.AllowedOrigins)
+        );
+        return false;
     }
 
-    private ObjectResult ForbiddenOrigin() =>
-        StatusCode(StatusCodes.Status403Forbidden, new { message = "Origen no permitido" });
+    private bool Matches(string origin) =>
+        _settings.AllowedOrigins.Any(o =>
+            string.Equals(o.TrimEnd('/'), origin, StringComparison.OrdinalIgnoreCase)
+        );
+
+    private ObjectResult ForbiddenOrigin([CallerMemberName] string action = "")
+    {
+        _logger.LogWarning(
+            "Account deletion {Action}: respondiendo 403 por origen no permitido (Origin={Origin})",
+            action,
+            Request.Headers.Origin.ToString()
+        );
+        return StatusCode(StatusCodes.Status403Forbidden, new { message = "Origen no permitido" });
+    }
 
     private void NoStore() => Response.Headers.CacheControl = "no-store";
 
     private void ClearCookie() =>
-        Response.Cookies.Append(SessionCookieName, string.Empty, CookieOptions(DateTime.UtcNow.AddDays(-1)));
+        Response.Cookies.Append(
+            SessionCookieName,
+            string.Empty,
+            CookieOptions(DateTime.UtcNow.AddDays(-1))
+        );
 
-    private CookieOptions CookieOptions(DateTime expiresUtc) => new()
-    {
-        HttpOnly = true,
-        // En desarrollo la web va por http a través del proxy de Vite.
-        Secure = !_environment.IsDevelopment(),
-        // www.coppadresd.com → erp.coppadresd.com es mismo sitio: Strict basta y
-        // bloquea el envío de la cookie desde cualquier otro sitio.
-        SameSite = SameSiteMode.Strict,
-        Path = CookiePath,
-        IsEssential = true,
-        Expires = new DateTimeOffset(DateTime.SpecifyKind(expiresUtc, DateTimeKind.Utc)),
-    };
+    private CookieOptions CookieOptions(DateTime expiresUtc) =>
+        new()
+        {
+            HttpOnly = true,
+            // En desarrollo la web va por http a través del proxy de Vite.
+            Secure = !_environment.IsDevelopment(),
+            // www.coppadresd.com → erp.coppadresd.com es mismo sitio: Strict basta y
+            // bloquea el envío de la cookie desde cualquier otro sitio.
+            SameSite = SameSiteMode.Strict,
+            Path = CookiePath,
+            IsEssential = true,
+            Expires = new DateTimeOffset(DateTime.SpecifyKind(expiresUtc, DateTimeKind.Utc)),
+        };
 }
