@@ -183,9 +183,12 @@ public class UsersController : ControllerBase
                 new { message = "Se requiere System.AdminSettings para eliminar usuarios." }
             );
 
-        var (success, error) = await _userService.DeleteAsync(id, ct);
-        if (!success)
+        var (success, error, notFound) = await _userService.DeleteAsync(id, ct);
+        if (notFound)
             return NotFound(new { message = error });
+
+        if (!success)
+            return Conflict(new { message = error });
 
         return NoContent();
     }

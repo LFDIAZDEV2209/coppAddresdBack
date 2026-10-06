@@ -9,5 +9,5 @@ public interface IUserService
     Task<(bool Success, string? Error, UserResponse? User)> CreateAsync(CreateUserRequest request, CancellationToken ct = default);
     Task<BulkCreateUsersResult> CreateBulkAsync(BulkCreateUsersRequest request, CancellationToken ct = default);
     Task<(bool Success, string? Error, bool NotFound)> UpdateAsync(Guid id, UpdateUserRequest request, CancellationToken ct = default);
-    Task<(bool Success, string? Error)> DeleteAsync(Guid id, CancellationToken ct = default);
+    Task<(bool Success, string? Error, bool NotFound)> DeleteAsync(Guid id, CancellationToken ct = default);
 }

@@ -747,24 +747,112 @@ public class UserService : IUserService
         }
     }
 
-    public async Task<(bool Success, string? Error)> DeleteAsync(Guid id, CancellationToken ct = default)
+    /// <summary>
+    /// Elimina la cuenta y desvincula sus perfiles de directorio. La
+    /// desvinculación es obligatoria antes del hard delete: las FK
+    /// <c>user_id</c> de <c>app.patient_profiles</c>/<c>erp.employees</c> son
+    /// ON DELETE CASCADE y, sin desvincular, arrastrarían el perfil y chocarían
+    /// con los RESTRICT clínicos (SOS, programa, nutrición…). La autoría clínica
+    /// (<c>app.clinical_baselines.set_by</c>, NOT NULL + RESTRICT) bloquea la
+    /// eliminación con un conflicto explícito.
+    /// </summary>
+    public async Task<(bool Success, string? Error, bool NotFound)> DeleteAsync(
+        Guid id,
+        CancellationToken ct = default
+    )
     {
         var user = await _userManager.FindByIdAsync(id.ToString());
         if (user is null)
         {
-            return (false, "Usuario no encontrado");
+            return (false, "Usuario no encontrado", true);
         }
 
-        var result = await _userManager.DeleteAsync(user);
-        if (!result.Succeeded)
+        if (await HasClinicalAuthorshipAsync(id, ct))
         {
-            var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-            _logger.LogWarning("Delete user {UserId} failed: {Errors}", id, errors);
-            return (false, errors);
+            return (
+                false,
+                "El usuario tiene autoría clínica registrada (líneas base) y no puede eliminarse; el historial debe conservarse.",
+                false
+            );
+        }
+
+        try
+        {
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
+
+            await UnlinkDirectoryProfilesAsync(id, ct);
+
+            // Journal de acceso ERP: FK RESTRICT sin valor tras eliminar la cuenta.
+            // Se elimina por el change tracker (no ExecuteDelete) para que EF
+            // ordene los DELETE respecto al usuario sin romper la relación.
+            var accessOperations = await _dbContext
+                .ErpAccessOperations.Where(x => x.UserId == id)
+                .ToListAsync(ct);
+            if (accessOperations.Count > 0)
+            {
+                _dbContext.ErpAccessOperations.RemoveRange(accessOperations);
+            }
+
+            var result = await _userManager.DeleteAsync(user);
+            if (!result.Succeeded)
+            {
+                await transaction.RollbackAsync(ct);
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                _logger.LogWarning("Delete user {UserId} failed: {Errors}", id, errors);
+                return (false, errors, false);
+            }
+
+            await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateException ex) when (IsForeignKeyViolation(ex))
+        {
+            _logger.LogWarning(ex, "Delete user {UserId} blocked by a foreign key", id);
+            return (
+                false,
+                "El usuario no puede eliminarse porque tiene datos clínicos u operativos asociados.",
+                false
+            );
         }
 
         _logger.LogInformation("User {UserId} deleted successfully", id);
-        return (true, null);
+        return (true, null, false);
+    }
+
+    /// <summary>
+    /// Desvincula los perfiles de directorio del usuario (paciente/empleado)
+    /// con SQL crudo cross-schema. Protected virtual: SQLite de tests no tiene
+    /// los esquemas app/erp.
+    /// </summary>
+    protected virtual async Task UnlinkDirectoryProfilesAsync(Guid userId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        await _dbContext.Database.ExecuteSqlRawAsync(
+            "UPDATE app.patient_profiles SET user_id = NULL, updated_at = {0} WHERE user_id = {1}",
+            [now, userId],
+            ct
+        );
+        await _dbContext.Database.ExecuteSqlRawAsync(
+            "UPDATE erp.employees SET user_id = NULL, updated_at = {0} WHERE user_id = {1}",
+            [now, userId],
+            ct
+        );
+    }
+
+    /// <summary>
+    /// ¿El usuario firmó líneas base clínicas? (<c>set_by</c> NOT NULL +
+    /// RESTRICT). Protected virtual: SQLite de tests no tiene el esquema app.
+    /// </summary>
+    protected virtual async Task<bool> HasClinicalAuthorshipAsync(
+        Guid userId,
+        CancellationToken ct
+    )
+    {
+        return await _dbContext.Database
+            .SqlQueryRaw<bool>(
+                "SELECT EXISTS(SELECT 1 FROM app.clinical_baselines WHERE set_by = @userId) AS \"Value\"",
+                new NpgsqlParameter("userId", userId)
+            )
+            .SingleAsync(ct);
     }
 
     /// <summary>
@@ -884,6 +972,11 @@ public class UserService : IUserService
     private static bool IsUniqueViolation(DbUpdateException ex)
     {
         return ex.InnerException is PostgresException { SqlState: "23505" };
+    }
+
+    private static bool IsForeignKeyViolation(DbUpdateException ex)
+    {
+        return ex.InnerException is PostgresException { SqlState: "23503" };
     }
 
     private static UserResponse MapToResponse(
