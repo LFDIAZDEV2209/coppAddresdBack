@@ -39,32 +39,34 @@ public sealed class InvalidationVerificationTests
                 Email = "staff@coppaddresd.com",
                 FirstName = "Staff",
                 LastName = "Erp",
-                IsActive = true
+                IsActive = true,
             };
             Db.Users.Add(User);
 
-            Db.Permissions.Add(new Permission
-            {
-                Id = PermissionId,
-                Code = "Users.View",
-                Name = "Ver usuarios",
-                Module = "Users"
-            });
+            Db.Permissions.Add(
+                new Permission
+                {
+                    Id = PermissionId,
+                    Code = "Users.View",
+                    Name = "Ver usuarios",
+                    Module = "Users",
+                }
+            );
 
             if (seedRoleWithTwoUsers)
             {
                 var role = new ApplicationRole { Id = RoleId, Name = "Admin" };
                 Db.Roles.Add(role);
                 Db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = UserId, RoleId = RoleId });
-                Db.UserRoles.Add(new IdentityUserRole<Guid> { UserId = Guid.NewGuid(), RoleId = RoleId });
+                Db.UserRoles.Add(
+                    new IdentityUserRole<Guid> { UserId = Guid.NewGuid(), RoleId = RoleId }
+                );
 
                 if (seedRolePermission)
                 {
-                    Db.RolePermissions.Add(new RolePermission
-                    {
-                        RoleId = RoleId,
-                        PermissionId = PermissionId
-                    });
+                    Db.RolePermissions.Add(
+                        new RolePermission { RoleId = RoleId, PermissionId = PermissionId }
+                    );
                 }
             }
 
@@ -78,14 +80,21 @@ public sealed class InvalidationVerificationTests
         // Arrange: permiso directo al usuario.
         var seed = new DbSeed();
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new PermissionService(seed.Db, invalidation, Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(), NullLogger<PermissionService>.Instance);
+        var service = new PermissionService(
+            seed.Db,
+            invalidation,
+            Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(),
+            NullLogger<PermissionService>.Instance
+        );
 
         // Act
         var result = await service.AssignToUserAsync(seed.UserId, seed.PermissionId);
 
         // Assert: el stamp del usuario se bumpeó una vez.
         Assert.True(result.Success);
-        await invalidation.Received(1).InvalidateUserTokensAsync(seed.UserId, Arg.Any<CancellationToken>());
+        await invalidation
+            .Received(1)
+            .InvalidateUserTokensAsync(seed.UserId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -94,7 +103,12 @@ public sealed class InvalidationVerificationTests
         // Arrange: rol con dos usuarios asignados.
         var seed = new DbSeed(seedRoleWithTwoUsers: true);
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new PermissionService(seed.Db, invalidation, Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(), NullLogger<PermissionService>.Instance);
+        var service = new PermissionService(
+            seed.Db,
+            invalidation,
+            Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(),
+            NullLogger<PermissionService>.Instance
+        );
 
         // Act
         var result = await service.AssignToRoleAsync(seed.RoleId, seed.PermissionId);
@@ -102,10 +116,15 @@ public sealed class InvalidationVerificationTests
         // Assert: UN solo llamado batch con los 2 usuarios afectados
         // (REQ-INVALID-05: sin loop por usuario).
         Assert.True(result.Success);
-        await invalidation.Received(1).InvalidateUsersTokensAsync(
-            Arg.Is<IEnumerable<Guid>>(ids => ids.Count() == 2),
-            Arg.Any<CancellationToken>());
-        await invalidation.DidNotReceive().InvalidateUserTokensAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await invalidation
+            .Received(1)
+            .InvalidateUsersTokensAsync(
+                Arg.Is<IEnumerable<Guid>>(ids => ids.Count() == 2),
+                Arg.Any<CancellationToken>()
+            );
+        await invalidation
+            .DidNotReceive()
+            .InvalidateUserTokensAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -114,16 +133,24 @@ public sealed class InvalidationVerificationTests
         // Arrange: rol con dos usuarios asignados y el permiso ya asignado al rol.
         var seed = new DbSeed(seedRoleWithTwoUsers: true, seedRolePermission: true);
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new PermissionService(seed.Db, invalidation, Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(), NullLogger<PermissionService>.Instance);
+        var service = new PermissionService(
+            seed.Db,
+            invalidation,
+            Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(),
+            NullLogger<PermissionService>.Instance
+        );
 
         // Act
         var result = await service.RemoveFromRoleAsync(seed.RoleId, seed.PermissionId);
 
         // Assert: UN solo llamado batch con los 2 usuarios afectados.
         Assert.True(result.Success);
-        await invalidation.Received(1).InvalidateUsersTokensAsync(
-            Arg.Is<IEnumerable<Guid>>(ids => ids.Count() == 2),
-            Arg.Any<CancellationToken>());
+        await invalidation
+            .Received(1)
+            .InvalidateUsersTokensAsync(
+                Arg.Is<IEnumerable<Guid>>(ids => ids.Count() == 2),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -132,7 +159,12 @@ public sealed class InvalidationVerificationTests
         // Arrange: el ct del request debe llegar hasta la invalidación batch.
         var seed = new DbSeed(seedRoleWithTwoUsers: true);
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new PermissionService(seed.Db, invalidation, Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(), NullLogger<PermissionService>.Instance);
+        var service = new PermissionService(
+            seed.Db,
+            invalidation,
+            Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(),
+            NullLogger<PermissionService>.Instance
+        );
         using var cts = new CancellationTokenSource();
 
         // Act
@@ -140,7 +172,9 @@ public sealed class InvalidationVerificationTests
 
         // Assert: el MISMO token se propagó al servicio de invalidación.
         Assert.True(result.Success);
-        await invalidation.Received(1).InvalidateUsersTokensAsync(Arg.Any<IEnumerable<Guid>>(), cts.Token);
+        await invalidation
+            .Received(1)
+            .InvalidateUsersTokensAsync(Arg.Any<IEnumerable<Guid>>(), cts.Token);
     }
 
     [Fact]
@@ -149,7 +183,12 @@ public sealed class InvalidationVerificationTests
         // Arrange: invalidación de usuario único también con ct.
         var seed = new DbSeed();
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new PermissionService(seed.Db, invalidation, Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(), NullLogger<PermissionService>.Instance);
+        var service = new PermissionService(
+            seed.Db,
+            invalidation,
+            Substitute.For<CoppAddresd.Auth.Services.Cache.ICacheService>(),
+            NullLogger<PermissionService>.Instance
+        );
         using var cts = new CancellationTokenSource();
 
         // Act
@@ -177,18 +216,27 @@ public sealed class InvalidationVerificationTests
             Array.Empty<IRoleValidator<ApplicationRole>>(),
             Substitute.For<ILookupNormalizer>(),
             new IdentityErrorDescriber(),
-            NullLogger<RoleManager<ApplicationRole>>.Instance);
+            NullLogger<RoleManager<ApplicationRole>>.Instance
+        );
         roleManager.FindByIdAsync(seed.RoleId.ToString()).Returns(role);
 
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new RoleService(roleManager, userManager, seed.Db, invalidation, NullLogger<RoleService>.Instance);
+        var service = new RoleService(
+            roleManager,
+            userManager,
+            seed.Db,
+            invalidation,
+            NullLogger<RoleService>.Instance
+        );
 
         // Act
         var result = await service.AssignToUserAsync(seed.UserId, seed.RoleId);
 
         // Assert: tokens del usuario invalidados.
         Assert.True(result.Success);
-        await invalidation.Received(1).InvalidateUserTokensAsync(seed.UserId, Arg.Any<CancellationToken>());
+        await invalidation
+            .Received(1)
+            .InvalidateUserTokensAsync(seed.UserId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -208,18 +256,27 @@ public sealed class InvalidationVerificationTests
             Array.Empty<IRoleValidator<ApplicationRole>>(),
             Substitute.For<ILookupNormalizer>(),
             new IdentityErrorDescriber(),
-            NullLogger<RoleManager<ApplicationRole>>.Instance);
+            NullLogger<RoleManager<ApplicationRole>>.Instance
+        );
         roleManager.FindByIdAsync(seed.RoleId.ToString()).Returns(role);
 
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new RoleService(roleManager, userManager, seed.Db, invalidation, NullLogger<RoleService>.Instance);
+        var service = new RoleService(
+            roleManager,
+            userManager,
+            seed.Db,
+            invalidation,
+            NullLogger<RoleService>.Instance
+        );
 
         // Act
         var result = await service.RemoveFromUserAsync(seed.UserId, seed.RoleId);
 
         // Assert: tokens del usuario invalidados.
         Assert.True(result.Success);
-        await invalidation.Received(1).InvalidateUserTokensAsync(seed.UserId, Arg.Any<CancellationToken>());
+        await invalidation
+            .Received(1)
+            .InvalidateUserTokensAsync(seed.UserId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -239,11 +296,18 @@ public sealed class InvalidationVerificationTests
             Array.Empty<IRoleValidator<ApplicationRole>>(),
             Substitute.For<ILookupNormalizer>(),
             new IdentityErrorDescriber(),
-            NullLogger<RoleManager<ApplicationRole>>.Instance);
+            NullLogger<RoleManager<ApplicationRole>>.Instance
+        );
         roleManager.FindByIdAsync(seed.RoleId.ToString()).Returns(role);
 
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new RoleService(roleManager, userManager, seed.Db, invalidation, NullLogger<RoleService>.Instance);
+        var service = new RoleService(
+            roleManager,
+            userManager,
+            seed.Db,
+            invalidation,
+            NullLogger<RoleService>.Instance
+        );
         using var cts = new CancellationTokenSource();
 
         // Act
@@ -271,11 +335,18 @@ public sealed class InvalidationVerificationTests
             Array.Empty<IRoleValidator<ApplicationRole>>(),
             Substitute.For<ILookupNormalizer>(),
             new IdentityErrorDescriber(),
-            NullLogger<RoleManager<ApplicationRole>>.Instance);
+            NullLogger<RoleManager<ApplicationRole>>.Instance
+        );
         roleManager.FindByIdAsync(seed.RoleId.ToString()).Returns(role);
 
         var invalidation = Substitute.For<ITokenInvalidationService>();
-        var service = new RoleService(roleManager, userManager, seed.Db, invalidation, NullLogger<RoleService>.Instance);
+        var service = new RoleService(
+            roleManager,
+            userManager,
+            seed.Db,
+            invalidation,
+            NullLogger<RoleService>.Instance
+        );
         using var cts = new CancellationTokenSource();
 
         // Act
@@ -291,19 +362,23 @@ public sealed class InvalidationVerificationTests
     {
         // Arrange: usuario con un refresh token activo.
         var seed = new DbSeed();
-        seed.Db.RefreshTokens.Add(new RefreshToken
-        {
-            Id = Guid.NewGuid(),
-            UserId = seed.UserId,
-            Token = "active-refresh",
-            ExpiresAt = DateTime.UtcNow.AddDays(7),
-            CreatedAt = DateTime.UtcNow,
-            User = seed.User
-        });
+        seed.Db.RefreshTokens.Add(
+            new RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = seed.UserId,
+                Token = "active-refresh",
+                ExpiresAt = DateTime.UtcNow.AddDays(7),
+                CreatedAt = DateTime.UtcNow,
+                User = seed.User,
+            }
+        );
         seed.Db.SaveChanges();
 
         var userManager = IdentityTestDoubles.CreateUserManager(seed.User);
-        userManager.ChangePasswordAsync(seed.User, "Old@1234", "New@5678").Returns(IdentityResult.Success);
+        userManager
+            .ChangePasswordAsync(seed.User, "Old@1234", "New@5678")
+            .Returns(IdentityResult.Success);
 
         var authService = new AuthService(
             userManager,
@@ -314,14 +389,15 @@ public sealed class InvalidationVerificationTests
             Substitute.For<IPatientAccessGuard>(),
             seed.Db,
             Options.Create(new JwtSettings { AccessTokenExpirationMinutes = 15 }),
-            NullLogger<AuthService>.Instance);
+            Options.Create(new AccountDeletionSettings()),
+            NullLogger<AuthService>.Instance
+        );
 
         // Act
-        var result = await authService.ChangePasswordAsync(seed.UserId, new ChangePasswordRequest
-        {
-            CurrentPassword = "Old@1234",
-            NewPassword = "New@5678"
-        });
+        var result = await authService.ChangePasswordAsync(
+            seed.UserId,
+            new ChangePasswordRequest { CurrentPassword = "Old@1234", NewPassword = "New@5678" }
+        );
 
         // Assert: security stamp bumpeado + refresh tokens activos revocados.
         Assert.True(result.Success);

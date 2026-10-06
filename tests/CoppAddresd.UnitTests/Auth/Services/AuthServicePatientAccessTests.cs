@@ -41,7 +41,7 @@ public sealed class AuthServicePatientAccessTests
                 Email = "patient@demo.com",
                 FirstName = "Patient",
                 LastName = "Demo",
-                IsActive = true
+                IsActive = true,
             };
 
             App = new AuthApplication
@@ -49,20 +49,22 @@ public sealed class AuthServicePatientAccessTests
                 Id = Guid.NewGuid(),
                 Code = "app",
                 Name = "App móvil",
-                IsActive = true
+                IsActive = true,
             };
 
             Db.Users.Add(User);
             Db.Applications.Add(App);
-            Db.UserApplications.Add(new UserApplication
-            {
-                UserId = User.Id,
-                User = User,
-                ApplicationId = App.Id,
-                Application = App,
-                IsSuspended = false,
-                SessionVersion = 0
-            });
+            Db.UserApplications.Add(
+                new UserApplication
+                {
+                    UserId = User.Id,
+                    User = User,
+                    ApplicationId = App.Id,
+                    Application = App,
+                    IsSuspended = false,
+                    SessionVersion = 0,
+                }
+            );
 
             if (withRefreshToken)
             {
@@ -75,7 +77,7 @@ public sealed class AuthServicePatientAccessTests
                     ExpiresAt = DateTime.UtcNow.AddDays(7),
                     CreatedAt = DateTime.UtcNow,
                     User = User,
-                    Application = App
+                    Application = App,
                 };
                 Db.RefreshTokens.Add(StoredToken);
             }
@@ -101,6 +103,7 @@ public sealed class AuthServicePatientAccessTests
             guard,
             seed.Db,
             Options.Create(new JwtSettings { AccessTokenExpirationMinutes = 15 }),
+            Options.Create(new AccountDeletionSettings()),
             NullLogger<AuthService>.Instance
         );
 
@@ -128,7 +131,7 @@ public sealed class AuthServicePatientAccessTests
             {
                 Email = seed.User.Email,
                 Password = "Whatever1!",
-                Application = "app"
+                Application = "app",
             }
         );
 
@@ -152,7 +155,9 @@ public sealed class AuthServicePatientAccessTests
         userManager.FindByEmailAsync(seed.User.Email!).Returns(seed.User);
         userManager.GetRolesAsync(seed.User).Returns(new List<string> { "Patient" });
         var signInManager = IdentityTestDoubles.CreateSignInManager(userManager);
-        signInManager.CheckPasswordSignInAsync(seed.User, "Pass1!", true).Returns(SignInResult.Success);
+        signInManager
+            .CheckPasswordSignInAsync(seed.User, "Pass1!", true)
+            .Returns(SignInResult.Success);
         var tokenService = Substitute.For<ITokenService>();
         tokenService
             .GenerateAccessToken(
@@ -189,7 +194,7 @@ public sealed class AuthServicePatientAccessTests
             {
                 Email = seed.User.Email,
                 Password = "Pass1!",
-                Application = "app"
+                Application = "app",
             }
         );
 
