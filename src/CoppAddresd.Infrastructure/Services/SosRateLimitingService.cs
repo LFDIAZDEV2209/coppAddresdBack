@@ -1,7 +1,9 @@
 using System.Text.Json;
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Features.Sos;
 using CoppAddresd.Application.Interfaces;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Infrastructure.Services;
 
@@ -15,6 +17,10 @@ namespace CoppAddresd.Infrastructure.Services;
 /// lockout). El check es previo a persistir o invocar canales; el consumo se
 /// registra tras crear la alerta (un 409 de carrera/idempotencia no consume).
 ///
+/// Interruptor <c>Sos:RateLimit:Enabled</c> (default false): apagado, el
+/// check permite SIEMPRE y no se registra consumo — el botón de pánico nunca
+/// rebota por cuota mientras producto no lo pida.
+///
 /// Contrato fail-open: si Valkey no responde, se PERMITE el intento (Warning
 /// en log) — bloquear una emergencia real por una caída de caché es peor que
 /// el riesgo de duplicar un SMS (el hard-guarantee de una sola alerta activa
@@ -22,6 +28,7 @@ namespace CoppAddresd.Infrastructure.Services;
 /// </summary>
 public sealed class SosRateLimitingService(
     ICacheService cache,
+    IOptions<SosRateLimitSettings> settings,
     ILogger<SosRateLimitingService> logger
 ) : ISosRateLimiter
 {
@@ -51,6 +58,12 @@ public sealed class SosRateLimitingService(
         CancellationToken ct = default
     )
     {
+        // Interruptor de producto: apagado (default), permitir siempre.
+        if (!settings.Value.Enabled)
+        {
+            return SosRateLimitDecision.Allow();
+        }
+
         try
         {
             var now = DateTimeOffset.UtcNow;
@@ -184,6 +197,12 @@ public sealed class SosRateLimitingService(
         CancellationToken ct = default
     )
     {
+        // Interruptor de producto: apagado (default), no se consume cuota.
+        if (!settings.Value.Enabled)
+        {
+            return;
+        }
+
         try
         {
             var now = DateTimeOffset.UtcNow;

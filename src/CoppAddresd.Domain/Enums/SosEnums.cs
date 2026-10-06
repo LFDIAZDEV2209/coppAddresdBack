@@ -14,11 +14,13 @@ public enum SosAlertStatus
 }
 
 /// <summary>
-/// Estado de un canal de notificación (SMS / push) de una alerta SOS:
-/// <c>Pendiente</c> (creada, aún sin procesar), <c>Enviado</c>, <c>Fallido</c>
-/// (proveedor rechazó o error), <c>Timeout</c> y <c>NoConfigurado</c>
-/// (credenciales ausentes). Se persiste junto a la alerta y la fila de
-/// deduplicación: los reintentos jamás reenvían un canal ya <c>Enviado</c>.
+/// Estado de un canal de notificación (SMS / voz / correo / push) de una
+/// alerta SOS: <c>Pendiente</c> (creada, aún sin procesar), <c>Enviado</c>,
+/// <c>Fallido</c> (proveedor rechazó o error), <c>Timeout</c>,
+/// <c>NoConfigurado</c> (credenciales/proveedor ausente) y <c>SinDestino</c>
+/// (el contacto de emergencia no tiene el dato del canal — p. ej. sin
+/// correo). Se persiste junto a la alerta y la fila de deduplicación: los
+/// reintentos jamás reenvían un canal ya <c>Enviado</c>.
 /// </summary>
 public enum SosChannelStatus
 {
@@ -27,4 +29,5 @@ public enum SosChannelStatus
     Fallido = 3,
     Timeout = 4,
     NoConfigurado = 5,
+    SinDestino = 6,
 }
