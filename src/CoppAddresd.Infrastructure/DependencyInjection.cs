@@ -244,6 +244,9 @@ public static class DependencyInjection
         services.Configure<SosWebhookSettings>(
             configuration.GetSection(SosWebhookSettings.SectionName)
         );
+        services.Configure<SosRateLimitSettings>(
+            configuration.GetSection(SosRateLimitSettings.SectionName)
+        );
         services.AddScoped<ISosWebhookProcessor, SosWebhookProcessor>();
 
         // Cola + procesador: el procesador crea su propio scope por mensaje

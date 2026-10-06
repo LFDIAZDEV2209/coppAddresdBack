@@ -1,16 +1,18 @@
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Infrastructure.Cache;
 using CoppAddresd.Infrastructure.Services;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.UnitTests.Features.Sos;
 
 /// <summary>
 /// Pruebas del rate-limiter distribuido SOS (task 2.1, REQ-SOS-02) con
 /// simulación de Valkey (MemoryCacheService real). Cubre cooldown 60s, cuota
-/// 3/15min, 10/día, lockout ante ráfagas, cuota por teléfono compartida y
-/// fail-open ante caché caída.
+/// 3/15min, 10/día, lockout ante ráfagas, cuota por teléfono compartida,
+/// fail-open ante caché caída y el interruptor Sos:RateLimit:Enabled.
 /// </summary>
 public sealed class SosRateLimitingTests
 {
@@ -23,8 +25,41 @@ public sealed class SosRateLimitingTests
             NullLogger<MemoryCacheService>.Instance
         );
 
+    /// <summary>Limiter con el rate-limit ENCENDIDO (los tests clásicos).</summary>
     private static SosRateLimitingService NewLimiter(ICacheService cache) =>
-        new(cache, NullLogger<SosRateLimitingService>.Instance);
+        new(
+            cache,
+            Options.Create(new SosRateLimitSettings { Enabled = true }),
+            NullLogger<SosRateLimitingService>.Instance
+        );
+
+    [Fact]
+    public async Task LimiteDesactivado_PermiteSiempreYNoRegistraConsumo()
+    {
+        // Default de producto: apagado. El pánico nunca rebota por cuota.
+        var cache = NewCache();
+        var limiter = new SosRateLimitingService(
+            cache,
+            Options.Create(new SosRateLimitSettings { Enabled = false }),
+            NullLogger<SosRateLimitingService>.Instance
+        );
+        var patientId = Guid.NewGuid();
+
+        for (var i = 0; i < 6; i++)
+        {
+            await limiter.RegisterAttemptAsync(patientId, Phone, null, CancellationToken.None);
+        }
+
+        var decision = await limiter.CheckAsync(patientId, Phone, null, CancellationToken.None);
+
+        Assert.True(decision.Allowed);
+        Assert.Null(
+            await cache.GetAsync<SosRateLimitingService.SosRateLimitState>(
+                $"sos:ratelimit:patient:{patientId}:day",
+                CancellationToken.None
+            )
+        );
+    }
 
     [Fact]
     public async Task PrimerIntento_Permitido()

@@ -20,6 +20,8 @@ public sealed record SosRateLimitDecision(bool Allowed, int RetryAfterSeconds, s
 /// de 15 min ante ráfagas. Se evalúa SIEMPRE antes de persistir la alerta o
 /// invocar canales (429 con Retry-After). Prohibido implementarlo en memoria
 /// (Singleton): con réplicas el contador no se comparte.
+/// Interruptor <c>Sos:RateLimit:Enabled</c> (default false): apagado no
+/// aplica cuotas ni registra consumo — el pánico nunca rebota.
 /// </summary>
 public interface ISosRateLimiter
 {
