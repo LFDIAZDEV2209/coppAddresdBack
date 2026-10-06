@@ -83,7 +83,10 @@ jobs:
             echo "test_projects=[]" >> "$GITHUB_OUTPUT"
             echo "migrate=[]" >> "$GITHUB_OUTPUT"
           else
-            JSON=$(echo "$SERVICES" | xargs | tr ' ' '\n' | jq -R . | jq -s -c .)
+            # Deduplicar: un commit puede tocar Auth y tests/UnitTests a la vez
+            # (auth + auth api) y un servicio duplicado lanzaría dos deploys en
+            # paralelo compitiendo por update-service (rollout MISSING espurio).
+            JSON=$(echo "$SERVICES" | xargs | tr ' ' '\n' | sort -u | jq -R . | jq -s -c .)
             echo "services=$JSON" >> "$GITHUB_OUTPUT"
             # Tests acotados al servicio afectado (el suite completo en cada
             # push duplicaba minutos). Compartido/api tocan el núcleo.
@@ -300,7 +303,7 @@ jobs:
                 --cluster "${{ env.ECS_CLUSTER }}" \
                 --services "$SERVICE" \
                 --region "${{ env.AWS_REGION }}" \
-                --query "services[0].deployments[?taskDefinition!=`$TD_ARN`].[taskDefinition,rolloutState] | [0]" \
+                --query "services[0].deployments[?taskDefinition!='$TD_ARN'].[taskDefinition,rolloutState] | [0]" \
                 --output text)
               echo "::error::Deployment retirado (rollback?) de $SERVICE. Otra revisión activa: $OTHER. Revisar stoppedReason de las tasks nuevas."
               exit 1
