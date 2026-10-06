@@ -45,6 +45,26 @@ public class ProfessionalsController(
     }
 
     /// <summary>
+    /// Preflight del alta: disponibilidad del correo del empleado dentro de la
+    /// organización. El wizard lo consulta mientras se escribe para avisar en
+    /// el propio campo; el alta lo vuelve a validar como autoridad final.
+    /// </summary>
+    [HttpGet("email-availability")]
+    [RequirePermission(PermissionCodes.ProfessionalsCreate)]
+    public async Task<ActionResult<EmailAvailabilityResult>> EmailAvailability(
+        [FromQuery] string email,
+        [FromQuery] Guid organizationId,
+        CancellationToken ct
+    )
+    {
+        var result = await mediator.Send(
+            new CheckEmployeeEmailAvailabilityQuery(organizationId, email),
+            ct
+        );
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Crea el profesional de extremo a extremo: empleado + extensión clínica
     /// + clínicas + (invitación con correo) + (roles/permisos scoped por
     /// clínica). Compensa si falla la aplicación de scopes.

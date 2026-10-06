@@ -74,6 +74,44 @@ public sealed class ListEmployeesQueryHandler(
     }
 }
 
+/// <summary>
+/// Preflight del alta: indica si un correo está disponible en la organización
+/// (la unicidad del correo de empleados es por organización). Lo consume el
+/// wizard al escribir para avisar en el propio campo, sin esperar al envío.
+/// </summary>
+public record CheckEmployeeEmailAvailabilityQuery(Guid OrganizationId, string Email)
+    : IRequest<EmailAvailabilityResult>;
+
+/// <summary>Disponibilidad de un correo dentro de una organización.</summary>
+public record EmailAvailabilityResult(bool Available);
+
+public sealed class CheckEmployeeEmailAvailabilityQueryHandler(IEmployeeRepository repository)
+    : IRequestHandler<CheckEmployeeEmailAvailabilityQuery, EmailAvailabilityResult>
+{
+    public async Task<EmailAvailabilityResult> Handle(
+        CheckEmployeeEmailAvailabilityQuery request,
+        CancellationToken ct
+    )
+    {
+        // Entrada incompleta = sin veredicto de conflicto (el alta revalida).
+        if (request.OrganizationId == Guid.Empty || string.IsNullOrWhiteSpace(request.Email))
+        {
+            return new EmailAvailabilityResult(true);
+        }
+
+        // Misma normalización que CreateEmployeeCommand: el correo se guarda
+        // en minúsculas, así que la comparación es efectivamente insensible a
+        // mayúsculas.
+        var email = request.Email.Trim().ToLowerInvariant();
+        var exists = await repository.EmailExistsInOrganizationAsync(
+            request.OrganizationId,
+            email,
+            ct: ct
+        );
+        return new EmailAvailabilityResult(!exists);
+    }
+}
+
 /// <summary>Empleado completo con clínicas y extensión profesional.</summary>
 public record GetEmployeeQuery(Guid Id) : IRequest<EmployeeDto?>;
 
