@@ -57,6 +57,20 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
             .Include(x => x.Clinic)
             .FirstOrDefaultAsync(ct);
 
+    public async Task<PatientProfile?> GetByEmailAsync(
+        string email,
+        CancellationToken ct = default
+    )
+    {
+        var lowered = email.Trim().ToLowerInvariant();
+        return await dbContext
+            .PatientProfiles.AsNoTracking()
+            .Where(x => x.DeletedAt == null && x.Email != null)
+            .Where(x => x.Email!.ToLower() == lowered)
+            .OrderBy(x => x.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
         int page,
         int pageSize,

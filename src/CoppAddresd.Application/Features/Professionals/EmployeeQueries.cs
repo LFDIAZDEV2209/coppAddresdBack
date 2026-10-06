@@ -75,18 +75,54 @@ public sealed class ListEmployeesQueryHandler(
 }
 
 /// <summary>
-/// Preflight del alta: indica si un correo está disponible en la organización
-/// (la unicidad del correo de empleados es por organización). Lo consume el
-/// wizard al escribir para avisar en el propio campo, sin esperar al envío.
+/// Preflight del alta: disponibilidad del correo en la organización (la
+/// unicidad del correo de empleados es por organización) + contexto de los
+/// perfiles y la cuenta que ya lo usan. Lo consume el wizard al escribir para
+/// mostrar la tarjeta de perfil existente sin esperar al envío.
 /// </summary>
 public record CheckEmployeeEmailAvailabilityQuery(Guid OrganizationId, string Email)
     : IRequest<EmailAvailabilityResult>;
 
-/// <summary>Disponibilidad de un correo dentro de una organización.</summary>
-public record EmailAvailabilityResult(bool Available);
+/// <summary>Empleado existente con ese correo en la organización.</summary>
+public record EmployeeEmailMatchDto(
+    Guid Id,
+    string FirstName,
+    string LastName,
+    string Status,
+    bool HasAccount
+);
 
-public sealed class CheckEmployeeEmailAvailabilityQueryHandler(IEmployeeRepository repository)
-    : IRequestHandler<CheckEmployeeEmailAvailabilityQuery, EmailAvailabilityResult>
+/// <summary>Paciente existente con ese correo (coexistencia de perfiles).</summary>
+public record PatientEmailMatchDto(
+    Guid Id,
+    string FirstName,
+    string LastName,
+    string Status,
+    bool HasAccount
+);
+
+/// <summary>
+/// Estado de la cuenta de Auth con ese correo. Null cuando el Auth Service no
+/// respondió (lectura informativa best-effort).
+/// </summary>
+public record AccountEmailMatchDto(bool Exists, bool IsActive, bool HasPassword);
+
+/// <summary>
+/// Disponibilidad de un correo dentro de una organización + contexto de los
+/// perfiles/cuenta que ya lo usan (tarjeta del wizard).
+/// </summary>
+public record EmailAvailabilityResult(
+    bool Available,
+    EmployeeEmailMatchDto? Employee = null,
+    PatientEmailMatchDto? Patient = null,
+    AccountEmailMatchDto? Account = null
+);
+
+public sealed class CheckEmployeeEmailAvailabilityQueryHandler(
+    IEmployeeRepository repository,
+    IPatientRepository patients,
+    IAuthUsersLookupClient usersLookup
+) : IRequestHandler<CheckEmployeeEmailAvailabilityQuery, EmailAvailabilityResult>
 {
     public async Task<EmailAvailabilityResult> Handle(
         CheckEmployeeEmailAvailabilityQuery request,
@@ -103,12 +139,39 @@ public sealed class CheckEmployeeEmailAvailabilityQueryHandler(IEmployeeReposito
         // en minúsculas, así que la comparación es efectivamente insensible a
         // mayúsculas.
         var email = request.Email.Trim().ToLowerInvariant();
-        var exists = await repository.EmailExistsInOrganizationAsync(
-            request.OrganizationId,
-            email,
-            ct: ct
+
+        var employee = await repository.GetByEmailAsync(request.OrganizationId, email, ct);
+        var patient = await patients.GetByEmailAsync(email, ct);
+        var account = await usersLookup.LookupByEmailAsync(email, ct);
+
+        return new EmailAvailabilityResult(
+            employee is null,
+            employee is null
+                ? null
+                : new EmployeeEmailMatchDto(
+                    employee.Id,
+                    employee.FirstName,
+                    employee.LastName,
+                    employee.Status,
+                    employee.UserId is not null
+                ),
+            patient is null
+                ? null
+                : new PatientEmailMatchDto(
+                    patient.Id,
+                    patient.FirstName,
+                    patient.LastName,
+                    patient.Status,
+                    patient.UserId is not null
+                ),
+            account is null
+                ? null
+                : new AccountEmailMatchDto(
+                    account.Exists,
+                    account.IsActive,
+                    account.HasPassword
+                )
         );
-        return new EmailAvailabilityResult(!exists);
     }
 }
 

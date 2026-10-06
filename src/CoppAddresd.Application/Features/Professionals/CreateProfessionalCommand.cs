@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Exceptions;
 using MediatR;
@@ -7,12 +8,16 @@ namespace CoppAddresd.Application.Features.Professionals;
 
 /// <summary>
 /// Resultado del flujo orquestado de creación de profesional.
+/// <paramref name="AccountLinked"/> true = el correo ya tenía cuenta con
+/// contraseña y se vinculó directamente (no se envió invitación nueva).
 /// </summary>
 public record CreateProfessionalResult(
     Guid EmployeeId,
     Guid? InvitationId,
     DateTime? InvitationExpiresAt,
-    string? InvitationLink);
+    string? InvitationLink,
+    bool AccountLinked
+);
 
 /// <summary>
 /// Crea un profesional de extremo a extremo en una sola operación:
@@ -101,13 +106,22 @@ public sealed class CreateProfessionalCommandHandler(
                 await employees.SetUserIdAsync(created.Id, invitation.UserId, ct);
             }
 
-            // 3. Scopes por clínica (reemplazo atómico en el Auth Service).
+            // 3. Scopes por clínica: unión pura (solo agrega; nunca remueve).
+            //    Si la cuenta ya existía (adoptExisting), se preservan sus
+            //    asignaciones actuales y se suman las del wizard respetando el
+            //    scope de cada rol/permiso. Las remociones se hacen en Usuarios.
             if (request.SendInvitation && wantsScopes)
             {
-                await scoped.ReplaceAsync(
-                    invitation!.UserId,
+                var current = await scoped.GetAsync(invitation!.UserId, ct);
+                var (mergedRoles, mergedPermissions) = ScopedAssignmentsMerge.Union(
+                    current,
                     request.ScopedRoles ?? [],
-                    request.ScopedPermissions ?? [],
+                    request.ScopedPermissions ?? []);
+
+                await scoped.ReplaceAsync(
+                    invitation.UserId,
+                    mergedRoles,
+                    mergedPermissions,
                     request.GrantedBy,
                     ct);
             }
@@ -143,6 +157,7 @@ public sealed class CreateProfessionalCommandHandler(
             created.Id,
             invitation?.InvitationId,
             invitation?.ExpiresAt,
-            invitation?.Link);
+            invitation?.Link,
+            invitation?.HasPassword == true);
     }
 }

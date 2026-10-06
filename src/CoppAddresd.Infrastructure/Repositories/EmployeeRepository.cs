@@ -27,7 +27,7 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
         CancellationToken ct = default
     )
     {
-        var query = dbContext.Employees.AsNoTracking();
+        var query = dbContext.Employees.AsNoTracking().Where(x => x.DeletedAt == null);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -97,7 +97,7 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
         var query = dbContext
             .Employees.AsNoTracking()
             // Catálogo de profesionales clínicos: solo empleados con extensión.
-            .Where(x => x.Professional != null);
+            .Where(x => x.Professional != null && x.DeletedAt == null);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -168,6 +168,7 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
     private IQueryable<Employee> QueryDetail() =>
         dbContext
             .Employees.AsNoTracking()
+            .Where(x => x.DeletedAt == null)
             .Include(x => x.Organization)
             .Include(x => x.ClinicAssignments)
                 .ThenInclude(a => a.Clinic)
@@ -190,11 +191,48 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
     ) =>
         await dbContext.Employees.AnyAsync(
             x =>
-                x.OrganizationId == organizationId
+                x.DeletedAt == null
+                && x.OrganizationId == organizationId
                 && x.Email == email
                 && (excludeEmployeeId == null || x.Id != excludeEmployeeId),
             ct
         );
+
+    /// <summary>
+    /// Empleado activo (no eliminado) por correo dentro de la organización.
+    /// Lo consume el preflight del alta para mostrar la tarjeta de perfil
+    /// existente (invitar/eliminar) sin esperar al envío.
+    /// </summary>
+    public async Task<Employee?> GetByEmailAsync(
+        Guid organizationId,
+        string email,
+        CancellationToken ct = default
+    ) =>
+        await QueryDetail()
+            .FirstOrDefaultAsync(
+                x => x.OrganizationId == organizationId && x.Email == email,
+                ct
+            );
+
+    /// <summary>
+    /// Soft-delete del perfil: marca <c>deleted_at</c> y libera el correo.
+    /// El historial y la cuenta de Auth quedan intactos. Devuelve false si el
+    /// perfil no existe o ya estaba eliminado.
+    /// </summary>
+    public async Task<bool> SoftDeleteAsync(Guid employeeId, CancellationToken ct = default)
+    {
+        var updated = await dbContext
+            .Employees.Where(x => x.Id == employeeId && x.DeletedAt == null)
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.DeletedAt, DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow),
+                ct
+            );
+
+        return updated > 0;
+    }
 
     public async Task<Employee> AddAsync(Employee employee, CancellationToken ct = default)
     {
@@ -559,7 +597,7 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
         CancellationToken ct = default
     )
     {
-        var query = dbContext.Employees.AsNoTracking();
+        var query = dbContext.Employees.AsNoTracking().Where(x => x.DeletedAt == null);
 
         if (organizationId is not null)
             query = query.Where(x => x.OrganizationId == organizationId);
@@ -658,7 +696,7 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
     {
         return await dbContext
             .Employees.AsNoTracking()
-            .Where(e => e.Professional != null)
+            .Where(e => e.Professional != null && e.DeletedAt == null)
             .Select(e => new ProfessionalClinicMembership(
                 e.Id,
                 e.Professional!.Id,

@@ -51,6 +51,14 @@ public sealed class Employee
 
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Eliminación lógica del perfil (soft-delete). El perfil y su historial
+    /// se conservan; el correo queda libre para un alta nueva y el empleado
+    /// desaparece del directorio. La cuenta de Auth no se toca (puede servir
+    /// a otros perfiles, p. ej. un paciente).
+    /// </summary>
+    public DateTime? DeletedAt { get; set; }
+
     public Organization Organization { get; set; } = default!;
 
     public Professional? Professional { get; set; }

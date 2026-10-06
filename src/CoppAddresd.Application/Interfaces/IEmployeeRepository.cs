@@ -62,6 +62,23 @@ public interface IEmployeeRepository
         CancellationToken ct = default
     );
 
+    /// <summary>
+    /// Empleado activo (no eliminado) por correo dentro de la organización.
+    /// Lo consume el preflight del alta para la tarjeta de perfil existente.
+    /// </summary>
+    Task<Employee?> GetByEmailAsync(
+        Guid organizationId,
+        string email,
+        CancellationToken ct = default
+    );
+
+    /// <summary>
+    /// Soft-delete del perfil: marca <c>deleted_at</c>, lo saca del directorio
+    /// y libera su correo. El historial y la cuenta de Auth quedan intactos.
+    /// Devuelve false si el perfil no existe o ya estaba eliminado.
+    /// </summary>
+    Task<bool> SoftDeleteAsync(Guid employeeId, CancellationToken ct = default);
+
     Task<Employee> AddAsync(Employee employee, CancellationToken ct = default);
 
     Task UpdateAsync(Employee employee, CancellationToken ct = default);

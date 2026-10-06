@@ -81,6 +81,10 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasColumnName("updated_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(x => x.DeletedAt)
+            .HasColumnName("deleted_at")
+            .HasColumnType("timestamptz");
+
         builder.HasOne(x => x.Organization)
             .WithMany(o => o.Employees)
             .HasForeignKey(x => x.OrganizationId)
@@ -102,13 +106,19 @@ public sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.HasIndex(x => x.OrganizationId)
             .HasDatabaseName("ix_employees_organization_id");
 
-        // Email único por organización (identidad de la invitación).
+        // Email único por organización (identidad de la invitación). Índice
+        // parcial: un perfil eliminado (soft-delete) libera su correo para un
+        // alta nueva.
         builder.HasIndex(x => new { x.OrganizationId, x.Email })
             .HasDatabaseName("ix_employees_organization_email")
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("deleted_at IS NULL");
 
         // Filtro frecuente del directorio.
         builder.HasIndex(x => x.Status)
             .HasDatabaseName("ix_employees_status");
+
+        builder.HasIndex(x => x.DeletedAt)
+            .HasDatabaseName("ix_employees_deleted_at");
     }
 }

@@ -18,6 +18,13 @@ public interface IPatientRepository
     /// <summary>Paciente por usuario de Auth (contexto del JWT). Excluye eliminados (soft delete).</summary>
     Task<PatientProfile?> GetByUserIdAsync(Guid userId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Paciente activo (no eliminado) por correo, comparación sin distinguir
+    /// mayúsculas. Lo consume el preflight del alta de empleados para avisar
+    /// que la cuenta ya pertenece a un paciente (coexistencia de perfiles).
+    /// </summary>
+    Task<PatientProfile?> GetByEmailAsync(string email, CancellationToken ct = default);
+
     /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4), <paramref name="professionalId"/> restringe al alcance "propio" del profesional (solo pacientes asignados activos) y <paramref name="stateCode"/> filtra por estado de EE. UU. (selección del mapa). <paramref name="sortBy"/> viene de la whitelist de campos y <paramref name="sortDir"/> es asc/desc; null → CreatedAt desc.</summary>
     Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
         int page,

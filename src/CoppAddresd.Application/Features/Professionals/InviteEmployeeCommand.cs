@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Exceptions;
@@ -22,8 +23,9 @@ public record InviteEmployeeResult(
 /// Si el usuario ya existe (adoptExisting), se vincula directamente sin duplicar.
 ///
 /// Opcionalmente acepta <see cref="ScopedRoles"/> que se aplican best-effort
-/// tras vincular el usuario (cada asignación se intenta individualmente; un
-/// fallo no bloquea las demás).
+/// tras vincular el usuario mediante una unión pura: se preservan las
+/// asignaciones existentes de la cuenta y se agregan las nuevas respetando el
+/// scope (el wizard solo agrega; las remociones se hacen en Usuarios).
 /// </summary>
 public record InviteEmployeeCommand(
     Guid EmployeeId,
@@ -67,41 +69,36 @@ public sealed class InviteEmployeeCommandHandler(
                 employee.Id, invitation.UserId);
         }
 
-        // Aplicar roles scoped best-effort (cada uno se intenta individualmente;
-        // un fallo no bloquea los demás y se registra en log).
+        // Roles scoped best-effort: unión pura con lo que la cuenta ya tenga
+        // (preserva asignaciones existentes y respeta el scope de cada una).
         if (request.ScopedRoles is { Count: > 0 })
         {
             var userId = invitation.UserId;
-            var successCount = 0;
-            var failCount = 0;
 
-            foreach (var scoped in request.ScopedRoles)
+            try
             {
-                try
-                {
-                    await scopedAssignmentsClient.ReplaceAsync(
-                        userId,
-                        [scoped],
-                        [],
-                        request.InvitedBy,
-                        ct);
+                var current = await scopedAssignmentsClient.GetAsync(userId, ct);
+                var (mergedRoles, mergedPermissions) = ScopedAssignmentsMerge.Union(
+                    current,
+                    request.ScopedRoles,
+                    []);
 
-                    successCount++;
-                }
-                catch (Exception ex)
-                {
-                    failCount++;
-                    logger.LogWarning(ex,
-                        "Empleado {EmployeeId}: no se pudo asignar rol scoped {RoleId} en {ScopeType}:{ScopeId} al usuario {UserId}",
-                        employee.Id, scoped.RoleId, scoped.ScopeType, scoped.ScopeId, userId);
-                }
-            }
+                await scopedAssignmentsClient.ReplaceAsync(
+                    userId,
+                    mergedRoles,
+                    mergedPermissions,
+                    request.InvitedBy,
+                    ct);
 
-            if (successCount > 0 || failCount > 0)
-            {
                 logger.LogInformation(
-                    "Empleado {EmployeeId}: {SuccessCount} roles scoped asignados, {FailCount} fallidos",
-                    employee.Id, successCount, failCount);
+                    "Empleado {EmployeeId}: scopes fusionados (unión pura) para el usuario {UserId}",
+                    employee.Id, userId);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex,
+                    "Empleado {EmployeeId}: no se pudieron fusionar los roles scoped al usuario {UserId}",
+                    employee.Id, userId);
             }
         }
 

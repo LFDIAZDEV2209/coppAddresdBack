@@ -204,6 +204,18 @@ public static class ApplicationServiceExtensions
             .AddResiliencePolicy();
 
         services
+            .AddHttpClient<IAuthUsersLookupClient, AuthUsersLookupClient>(
+                (sp, client) =>
+                {
+                    var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
+                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
+                    client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
+                }
+            )
+            .AddResiliencePolicy();
+
+        services
             .AddHttpClient<IAuthUsersByRoleClient, AuthUsersByRoleClient>(
                 (sp, client) =>
                 {

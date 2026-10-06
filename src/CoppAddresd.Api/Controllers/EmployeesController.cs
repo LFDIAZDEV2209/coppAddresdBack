@@ -142,6 +142,19 @@ public class EmployeesController(IMediator mediator) : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Elimina lógicamente el perfil del empleado: sale del directorio y su
+    /// correo queda libre para un alta nueva. El historial y la cuenta de Auth
+    /// se conservan (la cuenta se gestiona en el módulo de Usuarios).
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    [RequirePermission(PermissionCodes.EmployeesDelete)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
+    {
+        var deleted = await mediator.Send(new DeleteEmployeeCommand(id), ct);
+        return deleted ? NoContent() : NotFound(new { message = "Empleado no encontrado" });
+    }
+
     [HttpPut("{id:guid}")]
     [RequirePermission(PermissionCodes.EmployeesUpdate)]
     public async Task<ActionResult<EmployeeDto>> Update(
