@@ -30,7 +30,8 @@ public record SosAlertDto(
     string? SmsDeliveryStatus = null,
     string? VoiceCallStatus = null,
     string? VoiceAnsweredBy = null,
-    int? VoiceDurationSeconds = null
+    int? VoiceDurationSeconds = null,
+    string? EmailChannelStatus = null
 )
 {
     public static SosAlertDto FromEntity(SosAlert alert)
@@ -57,7 +58,8 @@ public record SosAlertDto(
             alert.SmsDeliveryStatus,
             alert.VoiceCallStatus,
             alert.VoiceAnsweredBy,
-            alert.VoiceDurationSeconds
+            alert.VoiceDurationSeconds,
+            alert.EmailChannelStatus.ToString()
         );
     }
 

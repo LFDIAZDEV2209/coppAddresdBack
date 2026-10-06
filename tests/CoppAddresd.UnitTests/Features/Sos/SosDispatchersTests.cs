@@ -553,11 +553,11 @@ public sealed class SosDispatchersTests
             .Returns((NotificationDedupeKey?)null);
 
         var alert = NewAlert();
-        alert.Patient!.EmergencyContact =
-            "{\"name\":\"Ana\",\"relationship\":\"Madre\",\"phone\":\"+573053924819\",\"email\":\"correo@test.com\"}";
+        alert.DestinationEmail = "correo@test.com";
         var dispatcher = new SosEmailDispatcher(
             email,
             _dedupe,
+            CreateDbContext(),
             NullLogger<SosEmailDispatcher>.Instance
         );
 
@@ -588,7 +588,7 @@ public sealed class SosDispatchersTests
     }
 
     [Fact]
-    public async Task Correo_SinCorreoEnElContacto_MarcaNoConfigurado()
+    public async Task Correo_SinCorreoEnElContacto_MarcaSinDestino()
     {
         var email = Substitute.For<IEmailService>();
         _dedupe
@@ -599,13 +599,15 @@ public sealed class SosDispatchersTests
         var dispatcher = new SosEmailDispatcher(
             email,
             _dedupe,
+            CreateDbContext(),
             NullLogger<SosEmailDispatcher>.Instance
         );
 
         var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
 
-        // El contacto demo no tiene correo: canal NoConfigurado sin 500.
-        Assert.Equal(SosChannelStatus.NoConfigurado, status);
+        // El contacto no tiene correo: canal SinDestino (distinto de
+        // NoConfigurado = proveedor ausente), sin envío y sin 500.
+        Assert.Equal(SosChannelStatus.SinDestino, status);
         await email
             .DidNotReceiveWithAnyArgs()
             .SendEmailAsync(default!, default!, default!, default, default);
@@ -617,9 +619,67 @@ public sealed class SosDispatchersTests
                 null,
                 null,
                 null,
-                "noconfigurado",
+                "sindestino",
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task Correo_EmailInvalidoEnElContacto_MarcaSinDestinoSinEnviar()
+    {
+        var email = Substitute.For<IEmailService>();
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var alert = NewAlert();
+        alert.Patient!.EmergencyContact = "{\"email\":\"no-es-un-correo\"}";
+        var dispatcher = new SosEmailDispatcher(
+            email,
+            _dedupe,
+            CreateDbContext(),
+            NullLogger<SosEmailDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // Correo inválido en el perfil (legacy): no se envía a basura.
+        Assert.Equal(SosChannelStatus.SinDestino, status);
+        await email
+            .DidNotReceiveWithAnyArgs()
+            .SendEmailAsync(default!, default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task Correo_Exitoso_PersisteElEstadoDelCanalEnLaAlerta()
+    {
+        var email = Substitute.For<IEmailService>();
+        _dedupe
+            .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((NotificationDedupeKey?)null);
+
+        var alert = NewAlert();
+        alert.DestinationEmail = "correo@test.com";
+        await using var dbContext = CreateDbContext();
+        dbContext.SosAlerts.Add(alert);
+        await dbContext.SaveChangesAsync();
+
+        var dispatcher = new SosEmailDispatcher(
+            email,
+            _dedupe,
+            dbContext,
+            NullLogger<SosEmailDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // El estado queda en la alerta (fuente del DTO que pinta la app).
+        Assert.Equal(SosChannelStatus.Enviado, status);
+        var tracked = await dbContext
+            .SosAlerts.AsNoTracking()
+            .SingleAsync(x => x.Id == alert.Id);
+        Assert.Equal(SosChannelStatus.Enviado, tracked.EmailChannelStatus);
+        Assert.NotNull(tracked.EmailUpdatedAt);
     }
 
     [Fact]
@@ -640,6 +700,7 @@ public sealed class SosDispatchersTests
         var dispatcher = new SosEmailDispatcher(
             email,
             _dedupe,
+            CreateDbContext(),
             NullLogger<SosEmailDispatcher>.Instance
         );
 
@@ -650,6 +711,47 @@ public sealed class SosDispatchersTests
         await email
             .DidNotReceiveWithAnyArgs()
             .SendEmailAsync(default!, default!, default!, default, default);
+    }
+
+    [Fact]
+    public async Task Correo_YaProcesado_BackfillDelEstadoEnLaAlertaSinReenviar()
+    {
+        var email = Substitute.For<IEmailService>();
+        var alert = NewAlert();
+        alert.DestinationEmail = "correo@test.com";
+        _dedupe
+            .GetByKeyAsync($"sos:email:{alert.Id}", Arg.Any<CancellationToken>())
+            .Returns(
+                new NotificationDedupeKey
+                {
+                    DedupeKey = $"sos:email:{alert.Id}",
+                    EmailStatus = "sindestino",
+                }
+            );
+
+        await using var dbContext = CreateDbContext();
+        dbContext.SosAlerts.Add(alert);
+        await dbContext.SaveChangesAsync();
+
+        var dispatcher = new SosEmailDispatcher(
+            email,
+            _dedupe,
+            dbContext,
+            NullLogger<SosEmailDispatcher>.Instance
+        );
+
+        var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
+
+        // Outbox terminal: no se reenvía; además la alerta queda backfilleada
+        // con el estado real (para alertas creadas antes de la columna).
+        Assert.Equal(SosChannelStatus.SinDestino, status);
+        await email
+            .DidNotReceiveWithAnyArgs()
+            .SendEmailAsync(default!, default!, default!, default, default);
+        var tracked = await dbContext
+            .SosAlerts.AsNoTracking()
+            .SingleAsync(x => x.Id == alert.Id);
+        Assert.Equal(SosChannelStatus.SinDestino, tracked.EmailChannelStatus);
     }
 
     [Fact]
@@ -670,10 +772,11 @@ public sealed class SosDispatchersTests
             .Returns((NotificationDedupeKey?)null);
 
         var alert = NewAlert();
-        alert.Patient!.EmergencyContact = "{\"email\":\"correo@test.com\"}";
+        alert.DestinationEmail = "correo@test.com";
         var dispatcher = new SosEmailDispatcher(
             email,
             _dedupe,
+            CreateDbContext(),
             NullLogger<SosEmailDispatcher>.Instance
         );
 

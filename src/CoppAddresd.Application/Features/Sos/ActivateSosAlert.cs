@@ -136,6 +136,13 @@ public sealed class ActivateSosAlertHandler(
             );
         }
 
+        // Correo del contacto: canal OPCIONAL (no bloquea la activación). Se
+        // congela un snapshot normalizado; sin correo válido el canal de
+        // correo queda SinDestino y el despachador no envía nada.
+        var destinationEmail = SosSupport.NormalizeEmail(
+            SosSupport.ExtractEmergencyContactEmail(profile.EmergencyContact)
+        );
+
         // --- 3) Rate-limit distribuido ANTES de persistir o invocar canales ---
         var decision = await rateLimiter.CheckAsync(request.PatientId, e164, request.DeviceId, ct);
         if (!decision.Allowed)
@@ -184,9 +191,10 @@ public sealed class ActivateSosAlertHandler(
             Spo2 = request.Vitals?.Spo2,
             BloodPressure = request.Vitals?.BloodPressure,
             DestinationPhoneE164 = e164,
+            DestinationEmail = destinationEmail,
         };
 
-        // Outbox: sms + una fila por profesional asignado (destinatarios del push).
+        // Outbox: sms + voz + correo + una fila por profesional asignado (push).
         var staffUserIds = await repository.GetAssignedStaffUserIdsAsync(request.PatientId, ct);
         var dedupeKeys = BuildDedupeKeys(alert.Id, staffUserIds);
 

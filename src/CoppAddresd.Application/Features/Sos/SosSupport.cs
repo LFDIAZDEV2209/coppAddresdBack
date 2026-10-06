@@ -121,7 +121,7 @@ public static class SosSupport
     /// <summary>
     /// Extrae el correo del JSON del contacto de emergencia
     /// (<c>{name, relationship, phone, email}</c>). Formato legacy o JSON sin
-    /// correo devuelve null (el canal de correo se marca NoConfigurado).
+    /// correo devuelve null (el canal de correo se marca SinDestino).
     /// </summary>
     public static string? ExtractEmergencyContactEmail(string? emergencyContactJson)
     {
@@ -149,6 +149,38 @@ public static class SosSupport
         {
             return null;
         }
+    }
+
+    /// <summary>Longitud máxima de un correo (RFC 5321: 320 caracteres).</summary>
+    public const int MaxEmailLength = 320;
+
+    /// <summary>
+    /// Normaliza el correo del contacto de emergencia: trim, sin espacios
+    /// internos, un único <c>@</c> con local y dominio no vacíos. Devuelve
+    /// null si es inválido o ausente — el correo es un canal OPCIONAL: no
+    /// bloquea la activación (a diferencia del teléfono), solo deja el canal
+    /// en <c>SinDestino</c> sin enviar nada.
+    /// </summary>
+    public static string? NormalizeEmail(string? rawEmail)
+    {
+        if (string.IsNullOrWhiteSpace(rawEmail))
+        {
+            return null;
+        }
+
+        var trimmed = rawEmail.Trim();
+        if (trimmed.Length > MaxEmailLength || trimmed.Any(char.IsWhiteSpace))
+        {
+            return null;
+        }
+
+        var at = trimmed.IndexOf('@');
+        if (at <= 0 || at != trimmed.LastIndexOf('@') || at == trimmed.Length - 1)
+        {
+            return null;
+        }
+
+        return trimmed;
     }
 
     /// <summary>

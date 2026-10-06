@@ -123,6 +123,26 @@ public sealed class SosAlert
     /// <summary>Duración de la llamada en segundos (reportada al completar).</summary>
     public int? VoiceDurationSeconds { get; set; }
 
+    // --- Canal correo (contacto de emergencia) ---
+
+    /// <summary>
+    /// Snapshot del correo del contacto de emergencia tomado de
+    /// <c>patient_profiles.emergency_contact.email</c> al momento de la
+    /// activación (el perfil posterior no muta alertas creadas). Null = el
+    /// contacto no tiene correo → el canal queda <c>SinDestino</c> y no se
+    /// envía nada. Nunca se registra en logs.
+    /// </summary>
+    public string? DestinationEmail { get; set; }
+
+    /// <summary>
+    /// Estado del correo al contacto de emergencia (<c>SinDestino</c> cuando
+    /// no hay correo registrado). Mismo ciclo de vida que los demás canales.
+    /// </summary>
+    public SosChannelStatus EmailChannelStatus { get; set; } = SosChannelStatus.Pendiente;
+
+    /// <summary>Última actualización del canal de correo (UTC).</summary>
+    public DateTime? EmailUpdatedAt { get; set; }
+
     // --- Canal push (staff asignado) ---
 
     public SosChannelStatus PushChannelStatus { get; set; } = SosChannelStatus.Pendiente;

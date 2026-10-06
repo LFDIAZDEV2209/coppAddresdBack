@@ -117,6 +117,21 @@ public sealed class SosActivateTests
         Assert.Equal(expected, SosSupport.IsUuidV4(value));
     }
 
+    [Theory]
+    [InlineData("ana@test.local", "ana@test.local")]
+    [InlineData("  ana@test.local  ", "ana@test.local")] // trim
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("sin-arroba", null)]
+    [InlineData("@test.local", null)] // local vacío
+    [InlineData("ana@", null)] // dominio vacío
+    [InlineData("a@@b.com", null)] // doble arroba
+    [InlineData("ana @test.local", null)] // espacio interno
+    public void NormalizeEmail_CasosRepresentativos(string raw, string? expected)
+    {
+        Assert.Equal(expected, SosSupport.NormalizeEmail(raw));
+    }
+
     [Fact]
     public void IsUuidV4_UnUuidV4Valido_Pasa()
     {
@@ -301,6 +316,60 @@ public sealed class SosActivateTests
     }
 
     [Fact]
+    public async Task Handle_ContactoConCorreoInvalido_ActivaSinSnapshotDeCorreo()
+    {
+        var patientId = Guid.NewGuid();
+        var key = NewKeyV4();
+        SosAlert? persisted = null;
+
+        _repository
+            .GetByPatientAndKeyAsync(patientId, key, Arg.Any<CancellationToken>())
+            .Returns((SosAlert?)null);
+        _repository
+            .GetPatientProfileAsync(patientId, Arg.Any<CancellationToken>())
+            .Returns(
+                new PatientProfile
+                {
+                    Id = patientId,
+                    FirstName = "Sofía",
+                    EmergencyContact = System.Text.Json.JsonSerializer.Serialize(
+                        new
+                        {
+                            name = "Ana",
+                            relationship = "Familiar",
+                            phone = "+573053924819",
+                            email = "no-es-un-correo",
+                        }
+                    ),
+                }
+            );
+        _repository
+            .GetActiveByPatientAsync(patientId, Arg.Any<CancellationToken>())
+            .Returns((SosAlert?)null);
+        _repository
+            .GetAssignedStaffUserIdsAsync(patientId, Arg.Any<CancellationToken>())
+            .Returns([]);
+        _repository
+            .AddWithOutboxAsync(
+                Arg.Do<SosAlert>(a => persisted = a),
+                Arg.Any<IReadOnlyCollection<string>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new SosCreateOutcome(SosCreateResult.Created, null));
+
+        var result = await _handler.Handle(
+            new ActivateSosAlertCommand(patientId, key),
+            CancellationToken.None
+        );
+
+        // El correo es OPCIONAL: uno inválido no bloquea (el teléfono manda);
+        // simplemente no se congela destino → canal SinDestino sin envío.
+        Assert.Equal(SosActivationOutcome.Created, result.Outcome);
+        Assert.NotNull(persisted);
+        Assert.Null(persisted!.DestinationEmail);
+    }
+
+    [Fact]
     public async Task Handle_RateLimitDistribuido_Devuelve429AntesDeCrearODespachar()
     {
         var patientId = Guid.NewGuid();
@@ -376,6 +445,7 @@ public sealed class SosActivateTests
         Assert.NotNull(persisted);
         Assert.Equal(SosAlertStatus.Activa, persisted!.Status);
         Assert.Equal("+573053924819", persisted.DestinationPhoneE164); // normalizado server-side
+        Assert.Equal("ana@test.local", persisted.DestinationEmail); // snapshot del correo
         Assert.Equal(4.7110, persisted.Latitude);
 
         // Outbox: 1 fila SMS + 1 voz + 1 correo + 2 push (uno por profesional asignado).
