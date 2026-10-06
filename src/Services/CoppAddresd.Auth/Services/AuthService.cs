@@ -546,7 +546,8 @@ public class AuthService : IAuthService
 
         // 256 bits aleatorios: el código viaja en la URL, así que solo se guarda su hash.
         // TTL holgado por defecto (600 s): la web tarda en cargar en redes móviles.
-        var handoffSeconds = _accountDeletionSettings.HandoffSeconds;
+        // Mínimo defensivo: un HandoffSeconds mal configurado no debe crear códigos ya expirados.
+        var handoffSeconds = Math.Max(30, _accountDeletionSettings.HandoffSeconds);
         var code = AccountDeletionSecrets.NewSecret();
         _dbContext.AccountDeletionHandoffs.Add(
             new AccountDeletionHandoff

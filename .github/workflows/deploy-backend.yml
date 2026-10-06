@@ -48,6 +48,18 @@ jobs:
           if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Auth"; then
             SERVICES="$SERVICES auth"
           fi
+          # Un commit de solo-tests no cambia la imagen, pero si rompe el build de
+          # un proyecto debe bloquear su despliegue y no dejarlo "verde" sin validar.
+          # Espejo de la selección de tests de abajo (mismo mapeo proyecto->servicios).
+          if echo "$CHANGED" | grep -q "tests/CoppAddresd.UnitTests"; then
+            SERVICES="$SERVICES auth api"
+          fi
+          if echo "$CHANGED" | grep -q "tests/CoppAddresd.Telemedicine.UnitTests"; then
+            SERVICES="$SERVICES telemedicine"
+          fi
+          if echo "$CHANGED" | grep -q "tests/CoppAddresd.Community.UnitTests"; then
+            SERVICES="$SERVICES community"
+          fi
           if echo "$CHANGED" | grep -q "src/CoppAddresd.Api"; then
             SERVICES="$SERVICES api"
           fi
