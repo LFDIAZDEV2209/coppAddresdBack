@@ -16,8 +16,11 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// Inicia la sesión de video de una cita: crea la sesión activa, asegura la sala
 /// virtual (creándola si no existe) y pasa la cita a <c>InProgress</c>. Solo el
 /// profesional de la cita o un supervisor pueden iniciarla; el paciente no.
-/// La transición de estado se protege con el token de concurrencia de la cita
-/// (dos inicios simultáneos → 409 para el perdedor).
+/// La ventana de acceso NO aplica al profesional/supervisor: puede abrir la sala
+/// en cualquier momento mientras la cita esté Confirmada o InProgress (la ventana
+/// solo restringe el join-token del paciente). La transición de estado se protege
+/// con el token de concurrencia de la cita (dos inicios simultáneos → 409 para el
+/// perdedor).
 /// </summary>
 public sealed record StartSessionCommand(
     Guid AppointmentId,
@@ -57,7 +60,6 @@ public sealed class StartSessionCommandHandler(
         SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
 
         var now = DateTimeOffset.UtcNow;
-        SessionSupport.EnsureWithinWindow(appointment, settings, now);
 
         if (appointment.Sessions.Any(s => s.Status == TelemedicineSessionStatus.Active))
         {

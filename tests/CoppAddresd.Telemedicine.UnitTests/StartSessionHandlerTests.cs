@@ -8,9 +8,10 @@ namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
 /// Caso de uso de inicio de sesión (StartSessionCommandHandler): autorización
-/// del profesional/supervisor, estado de la cita, ventana, una sesión activa a
+/// del profesional/supervisor, estado de la cita, una sesión activa a
 /// la vez, elevación perezosa de capacidad (F3) y transición
-/// Confirmed → InProgress con creación de sala.
+/// Confirmed → InProgress con creación de sala. La ventana de acceso no aplica
+/// (solo restringe el join-token del paciente).
 /// </summary>
 public class StartSessionHandlerTests
 {
@@ -78,14 +79,18 @@ public class StartSessionHandlerTests
     }
 
     [Fact]
-    public async Task Handle_FueraDeVentana_LanzaViolacion()
+    public async Task Handle_FueraDeVentana_IniciaSesionIgualmente()
     {
-        // Cita dentro de 5 horas: fuera de la ventana de acceso (abre 10 min antes).
+        // El profesional puede abrir la sala aunque falten horas para la cita:
+        // la ventana de acceso solo restringe el ingreso del paciente (join-token).
         var appointment = AddConfirmed(DateTimeOffset.UtcNow.AddHours(5));
         var command = new StartSessionCommand(appointment.Id, TestData.UserId, false);
 
-        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            _handler.Handle(command, CancellationToken.None));
+        var dto = await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal(AppointmentStatus.InProgress, dto.Status);
+        Assert.Equal(TelemedicineSessionStatus.Active, Assert.Single(appointment.Sessions).Status);
+        Assert.Equal(1, _videoProvider.CreateRoomCalls);
     }
 
     [Fact]
