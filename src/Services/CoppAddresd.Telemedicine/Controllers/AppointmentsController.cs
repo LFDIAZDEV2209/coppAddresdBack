@@ -18,7 +18,10 @@ namespace CoppAddresd.Telemedicine.Controllers;
 [ApiController]
 [Route("api/v1/appointments")]
 [Authorize]
-public class AppointmentsController(IMediator mediator) : ControllerBase
+public class AppointmentsController(
+    IMediator mediator,
+    IAuthorizationService authorizationService
+) : ControllerBase
 {
     [HttpPost]
     [RequirePermission(AppointmentPermissionCodes.AppointmentsSchedule)]
@@ -198,10 +201,17 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
         CancellationToken ct
     )
     {
-        // Alcance dual: con el permiso ERP el actor sale del body (comportamiento
+        // Alcance dual: con el permiso ERP (claim JWT o introspección scoped
+        // vía AuthorizationHandler) el actor sale del body (comportamiento
         // actual); sin permiso, el llamador es el paciente de la cita (identidad
         // del JWT) y el handler valida propiedad/estado.
-        var erpMode = User.HasClaim("permission", AppointmentPermissionCodes.AppointmentsCancel);
+        var erpMode = (
+            await authorizationService.AuthorizeAsync(
+                User,
+                null,
+                AppointmentPermissionCodes.AppointmentsCancel
+            )
+        ).Succeeded;
         var command = new CancelAppointmentCommand(
             id,
             request.Reason,
@@ -221,14 +231,18 @@ public class AppointmentsController(IMediator mediator) : ControllerBase
         CancellationToken ct
     )
     {
-        // Alcance dual (igual que Cancel): con el permiso ERP el RequestedBy
+        // Alcance dual (igual que Cancel): con el permiso ERP (claim JWT o
+        // introspección scoped vía AuthorizationHandler) el RequestedBy
         // sale del body; sin permiso, el llamador es el paciente de la cita
         // (identidad del JWT), el servidor fuerza RequestedBy = Patient y el
         // handler valida propiedad/estado/límites.
-        var erpMode = User.HasClaim(
-            "permission",
-            AppointmentPermissionCodes.AppointmentsReschedule
-        );
+        var erpMode = (
+            await authorizationService.AuthorizeAsync(
+                User,
+                null,
+                AppointmentPermissionCodes.AppointmentsReschedule
+            )
+        ).Succeeded;
         var command = new RescheduleAppointmentCommand(
             id,
             request.NewStart,
