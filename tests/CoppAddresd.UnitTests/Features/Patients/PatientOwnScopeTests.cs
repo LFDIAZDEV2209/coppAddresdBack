@@ -203,6 +203,7 @@ public class PatientOwnScopeTests
                 null,
                 "desc",
                 null,
+                null,
                 Arg.Any<CancellationToken>()
             )
             .Returns((new[] { patient }, 1));
@@ -227,6 +228,7 @@ public class PatientOwnScopeTests
                 professionalId,
                 null,
                 "desc",
+                null,
                 null,
                 Arg.Any<CancellationToken>()
             );

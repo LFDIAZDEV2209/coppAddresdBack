@@ -11,7 +11,11 @@ namespace CoppAddresd.Api.Controllers;
 [ApiController]
 [Route("api/v1/[controller]")]
 [Authorize]
-public class PatientsController(IMediator mediator, ICurrentContext context) : ControllerBase
+public class PatientsController(
+    IMediator mediator,
+    ICurrentContext context,
+    IEmployeeRepository employees
+) : ControllerBase
 {
     [HttpGet("stats")]
     public async Task<ActionResult<PatientStatsDto>> Stats(CancellationToken ct)
@@ -137,6 +141,81 @@ public class PatientsController(IMediator mediator, ICurrentContext context) : C
             ct
         );
         return Ok(result);
+    }
+
+    /// <summary>
+    /// Búsqueda de pacientes para agendar citas del ERP. El staff conserva su
+    /// alcance de directorio (clínica activa); un profesional clínico con
+    /// permiso de agendamiento puede buscar en toda su organización, no solo
+    /// entre sus pacientes asignados (necesario para citar pacientes nuevos o
+    /// de otras sedes de la organización).
+    /// </summary>
+    [HttpGet("scheduling")]
+    public async Task<ActionResult<PaginatedPatientsResult>> ListForScheduling(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        CancellationToken ct = default
+    )
+    {
+        if (await context.HasPermissionAsync("Patients.View", ct))
+        {
+            var (allowed, ownProfessionalId) = await ResolvePatientScopeAsync(ct);
+            if (!allowed)
+                return Forbid();
+
+            return Ok(
+                await mediator.Send(
+                    new ListPatientsQuery(
+                        page,
+                        pageSize,
+                        search,
+                        null,
+                        null,
+                        context.ActiveClinicId,
+                        ownProfessionalId,
+                        null,
+                        null
+                    ),
+                    ct
+                )
+            );
+        }
+
+        // Alcance de agendamiento: profesional clínico buscando pacientes de
+        // su organización. Se omite el filtro de asignación propia y el de
+        // clínica activa; el id de profesional se resuelve por el JWT.
+        if (
+            !await context.HasPermissionAsync("Patients.ViewOwn", ct)
+            || !await context.HasPermissionAsync("Appointments.Schedule", ct)
+        )
+            return Forbid();
+
+        if (context.UserId is not { } userId)
+            return Forbid();
+
+        var employee = await employees.GetByUserIdAsync(userId, ct);
+        if (employee is null || await context.GetProfessionalIdAsync(ct) is null)
+            return Forbid();
+
+        return Ok(
+            await mediator.Send(
+                new ListPatientsQuery(
+                    page,
+                    pageSize,
+                    search,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    employee.OrganizationId
+                ),
+                ct
+            )
+        );
     }
 
     [HttpGet("{id:guid}")]

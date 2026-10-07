@@ -260,6 +260,7 @@ public class PatientScopingTests
                 null,
                 "desc",
                 null,
+                null,
                 Arg.Any<CancellationToken>()
             )
             .Returns((new[] { patient }, 1));
@@ -291,6 +292,7 @@ public class PatientScopingTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
+                null,
                 Arg.Any<CancellationToken>()
             )
             .Returns((new List<PatientProfile>(), 0));
@@ -312,6 +314,7 @@ public class PatientScopingTests
                 Arg.Is<string?>(v => v == null),
                 Arg.Is<string?>(v => v == "desc"),
                 Arg.Any<string?>(),
+                Arg.Any<Guid?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -331,6 +334,7 @@ public class PatientScopingTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
+                null,
                 Arg.Any<CancellationToken>()
             )
             .Returns((new List<PatientProfile>(), 0));
@@ -355,6 +359,7 @@ public class PatientScopingTests
                 Arg.Is<string?>(v => v == "firstName"),
                 Arg.Is<string?>(v => v == "asc"),
                 Arg.Any<string?>(),
+                Arg.Any<Guid?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -374,6 +379,7 @@ public class PatientScopingTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
+                null,
                 Arg.Any<CancellationToken>()
             )
             .Returns((new List<PatientProfile>(), 0));
@@ -399,6 +405,7 @@ public class PatientScopingTests
                 Arg.Is<string?>(v => v == null),
                 Arg.Is<string?>(v => v == "desc"),
                 Arg.Any<string?>(),
+                Arg.Any<Guid?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -418,6 +425,7 @@ public class PatientScopingTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
+                null,
                 Arg.Any<CancellationToken>()
             )
             .Returns((new List<PatientProfile>(), 0));
@@ -439,6 +447,7 @@ public class PatientScopingTests
                 Arg.Any<string?>(),
                 Arg.Any<string?>(),
                 Arg.Is<string?>(v => v == "CA"),
+                Arg.Any<Guid?>(),
                 Arg.Any<CancellationToken>()
             );
     }

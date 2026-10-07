@@ -11,6 +11,8 @@ namespace CoppAddresd.Application.Features.Patients;
 /// <paramref name="OwnProfessionalId"/> restringe el resultado al alcance
 /// "propio" del profesional (solo pacientes asignados a él): el id se resuelve
 /// en el backend desde la identidad del JWT, nunca se acepta del cliente.
+/// <paramref name="OrganizationId"/> acota a los pacientes de las clínicas de
+/// esa organización (búsqueda para agendar); igualmente resuelto en el backend.
 /// </summary>
 public record ListPatientsQuery(
     int Page = 1,
@@ -22,7 +24,8 @@ public record ListPatientsQuery(
     Guid? OwnProfessionalId = null,
     string? SortBy = null,
     string? SortDir = null,
-    string? StateCode = null
+    string? StateCode = null,
+    Guid? OrganizationId = null
 ) : IRequest<PaginatedPatientsResult>;
 
 /// <summary>Campos de orden permitidos del listado (whitelist anti-inyección).</summary>
@@ -81,6 +84,7 @@ public sealed class ListPatientsQueryHandler(IPatientRepository repository)
             sortBy,
             sortDir,
             stateCode,
+            request.OrganizationId,
             ct
         );
 

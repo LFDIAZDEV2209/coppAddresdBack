@@ -82,6 +82,7 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         string? sortBy,
         string? sortDir,
         string? stateCode = null,
+        Guid? organizationId = null,
         CancellationToken ct = default
     )
     {
@@ -115,6 +116,14 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         // fuera de la vista por clínica; se accede desde el contexto global.
         if (clinicId is not null)
             query = query.Where(x => x.ClinicId == clinicId);
+
+        // Alcance por organización (búsqueda para AGENDAR del profesional
+        // clínico): pacientes de cualquier clínica de la organización. No
+        // aplica al directorio legacy sin clínica (clinic_id null).
+        if (organizationId is not null)
+            query = query.Where(x =>
+                x.Clinic != null && x.Clinic.OrganizationId == organizationId
+            );
 
         // Alcance "propios" (profesional clínico): solo pacientes con una
         // asignación activa hacia él. El id NUNCA viene del cliente: lo

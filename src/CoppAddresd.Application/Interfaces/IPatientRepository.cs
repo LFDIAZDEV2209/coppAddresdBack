@@ -25,7 +25,7 @@ public interface IPatientRepository
     /// </summary>
     Task<PatientProfile?> GetByEmailAsync(string email, CancellationToken ct = default);
 
-    /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4), <paramref name="professionalId"/> restringe al alcance "propio" del profesional (solo pacientes asignados activos) y <paramref name="stateCode"/> filtra por estado de EE. UU. (selección del mapa). <paramref name="sortBy"/> viene de la whitelist de campos y <paramref name="sortDir"/> es asc/desc; null → CreatedAt desc.</summary>
+    /// <summary>Lista paginada del directorio con filtros y orden estable (CreatedAt desc, Id desc). Solo pacientes no eliminados; <paramref name="clinicId"/> filtra por clínica (frontera de datos Fase 4), <paramref name="professionalId"/> restringe al alcance "propio" del profesional (solo pacientes asignados activos), <paramref name="stateCode"/> filtra por estado de EE. UU. (selección del mapa) y <paramref name="organizationId"/> restringe a los pacientes de las clínicas de esa organización (búsqueda para agendar del profesional clínico). <paramref name="sortBy"/> viene de la whitelist de campos y <paramref name="sortDir"/> es asc/desc; null → CreatedAt desc.</summary>
     Task<(IReadOnlyList<PatientProfile> Items, int Total)> ListAsync(
         int page,
         int pageSize,
@@ -37,6 +37,7 @@ public interface IPatientRepository
         string? sortBy,
         string? sortDir,
         string? stateCode = null,
+        Guid? organizationId = null,
         CancellationToken ct = default
     );
 

@@ -408,6 +408,7 @@ public sealed class PatientDashboardIntegrationTests : IAsyncLifetime
             null,
             null,
             null,
+            null,
             CancellationToken.None
         );
 
@@ -432,6 +433,7 @@ public sealed class PatientDashboardIntegrationTests : IAsyncLifetime
             null,
             null,
             item.State.Code,
+            null,
             CancellationToken.None
         );
         Assert.Equal(1, filteredTotal);
