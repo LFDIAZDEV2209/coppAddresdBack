@@ -123,6 +123,34 @@ internal static class SessionSupport
             appointment.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes));
     }
 
+    /// <summary>
+    /// Ventana efectiva publicada al paciente y usada al emitir el token.
+    /// Una sesión iniciada explícitamente abre antes; no extiende el cierre.
+    /// El estado InProgress por sí solo no basta: exige una sesión activa persistida.
+    /// </summary>
+    public static (DateTimeOffset Open, DateTimeOffset Close) EffectiveWindow(
+        Appointment appointment,
+        TelemedicineSettings settings,
+        VirtualRoom? room)
+    {
+        var (open, close) = room is null
+            ? Window(appointment, settings)
+            : (room.ScheduledOpenAt, room.ScheduledCloseAt);
+
+        if (appointment.Status == AppointmentStatus.InProgress && room is not null)
+        {
+            var startedAt = room.Sessions
+                .Where(s => s.Status == TelemedicineSessionStatus.Active)
+                .Select(s => s.StartedAt)
+                .Where(s => s.HasValue)
+                .Min();
+            if (startedAt is { } started && started < open)
+                open = started;
+        }
+
+        return (open, close);
+    }
+
     /// <summary>La cita debe estar en un estado que admita sala/sesión (confirmada o en curso).</summary>
     public static void EnsureCanStartOrJoin(AppointmentStatus status)
     {
@@ -238,9 +266,10 @@ internal static class SessionSupport
     public static void EnsureWithinWindow(
         Appointment appointment,
         TelemedicineSettings settings,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        VirtualRoom? room = null)
     {
-        var (open, close) = Window(appointment, settings);
+        var (open, close) = EffectiveWindow(appointment, settings, room);
 
         if (now < open)
         {

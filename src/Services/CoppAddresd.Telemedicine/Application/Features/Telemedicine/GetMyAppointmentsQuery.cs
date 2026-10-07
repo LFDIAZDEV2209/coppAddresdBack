@@ -94,10 +94,11 @@ public sealed class GetMyAppointmentsQueryHandler(
 
                     if (roomByAppointmentId.TryGetValue(entity.Id, out var room))
                     {
+                        var window = SessionSupport.EffectiveWindow(entity, settings, room);
                         return dto with
                         {
-                            RoomOpensAt = room.ScheduledOpenAt,
-                            RoomClosesAt = room.ScheduledCloseAt,
+                            RoomOpensAt = window.Open,
+                            RoomClosesAt = window.Close,
                             ReopenGraceMinutes = settings.ReopenGraceMinutes,
                         };
                     }

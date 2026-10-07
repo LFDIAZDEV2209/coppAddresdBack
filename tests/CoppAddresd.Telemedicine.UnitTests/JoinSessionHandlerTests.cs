@@ -8,8 +8,9 @@ namespace CoppAddresd.Telemedicine.UnitTests;
 
 /// <summary>
 /// Caso de uso de join-token (JoinSessionCommandHandler): autorización del
-/// participante, estado y ventana, creación perezosa e idempotente de la sala,
-/// elevación perezosa de capacidad (F3) y generación del token de acceso.
+/// participante, estado y ventana de acceso del paciente, creación perezosa e
+/// idempotente de la sala, elevación perezosa de capacidad (F3) y generación del
+/// token de acceso.
 /// </summary>
 public class JoinSessionHandlerTests
 {
@@ -104,15 +105,32 @@ public class JoinSessionHandlerTests
     }
 
     [Fact]
-    public async Task Handle_FueraDeVentana_LanzaViolacion()
+    public async Task Handle_PacienteFueraDeVentana_LanzaViolacion()
     {
+        // El paciente sigue sujeto a la ventana de acceso.
+        var appointment = AddConfirmed(DateTimeOffset.UtcNow.AddHours(5));
+        _referenceData.Patients[TestData.PatientId] = TestData.Patient();
+        _referenceData.UserToPatient[TestData.PatientUserId] = TestData.PatientId;
+        var command = new JoinSessionCommand(appointment.Id, TestData.PatientUserId, false);
+
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+        Assert.Empty(_rooms.Rooms);
+    }
+
+    [Fact]
+    public async Task Handle_ProfesionalFueraDeVentana_GeneraToken()
+    {
+        // El profesional puede ingresar aunque falten horas para la cita.
         var appointment = AddConfirmed(DateTimeOffset.UtcNow.AddHours(5));
         _referenceData.Professionals[appointment.ProfessionalId] = TestData.Professional(userId: TestData.UserId);
         _referenceData.UserToProfessional[TestData.UserId] = appointment.ProfessionalId;
         var command = new JoinSessionCommand(appointment.Id, TestData.UserId, false);
 
-        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
-            _handler.Handle(command, CancellationToken.None));
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        Assert.Equal("fake-access-token", result.Token);
+        Assert.Equal(1, _videoProvider.CreateRoomCalls);
     }
 
     [Fact]

@@ -14,8 +14,10 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// <summary>
 /// Genera el token de acceso a la sala virtual de una cita para el usuario
 /// autenticado. Verifica: cita existente, participante autorizado (profesional,
-/// paciente o supervisor), estado de la cita y ventana de acceso. La sala se
-/// crea perezosamente en el primer <c>join-token</c> dentro de la ventana
+/// paciente o supervisor), estado de la cita y ventana de acceso del paciente.
+/// La ventana solo restringe al paciente: el profesional/supervisor puede
+/// ingresar en cualquier momento mientras la cita esté Confirmada o InProgress.
+/// La sala se crea perezosamente en el primer <c>join-token</c> autorizado
 /// (creación idempotente por nombre determinista). El usuario autenticado sale
 /// del JWT, nunca del cuerpo de la petición.
 /// </summary>
@@ -49,7 +51,7 @@ public sealed class JoinSessionCommandHandler(
         var appointment = await appointments.GetByIdAsync(request.AppointmentId, ct)
             ?? throw new NotFoundException("Cita", request.AppointmentId);
 
-        await SessionSupport.RequireParticipantAsync(
+        var participant = await SessionSupport.RequireParticipantAsync(
             referenceData, appointment, request.UserId, request.HasManagePermission, ct);
 
         SessionSupport.EnsureCanStartOrJoin(appointment.Status);
@@ -58,10 +60,17 @@ public sealed class JoinSessionCommandHandler(
         SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
 
         var now = DateTimeOffset.UtcNow;
-        SessionSupport.EnsureWithinWindow(appointment, settings, now);
+        var room = await rooms.GetForUpdateAsync(appointment.Id, ct);
+
+        // El paciente respeta la ventana efectiva: una sesión activa iniciada
+        // por el profesional/supervisor adelanta la apertura, sin extender el cierre.
+        // El profesional/supervisor conserva su acceso anticipado.
+        if (participant == SessionParticipant.Patient)
+        {
+            SessionSupport.EnsureWithinWindow(appointment, settings, now, room);
+        }
 
         // La sala se carga TRACKEADA: la elevación de capacidad (F3) muta la fila.
-        var room = await rooms.GetForUpdateAsync(appointment.Id, ct);
         if (room is null)
         {
             var providerRoomName = SessionSupport.ProviderRoomName(appointment.Id);

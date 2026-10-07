@@ -30,7 +30,7 @@ public class ReopenGraceExposureTests
     {
         var appointment = TestData.Appointment();
         _appointments.Items.Add(appointment);
-        var handler = new GetAppointmentQueryHandler(_appointments, _referenceData, _settings);
+        var handler = new GetAppointmentQueryHandler(_appointments, _referenceData, _settings, new FakeRoomRepository());
 
         var dto = await handler.Handle(
             new GetAppointmentQuery(appointment.Id), CancellationToken.None);
