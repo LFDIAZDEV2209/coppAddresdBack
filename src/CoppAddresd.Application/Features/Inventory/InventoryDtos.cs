@@ -6,7 +6,7 @@ public record ProductDto(
     Guid Id, string Sku, string Name, string ProductType, string Category,
     string? ActiveIngredient, string Presentation, string? Concentration,
     string Unit, string? Manufacturer, string? Supplier, string? Lot,
-    DateTime? ExpirationDate, int Stock, int MinimumStock, int MaximumStock,
+    DateOnly? ExpirationDate, int Stock, int MinimumStock, int MaximumStock,
     string? Location, string Status, decimal UnitCost, string? Notes,
     DateTime CreatedAt, DateTime? UpdatedAt)
 {
@@ -14,7 +14,8 @@ public record ProductDto(
         p.Id, p.Sku, p.Name, p.ProductType, p.Category,
         p.ActiveIngredient, p.Presentation, p.Concentration,
         p.Unit, p.Manufacturer, p.Supplier, p.Lot,
-        p.ExpirationDate, p.Stock, p.MinimumStock, p.MaximumStock,
+        p.ExpirationDate is { } expiration ? DateOnly.FromDateTime(expiration) : null,
+        p.Stock, p.MinimumStock, p.MaximumStock,
         p.Location, p.Status, p.UnitCost, p.Notes,
         p.CreatedAt, p.UpdatedAt);
 }
@@ -23,14 +24,15 @@ public record ProductListItemDto(
     Guid Id, string Sku, string Name, string ProductType, string Category,
     string? ActiveIngredient, string Presentation, string? Concentration,
     string Unit, string? Supplier, string? Manufacturer, string? Lot,
-    DateTime? ExpirationDate, int Stock, int MinimumStock, int MaximumStock,
+    DateOnly? ExpirationDate, int Stock, int MinimumStock, int MaximumStock,
     string? Location, string Status, decimal UnitCost, string? Notes)
 {
     public static ProductListItemDto FromEntity(Domain.Entities.Product p) => new(
         p.Id, p.Sku, p.Name, p.ProductType, p.Category,
         p.ActiveIngredient, p.Presentation, p.Concentration,
         p.Unit, p.Supplier, p.Manufacturer, p.Lot,
-        p.ExpirationDate, p.Stock, p.MinimumStock, p.MaximumStock,
+        p.ExpirationDate is { } expiration ? DateOnly.FromDateTime(expiration) : null,
+        p.Stock, p.MinimumStock, p.MaximumStock,
         p.Location, p.Status, p.UnitCost, p.Notes);
 }
 
