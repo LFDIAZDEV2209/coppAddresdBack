@@ -94,6 +94,71 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
+    /// Preflight del alta: informa si el correo ya tiene cuenta (y si está
+    /// activa / tiene contraseña) para que el wizard ofrezca vincularla en vez
+    /// de fallar al final. La autoridad final sigue siendo el POST/link.
+    /// </summary>
+    [HttpGet("email-availability")]
+    [RequirePermission(PermissionCodes.UsersCreate)]
+    public async Task<ActionResult<UserEmailAvailabilityResponse>> EmailAvailability(
+        [FromQuery] string email,
+        CancellationToken ct
+    )
+    {
+        return Ok(await _userService.GetEmailAvailabilityAsync(email, ct));
+    }
+
+    /// <summary>
+    /// Vincula un alta a una cuenta existente: suma (unión pura) los roles y
+    /// permisos seleccionados sin quitar los existentes; las credenciales no
+    /// cambian. Misma postura de autorización que el POST con asignaciones.
+    /// </summary>
+    [HttpPost("link")]
+    [RequirePermission(PermissionCodes.UsersCreate)]
+    public async Task<ActionResult<UserResponse>> Link(
+        [FromBody] LinkUserAccountRequest request,
+        CancellationToken ct
+    )
+    {
+        var wantsAssignments =
+            request.RoleIds is { Length: > 0 } || request.PermissionIds is { Length: > 0 };
+        if (wantsAssignments)
+        {
+            var authorized = await HasAssignPermissionsAsync(requireUsersCreate: true);
+            if (!authorized)
+            {
+                return StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    new
+                    {
+                        message = "No tienes permisos para asignar roles y permisos al vincular un usuario. Iniciá sesión con una cuenta con Users.Create, Roles.Assign y Permissions.Assign.",
+                    }
+                );
+            }
+
+            if (!await HasSystemAdminSettingsAsync())
+            {
+                return StatusCode(
+                    StatusCodes.Status403Forbidden,
+                    new
+                    {
+                        message = "Se requiere System.AdminSettings para asignar roles y permisos al vincular un usuario.",
+                    }
+                );
+            }
+        }
+
+        var (success, error, user, notFound) = await _userService.LinkAsync(request, ct);
+        if (notFound)
+            return NotFound(new { message = error });
+
+        if (!success)
+            return Conflict(new { message = error });
+
+        return Ok(user);
+    }
+
+    /// <summary>
     /// Creación masiva de usuarios (AllowAnonymous, misma postura que el
     /// POST /api/auth/users individual). Cada fila se procesa de forma
     /// independiente: una falla no bloquea las demás. Las contraseñas se

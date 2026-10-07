@@ -350,6 +350,138 @@ public class UserService : IUserService
     }
 
     /// <summary>
+    /// Preflight del alta: ¿el correo ya tiene cuenta? Devuelve también si la
+    /// cuenta está activa y si tiene contraseña (cuenta real vs. invitación
+    /// pendiente), para que el wizard decida entre crear o vincular.
+    /// </summary>
+    public async Task<UserEmailAvailabilityResponse> GetEmailAvailabilityAsync(
+        string email,
+        CancellationToken ct = default)
+    {
+        var normalized = email?.Trim() ?? string.Empty;
+        if (normalized.Length == 0)
+        {
+            return new UserEmailAvailabilityResponse(false, false, false, null, null, null);
+        }
+
+        var user = await _userManager.FindByEmailAsync(normalized);
+        if (user is null)
+        {
+            return new UserEmailAvailabilityResponse(false, false, false, null, null, null);
+        }
+
+        return new UserEmailAvailabilityResponse(
+            Exists: true,
+            IsActive: user.IsActive,
+            HasPassword: !string.IsNullOrEmpty(user.PasswordHash),
+            UserId: user.Id,
+            FirstName: user.FirstName,
+            LastName: user.LastName
+        );
+    }
+
+    /// <summary>
+    /// Vincula un alta a una cuenta existente (mismo correo): suma roles y
+    /// permisos en modo UNIÓN PURA (los existentes jamás se quitan) y no toca
+    /// las credenciales. La cuenta inactiva se rechaza con conflicto.
+    /// </summary>
+    public async Task<(bool Success, string? Error, UserResponse? User, bool NotFound)> LinkAsync(
+        LinkUserAccountRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _userManager.FindByEmailAsync(request.Email.Trim());
+        if (user is null)
+        {
+            _logger.LogWarning("Link user failed: email {Email} not found", request.Email);
+            return (false, "Usuario no encontrado", null, true);
+        }
+
+        if (!user.IsActive)
+        {
+            _logger.LogWarning("Link user failed: email {Email} is inactive", request.Email);
+            return (
+                false,
+                "La cuenta está inactiva. Reactívala en Usuarios antes de vincularla.",
+                null,
+                false
+            );
+        }
+
+        await using var tx = await _dbContext.Database.BeginTransactionAsync(ct);
+        try
+        {
+            async Task<(bool Success, string? Error, UserResponse? User, bool NotFound)> FailAsync(
+                string error
+            )
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                return (false, error, null, false);
+            }
+
+            if (request.RoleIds is { Length: > 0 })
+            {
+                // Unión pura: los roles actuales se conservan.
+                var currentNames = await _userManager.GetRolesAsync(user);
+                var currentRoleIds = await _dbContext.Roles
+                    .Where(r => currentNames.Contains(r.Name!))
+                    .Select(r => r.Id)
+                    .ToListAsync(ct);
+                var unionIds = currentRoleIds.Concat(request.RoleIds).Distinct().ToArray();
+
+                var roleSync = await SyncRolesAsync(user, unionIds, ct);
+                if (!roleSync.Success)
+                {
+                    _logger.LogWarning(
+                        "Link user {UserId} failed assigning roles: {Error}",
+                        user.Id,
+                        roleSync.Error
+                    );
+                    return await FailAsync(roleSync.Error!);
+                }
+            }
+
+            if (request.PermissionIds is { Length: > 0 })
+            {
+                // Unión pura: los permisos directos actuales se conservan.
+                var currentPermissionIds = await _dbContext.UserPermissions
+                    .Where(up => up.UserId == user.Id)
+                    .Select(up => up.PermissionId)
+                    .ToListAsync(ct);
+                var unionIds = currentPermissionIds
+                    .Concat(request.PermissionIds)
+                    .Distinct()
+                    .ToArray();
+
+                var permissionSync = await SyncPermissionsAsync(user.Id, unionIds, ct);
+                if (!permissionSync.Success)
+                {
+                    _logger.LogWarning(
+                        "Link user {UserId} failed assigning permissions: {Error}",
+                        user.Id,
+                        permissionSync.Error
+                    );
+                    return await FailAsync(permissionSync.Error!);
+                }
+            }
+
+            await tx.CommitAsync(ct);
+
+            _logger.LogInformation(
+                "User {UserId} linked to existing account with merged assignments",
+                user.Id
+            );
+
+            var roles = await _userManager.GetRolesAsync(user);
+            return (true, null, MapToResponse(user, roles), false);
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Creación masiva de usuarios: cada fila se procesa de forma independiente
     /// (una falla no detiene las demás), sin transacción global.
     /// Carga el catálogo de roles activos una sola vez antes del loop para
