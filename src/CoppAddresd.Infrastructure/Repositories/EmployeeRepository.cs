@@ -215,19 +215,22 @@ public sealed class EmployeeRepository(AppDbContext dbContext) : IEmployeeReposi
             );
 
     /// <summary>
-    /// Soft-delete del perfil: marca <c>deleted_at</c> y libera el correo.
-    /// El historial y la cuenta de Auth quedan intactos. Devuelve false si el
-    /// perfil no existe o ya estaba eliminado.
+    /// Soft-delete del perfil: marca <c>deleted_at</c>, libera el correo y
+    /// desvincula la cuenta (<c>user_id</c>) para que el mismo correo pueda
+    /// vincularse a un perfil nuevo. El historial y la cuenta de Auth quedan
+    /// intactos. Devuelve false si el perfil no existe o ya estaba eliminado.
     /// </summary>
     public async Task<bool> SoftDeleteAsync(Guid employeeId, CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
         var updated = await dbContext
             .Employees.Where(x => x.Id == employeeId && x.DeletedAt == null)
             .ExecuteUpdateAsync(
                 setters =>
                     setters
-                        .SetProperty(x => x.DeletedAt, DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, DateTime.UtcNow),
+                        .SetProperty(x => x.DeletedAt, now)
+                        .SetProperty(x => x.UserId, (Guid?)null)
+                        .SetProperty(x => x.UpdatedAt, now),
                 ct
             );
 
