@@ -60,17 +60,17 @@ public sealed class JoinSessionCommandHandler(
         SessionSupport.EnsureValidMaxParticipants(settings.MaxParticipants);
 
         var now = DateTimeOffset.UtcNow;
+        var room = await rooms.GetForUpdateAsync(appointment.Id, ct);
 
-        // Ventana de acceso: solo restringe al paciente. El profesional/supervisor
-        // puede abrir e ingresar la sala en cualquier momento mientras la cita esté
-        // Confirmada o InProgress (p. ej. iniciar la sesión con antelación).
+        // El paciente respeta la ventana efectiva: una sesión activa iniciada
+        // por el profesional/supervisor adelanta la apertura, sin extender el cierre.
+        // El profesional/supervisor conserva su acceso anticipado.
         if (participant == SessionParticipant.Patient)
         {
-            SessionSupport.EnsureWithinWindow(appointment, settings, now);
+            SessionSupport.EnsureWithinWindow(appointment, settings, now, room);
         }
 
         // La sala se carga TRACKEADA: la elevación de capacidad (F3) muta la fila.
-        var room = await rooms.GetForUpdateAsync(appointment.Id, ct);
         if (room is null)
         {
             var providerRoomName = SessionSupport.ProviderRoomName(appointment.Id);

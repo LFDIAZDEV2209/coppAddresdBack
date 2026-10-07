@@ -11,7 +11,8 @@ public sealed record GetAppointmentQuery(Guid AppointmentId)
 public sealed class GetAppointmentQueryHandler(
     IAppointmentRepository appointments,
     IAppointmentReferenceDataService referenceData,
-    ITelemedicineSettingsProvider settingsProvider)
+    ITelemedicineSettingsProvider settingsProvider,
+    IRoomRepository rooms)
     : IRequestHandler<GetAppointmentQuery, AppointmentDto>
 {
     public async Task<AppointmentDto> Handle(
@@ -24,16 +25,19 @@ public sealed class GetAppointmentQueryHandler(
         var dto = await AppointmentMapper.BuildDtosAsync([entity], referenceData, ct);
 
         // Ventana efectiva de la sala (settings por organización/clínica): el
-        // detalle la expone para que la UI decida unirse sin esperar la creación
-        // lazy de la sala. Las listas admin la dejan en null; la del paciente
+        // detalle la expone con la sesión activa, o la calcula si aún no hay sala.
+        // Las listas admin la dejan en null; la del paciente
         // (app móvil) también la trae para el pre-join (GetMyAppointmentsQuery).
         var settings = await settingsProvider.GetSettingsAsync(
             entity.OrganizationId, entity.ClinicId, ct);
 
+        var room = await rooms.GetByAppointmentIdAsync(entity.Id, includeSessions: true, ct: ct);
+        var (open, close) = SessionSupport.EffectiveWindow(entity, settings, room);
+
         return dto[0] with
         {
-            RoomOpensAt = entity.ScheduledStart.AddMinutes(-settings.RoomOpenBeforeMinutes),
-            RoomClosesAt = entity.ScheduledEnd.AddMinutes(settings.RoomCloseAfterMinutes),
+            RoomOpensAt = open,
+            RoomClosesAt = close,
             CompletedAt = entity.CompletedAt,
             // F5: el detalle expone la gracia efectiva (útil en Completed) para
             // que el ERP calcule "Reabrir consulta" sin hardcodear 60.

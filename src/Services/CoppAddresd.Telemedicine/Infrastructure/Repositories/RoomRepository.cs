@@ -43,6 +43,7 @@ public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepos
         return await dbContext
             .Rooms.AsNoTracking()
             .Where(r => appointmentIds.Contains(r.AppointmentId))
+            .Include(r => r.Sessions.Where(s => s.Status == TelemedicineSessionStatus.Active))
             .ToListAsync(ct);
     }
 
