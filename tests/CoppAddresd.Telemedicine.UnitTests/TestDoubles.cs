@@ -221,6 +221,7 @@ public sealed class FakeSettingsProvider : ITelemedicineSettingsProvider
 /// <summary>Proveedor de video configurable (sustituye al TwilioVideoProvider).</summary>
 public sealed class FakeVideoProvider : IVideoProvider
 {
+    public IReadOnlyList<ParticipantInfo> Participants { get; set; } = [];
     public bool SignatureValid { get; set; } = true;
     public bool CompleteRoomThrows { get; set; }
 
@@ -291,7 +292,7 @@ public sealed class FakeVideoProvider : IVideoProvider
     public Task<IReadOnlyList<ParticipantInfo>> GetParticipantsAsync(
         string providerRoomSid,
         CancellationToken ct
-    ) => Task.FromResult<IReadOnlyList<ParticipantInfo>>([]);
+    ) => Task.FromResult(Participants);
 
     public Task<bool> ValidateWebhookSignatureAsync(
         WebhookValidationRequest request,

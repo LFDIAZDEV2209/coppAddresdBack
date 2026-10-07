@@ -64,7 +64,9 @@ public sealed record RoomParticipantDto(
     string Identity,
     bool IsConnected,
     DateTimeOffset? ConnectedAt,
-    DateTimeOffset? DisconnectedAt
+    DateTimeOffset? DisconnectedAt,
+    string? DisplayName = null,
+    string? Role = null
 );
 
 /// <summary>Sala virtual de una cita (estado de dominio + ventana + participantes).</summary>

@@ -30,6 +30,10 @@ public sealed class GetAppointmentRoomQueryHandler(
             ?? throw new NotFoundException("Sala", request.AppointmentId);
 
         var participants = await videoProvider.GetParticipantsAsync(room.ProviderRoomSid, ct);
+        // Dos referencias por sala, independientemente del número de participantes.
+        // La identidad del proveedor es el usuario Auth, no el perfil clínico.
+        var patient = await referenceData.GetPatientAsync(appointment.PatientId, ct);
+        var professional = await referenceData.GetProfessionalAsync(appointment.ProfessionalId, ct);
 
         var participantDtos = participants
             .Select(p => new RoomParticipantDto(
@@ -37,7 +41,15 @@ public sealed class GetAppointmentRoomQueryHandler(
                 p.Identity,
                 p.IsConnected,
                 p.ConnectedAt,
-                p.DisconnectedAt))
+                p.DisconnectedAt,
+                Guid.TryParse(p.Identity, out var userId) && userId == patient?.UserId
+                    ? patient.FullName
+                    : Guid.TryParse(p.Identity, out userId) && userId == professional?.UserId
+                        ? professional.FullName : null,
+                Guid.TryParse(p.Identity, out userId) && userId == patient?.UserId
+                    ? "Patient"
+                    : Guid.TryParse(p.Identity, out userId) && userId == professional?.UserId
+                        ? "Professional" : "Supervisor"))
             .ToList();
 
         return RoomDtos.Build(room, participantDtos);
