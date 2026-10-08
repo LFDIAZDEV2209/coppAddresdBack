@@ -41,7 +41,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         CancellationToken ct = default
     )
     {
-        var query = dbContext.HealthTestInstruments.AsNoTracking().AsQueryable();
+        var query = dbContext.HealthTestInstruments.AsNoTracking().Include(x => x.Versions).ThenInclude(v => v.Questions).AsSplitQuery().AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(x => x.Name.Contains(search) || x.Code.Contains(search));
@@ -121,6 +121,25 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         return version;
     }
 
+    public async Task<bool> TryPublishVersionAsync(Guid id, Guid instrumentId, DateTime publishedAt, CancellationToken ct = default)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
+            var lockKey = $"health-test-publish:{instrumentId}";
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))", ct);
+            var draft = await dbContext.HealthTestVersions.AsNoTracking().FirstOrDefaultAsync(v => v.Id == id && v.InstrumentId == instrumentId && v.Status == HealthTestVersionStatus.draft, ct);
+            if (draft is null) return false;
+            await dbContext.HealthTestVersions.Where(v => v.InstrumentId == instrumentId && v.Id != id && (v.IsCurrent || v.Status == HealthTestVersionStatus.active))
+                .ExecuteUpdateAsync(s => s.SetProperty(v => v.IsCurrent, false).SetProperty(v => v.Status, HealthTestVersionStatus.retired).SetProperty(v => v.RetiredAt, publishedAt), ct);
+            await dbContext.HealthTestVersions.Where(v => v.Id == id)
+                .ExecuteUpdateAsync(s => s.SetProperty(v => v.IsCurrent, true).SetProperty(v => v.Status, HealthTestVersionStatus.active).SetProperty(v => v.PublishedAt, publishedAt), ct);
+            await transaction.CommitAsync(ct);
+            return true;
+        });
+    }
+
     public async Task UpdateVersionAsync(HealthTestVersion version, CancellationToken ct = default)
     {
         dbContext.HealthTestVersions.Update(version);
@@ -160,6 +179,26 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .Where(x => x.VersionId == versionId && x.IsActive)
             .OrderBy(x => x.SortOrder)
             .ToListAsync(ct);
+
+    public async Task SaveQuestionAsync(HealthTestQuestion question, CancellationToken ct = default)
+    {
+        var stored = await dbContext.HealthTestQuestions.Include(q => q.Options).FirstOrDefaultAsync(q => q.Id == question.Id, ct);
+        if (stored is null) dbContext.HealthTestQuestions.Add(question);
+        else
+        {
+            dbContext.Entry(stored).CurrentValues.SetValues(question);
+            var incomingIds = question.Options.Select(option => option.Id).ToHashSet();
+            foreach (var option in stored.Options.Where(option => !incomingIds.Contains(option.Id)).ToList())
+            { dbContext.Remove(option); stored.Options.Remove(option); }
+            foreach (var option in question.Options)
+            {
+                var existing = stored.Options.FirstOrDefault(item => item.Id == option.Id);
+                if (existing is null) stored.Options.Add(option);
+                else dbContext.Entry(existing).CurrentValues.SetValues(option);
+            }
+        }
+        await dbContext.SaveChangesAsync(ct);
+    }
 
     public async Task<IReadOnlyList<HealthTestAnswerOption>> ListOptionsByQuestionAsync(
         Guid questionId,

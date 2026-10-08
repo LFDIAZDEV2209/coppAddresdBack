@@ -189,7 +189,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .OrderByDescending(a => a.ScheduledStart)
             .ToListAsync(ct);
 
-    public async Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminAsync(
+    public Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminAsync(
         Guid? professionalId,
         Guid? patientId,
         Guid? clinicId,
@@ -199,6 +199,21 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         DateTimeOffset? to,
         int page,
         int pageSize,
+        CancellationToken ct = default
+    )
+        => ListAdminSearchAsync(professionalId, patientId, clinicId, locationId, status, from, to, page, pageSize, null, ct);
+
+    public async Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminSearchAsync(
+        Guid? professionalId,
+        Guid? patientId,
+        Guid? clinicId,
+        Guid? locationId,
+        AppointmentStatus? status,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CoppAddresd.Telemedicine.Application.ReferenceData.AppointmentSearchMatches? matches,
         CancellationToken ct = default
     )
     {
@@ -224,6 +239,10 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
 
         if (to is not null)
             query = query.Where(a => a.ScheduledStart < to);
+
+        if (matches is not null)
+            query = query.Where(a => matches.PatientIds.Contains(a.PatientId) || matches.ProfessionalIds.Contains(a.ProfessionalId)
+                || matches.SpecialtyIds.Contains(a.SpecialtyId) || (a.LocationId.HasValue && matches.LocationIds.Contains(a.LocationId.Value)));
 
         var total = await query.CountAsync(ct);
 
@@ -261,6 +280,28 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         return utc.TimeOfDay == TimeSpan.Zero ? toDate.AddDays(-1) : toDate;
     }
 
+    private readonly Dictionary<(Guid, DateTimeOffset, DateTimeOffset), bool> _validRollups = [];
+    private async Task<bool> CanUseRollupAsync(Guid? professionalId, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    {
+        // Un rollup diario no representa fracciones de día. Si está incompleto o
+        // sus series divergen, todas las tarjetas usan el mismo rango OLTP.
+        if (from.UtcDateTime.TimeOfDay != TimeSpan.Zero || to.UtcDateTime.TimeOfDay != TimeSpan.Zero) return false;
+        var key = (professionalId ?? Guid.Empty, from, to);
+        if (_validRollups.TryGetValue(key, out var cached)) return cached;
+        var start = DateOnly.FromDateTime(from.UtcDateTime);
+        var end = InclusiveEndDate(to);
+        var rows = await dbContext.AppointmentDailyMetrics.AsNoTracking().Where(m => m.ProfessionalId == key.Item1 && m.MetricDate >= start && m.MetricDate <= end
+            && (m.MetricKey == "daily_total" || m.MetricKey == "status_count" || m.MetricKey == "hourly_count")).ToListAsync(ct);
+        var query = dbContext.Appointments.AsNoTracking().Where(a => a.ScheduledStart >= from && a.ScheduledStart < to);
+        if (professionalId is not null) query = query.Where(a => a.ProfessionalId == professionalId);
+        var actual = await query.CountAsync(ct);
+        var valid = rows.Count > 0 && rows.Where(m => m.MetricKey == "daily_total").Sum(m => m.TotalCount) == actual
+            && rows.Where(m => m.MetricKey == "status_count").Sum(m => m.TotalCount) == actual
+            && rows.Where(m => m.MetricKey == "hourly_count").Sum(m => m.TotalCount) == actual;
+        _validRollups[key] = valid;
+        return valid;
+    }
+
     public async Task<int> CountInRangeAsync(
         Guid? professionalId,
         DateTimeOffset from,
@@ -275,7 +316,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         var profId = professionalId ?? Guid.Empty;
 
         long? preaggTotal = null;
-        if (usePreagg && !onlyUpcoming)
+        if (usePreagg && !onlyUpcoming && await CanUseRollupAsync(professionalId, from, to, ct))
         {
             preaggTotal = await dbContext
                 .AppointmentDailyMetrics.AsNoTracking()
@@ -346,7 +387,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             )
             .ToListAsync(ct);
 
-        if (preagg.Count > 0)
+        if (preagg.Count > 0 && await CanUseRollupAsync(professionalId, from, to, ct))
         {
             return preagg
                 .Select(m => new DailyAppointmentCount(
@@ -400,7 +441,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             )
             .ToListAsync(ct);
 
-        if (preagg.Count > 0)
+        if (preagg.Count > 0 && await CanUseRollupAsync(professionalId, from, to, ct))
         {
             return preagg
                 .GroupBy(m => m.DimensionKey)
@@ -456,7 +497,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             )
             .ToListAsync(ct);
 
-        if (preagg.Count > 0)
+        if (preagg.Count > 0 && await CanUseRollupAsync(professionalId, from, to, ct))
         {
             return preagg
                 .GroupBy(m => m.DimensionKey)
@@ -504,7 +545,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
             .Where(s => s.MetricDate >= fromDate && s.MetricDate <= toDate)
             .ToListAsync(ct);
 
-        if (stats.Count > 0)
+        if (stats.Count > 0 && await CanUseRollupAsync(null, from, to, ct))
         {
             return stats
                 .GroupBy(s => s.ProfessionalId)

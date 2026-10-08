@@ -161,6 +161,10 @@ public sealed class AppointmentReferenceDataService(
         return fetched;
     }
 
+    public async Task<AppointmentSearchMatches> SearchAsync(string search, CancellationToken ct = default)
+        => await GetAsync<AppointmentSearchMatches>($"/api/v1/internal/telemedicine/search?search={Uri.EscapeDataString(search.Trim())}", ct)
+            ?? throw new Application.Exceptions.UpstreamUnavailableException("No se pudo buscar en el directorio.");
+
     private async Task<T?> GetAsync<T>(string path, CancellationToken ct)
         where T : class
     {

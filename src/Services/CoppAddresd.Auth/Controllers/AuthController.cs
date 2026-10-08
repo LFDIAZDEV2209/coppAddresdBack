@@ -39,7 +39,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Credenciales inválidas" });
         }
 
-        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
+        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe, request.Application);
 
         return Ok(new LoginResponse(
             AccessToken: result.AccessToken,
@@ -71,6 +71,22 @@ public class AuthController : ControllerBase
     /// Envía el código OTP al método de contacto elegido. En desarrollo la
     /// respuesta incluye <c>devCode</c> para pruebas end-to-end.
     /// </summary>
+    [HttpPost("recovery-code")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SendRecoveryCode([FromBody] PasswordRecoveryCodeRequest request,
+        [FromServices] CoppAddresd.Auth.Services.PasswordRecoveryService recovery, CancellationToken ct)
+        => Ok(await recovery.SendAsync(request, ct));
+
+    [HttpPost("recover-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RecoverPassword([FromBody] PasswordRecoveryRequest request,
+        [FromServices] CoppAddresd.Auth.Services.PasswordRecoveryService recovery, CancellationToken ct)
+    {
+        if (!await recovery.ResetAsync(request, ct)) return BadRequest(new { message = "Código inválido o expirado." });
+        ClearRefreshTokenCookie("app");
+        return Ok(new { message = "Contraseña actualizada. Inicia sesión con tu nueva contraseña." });
+    }
+
     [HttpPost("send-otp")]
     public async Task<ActionResult<SendOtpResponse>> SendOtp(
         [FromBody] SendOtpRequest request,
@@ -103,7 +119,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Código inválido o expirado" });
         }
 
-        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe);
+        SetRefreshTokenCookie(result.RefreshToken, request.RememberMe, request.Application);
 
         return Ok(new LoginResponse(
             AccessToken: result.AccessToken,
@@ -116,7 +132,10 @@ public class AuthController : ControllerBase
         [FromBody] RefreshTokenRequest? request,
         CancellationToken ct)
     {
-        var refreshToken = Request.Cookies[RefreshTokenCookieName]
+        var application = (request?.Application ?? "erp").ToLowerInvariant();
+        // Migración: la cookie antigua solo se acepta si el servicio verifica su aplicación.
+        var refreshToken = Request.Cookies[CookieName(application)]
+            ?? Request.Cookies[RefreshTokenCookieName]
             ?? request?.RefreshToken;
 
         if (string.IsNullOrWhiteSpace(refreshToken))
@@ -124,22 +143,19 @@ public class AuthController : ControllerBase
             // Sin cookie: visitante que nunca tuvo sesión. Se informa al
             // cliente para que NO muestre el banner de "sesión expirada".
             Response.Headers["X-Refresh-Status"] = "missing";
-            ClearRefreshTokenCookie();
             return Unauthorized(new { message = "Refresh token inválido o expirado" });
         }
 
-        var result = await _authService.RefreshAsync(refreshToken, ct);
+        var result = await _authService.RefreshAsync(refreshToken, ct, application);
 
         if (result is null)
         {
-            // Cookie corrupta, expirada o revocada: se limpia para que el
-            // cliente se recupere sin intervención manual del usuario.
+            // No borra cookies aquí: otra pestaña puede haber completado una rotación.
             Response.Headers["X-Refresh-Status"] = "invalid";
-            ClearRefreshTokenCookie();
             return Unauthorized(new { message = "Refresh token inválido o expirado" });
         }
 
-        SetRefreshTokenCookie(result.RefreshToken, rememberMe: true);
+        SetRefreshTokenCookie(result.RefreshToken, rememberMe: true, application);
 
         return Ok(new RefreshTokenResponse(
             AccessToken: result.AccessToken,
@@ -148,22 +164,24 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout(CancellationToken ct)
+    public async Task<IActionResult> Logout([FromBody] RefreshTokenRequest? request, CancellationToken ct)
     {
         // El logout se resuelve con la cookie de refresh, sin depender del
         // access token (que pudo haber expirado). Sin cookie: idempotente.
-        var refreshToken = Request.Cookies[RefreshTokenCookieName];
+        var application = (request?.Application ?? "erp").ToLowerInvariant();
+        var refreshToken = Request.Cookies[CookieName(application)] ?? Request.Cookies[RefreshTokenCookieName];
 
         if (!string.IsNullOrWhiteSpace(refreshToken))
         {
-            var userId = await _authService.GetUserIdByRefreshTokenAsync(refreshToken, ct);
+            var userId = await _authService.GetUserIdByRefreshTokenAsync(refreshToken, ct, application);
             if (userId.HasValue)
             {
-                await _authService.LogoutAsync(userId.Value, ct);
+                await _authService.LogoutAsync(userId.Value, ct, application);
+                Response.Cookies.Delete(RefreshTokenCookieName, BuildCookieOptions(DateTimeOffset.UtcNow.AddDays(-1)));
             }
         }
 
-        ClearRefreshTokenCookie();
+        ClearRefreshTokenCookie(application);
 
         return Ok(new { message = "Sesión cerrada correctamente" });
     }
@@ -216,23 +234,27 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = error });
         }
 
-        ClearRefreshTokenCookie();
+        ClearRefreshTokenCookie("erp");
+        ClearRefreshTokenCookie("app");
 
         return Ok(new { message = "Contraseña cambiada correctamente. Debe iniciar sesión nuevamente." });
     }
 
-    private void SetRefreshTokenCookie(string refreshToken, bool rememberMe)
+    private static string CookieName(string application) => $"{RefreshTokenCookieName}_{application.ToLowerInvariant()}";
+
+    private void SetRefreshTokenCookie(string refreshToken, bool rememberMe, string application)
     {
         var expires = rememberMe
             ? DateTimeOffset.UtcNow.AddDays(RefreshTokenMaxAgeDays)
             : DateTimeOffset.UtcNow.AddHours(SessionCookieMaxAgeHours);
 
-        Response.Cookies.Append(RefreshTokenCookieName, refreshToken, BuildCookieOptions(expires));
+        Response.Cookies.Append(CookieName(application), refreshToken, BuildCookieOptions(expires));
+        Response.Cookies.Delete(RefreshTokenCookieName, BuildCookieOptions(DateTimeOffset.UtcNow.AddDays(-1)));
     }
 
-    private void ClearRefreshTokenCookie()
+    private void ClearRefreshTokenCookie(string application)
     {
-        Response.Cookies.Append(RefreshTokenCookieName, string.Empty,
+        Response.Cookies.Append(CookieName(application), string.Empty,
             BuildCookieOptions(DateTimeOffset.UtcNow.AddDays(-1)));
     }
 

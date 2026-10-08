@@ -45,6 +45,9 @@ public interface IHealthTestRepository
         HealthTestVersion version,
         CancellationToken ct = default
     );
+    /// <summary>Activa un borrador y retira la versión previa en una sola transacción.</summary>
+    Task<bool> TryPublishVersionAsync(Guid id, Guid instrumentId, DateTime publishedAt, CancellationToken ct = default)
+        => throw new NotSupportedException("Publicación transaccional no implementada.");
     Task UpdateVersionAsync(HealthTestVersion version, CancellationToken ct = default);
     Task<int> GetNextVersionNumberAsync(Guid instrumentId, CancellationToken ct = default);
 
@@ -62,6 +65,8 @@ public interface IHealthTestRepository
         IEnumerable<HealthTestQuestion> questions,
         CancellationToken ct = default
     );
+
+    Task SaveQuestionAsync(HealthTestQuestion question, CancellationToken ct = default);
 
     // --- Rangos ---
     Task<IReadOnlyList<HealthTestScoreRange>> ListRangesByVersionAsync(

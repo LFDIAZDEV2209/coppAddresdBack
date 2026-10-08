@@ -44,7 +44,9 @@ public record HealthTestVersionDto(
     int? Points,
     DateTime CreatedAt,
     DateTime? PublishedAt,
-    DateTime? RetiredAt
+    DateTime? RetiredAt,
+    int QuestionsCount = 0,
+    IReadOnlyList<string>? Sections = null
 )
 {
     public static HealthTestVersionDto FromEntity(HealthTestVersion v) =>
@@ -59,7 +61,9 @@ public record HealthTestVersionDto(
             v.Points,
             v.CreatedAt,
             v.PublishedAt,
-            v.RetiredAt
+            v.RetiredAt,
+            v.Questions.Count(q => q.IsActive),
+            v.Questions.Where(q => q.IsActive && q.Section != null).Select(q => q.Section!).Distinct().ToList()
         );
 }
 
@@ -143,11 +147,13 @@ public record HealthTestAnswerOptionDto(
     string Text,
     decimal? ScoreValue,
     int SortOrder,
-    bool IsActive
+    bool IsActive,
+    Guid? DependsOnQuestionId = null,
+    Guid? DependsOnOptionId = null
 )
 {
     public static HealthTestAnswerOptionDto FromEntity(HealthTestAnswerOption o) =>
-        new(o.Id, o.QuestionId, o.Text, o.ScoreValue, o.SortOrder, o.IsActive);
+        new(o.Id, o.QuestionId, o.Text, o.ScoreValue, o.SortOrder, o.IsActive, o.DependsOnQuestionId, o.DependsOnOptionId);
 }
 
 public record HealthTestScoreRangeDto(

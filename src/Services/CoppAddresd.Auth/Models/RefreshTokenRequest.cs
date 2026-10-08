@@ -9,5 +9,8 @@ namespace CoppAddresd.Auth.Models;
 /// </summary>
 public record RefreshTokenRequest
 {
+    [RegularExpression("^[a-zA-Z0-9-]{1,32}$")]
+    public string Application { get; init; } = "erp";
+
     public string? RefreshToken { get; init; }
 }

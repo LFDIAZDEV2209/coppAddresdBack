@@ -83,6 +83,13 @@ public interface IAppointmentRepository
     /// (profesional, paciente, clínica, sede, estado, rango), paginado y con
     /// orden estable por inicio. Es la base de la vista "Citas" del admin.
     /// </summary>
+    Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminSearchAsync(
+        Guid? professionalId, Guid? patientId, Guid? clinicId, Guid? locationId, AppointmentStatus? status,
+        DateTimeOffset? from, DateTimeOffset? to, int page, int pageSize,
+        CoppAddresd.Telemedicine.Application.ReferenceData.AppointmentSearchMatches? matches, CancellationToken ct = default)
+        => matches is null ? ListAdminAsync(professionalId, patientId, clinicId, locationId, status, from, to, page, pageSize, ct)
+            : throw new NotSupportedException("Búsqueda de citas no configurada.");
+
     Task<(IReadOnlyList<Appointment> Items, int Total)> ListAdminAsync(
         Guid? professionalId,
         Guid? patientId,

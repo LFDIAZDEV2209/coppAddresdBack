@@ -55,6 +55,9 @@ public interface IAgentCatalogRepository
     Task<AgentDocument?> GetDocumentAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<AgentDocument>> ListDocumentsAsync(Guid knowledgeBaseId, CancellationToken ct = default);
     Task<AgentDocument> AddDocumentAsync(AgentDocument document, CancellationToken ct = default);
+    /// <summary>Archiva sin sobrescribir una reserva de indexación concurrente.</summary>
+    Task<bool> TryArchiveDocumentAsync(Guid id, DateTimeOffset archivedAt, CancellationToken ct = default)
+        => throw new NotSupportedException("Archivado atómico no implementado.");
     Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default);
     /// <summary>Reserva atómicamente una indexación; permite recuperar Procesando vencido.</summary>
     Task<bool> TryStartDocumentIndexAsync(Guid id, DateTimeOffset startedAt, DateTimeOffset expiredBefore, CancellationToken ct = default);

@@ -21,7 +21,8 @@ public sealed record ListMyAppointmentsQuery(
     DateTimeOffset? From,
     DateTimeOffset? To,
     int Page = 1,
-    int PageSize = 20
+    int PageSize = 20,
+    string? Search = null
 ) : IRequest<PaginatedAdminAppointmentsResult>;
 
 public sealed class ListMyAppointmentsQueryHandler(
@@ -39,7 +40,8 @@ public sealed class ListMyAppointmentsQueryHandler(
 
         // Alcance forzado por identidad: el profesionalId del query es el del
         // JWT, no un filtro opcional del cliente.
-        var (items, total) = await appointments.ListAdminAsync(
+        var matches = string.IsNullOrWhiteSpace(request.Search) ? null : await referenceData.SearchAsync(request.Search, ct);
+        var (items, total) = await appointments.ListAdminSearchAsync(
             request.ProfessionalId,
             request.PatientId,
             clinicId: null,
@@ -49,6 +51,7 @@ public sealed class ListMyAppointmentsQueryHandler(
             request.To?.ToUniversalTime(),
             page,
             pageSize,
+            matches,
             ct
         );
 

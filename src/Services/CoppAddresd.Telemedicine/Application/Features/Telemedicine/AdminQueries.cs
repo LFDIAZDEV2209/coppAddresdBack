@@ -216,7 +216,8 @@ public sealed record ListAdminAppointmentsQuery(
     DateTimeOffset? From,
     DateTimeOffset? To,
     int Page = 1,
-    int PageSize = 20
+    int PageSize = 20,
+    string? Search = null
 ) : IRequest<PaginatedAdminAppointmentsResult>;
 
 public sealed record PaginatedAdminAppointmentsResult(
@@ -240,7 +241,8 @@ public sealed class ListAdminAppointmentsQueryHandler(
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize, 1, 100);
 
-        var (items, total) = await appointments.ListAdminAsync(
+        var matches = string.IsNullOrWhiteSpace(request.Search) ? null : await referenceData.SearchAsync(request.Search, ct);
+        var (items, total) = await appointments.ListAdminSearchAsync(
             request.ProfessionalId,
             request.PatientId,
             request.ClinicId,
@@ -250,6 +252,7 @@ public sealed class ListAdminAppointmentsQueryHandler(
             request.To?.ToUniversalTime(),
             page,
             pageSize,
+            matches,
             ct
         );
 

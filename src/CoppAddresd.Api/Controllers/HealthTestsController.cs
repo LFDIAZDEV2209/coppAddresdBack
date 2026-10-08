@@ -152,12 +152,22 @@ public class HealthTestsController(
             : Ok(result);
     }
 
+    [HttpGet("alert-rules")]
+    [RequirePermission(PermissionCodes.HealthTestsView)]
+    public async Task<ActionResult<IReadOnlyList<HealthTestAlertRuleCatalogDto>>> ListAlertRules(CancellationToken ct)
+        => Ok(await mediator.Send(new ListAlertRulesQuery(), ct));
+
     [HttpGet("versions/{versionId:guid}/questions")]
     [RequirePermission(PermissionCodes.HealthTestsView)]
     public async Task<ActionResult<IReadOnlyList<HealthTestQuestionDto>>> ListQuestions(
         Guid versionId,
         CancellationToken ct
     ) => Ok(await mediator.Send(new ListQuestionsQuery(versionId), ct));
+
+    [HttpPut("versions/{versionId:guid}/questions")]
+    [RequirePermission(PermissionCodes.HealthTestsManage)]
+    public async Task<ActionResult<HealthTestQuestionDto>> SaveDraftQuestion(Guid versionId, [FromBody] HealthTestQuestionDto question, CancellationToken ct)
+        => Ok(await mediator.Send(new SaveDraftQuestionCommand(versionId, question), ct));
 
     // ===================== BATERÍAS =====================
 
@@ -424,6 +434,25 @@ public class HealthTestsController(
         }
 
         return Ok(await mediator.Send(new ListResultsByPatientQuery(patientId), ct));
+    }
+
+    [HttpGet("reminders")]
+    public async Task<IActionResult> ListReminders(CancellationToken ct)
+    {
+        var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
+        if (!allowed) return Forbid();
+        return Ok(await mediator.Send(new GetHealthTestRemindersQuery(ownProfessionalId), ct));
+    }
+
+    [HttpPost("patients/{patientId:guid}/reminders")]
+    [RequirePermission(PermissionCodes.HealthTestsAssign)]
+    public async Task<IActionResult> SendReminder(Guid patientId, CancellationToken ct)
+    {
+        var (allowed, ownProfessionalId) = await ResolveScopeAsync(ct);
+        if (!allowed) return Forbid();
+        if (ownProfessionalId is {} professionalId && !await repository.PatientBelongsToProfessionalAsync(patientId, professionalId, ct))
+            return NotFound();
+        return Ok(await mediator.Send(new SendHealthTestReminderCommand(patientId), ct));
     }
 
     // ===================== INDICADORES =====================

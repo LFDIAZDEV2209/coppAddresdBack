@@ -39,7 +39,7 @@ public sealed class AgentExecutionsQueryService(
             {
                 logger.LogWarning("Listado de ejecuciones rechazado: {Status} {Body}",
                     response.StatusCode, await response.Content.ReadAsStringAsync(ct));
-                return new AgentExecutionsListDto(0, []);
+                return new AgentExecutionsListDto(0, [], false);
             }
 
             var payload = await response.Content.ReadFromJsonAsync<ExecutionsPageJson>(JsonOpts, ct);
@@ -47,12 +47,12 @@ public sealed class AgentExecutionsQueryService(
                 .Select(ToSummary)
                 .ToList() ?? [];
 
-            return new AgentExecutionsListDto(payload?.Total ?? items.Count, items);
+            return new AgentExecutionsListDto(payload?.Total ?? items.Count, items, payload is not null);
         }
         catch (Exception exc) when (exc is HttpRequestException or TaskCanceledException)
         {
             logger.LogWarning(exc, "No se pudo consultar el listado de ejecuciones del AI Service");
-            return new AgentExecutionsListDto(0, []);
+            return new AgentExecutionsListDto(0, [], false);
         }
     }
 

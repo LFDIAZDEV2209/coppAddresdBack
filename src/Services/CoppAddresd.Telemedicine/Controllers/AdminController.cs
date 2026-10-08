@@ -70,6 +70,7 @@ public class AdminController(IMediator mediator) : ControllerBase
         [FromQuery] DateTimeOffset? to = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery, System.ComponentModel.DataAnnotations.StringLength(100)] string? search = null,
         CancellationToken ct = default
     ) =>
         Ok(
@@ -83,7 +84,8 @@ public class AdminController(IMediator mediator) : ControllerBase
                     from,
                     to,
                     page,
-                    pageSize
+                    pageSize,
+                    search
                 ),
                 ct
             )
@@ -233,6 +235,7 @@ public class MeController(IMediator mediator) : ControllerBase
         [FromQuery] DateTimeOffset? to = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery, System.ComponentModel.DataAnnotations.StringLength(100)] string? search = null,
         CancellationToken ct = default
     )
     {
@@ -257,7 +260,8 @@ public class MeController(IMediator mediator) : ControllerBase
                     from,
                     to,
                     page,
-                    pageSize
+                    pageSize,
+                    search
                 ),
                 ct
             )

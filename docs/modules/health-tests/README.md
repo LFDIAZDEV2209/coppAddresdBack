@@ -408,3 +408,11 @@ rendimiento con volumen sintético, concurrencia y extensibilidad) está documen
 `health_test_score_ranges` define rangos por versión, sin código de subescala. Por eso se aplica al score total y no a las dimensiones individuales. Al enviar una evaluación, sus resultados `subscale` guardan `qualifier` y `severity` nulos: un 4/4 no debe clasificarse con los umbrales de un total de 22 puntos. La ausencia de clasificación también evita alertas por una severidad de subescala inventada.
 
 El DTO compartido de resultados omite ambos campos para subescalas históricas en las consultas de ERP y app; mantiene IDs, valores y snapshots persistidos. No se recalculan evaluaciones ni se requiere migración de datos. El total y los indicadores conservan su comportamiento actual. Incorporar interpretaciones por dimensión requerirá rangos propios aprobados, no reutilizar los del total.
+
+## Correcciones QA 2026-10-08
+
+El catálogo devuelve versiones, conteos reales de preguntas y secciones; la edición de preguntas/opciones se permite solo en borradores. Clonar conserva campos numéricos y remapea dependencias a las nuevas IDs. Publicar exige preguntas activas y opciones válidas. Las evaluaciones previas conservan su versión.
+
+`GET /api/v1/health-tests/alert-rules` devuelve reglas activas persistidas. `GET /api/v1/health-tests/reminders` y `POST /api/v1/health-tests/patients/{id}/reminders` respetan alcance/permisos de asignación. Los recordatorios se guardan como notificaciones inapp `health_test_reminder`, como máximo uno por paciente/día UTC con bloqueo transaccional. No certifica entrega push.
+
+El maestro de pacientes incluye historial de resultados completados. El ERP calcula prevalencia con personas únicas y el último resultado de cada instrumento; las series mensuales usan observaciones reales sin inventar tendencias.

@@ -561,3 +561,9 @@ curl -b jar.txt -c jar.txt -X POST http://localhost:5058/api/auth/logout
 - [ ] Logins externos (Google, GitHub) — `UserLogins` ya existe
 - [ ] Email confirmation (RequireConfirmedEmail = false actualmente)
 - [ ] HTTPS obligatorio en producción
+
+## Recuperación y sesiones por aplicación (QA 2026-10-08)
+
+ERP y app usan cookies HttpOnly distintas (`copp_refresh_token_erp`, `copp_refresh_token_app`). Refresh/logout requieren la aplicación correspondiente y verifican que el token pertenezca a ella. Una respuesta de refresh inválido no borra una cookie rotada por otra pestaña. Los clientes serializan refresh entre pestañas mediante Web Locks cuando están disponibles.
+
+La app recupera contraseñas mediante `POST /api/auth/recovery-code` y `POST /api/auth/recover-password`. Solo admite cuentas existentes, activas y habilitadas para app; no crea usuarios ni concede accesos. Usa contactos registrados, Twilio Verify o correo, límites OTP existentes y códigos de recuperación separados con caducidad/uso único. La operación bloquea la fila OTP y revoca refresh tokens previos al restablecer. La verificación positiva en producción requiere que el dueño ingrese y cambie su contraseña.
