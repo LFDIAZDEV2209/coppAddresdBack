@@ -202,10 +202,8 @@ public sealed class SubmitEvaluationCommandHandler(
 
                 foreach (var subscale in output.Subscales)
                 {
-                    var classification = rangeEngine.Classify(
-                        subscale.Value,
-                        version.ScoreRanges.ToList()
-                    );
+                    // Los rangos de la versión corresponden al total, no a sus
+                    // dimensiones. Sin rangos propios, la subescala no se clasifica.
                     results.Add(
                         new HealthTestResult
                         {
@@ -215,8 +213,8 @@ public sealed class SubmitEvaluationCommandHandler(
                             Code = subscale.Code,
                             Label = subscale.Code,
                             Value = subscale.Value,
-                            Qualifier = classification.Label,
-                            Severity = classification.Severity,
+                            Qualifier = null,
+                            Severity = null,
                             CreatedAt = DateTime.UtcNow,
                         }
                     );

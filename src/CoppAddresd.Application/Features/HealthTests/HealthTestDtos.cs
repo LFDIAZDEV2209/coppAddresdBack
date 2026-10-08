@@ -331,7 +331,13 @@ public record HealthTestResultDto(
 )
 {
     public static HealthTestResultDto FromEntity(HealthTestResult r) =>
-        new(r.Id, r.EvaluationId, r.ResultType, r.Code, r.Label, r.Value, r.Qualifier, r.Severity);
+        // También se omiten etiquetas históricas de subescala calculadas con
+        // rangos del total. El snapshot persistido y su valor no se modifican.
+        new(
+            r.Id, r.EvaluationId, r.ResultType, r.Code, r.Label, r.Value,
+            r.ResultType == HealthTestResultType.subscale ? null : r.Qualifier,
+            r.ResultType == HealthTestResultType.subscale ? null : r.Severity
+        );
 }
 
 // --- Alertas ---

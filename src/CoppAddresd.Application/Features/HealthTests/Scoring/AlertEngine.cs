@@ -67,9 +67,10 @@ public sealed class AlertEngine
             return false;
         }
 
-        if (when.Severity.Count > 0 && result.Severity.HasValue)
+        if (when.Severity.Count > 0)
         {
-            return when.Severity.Contains(result.Severity.Value.ToString());
+            return result.Severity.HasValue
+                && when.Severity.Contains(result.Severity.Value.ToString());
         }
 
         return true;
