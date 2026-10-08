@@ -402,3 +402,9 @@ rendimiento con volumen sintético, concurrencia y extensibilidad) está documen
 - NO hay narrativa IA del resultado (el `/me/results` es derivación determinista; la narrativa con AI
   Service es iteración futura sin cambio de contrato).
 - Los índices están documentados en `docs/database/indexes.md` (migración `AddHealthTestsModule`).
+
+## Alcance de rangos y subescalas (2026-10-08)
+
+`health_test_score_ranges` define rangos por versión, sin código de subescala. Por eso se aplica al score total y no a las dimensiones individuales. Al enviar una evaluación, sus resultados `subscale` guardan `qualifier` y `severity` nulos: un 4/4 no debe clasificarse con los umbrales de un total de 22 puntos. La ausencia de clasificación también evita alertas por una severidad de subescala inventada.
+
+El DTO compartido de resultados omite ambos campos para subescalas históricas en las consultas de ERP y app; mantiene IDs, valores y snapshots persistidos. No se recalculan evaluaciones ni se requiere migración de datos. El total y los indicadores conservan su comportamiento actual. Incorporar interpretaciones por dimensión requerirá rangos propios aprobados, no reutilizar los del total.
