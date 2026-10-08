@@ -52,7 +52,8 @@ public record MasterPatientResultDto(
     string? Qualifier,
     string? Severity,
     DateTime? CompletedAt,
-    IReadOnlyList<MasterResultHistoryDto>? History = null
+    IReadOnlyList<MasterResultHistoryDto>? History = null,
+    DateTime? PendingAssignedAt = null
 );
 
 public record MasterResultHistoryDto(DateTime CompletedAt, decimal? Score, string? Severity);
@@ -101,7 +102,7 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
                 request.CityId?.ToString()
             )
             : CacheKeys.HashScope(request.ProfessionalId?.ToString() ?? "global");
-        var cacheKey = CacheKeys.Stats("health-master", scopeHash);
+        var cacheKey = CacheKeys.Stats("health-master-v2", scopeHash);
         return await cache.GetOrCreateAsync(
             cacheKey,
             CacheKeys.StatsTtl(),
@@ -164,9 +165,17 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
                         var started = evaluations.FirstOrDefault(e =>
                             e.Status == HealthTestEvaluationStatus.started
                         );
-                        var hasStartedAssignment = versionGroup.Any(a =>
+                        // Una evaluación histórica no completa una nueva asignación
+                        // de la misma versión. El pendiente debe seguir visible en ERP.
+                        var activeAssignments = versionGroup.Where(a =>
+                            a.Status is HealthTestAssignmentStatus.pending or HealthTestAssignmentStatus.in_progress
+                        ).ToList();
+                        var hasStartedAssignment = activeAssignments.Any(a =>
                             a.Status == HealthTestAssignmentStatus.in_progress
                         );
+                        var pendingAssignedAt = activeAssignments.Count == 0
+                            ? (DateTime?)null
+                            : activeAssignments.Min(a => a.AssignedAt);
 
                         string state;
                         decimal? score = null;
@@ -196,6 +205,9 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
                             state = "pendiente";
                         }
 
+                        if (hasStartedAssignment) state = "en-progreso";
+                        else if (activeAssignments.Count > 0) state = "pendiente";
+
                         results.Add(
                             new MasterPatientResultDto(
                                 versionGroup.Key,
@@ -213,7 +225,8 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
                                     .Select(e => new MasterResultHistoryDto(e.CompletedAt!.Value,
                                         e.Results.FirstOrDefault(r => r.ResultType == HealthTestResultType.score)?.Value,
                                         e.Results.FirstOrDefault(r => r.ResultType == HealthTestResultType.score)?.Severity?.ToString()))
-                                    .ToList()
+                                    .ToList(),
+                                pendingAssignedAt
                             )
                         );
                     }

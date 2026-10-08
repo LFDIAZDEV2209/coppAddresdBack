@@ -416,3 +416,13 @@ El catálogo devuelve versiones, conteos reales de preguntas y secciones; la edi
 `GET /api/v1/health-tests/alert-rules` devuelve reglas activas persistidas. `GET /api/v1/health-tests/reminders` y `POST /api/v1/health-tests/patients/{id}/reminders` respetan alcance/permisos de asignación. Los recordatorios se guardan como notificaciones inapp `health_test_reminder`, como máximo uno por paciente/día UTC con bloqueo transaccional. No certifica entrega push.
 
 El maestro de pacientes incluye historial de resultados completados. El ERP calcula prevalencia con personas únicas y el último resultado de cada instrumento; las series mensuales usan observaciones reales sin inventar tendencias.
+
+### Seguimiento de reasignaciones (QA producción, 2026-10-08)
+
+`GET /master` conserva el último resultado y su histórico, pero una asignación
+`pending`/`in_progress` de la misma versión sigue abierta aunque haya una evaluación
+anterior completada. `pendingAssignedAt` expone la fecha más antigua de esas
+asignaciones abiertas; no se deriva de `completedAt`. El ERP muestra «—» cuando
+una API anterior no aporta fecha, sin inventar cero días. La clave de caché
+`health-master-v2` evita reutilizar el contrato anterior; mantiene el TTL existente
+30–60 s y el alcance profesional/geográfico.
