@@ -23,6 +23,7 @@ public enum AgentDocumentStatus
     Procesando,
     Listo,
     Error,
+    Archivado,
 }
 
 /// <summary>Estado de una instancia de agente asignada a un paciente.</summary>

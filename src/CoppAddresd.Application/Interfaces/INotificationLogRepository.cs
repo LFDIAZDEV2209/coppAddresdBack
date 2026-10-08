@@ -52,6 +52,10 @@ public interface INotificationLogRepository
     /// </summary>
     Task AddAsync(AppNotification notification, CancellationToken ct = default);
 
+    Task<bool> TryAddDailyReminderAsync(AppNotification notification, CancellationToken ct = default);
+
+    Task<IReadOnlyDictionary<Guid, int>> CountByPatientAsync(string type, IReadOnlyCollection<Guid>? patientIds, CancellationToken ct = default);
+
     /// <summary>
     /// Listado paginado del centro de notificaciones del paciente (SPEC §20, D):
     /// orden descendente por <c>sent_at</c>, con el total de filas y el

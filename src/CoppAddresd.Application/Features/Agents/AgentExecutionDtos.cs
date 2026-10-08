@@ -61,7 +61,8 @@ public record AgentExperienceLiteDto(
 /// <summary>Resultado paginado de ejecuciones.</summary>
 public record AgentExecutionsListDto(
     int Total,
-    IReadOnlyList<AgentExecutionSummaryDto> Items);
+    IReadOnlyList<AgentExecutionSummaryDto> Items,
+    bool IsAvailable = true);
 
 /// <summary>Payload del AI Service en snake_case (contrato interno).</summary>
 public sealed class AgentExecutionQueryOptions
@@ -80,8 +81,8 @@ public sealed class AgentExecutionQueryOptions
         if (!string.IsNullOrWhiteSpace(AgentTypeId)) parts.Add($"agent_type_id={Uri.EscapeDataString(AgentTypeId)}");
         if (!string.IsNullOrWhiteSpace(UserId)) parts.Add($"user_id={Uri.EscapeDataString(UserId)}");
         if (!string.IsNullOrWhiteSpace(Status)) parts.Add($"status={Uri.EscapeDataString(Status)}");
-        if (FromDate is not null) parts.Add($"from_date={FromDate.Value:O}");
-        if (ToDate is not null) parts.Add($"to_date={ToDate.Value:O}");
+        if (FromDate is not null) parts.Add($"from_date={Uri.EscapeDataString(FromDate.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}");
+        if (ToDate is not null) parts.Add($"to_date={Uri.EscapeDataString(ToDate.Value.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}");
         parts.Add($"limit={Limit}");
         parts.Add($"offset={Offset}");
         return string.Join("&", parts);

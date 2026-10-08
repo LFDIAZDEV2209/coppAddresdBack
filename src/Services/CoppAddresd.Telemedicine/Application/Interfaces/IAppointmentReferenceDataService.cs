@@ -12,6 +12,9 @@ namespace CoppAddresd.Telemedicine.Application.Interfaces;
 /// </summary>
 public interface IAppointmentReferenceDataService
 {
+    Task<AppointmentSearchMatches> SearchAsync(string search, CancellationToken ct = default)
+        => throw new NotSupportedException("Búsqueda de referencias no configurada.");
+
     /// <summary>Profesional por su id de <c>erp.professionals</c>; <c>null</c> si no existe.</summary>
     Task<ProfessionalRefDto?> GetProfessionalAsync(
         Guid professionalId,

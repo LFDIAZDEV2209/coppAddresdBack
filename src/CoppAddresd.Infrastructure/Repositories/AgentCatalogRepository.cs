@@ -234,6 +234,11 @@ public sealed class AgentCatalogRepository(AppDbContext dbContext) : IAgentCatal
         return document;
     }
 
+    public async Task<bool> TryArchiveDocumentAsync(Guid id, DateTimeOffset archivedAt, CancellationToken ct = default)
+        => await dbContext.AgentDocuments.Where(x => x.Id == id && x.Status != AgentDocumentStatus.Procesando)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, AgentDocumentStatus.Archivado)
+                .SetProperty(x => x.UpdatedAt, archivedAt), ct) == 1;
+
     public async Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default)
     {
         dbContext.AgentDocuments.Update(document);

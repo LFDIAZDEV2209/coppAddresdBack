@@ -204,10 +204,7 @@ public class AuthService : IAuthService
         );
     }
 
-    public async Task<TokenResult?> RefreshAsync(
-        string refreshToken,
-        CancellationToken ct = default
-    )
+    public async Task<TokenResult?> RefreshAsync(string refreshToken, CancellationToken ct = default, string? application = null)
     {
         var storedToken = await _dbContext
             .RefreshTokens.Include(rt => rt.User)
@@ -248,7 +245,8 @@ public class AuthService : IAuthService
 
         // El refresh conserva la aplicación con la que se emitió el token
         // original: el nuevo access token mantiene el mismo `aud`.
-        if (storedToken.Application is null || !storedToken.Application.IsActive)
+        if (storedToken.Application is null || !storedToken.Application.IsActive
+            || (application is not null && !string.Equals(storedToken.Application.Code, application, StringComparison.OrdinalIgnoreCase)))
         {
             _logger.LogWarning(
                 "Refresh failed: token {TokenId} has no valid application binding",
@@ -342,14 +340,12 @@ public class AuthService : IAuthService
         );
     }
 
-    public async Task<Guid?> GetUserIdByRefreshTokenAsync(
-        string refreshToken,
-        CancellationToken ct = default
-    )
+    public async Task<Guid?> GetUserIdByRefreshTokenAsync(string refreshToken, CancellationToken ct = default, string? application = null)
     {
-        var storedToken = await _dbContext
-            .RefreshTokens.AsNoTracking()
-            .FirstOrDefaultAsync(rt => rt.Token == refreshToken, ct);
+        var storedToken = await _dbContext.RefreshTokens
+            .AsNoTracking()
+            .FirstOrDefaultAsync(rt => rt.Token == refreshToken
+                && (application == null || (rt.Application != null && rt.Application.Code == application)), ct);
 
         if (storedToken is null || !storedToken.IsActive)
         {
@@ -377,10 +373,11 @@ public class AuthService : IAuthService
         return storedToken.Application?.Code;
     }
 
-    public async Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default)
+    public async Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default, string? application = null)
     {
-        var activeTokens = await _dbContext
-            .RefreshTokens.Where(rt => rt.UserId == userId && rt.RevokedAt == null)
+        var activeTokens = await _dbContext.RefreshTokens
+            .Where(rt => rt.UserId == userId && rt.RevokedAt == null
+                && (application == null || (rt.Application != null && rt.Application.Code == application)))
             .ToListAsync(ct);
 
         foreach (var token in activeTokens)

@@ -48,6 +48,18 @@ public class AgentExecutionsQueryServiceTests
         NullLogger<AgentExecutionsQueryService>.Instance);
 
     [Fact]
+    public void Filtros_de_fecha_preservan_offset_al_codificar_query()
+    {
+        var start = DateTimeOffset.Parse("2026-10-08T10:00:00+00:00");
+        var end = DateTimeOffset.Parse("2026-10-09T10:00:00+05:30");
+        var query = new AgentExecutionQueryOptions { FromDate = start, ToDate = end }.ToQueryString();
+        var parsed = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery("?" + query);
+        Assert.Equal(start, DateTimeOffset.Parse(parsed["from_date"].ToString()));
+        Assert.Equal(end, DateTimeOffset.Parse(parsed["to_date"].ToString()));
+        Assert.DoesNotContain("+", query);
+    }
+
+    [Fact]
     public async Task ListAsync_envia_key_y_parsa_pagina()
     {
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
@@ -63,6 +75,7 @@ public class AgentExecutionsQueryServiceTests
         Assert.Equal("secret-internal-key", request.Headers["X-Internal-Key"]);
         Assert.Equal("/api/v1/admin/executions", request.Path);
         Assert.Equal(1, result.Total);
+        Assert.True(result.IsAvailable);
         Assert.Single(result.Items);
         Assert.Equal("e1", result.Items[0].Id);
         Assert.Equal("completado", result.Items[0].Status);
@@ -80,6 +93,7 @@ public class AgentExecutionsQueryServiceTests
         var result = await client.ListAsync(new AgentExecutionQueryOptions());
 
         Assert.Equal(0, result.Total);
+        Assert.False(result.IsAvailable);
         Assert.Empty(result.Items);
     }
 

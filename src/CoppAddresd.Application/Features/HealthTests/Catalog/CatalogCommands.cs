@@ -3,6 +3,7 @@ using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
 using MediatR;
+using CoppAddresd.Domain.Exceptions;
 
 namespace CoppAddresd.Application.Features.HealthTests.Catalog;
 
@@ -102,7 +103,8 @@ public record CreateInstrumentRequest(
     string Name,
     string? Description,
     string? Category,
-    int SortOrder
+    int SortOrder,
+    bool IsActive = true
 );
 
 public record CreateInstrumentCommand(CreateInstrumentRequest Request, Guid? CreatedBy = null)
@@ -117,10 +119,11 @@ public sealed class CreateInstrumentCommandHandler(IHealthTestRepository reposit
     )
     {
         var r = request.Request;
-        var existing = await repository.GetInstrumentByCodeAsync(r.Code, ct);
+        if (string.IsNullOrWhiteSpace(r.Code) || string.IsNullOrWhiteSpace(r.Name)) throw new UnprocessableEntityException("Código y nombre son requeridos.");
+        var existing = await repository.GetInstrumentByCodeAsync(r.Code.Trim(), ct);
         if (existing is not null)
         {
-            throw new InvalidOperationException(
+            throw new BusinessRuleViolationException(
                 $"Ya existe un instrumento con el código '{r.Code}'."
             );
         }
@@ -133,7 +136,7 @@ public sealed class CreateInstrumentCommandHandler(IHealthTestRepository reposit
             Description = string.IsNullOrWhiteSpace(r.Description) ? null : r.Description.Trim(),
             Category = string.IsNullOrWhiteSpace(r.Category) ? null : r.Category.Trim(),
             SortOrder = r.SortOrder,
-            IsActive = true,
+            IsActive = r.IsActive,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -170,6 +173,7 @@ public sealed class UpdateInstrumentCommandHandler(IHealthTestRepository reposit
         }
 
         var r = request.Request;
+        if (string.IsNullOrWhiteSpace(r.Name)) throw new UnprocessableEntityException("El nombre es requerido.");
         instrument.Name = r.Name.Trim();
         instrument.Description = string.IsNullOrWhiteSpace(r.Description)
             ? null
@@ -211,6 +215,8 @@ public sealed class CreateVersionCommandHandler(IHealthTestRepository repository
         }
 
         var r = request.Request;
+        if (r.VersionNumber < 1 || !Enum.IsDefined(r.ScoringStrategy) || r.Points < 0) throw new UnprocessableEntityException("Configuración de versión inválida.");
+        if ((await repository.ListVersionsByInstrumentAsync(request.InstrumentId, ct)).Any(v => v.VersionNumber == r.VersionNumber)) throw new UnprocessableEntityException("El número de versión ya existe.");
         var version = new HealthTestVersion
         {
             Id = Guid.NewGuid(),
@@ -241,7 +247,7 @@ public sealed class PublishVersionCommandHandler(IHealthTestRepository repositor
         CancellationToken ct
     )
     {
-        var version = await repository.GetVersionByIdAsync(request.VersionId, ct);
+        var version = await repository.GetVersionWithDetailsAsync(request.VersionId, ct);
         if (version is null)
         {
             return null;
@@ -249,25 +255,21 @@ public sealed class PublishVersionCommandHandler(IHealthTestRepository repositor
 
         if (version.Status != HealthTestVersionStatus.draft)
         {
-            throw new InvalidOperationException("Solo se publica una versión en estado Draft.");
+            throw new BusinessRuleViolationException("Solo se publica una versión en estado Draft.");
         }
 
-        // Una sola versión activa a la vez: retira la anterior del instrumento.
-        var versions = await repository.ListVersionsByInstrumentAsync(version.InstrumentId, ct);
-        foreach (
-            var v in versions.Where(v => v.IsCurrent || v.Status == HealthTestVersionStatus.active)
-        )
-        {
-            v.IsCurrent = false;
-            v.Status = HealthTestVersionStatus.retired;
-            v.RetiredAt = DateTime.UtcNow;
-            await repository.UpdateVersionAsync(v, ct);
-        }
+        var activeQuestions = version.Questions.Where(q => q.IsActive).ToList();
+        if (activeQuestions.Count == 0) throw new BusinessRuleViolationException("Agrega preguntas antes de publicar.");
+        if (activeQuestions.Any(q => (q.Type == HealthTestQuestionType.single || q.Type == HealthTestQuestionType.multi || q.Type == HealthTestQuestionType.scale) && !q.Options.Any(o => o.IsActive)))
+            throw new BusinessRuleViolationException("Las preguntas de selección requieren opciones activas.");
 
+        // El cambio de versión no deja un intervalo sin versión activa y serializa publicaciones concurrentes.
+        var publishedAt = DateTime.UtcNow;
+        if (!await repository.TryPublishVersionAsync(version.Id, version.InstrumentId, publishedAt, ct))
+            throw new BusinessRuleViolationException("La versión cambió mientras publicabas. Actualiza e intenta de nuevo.");
         version.Status = HealthTestVersionStatus.active;
         version.IsCurrent = true;
-        version.PublishedAt = DateTime.UtcNow;
-        await repository.UpdateVersionAsync(version, ct);
+        version.PublishedAt = publishedAt;
 
         return HealthTestVersionDto.FromEntity(version);
     }
@@ -350,6 +352,9 @@ public sealed class CloneVersionCommandHandler(IHealthTestRepository repository)
         };
         await repository.AddVersionAsync(clone, ct);
 
+        // Remapea también las dependencias al nuevo borrador.
+        var questionIds = source.Questions.ToDictionary(q => q.Id, _ => Guid.NewGuid());
+        var optionIds = source.Questions.SelectMany(q => q.Options).ToDictionary(o => o.Id, _ => Guid.NewGuid());
         // Copia preguntas y opciones (con nuevos Ids).
         var questions = source
             .Questions.OrderBy(q => q.SortOrder)
@@ -357,13 +362,15 @@ public sealed class CloneVersionCommandHandler(IHealthTestRepository repository)
             {
                 var newQ = new HealthTestQuestion
                 {
-                    Id = Guid.NewGuid(),
+                    Id = questionIds[q.Id],
                     VersionId = clone.Id,
                     Code = q.Code,
                     Section = q.Section,
                     Text = q.Text,
                     Type = q.Type,
                     ScoringDirection = q.ScoringDirection,
+                    Unit = q.Unit, MinValue = q.MinValue, MaxValue = q.MaxValue, DefaultValue = q.DefaultValue,
+                    MinLabel = q.MinLabel, MaxLabel = q.MaxLabel, Hint = q.Hint,
                     SortOrder = q.SortOrder,
                     IsActive = q.IsActive,
                 };
@@ -371,10 +378,12 @@ public sealed class CloneVersionCommandHandler(IHealthTestRepository repository)
                     .Options.OrderBy(o => o.SortOrder)
                     .Select(o => new HealthTestAnswerOption
                     {
-                        Id = Guid.NewGuid(),
+                        Id = optionIds[o.Id],
                         QuestionId = newQ.Id,
                         Text = o.Text,
                         ScoreValue = o.ScoreValue,
+                        DependsOnQuestionId = o.DependsOnQuestionId is {} qid && questionIds.TryGetValue(qid, out var newQid) ? newQid : null,
+                        DependsOnOptionId = o.DependsOnOptionId is {} oid && optionIds.TryGetValue(oid, out var newOid) ? newOid : null,
                         SortOrder = o.SortOrder,
                         IsActive = o.IsActive,
                     })

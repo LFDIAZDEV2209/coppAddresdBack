@@ -51,8 +51,11 @@ public record MasterPatientResultDto(
     decimal? ScorePercentage,
     string? Qualifier,
     string? Severity,
-    DateTime? CompletedAt
+    DateTime? CompletedAt,
+    IReadOnlyList<MasterResultHistoryDto>? History = null
 );
+
+public record MasterResultHistoryDto(DateTime CompletedAt, decimal? Score, string? Severity);
 
 /// <summary>Fila completa de la tabla maestra: identidad + resumen por test + alertas activas.</summary>
 public record MasterPatientRowDto(
@@ -204,7 +207,13 @@ public sealed class GetMasterRowsQueryHandler(IHealthTestRepository repository, 
                                 pct,
                                 qualifier,
                                 severity,
-                                completedAt
+                                completedAt,
+                                evaluations.Where(e => e.Status == HealthTestEvaluationStatus.completed && e.CompletedAt.HasValue)
+                                    .OrderBy(e => e.CompletedAt)
+                                    .Select(e => new MasterResultHistoryDto(e.CompletedAt!.Value,
+                                        e.Results.FirstOrDefault(r => r.ResultType == HealthTestResultType.score)?.Value,
+                                        e.Results.FirstOrDefault(r => r.ResultType == HealthTestResultType.score)?.Severity?.ToString()))
+                                    .ToList()
                             )
                         );
                     }

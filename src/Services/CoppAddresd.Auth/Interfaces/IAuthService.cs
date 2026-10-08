@@ -5,16 +5,15 @@ namespace CoppAddresd.Auth.Interfaces;
 public interface IAuthService
 {
     Task<TokenResult?> LoginAsync(LoginRequest request, CancellationToken ct = default);
-    Task<TokenResult?> RefreshAsync(string refreshToken, CancellationToken ct = default);
-    Task<Guid?> GetUserIdByRefreshTokenAsync(string refreshToken, CancellationToken ct = default);
-
+    Task<TokenResult?> RefreshAsync(string refreshToken, CancellationToken ct = default, string? application = null);
+    Task<Guid?> GetUserIdByRefreshTokenAsync(string refreshToken, CancellationToken ct = default, string? application = null);
+    Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default, string? application = null);
     /// <summary>
     /// Código de la aplicación (erp, app) con la que se emitió un refresh token
     /// activo. Null si el token no existe, expiró o fue revocado. No rota ni
     /// modifica el token: sirve para validar la aplicación antes de refrescar.
     /// </summary>
     Task<string?> GetRefreshTokenApplicationCodeAsync(string refreshToken, CancellationToken ct = default);
-    Task<bool> LogoutAsync(Guid userId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> ChangePasswordAsync(Guid userId, ChangePasswordRequest request, CancellationToken ct = default);
 
     /// <summary>Define la primera contrasena de una cuenta OTP (sin password previo).</summary>

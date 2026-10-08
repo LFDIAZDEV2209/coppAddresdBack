@@ -18,6 +18,10 @@ namespace CoppAddresd.Api.Controllers;
 [RequireInternalKey]
 public class AppointmentReferenceController(IMediator mediator) : ControllerBase
 {
+    [HttpGet("search")]
+    public async Task<ActionResult<AppointmentSearchReferencesDto>> Search([FromQuery] string search, CancellationToken ct)
+        => Ok(await mediator.Send(new SearchAppointmentReferencesQuery(search), ct));
+
     /// <summary>Profesional por id de su extensión clínica (<c>erp.professionals</c>).</summary>
     [HttpGet("professionals/{id:guid}")]
     [ProducesResponseType(typeof(AppointmentProfessionalRefDto), StatusCodes.Status200OK)]

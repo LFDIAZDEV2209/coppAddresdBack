@@ -157,7 +157,7 @@ public sealed class AuthControllerRefreshCookieTests
     public async Task Refresh_ConCookiePropia_RotaYEscribeLaCookiePropia()
     {
         _auth.GetRefreshTokenApplicationCodeAsync("tok-app", Arg.Any<CancellationToken>()).Returns("app");
-        _auth.RefreshAsync("tok-app", Arg.Any<CancellationToken>()).Returns(Tokens("tok-app-2"));
+        _auth.RefreshAsync("tok-app", Arg.Any<CancellationToken>(), "app").Returns(Tokens("tok-app-2"));
         var (controller, http) = Create($"{AppCookie}=tok-app");
 
         var result = await controller.Refresh(new RefreshTokenRequest { Application = "app" }, CancellationToken.None);
@@ -180,7 +180,7 @@ public sealed class AuthControllerRefreshCookieTests
 
         Assert.IsType<UnauthorizedObjectResult>(result.Result);
         Assert.Equal("missing", http.Response.Headers["X-Refresh-Status"].ToString());
-        await _auth.DidNotReceiveWithAnyArgs().RefreshAsync(default!, default);
+        await _auth.DidNotReceiveWithAnyArgs().RefreshAsync(default!, default, default);
         // La cookie heredada es la sesion valida del ERP: no se toca.
         Assert.Empty(SetCookies(http));
     }
@@ -196,14 +196,14 @@ public sealed class AuthControllerRefreshCookieTests
             CancellationToken.None);
 
         Assert.IsType<UnauthorizedObjectResult>(result.Result);
-        await _auth.DidNotReceiveWithAnyArgs().RefreshAsync(default!, default);
+        await _auth.DidNotReceiveWithAnyArgs().RefreshAsync(default!, default, default);
     }
 
     [Fact]
     public async Task Refresh_CookieHeredadaDeLaMismaAplicacion_MigraALaCookiePropia()
     {
         _auth.GetRefreshTokenApplicationCodeAsync("tok-legacy", Arg.Any<CancellationToken>()).Returns("erp");
-        _auth.RefreshAsync("tok-legacy", Arg.Any<CancellationToken>()).Returns(Tokens("tok-erp-1"));
+        _auth.RefreshAsync("tok-legacy", Arg.Any<CancellationToken>(), "erp").Returns(Tokens("tok-erp-1"));
         var (controller, http) = Create($"{Legacy}=tok-legacy");
 
         var result = await controller.Refresh(new RefreshTokenRequest { Application = "erp" }, CancellationToken.None);
@@ -216,7 +216,7 @@ public sealed class AuthControllerRefreshCookieTests
     [Fact]
     public async Task Refresh_SinApplication_ClienteAnterior_UsaYEscribeLaCookieHeredada()
     {
-        _auth.RefreshAsync("tok-old", Arg.Any<CancellationToken>()).Returns(Tokens("tok-old-2"));
+        _auth.RefreshAsync("tok-old", Arg.Any<CancellationToken>(), null).Returns(Tokens("tok-old-2"));
         var (controller, http) = Create($"{Legacy}=tok-old");
 
         var result = await controller.Refresh(null, CancellationToken.None);
@@ -230,31 +230,31 @@ public sealed class AuthControllerRefreshCookieTests
     public async Task Refresh_CookiePropiaTienePrecedenciaSobreLaHeredada()
     {
         _auth.GetRefreshTokenApplicationCodeAsync("tok-erp", Arg.Any<CancellationToken>()).Returns("erp");
-        _auth.RefreshAsync("tok-erp", Arg.Any<CancellationToken>()).Returns(Tokens("tok-erp-2"));
+        _auth.RefreshAsync("tok-erp", Arg.Any<CancellationToken>(), "erp").Returns(Tokens("tok-erp-2"));
         var (controller, http) = Create($"{Legacy}=tok-other; {ErpCookie}=tok-erp");
 
         var result = await controller.Refresh(new RefreshTokenRequest { Application = "erp" }, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result.Result);
-        await _auth.Received(1).RefreshAsync("tok-erp", Arg.Any<CancellationToken>());
-        await _auth.DidNotReceive().RefreshAsync("tok-other", Arg.Any<CancellationToken>());
+        await _auth.Received(1).RefreshAsync("tok-erp", Arg.Any<CancellationToken>(), "erp");
+        await _auth.DidNotReceive().RefreshAsync("tok-other", Arg.Any<CancellationToken>(), "erp");
         // La heredada no era la usada: se deja intacta.
         Assert.Null(Cleared(http, Legacy));
     }
 
     [Fact]
-    public async Task Refresh_TokenInvalido_LimpiaSoloLaCookiePropia()
+    public async Task Refresh_TokenInvalido_NoLimpiaCookiesQueOtraPestanaPudoRotar()
     {
         _auth.GetRefreshTokenApplicationCodeAsync("tok-bad", Arg.Any<CancellationToken>()).Returns((string?)null);
-        _auth.RefreshAsync("tok-bad", Arg.Any<CancellationToken>()).Returns((TokenResult?)null);
+        _auth.RefreshAsync("tok-bad", Arg.Any<CancellationToken>(), "app").Returns((TokenResult?)null);
         var (controller, http) = Create($"{AppCookie}=tok-bad; {Legacy}=tok-erp-valid");
 
         var result = await controller.Refresh(new RefreshTokenRequest { Application = "app" }, CancellationToken.None);
 
         Assert.IsType<UnauthorizedObjectResult>(result.Result);
         Assert.Equal("invalid", http.Response.Headers["X-Refresh-Status"].ToString());
-        Assert.NotNull(Cleared(http, AppCookie));
-        // La heredada puede ser la sesion del ERP: no se retira.
+        Assert.Empty(SetCookies(http));
+        // Otra pestaña pudo rotar la cookie propia; la heredada puede ser del ERP.
         Assert.Null(Cleared(http, Legacy));
     }
 
@@ -267,7 +267,7 @@ public sealed class AuthControllerRefreshCookieTests
 
         Assert.IsType<UnauthorizedObjectResult>(result.Result);
         Assert.Equal("missing", http.Response.Headers["X-Refresh-Status"].ToString());
-        await _auth.DidNotReceiveWithAnyArgs().RefreshAsync(default!, default);
+        await _auth.DidNotReceiveWithAnyArgs().RefreshAsync(default!, default, default);
     }
 
     // ---------- Logout ----------
@@ -277,13 +277,13 @@ public sealed class AuthControllerRefreshCookieTests
     {
         var userId = Guid.NewGuid();
         _auth.GetRefreshTokenApplicationCodeAsync("tok-app", Arg.Any<CancellationToken>()).Returns("app");
-        _auth.GetUserIdByRefreshTokenAsync("tok-app", Arg.Any<CancellationToken>()).Returns(userId);
+        _auth.GetUserIdByRefreshTokenAsync("tok-app", Arg.Any<CancellationToken>(), "app").Returns(userId);
         var (controller, http) = Create($"{AppCookie}=tok-app; {ErpCookie}=tok-erp");
 
         var result = await controller.Logout(new RefreshTokenRequest { Application = "app" }, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result);
-        await _auth.Received(1).LogoutAsync(userId, Arg.Any<CancellationToken>());
+        await _auth.Received(1).LogoutAsync(userId, Arg.Any<CancellationToken>(), "app");
         Assert.NotNull(Cleared(http, AppCookie));
         Assert.Null(Cleared(http, ErpCookie));
         Assert.Null(Cleared(http, Legacy));
@@ -298,7 +298,7 @@ public sealed class AuthControllerRefreshCookieTests
         var result = await controller.Logout(new RefreshTokenRequest { Application = "app" }, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result);
-        await _auth.DidNotReceiveWithAnyArgs().LogoutAsync(default, default);
+        await _auth.DidNotReceiveWithAnyArgs().LogoutAsync(default, default, default);
         Assert.Null(Cleared(http, Legacy));
         Assert.NotNull(Cleared(http, AppCookie));
     }
@@ -308,12 +308,12 @@ public sealed class AuthControllerRefreshCookieTests
     {
         var userId = Guid.NewGuid();
         _auth.GetRefreshTokenApplicationCodeAsync("tok-legacy", Arg.Any<CancellationToken>()).Returns("erp");
-        _auth.GetUserIdByRefreshTokenAsync("tok-legacy", Arg.Any<CancellationToken>()).Returns(userId);
+        _auth.GetUserIdByRefreshTokenAsync("tok-legacy", Arg.Any<CancellationToken>(), "erp").Returns(userId);
         var (controller, http) = Create($"{Legacy}=tok-legacy");
 
         await controller.Logout(new RefreshTokenRequest { Application = "erp" }, CancellationToken.None);
 
-        await _auth.Received(1).LogoutAsync(userId, Arg.Any<CancellationToken>());
+        await _auth.Received(1).LogoutAsync(userId, Arg.Any<CancellationToken>(), "erp");
         Assert.NotNull(Cleared(http, ErpCookie));
         Assert.NotNull(Cleared(http, Legacy));
     }
@@ -322,13 +322,13 @@ public sealed class AuthControllerRefreshCookieTests
     public async Task Logout_SinCuerpo_ClienteAnterior_RevocaYRetiraLaCookieHeredada()
     {
         var userId = Guid.NewGuid();
-        _auth.GetUserIdByRefreshTokenAsync("tok-old", Arg.Any<CancellationToken>()).Returns(userId);
+        _auth.GetUserIdByRefreshTokenAsync("tok-old", Arg.Any<CancellationToken>(), null).Returns(userId);
         var (controller, http) = Create($"{Legacy}=tok-old");
 
         var result = await controller.Logout(null, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result);
-        await _auth.Received(1).LogoutAsync(userId, Arg.Any<CancellationToken>());
+        await _auth.Received(1).LogoutAsync(userId, Arg.Any<CancellationToken>(), null);
         Assert.NotNull(Cleared(http, Legacy));
     }
 
@@ -340,7 +340,7 @@ public sealed class AuthControllerRefreshCookieTests
         var result = await controller.Logout(new RefreshTokenRequest { Application = "app" }, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result);
-        await _auth.DidNotReceiveWithAnyArgs().LogoutAsync(default, default);
+        await _auth.DidNotReceiveWithAnyArgs().LogoutAsync(default, default, default);
         Assert.NotNull(Cleared(http, AppCookie));
     }
 }

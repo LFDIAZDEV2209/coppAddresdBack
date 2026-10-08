@@ -210,6 +210,10 @@ public class AgentsController(IMediator mediator) : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("documents/{id:guid}/archive")]
+    public async Task<ActionResult<AgentDocumentDto>> ArchiveDocument(Guid id, CancellationToken ct)
+        => Ok(await mediator.Send(new ArchiveAgentDocumentCommand(id), ct));
+
     /// <summary>Recupera documentos fallidos o una indexación interrumpida.</summary>
     [HttpPost("documents/{id:guid}/retry")]
     public async Task<ActionResult<AgentDocumentDto>> RetryDocument(Guid id, CancellationToken ct)

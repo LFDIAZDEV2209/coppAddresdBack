@@ -202,7 +202,9 @@ propiedad del número.
 ### Refresh token
 
 ```
-1. POST /api/auth/refresh (sin body — el token viene de la cookie HttpOnly)
+1. POST /api/auth/refresh con { application: "erp" | "app" }; token desde la
+   cookie HttpOnly propia. Clientes anteriores sin application conservan la
+   cookie heredada. La migración valida la aplicación antes de rotar el token.
 2. Buscar token en DB
 3. Validar: no expirado, no revocado, aplicación ligada activa, usuario activo
 4. RECLAMAR el token atómicamente: UPDATE ... SET revoked_at = now()
@@ -218,8 +220,8 @@ propiedad del número.
 8. Set-Cookie con el NUEVO refresh token (rota la cookie)
 9. Response: { accessToken, tokenType, expiresIn }
 
-Si la cookie está corrupta/expirada/revocada → 401 + Set-Cookie expirada
-(limpia la cookie automáticamente; el usuario no debe borrarla a mano).
+Si la cookie está corrupta/expirada/revocada → 401 sin borrarla desde la
+respuesta fallida: otra pestaña pudo renovarla mientras esa petición viajaba.
 Header X-Refresh-Status: "missing" (nunca hubo cookie) | "invalid" (token
 inválido) — el frontend decide si muestra el banner de sesión expirada.
 ```
@@ -229,8 +231,10 @@ inválido) — el frontend decide si muestra el banner de sesión expirada.
 ```
 1. POST /api/auth/logout — se resuelve SOLO con la cookie de refresh
    (no requiere [Authorize]: funciona aunque el access token haya expirado)
-2. Revoca TODOS los refresh tokens del usuario
-3. Set-Cookie expirada (limpia la cookie del navegador)
+2. Con application, revoca solo los refresh tokens de esa aplicación.
+   Clientes anteriores sin application conservan la revocación global.
+3. Retira la cookie propia; la heredada solo si fue usada y corresponde.
+   Una cookie heredada de otra aplicación nunca se rota, revoca ni limpia.
 4. Idempotente: sin cookie responde 200 igual
 ```
 
@@ -623,3 +627,9 @@ DELETE /api/auth/account/deletion-session            # cancela sin eliminar nada
 - [ ] Logins externos (Google, GitHub) — `UserLogins` ya existe
 - [ ] Email confirmation (RequireConfirmedEmail = false actualmente)
 - [ ] HTTPS obligatorio en producción
+
+## Recuperación y sesiones por aplicación (QA 2026-10-08)
+
+ERP y app usan cookies HttpOnly distintas (`copp_refresh_token_erp`, `copp_refresh_token_app`). Los clientes actuales envían la aplicación en refresh/logout y el servicio verifica que el token pertenezca a ella. Una respuesta de refresh inválido no borra una cookie rotada por otra pestaña. Los clientes serializan refresh entre pestañas mediante Web Locks cuando están disponibles.
+
+La app recupera contraseñas mediante `POST /api/auth/recovery-code` y `POST /api/auth/recover-password`. Solo admite cuentas existentes, activas y habilitadas para app; no crea usuarios ni concede accesos. Usa contactos registrados, Twilio Verify o correo, límites OTP existentes y códigos de recuperación separados con caducidad/uso único. La operación bloquea la fila OTP y revoca refresh tokens previos al restablecer. La verificación positiva en producción requiere que el dueño ingrese y cambie su contraseña.

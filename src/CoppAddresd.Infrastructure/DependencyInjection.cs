@@ -38,6 +38,7 @@ public static class DependencyInjection
                 "ConnectionStrings:DefaultConnection no configurada."
             );
 
+        services.AddScoped<IAppointmentReferenceSearchRepository, AppointmentReferenceSearchRepository>();
         services.AddScoped<AuditTriggerInterceptor>();
 
         services.AddDbContext<AppDbContext>(

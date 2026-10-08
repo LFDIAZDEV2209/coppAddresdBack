@@ -78,6 +78,22 @@ public class AuthController : ControllerBase
     /// Envía el código OTP al método de contacto elegido. En desarrollo la
     /// respuesta incluye <c>devCode</c> para pruebas end-to-end.
     /// </summary>
+    [HttpPost("recovery-code")]
+    [AllowAnonymous]
+    public async Task<IActionResult> SendRecoveryCode([FromBody] PasswordRecoveryCodeRequest request,
+        [FromServices] CoppAddresd.Auth.Services.PasswordRecoveryService recovery, CancellationToken ct)
+        => Ok(await recovery.SendAsync(request, ct));
+
+    [HttpPost("recover-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RecoverPassword([FromBody] PasswordRecoveryRequest request,
+        [FromServices] CoppAddresd.Auth.Services.PasswordRecoveryService recovery, CancellationToken ct)
+    {
+        if (!await recovery.ResetAsync(request, ct)) return BadRequest(new { message = "Código inválido o expirado." });
+        ClearRefreshCookies("app", includeLegacy: false);
+        return Ok(new { message = "Contraseña actualizada. Inicia sesión con tu nueva contraseña." });
+    }
+
     [HttpPost("send-otp")]
     public async Task<ActionResult<SendOtpResponse>> SendOtp(
         [FromBody] SendOtpRequest request,
@@ -131,7 +147,6 @@ public class AuthController : ControllerBase
             // Sin cookie: visitante que nunca tuvo sesión. Se informa al
             // cliente para que NO muestre el banner de "sesión expirada".
             Response.Headers["X-Refresh-Status"] = "missing";
-            ClearRefreshCookies(application, includeLegacy: application is null);
             return Unauthorized(new { message = "Refresh token inválido o expirado" });
         }
 
@@ -144,14 +159,12 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Refresh token no corresponde a la aplicacion" });
         }
 
-        var result = await _authService.RefreshAsync(refreshToken, ct);
+        var result = await _authService.RefreshAsync(refreshToken, ct, application);
 
         if (result is null)
         {
-            // Cookie corrupta, expirada o revocada: se limpia para que el
-            // cliente se recupere sin intervención manual del usuario.
+            // No borra cookies aquí: otra pestaña puede haber completado una rotación.
             Response.Headers["X-Refresh-Status"] = "invalid";
-            ClearRefreshCookies(application, includeLegacy: application is null || fromLegacyCookie);
             return Unauthorized(new { message = "Refresh token inválido o expirado" });
         }
 
@@ -191,10 +204,10 @@ public class AuthController : ControllerBase
             if (!otherApplication)
             {
                 clearLegacy = clearLegacy || fromLegacyCookie;
-                var userId = await _authService.GetUserIdByRefreshTokenAsync(refreshToken, ct);
+                var userId = await _authService.GetUserIdByRefreshTokenAsync(refreshToken, ct, application);
                 if (userId.HasValue)
                 {
-                    await _authService.LogoutAsync(userId.Value, ct);
+                    await _authService.LogoutAsync(userId.Value, ct, application);
                 }
             }
         }

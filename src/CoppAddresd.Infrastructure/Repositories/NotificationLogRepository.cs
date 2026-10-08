@@ -19,6 +19,22 @@ namespace CoppAddresd.Infrastructure.Repositories;
 /// </summary>
 public sealed class NotificationLogRepository(AppDbContext dbContext) : INotificationLogRepository
 {
+    public async Task<bool> TryAddDailyReminderAsync(AppNotification notification, CancellationToken ct)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await dbContext.Database.BeginTransactionAsync(ct);
+            var lockKey = $"reminder:{notification.PatientId}:{notification.Type}";
+            await dbContext.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))", ct);
+            if (await CountByTypeOnDayAsync(notification.PatientId, notification.Type, notification.SentAt.Date, notification.SentAt.Date.AddDays(1), ct) > 0)
+                return false;
+            await AddAsync(notification, ct);
+            await tx.CommitAsync(ct);
+            return true;
+        });
+    }
+
     public async Task<NotificationContext?> GetContextAsync(Guid patientId, CancellationToken ct)
     {
         // userId del perfil (auth.users) + timezone de la inscripción activa.
@@ -54,6 +70,14 @@ public sealed class NotificationLogRepository(AppDbContext dbContext) : INotific
         => await dbContext.AppNotifications.AsNoTracking()
             .CountAsync(n => n.PatientId == patientId
                 && n.SentAt >= dayStartUtc && n.SentAt < dayEndUtc, ct);
+
+    public async Task<IReadOnlyDictionary<Guid, int>> CountByPatientAsync(string type, IReadOnlyCollection<Guid>? patientIds, CancellationToken ct = default)
+    {
+        var query = dbContext.AppNotifications.AsNoTracking().Where(n => n.Type == type);
+        if (patientIds is not null) query = query.Where(n => patientIds.Contains(n.PatientId));
+        return await query.GroupBy(n => n.PatientId).Select(g => new { PatientId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(row => row.PatientId, row => row.Count, ct);
+    }
 
     public async Task AddAsync(AppNotification notification, CancellationToken ct)
     {

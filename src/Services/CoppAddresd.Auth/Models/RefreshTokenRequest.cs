@@ -17,5 +17,6 @@ public record RefreshTokenRequest
     /// para otra. Opcional: los clientes anteriores a la cookie por aplicación
     /// no lo envían y siguen usando la cookie <c>copp_refresh_token</c>.
     /// </summary>
+    [RegularExpression("^[a-zA-Z0-9_-]{1,32}$")]
     public string? Application { get; init; }
 }
