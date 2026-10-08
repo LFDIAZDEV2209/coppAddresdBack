@@ -69,6 +69,10 @@ public sealed class PostImageUrlResolver
         if (string.IsNullOrWhiteSpace(post.ImageKey))
             return null;
 
+        // Los anuncios oficiales pueden adjuntar medios HTTPS externos sin copiar el archivo.
+        if (Uri.TryCreate(post.ImageKey, UriKind.Absolute, out var external) && external.Scheme == Uri.UriSchemeHttps)
+            return external.AbsoluteUri;
+
         if (storage.IsCloudStorage)
             return await storage.GetPreSignedUrlAsync(post.ImageKey, TimeSpan.FromHours(1), ct);
 
@@ -84,6 +88,9 @@ public sealed class PostImageUrlResolver
     {
         if (string.IsNullOrWhiteSpace(post.ImageKey))
             return null;
+
+        if (Uri.TryCreate(post.ImageKey, UriKind.Absolute, out var external) && external.Scheme == Uri.UriSchemeHttps)
+            return post.Type == PostType.Video ? "VIDEO" : "IMAGE";
 
         var extension = System.IO.Path.GetExtension(post.ImageKey).ToLowerInvariant();
         return extension is ".mp4" or ".webm" ? "VIDEO" : "IMAGE";

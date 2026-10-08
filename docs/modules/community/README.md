@@ -120,3 +120,7 @@ pacientes demo.
 - `PLAN.md` — plan del módulo.
 - `analytics.md` — métricas y dashboard ERP.
 - `MOBILE-INTEGRATION.md` — integración con la app móvil.
+
+## QA ERP ↔ app (octubre de 2026)
+
+Contrato de directorio paginado, anuncios con encuestas/adjuntos y estado de validación: [QA-2026-10-08](QA-2026-10-08.md). Desplegar Community antes de los clientes que usan `profilesPage`, `pollOptions` y `mediaUrl`.
