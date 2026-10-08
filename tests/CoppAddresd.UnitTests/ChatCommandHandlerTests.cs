@@ -232,6 +232,12 @@ public class ChatCommandHandlerTests
         public Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default) =>
             throw new NotImplementedException();
 
+        public Task<bool> TryStartDocumentIndexAsync(Guid id, DateTimeOffset startedAt,
+            DateTimeOffset expiredBefore, CancellationToken ct = default) => throw new NotImplementedException();
+
+        public Task<bool> CompleteDocumentIndexAsync(AgentDocument document,
+            DateTimeOffset startedAt, CancellationToken ct = default) => throw new NotImplementedException();
+
         public Task DeleteDocumentAsync(AgentDocument document, CancellationToken ct = default) =>
             throw new NotImplementedException();
 

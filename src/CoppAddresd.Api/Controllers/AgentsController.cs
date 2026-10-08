@@ -210,6 +210,14 @@ public class AgentsController(IMediator mediator) : ControllerBase
         return NoContent();
     }
 
+    /// <summary>Recupera documentos fallidos o una indexación interrumpida.</summary>
+    [HttpPost("documents/{id:guid}/retry")]
+    public async Task<ActionResult<AgentDocumentDto>> RetryDocument(Guid id, CancellationToken ct)
+    {
+        var result = await mediator.Send(new RetryAgentDocumentCommand(id), ct);
+        return Ok(result);
+    }
+
     // --- Instancias ---
 
     /// <summary>Agentes asignados a un paciente (user_id = auth.users.Id).</summary>

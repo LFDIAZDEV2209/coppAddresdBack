@@ -93,6 +93,7 @@ public static class ApplicationServiceExtensions
         });
 
         services.AddValidatorsFromAssembly(typeof(CreateMediaItemCommand).Assembly);
+        services.AddScoped<CoppAddresd.Application.Features.Agents.AgentDocumentIndexer>();
 
         services
             .AddHttpClient<IAiServiceClient, AiServiceClient>()

@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Enums;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -244,6 +245,27 @@ public sealed class AgentCatalogRepository(AppDbContext dbContext) : IAgentCatal
         dbContext.AgentDocuments.Remove(document);
         await dbContext.SaveChangesAsync(ct);
     }
+
+    public async Task<bool> TryStartDocumentIndexAsync(
+        Guid id, DateTimeOffset startedAt, DateTimeOffset expiredBefore, CancellationToken ct = default)
+        => await dbContext.AgentDocuments
+            .Where(x => x.Id == id && (x.Status != AgentDocumentStatus.Procesando
+                || (x.UpdatedAt ?? x.CreatedAt) < expiredBefore))
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, AgentDocumentStatus.Procesando)
+                .SetProperty(x => x.UpdatedAt, startedAt)
+                .SetProperty(x => x.ErrorMessage, (string?)null), ct) == 1;
+
+    public async Task<bool> CompleteDocumentIndexAsync(
+        AgentDocument document, DateTimeOffset startedAt, CancellationToken ct = default)
+        => await dbContext.AgentDocuments
+            .Where(x => x.Id == document.Id && x.Status == AgentDocumentStatus.Procesando
+                && x.UpdatedAt == startedAt)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.Status, document.Status)
+                .SetProperty(x => x.ChunksCount, document.ChunksCount)
+                .SetProperty(x => x.ErrorMessage, document.ErrorMessage)
+                .SetProperty(x => x.UpdatedAt, document.UpdatedAt), ct) == 1;
 
     // --- Instancias ---
 

@@ -241,3 +241,28 @@ curl "http://localhost:5122/api/v1/threads/<thread_id>/messages?limit=10" \
 - [ ] Historial de conversaciones persistente (lado .NET)
 - [ ] WebSockets como alternativa a SSE (bidireccional)
 - [ ] Health check específico para AI Service (más allá de Polly)
+
+## Documentos de agentes: recuperación de indexación (2026-10-08)
+
+`POST /api/v1/agents/documents/{id}/retry` reutiliza el documento, KB y archivo
+existentes. Mantiene la autenticación del controlador usada por el registro.
+`RegisterAgentDocumentCommand` persiste inicialmente `Pendiente` y comparte el
+mismo `AgentDocumentIndexer` que los reintentos.
+
+El repositorio reserva la indexación con un update condicional atómico:
+`Procesando` y una marca UTC de microsegundos. Una reserva vigente devuelve 409;
+tras 15 minutos puede recuperarse. La finalización exige la misma marca, por lo
+que un intento anterior no pisa un reintento ni recrea un documento eliminado.
+El AI Service reemplaza chunks de forma idempotente por el mismo document ID.
+
+Solo una respuesta `indexado` con chunks positivos y sin error marca `Listo`.
+Respuesta inválida, timeout o fallo de archivo dejan un error recuperable y no
+exponen detalles internos. La operación tiene límite de 10 minutos. Al cancelar
+la petición se persiste el error con un token independiente y acotado a 10
+segundos antes de propagar la cancelación; una caída del proceso requiere el
+reintento manual una vez vencida la reserva.
+
+Pruebas: `AgentDocumentIndexingTests`, `AgentDocumentIndexLeaseTests` (SQL real
+SQLite), `AgentRuntimeSyncServiceTests` y `ChatFeedbackClientTests`. No requiere
+migración de esquema. Las calificaciones siguen enviando `executionId` al
+runtime; la asociación por respuesta se corrige allí.

@@ -22,8 +22,7 @@ public record RegisterAgentDocumentCommand(
 
 public sealed class RegisterAgentDocumentCommandHandler(
     IAgentCatalogRepository repository,
-    IObjectStorageService objectStorage,
-    IAgentRuntimeSyncService runtimeSync,
+    AgentDocumentIndexer indexer,
     ILogger<RegisterAgentDocumentCommandHandler> logger)
     : IRequestHandler<RegisterAgentDocumentCommand, AgentDocumentDto>
 {
@@ -40,7 +39,7 @@ public sealed class RegisterAgentDocumentCommandHandler(
             FileName = request.FileName.Trim(),
             ContentType = Normalize(request.ContentType),
             FileSizeBytes = request.FileSizeBytes,
-            Status = AgentDocumentStatus.Procesando,
+            Status = AgentDocumentStatus.Pendiente,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -49,48 +48,9 @@ public sealed class RegisterAgentDocumentCommandHandler(
         logger.LogInformation("Documento registrado: {Id} ({FileName}) en KB {KnowledgeBaseId}",
             entity.Id, entity.FileName, entity.KnowledgeBaseId);
 
-        await IndexAsync(entity, ct);
+        await indexer.IndexAsync(entity, ct);
 
         return AgentDocumentDto.FromEntity(entity);
-    }
-
-    /// <summary>
-    /// Lee el blob del storage y pide al AI Service que lo indexe; actualiza el
-    /// estado del documento con el resultado (Listo + chunks / Error).
-    /// </summary>
-    private async Task IndexAsync(AgentDocument document, CancellationToken ct)
-    {
-        try
-        {
-            await using var stream = await objectStorage.GetObjectAsync(document.StorageKey, ct);
-            using var memory = new MemoryStream();
-            await stream.CopyToAsync(memory, ct);
-            var bytes = memory.ToArray();
-
-            var payload = new AgentDocumentIngestPayload(
-                document.Id,
-                document.KnowledgeBaseId,
-                document.FileName,
-                Convert.ToBase64String(bytes));
-
-            var result = await runtimeSync.IngestDocumentAsync(payload, ct);
-
-            document.Status = result.Status.Equals("indexado", StringComparison.OrdinalIgnoreCase)
-                ? AgentDocumentStatus.Listo
-                : AgentDocumentStatus.Error;
-            document.ChunksCount = result.ChunksCreated;
-            document.ErrorMessage = result.Error;
-            document.UpdatedAt = DateTime.UtcNow;
-        }
-        catch (Exception exc) when (exc is FileNotFoundException or HttpRequestException or TaskCanceledException)
-        {
-            logger.LogWarning(exc, "No se pudo indexar el documento {Id}", document.Id);
-            document.Status = AgentDocumentStatus.Error;
-            document.ErrorMessage = exc.Message;
-            document.UpdatedAt = DateTime.UtcNow;
-        }
-
-        await repository.UpdateDocumentAsync(document, ct);
     }
 
     private static string? Normalize(string? value)
