@@ -108,6 +108,41 @@ public class S3ObjectStorageServiceTests
     }
 
     [Fact]
+    public async Task PutObject_bodyHttpNoSeekable_seCopiaSinCerrarElBody()
+    {
+        var client = NewClient();
+        Stream? uploaded = null;
+        client.Setup(c => c.PutObjectAsync(It.IsAny<PutObjectRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async (PutObjectRequest request, CancellationToken ct) =>
+            {
+                uploaded = request.InputStream;
+                Assert.True(uploaded.CanSeek);
+                Assert.Equal(6, uploaded.Length);
+                Assert.Equal(0, uploaded.Position);
+                using var reader = new StreamReader(uploaded, leaveOpen: true);
+                Assert.Equal("audio!", await reader.ReadToEndAsync(ct));
+                return new PutObjectResponse { ETag = "qa" };
+            });
+        using var body = new NonSeekableBody(Encoding.UTF8.GetBytes("audio!"));
+        Assert.Equal("qa", await Build(client).PutObjectAsync("media/audio/qa.mp3", body, "audio/mpeg"));
+        Assert.True(body.CanRead);
+        Assert.NotNull(uploaded);
+        Assert.False(uploaded.CanRead); // La copia temporal se libera al terminar.
+    }
+
+    private sealed class NonSeekableBody(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override long Seek(long offset, SeekOrigin loc) => throw new NotSupportedException();
+    }
+
+    [Fact]
     public async Task GetObject_404_se_traduce_a_FileNotFound()
     {
         var client = NewClient();

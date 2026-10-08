@@ -81,6 +81,19 @@ public sealed class S3ObjectStorageService : IObjectStorageService
     {
         ct.ThrowIfCancellationRequested();
 
+        // El body HTTP no admite Seek/Length; el SDK necesita rebobinar para
+        // firmar y reintentar. Usar disco temporal para no cargar videos en RAM.
+        if (!content.CanSeek)
+        {
+            var path = Path.Combine(Path.GetTempPath(), $"copp-upload-{Guid.NewGuid():N}.tmp");
+            await using var buffered = new FileStream(path, FileMode.CreateNew,
+                FileAccess.ReadWrite, FileShare.None, 64 * 1024,
+                FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+            await content.CopyToAsync(buffered, ct);
+            buffered.Position = 0;
+            return await PutObjectAsync(key, buffered, contentType, ct);
+        }
+
         var response = await _client.PutObjectAsync(new PutObjectRequest
         {
             BucketName = _bucket,

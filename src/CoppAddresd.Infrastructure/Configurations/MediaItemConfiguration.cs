@@ -10,6 +10,12 @@ namespace CoppAddresd.Infrastructure.Configurations;
 /// </summary>
 public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
 {
+    // Los capítulos históricos del seed usan camelCase; aceptar también PascalCase.
+    private static readonly JsonSerializerOptions ChapterReadOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     public void Configure(EntityTypeBuilder<MediaItem> builder)
     {
         builder.ToTable("media_items", "app");
@@ -97,7 +103,7 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
             .HasColumnType("jsonb")
             .HasConversion(
                 v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                v => JsonSerializer.Deserialize<List<MediaChapterDto>>(v, (JsonSerializerOptions?)null) ?? new List<MediaChapterDto>())
+                v => JsonSerializer.Deserialize<List<MediaChapterDto>>(v, ChapterReadOptions) ?? new List<MediaChapterDto>())
             .HasDefaultValueSql("'[]'::jsonb");
 
         builder.Property(x => x.Takeaways)
