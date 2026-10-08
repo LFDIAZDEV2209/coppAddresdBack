@@ -190,7 +190,7 @@ public class GetDashboardAnalyticsQueryHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ProximasCitas_ResuelveNombresYSoloFuturas()
+    public async Task Handle_ProximasCitas_ResuelveNombresYSoloFuturasActivas()
     {
         var now = DateTimeOffset.UtcNow;
         _appointments.Items.AddRange([
@@ -198,6 +198,8 @@ public class GetDashboardAnalyticsQueryHandlerTests
             Appointment(AppointmentStatus.Confirmed, now.AddDays(1)),
             Appointment(AppointmentStatus.Confirmed, now.AddDays(3)),
             Appointment(AppointmentStatus.Cancelled, now.AddDays(5)),
+            Appointment(AppointmentStatus.Completed, now.AddDays(2)),
+            Appointment(AppointmentStatus.NoShow, now.AddDays(4)),
         ]);
 
         var handler = BuildHandler();
@@ -206,12 +208,13 @@ public class GetDashboardAnalyticsQueryHandlerTests
             CancellationToken.None
         );
 
-        Assert.Equal(3, result.UpcomingAppointments.Count);
+        Assert.Equal(2, result.UpcomingAppointments.Count);
+        Assert.Equal(2, result.Kpis.UpcomingAppointments);
         Assert.All(result.UpcomingAppointments, a => Assert.True(a.ScheduledStart >= now));
         Assert.Equal("María Gómez", result.UpcomingAppointments[0].PatientName);
         Assert.DoesNotContain(
             result.UpcomingAppointments,
-            a => a.Status == AppointmentStatus.Completed
+            a => a.Status is AppointmentStatus.Completed or AppointmentStatus.Cancelled or AppointmentStatus.NoShow
         );
     }
 
