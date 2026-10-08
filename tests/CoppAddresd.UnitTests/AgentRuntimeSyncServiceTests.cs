@@ -101,4 +101,20 @@ public class AgentRuntimeSyncServiceTests
         Assert.Equal("error", result.Status);
         Assert.False(string.IsNullOrWhiteSpace(result.Error));
     }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("{\"status\":null}")]
+    [InlineData("no-json")]
+    public async Task IngestDocumentAsync_respuesta_invalida_no_es_exito(string body)
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body),
+        });
+        var result = await BuildClient(handler).IngestDocumentAsync(new AgentDocumentIngestPayload(
+            Guid.NewGuid(), Guid.NewGuid(), "doc.md", "YWJj"));
+        Assert.Equal("error", result.Status);
+    }
 }

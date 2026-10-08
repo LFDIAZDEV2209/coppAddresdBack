@@ -56,6 +56,10 @@ public interface IAgentCatalogRepository
     Task<IReadOnlyList<AgentDocument>> ListDocumentsAsync(Guid knowledgeBaseId, CancellationToken ct = default);
     Task<AgentDocument> AddDocumentAsync(AgentDocument document, CancellationToken ct = default);
     Task UpdateDocumentAsync(AgentDocument document, CancellationToken ct = default);
+    /// <summary>Reserva atómicamente una indexación; permite recuperar Procesando vencido.</summary>
+    Task<bool> TryStartDocumentIndexAsync(Guid id, DateTimeOffset startedAt, DateTimeOffset expiredBefore, CancellationToken ct = default);
+    /// <summary>Finaliza solo la reserva vigente, sin sobrescribir otro reintento.</summary>
+    Task<bool> CompleteDocumentIndexAsync(AgentDocument document, DateTimeOffset startedAt, CancellationToken ct = default);
     Task DeleteDocumentAsync(AgentDocument document, CancellationToken ct = default);
 
     // --- Instancias ---

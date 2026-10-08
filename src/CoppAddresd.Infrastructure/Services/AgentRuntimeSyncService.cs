@@ -100,11 +100,10 @@ public sealed class AgentRuntimeSyncService(
             if (response.IsSuccessStatusCode)
             {
                 var result = JsonSerializer.Deserialize<IngestResponseDto>(responseBody, JsonOpts);
+                if (result is null || string.IsNullOrWhiteSpace(result.Status))
+                    return new AgentDocumentIngestResult("error", 0, 0, "Respuesta de indexación inválida.");
                 return new AgentDocumentIngestResult(
-                    result?.Status ?? "indexado",
-                    result?.ChunksCreated ?? 0,
-                    result?.ReplacedChunks ?? 0,
-                    result?.Error);
+                    result.Status, result.ChunksCreated, result.ReplacedChunks, result.Error);
             }
 
             logger.LogWarning("Ingestión de {DocumentId} rechazada: {Status} {Body}",
@@ -112,7 +111,11 @@ public sealed class AgentRuntimeSyncService(
             return new AgentDocumentIngestResult("error", 0, 0,
                 $"AI Service respondió {(int)response.StatusCode}: {responseBody}");
         }
-        catch (Exception exc) when (exc is HttpRequestException or TaskCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exc) when (exc is HttpRequestException or TaskCanceledException or JsonException)
         {
             logger.LogWarning(exc, "No se pudo contactar al AI Service para indexar {DocumentId}",
                 payload.DocumentId);
