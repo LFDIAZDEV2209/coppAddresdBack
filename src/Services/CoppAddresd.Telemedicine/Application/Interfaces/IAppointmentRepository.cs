@@ -116,7 +116,8 @@ public interface IAppointmentRepository
         DateTimeOffset from,
         DateTimeOffset to,
         CancellationToken ct = default,
-        bool usePreagg = true
+        bool usePreagg = true,
+        bool onlyUpcoming = false
     );
 
     /// <summary>Cuenta las citas en un estado concreto (KPIs del dashboard admin).</summary>

@@ -462,13 +462,15 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
         DateTimeOffset from,
         DateTimeOffset to,
         CancellationToken ct = default,
-        bool usePreagg = true
+        bool usePreagg = true,
+        bool onlyUpcoming = false
     ) =>
         Task.FromResult(
             Items.Count(a =>
                 (professionalId == null || a.ProfessionalId == professionalId)
                 && a.ScheduledStart >= from
                 && a.ScheduledStart < to
+                && (!onlyUpcoming || a.Status is AppointmentStatus.Requested or AppointmentStatus.Confirmed or AppointmentStatus.InProgress)
             )
         );
 
@@ -629,6 +631,7 @@ public sealed class FakeAppointmentRepository : IAppointmentRepository
                 .Where(a =>
                     (professionalId == null || a.ProfessionalId == professionalId)
                     && a.ScheduledStart >= from
+                    && a.Status is AppointmentStatus.Requested or AppointmentStatus.Confirmed or AppointmentStatus.InProgress
                 )
                 .OrderBy(a => a.ScheduledStart)
                 .Take(limit)

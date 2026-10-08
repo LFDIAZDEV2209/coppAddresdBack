@@ -266,7 +266,8 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         DateTimeOffset from,
         DateTimeOffset to,
         CancellationToken ct = default,
-        bool usePreagg = true
+        bool usePreagg = true,
+        bool onlyUpcoming = false
     )
     {
         var fromDate = DateOnly.FromDateTime(from.UtcDateTime);
@@ -274,7 +275,7 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         var profId = professionalId ?? Guid.Empty;
 
         long? preaggTotal = null;
-        if (usePreagg)
+        if (usePreagg && !onlyUpcoming)
         {
             preaggTotal = await dbContext
                 .AppointmentDailyMetrics.AsNoTracking()
@@ -300,6 +301,10 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         {
             query = query.Where(a => a.ProfessionalId == professionalId);
         }
+
+        if (onlyUpcoming)
+            query = query.Where(a => a.Status == AppointmentStatus.Requested
+                || a.Status == AppointmentStatus.Confirmed || a.Status == AppointmentStatus.InProgress);
 
         return await query.CountAsync(ct);
     }
@@ -714,7 +719,9 @@ public sealed class AppointmentRepository(TelemedicineDbContext dbContext) : IAp
         CancellationToken ct = default
     )
     {
-        var query = dbContext.Appointments.AsNoTracking().Where(a => a.ScheduledStart >= from);
+        var query = dbContext.Appointments.AsNoTracking().Where(a => a.ScheduledStart >= from
+            && (a.Status == AppointmentStatus.Requested || a.Status == AppointmentStatus.Confirmed
+                || a.Status == AppointmentStatus.InProgress));
 
         if (professionalId is not null)
         {

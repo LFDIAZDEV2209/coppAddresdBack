@@ -198,7 +198,8 @@ public sealed class GetDashboardAnalyticsQueryHandler(
             now,
             endOfNextWeek,
             ct,
-            usePreagg: false
+            usePreagg: false,
+            onlyUpcoming: true
         );
 
         // La actividad por profesional solo tiene sentido en la vista global.
