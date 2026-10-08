@@ -48,6 +48,24 @@ public class AppointmentRepositoryPersistenceTests
         };
 
     [Fact]
+    public async Task Upcoming_ExcludesTerminalStatusesAndKeepsProfessionalScope()
+    {
+        var repo = new AppointmentRepository(_ctx.Create());
+        var professional = Guid.NewGuid();
+        var from = UtcNoon(10);
+        var eligible = Appointment(professional, from.AddHours(1));
+        await repo.AddAsync(eligible);
+        foreach (var status in new[] { AppointmentStatus.Completed, AppointmentStatus.Cancelled, AppointmentStatus.NoShow })
+            await repo.AddAsync(Appointment(professional, from.AddHours(2 + (int)status), status));
+        await repo.AddAsync(Appointment(Guid.NewGuid(), from.AddHours(3)));
+        await repo.AddAsync(Appointment(professional, from.AddHours(-1)));
+        var upcoming = await repo.ListUpcomingAsync(professional, from, 8);
+        Assert.Equal(eligible.Id, Assert.Single(upcoming).Id);
+        Assert.Equal(1, await repo.CountInRangeAsync(professional, from, from.AddDays(1),
+            usePreagg: false, onlyUpcoming: true));
+    }
+
+    [Fact]
     public async Task AltaYLectura_PersistenTodosLosCampos()
     {
         var repo = new AppointmentRepository(_ctx.Create());
