@@ -186,10 +186,23 @@ public sealed class CommunityMutation
         [Service] ITopicEventSender sender,
         CancellationToken ct,
         bool pinned = false,
-        [Service] ICommunityMetricsQueue? metricsQueue = null)
+        [Service] ICommunityMetricsQueue? metricsQueue = null,
+        List<string>? pollOptions = null,
+        string? mediaUrl = null)
     {
         body = body.Trim();
         if (body.Length == 0) throw new GraphQLException("Escribe el contenido de la publicación.");
+        var effectiveType = type ?? PostType.Texto;
+        var options = effectiveType == PostType.Encuesta ? ValidatePoll(body, pollOptions ?? []) : null;
+        if (!string.IsNullOrWhiteSpace(mediaUrl))
+        {
+            if (effectiveType is not (PostType.Imagen or PostType.Video)
+                || !Uri.TryCreate(mediaUrl.Trim(), UriKind.Absolute, out var uri)
+                || uri.Scheme != Uri.UriSchemeHttps || string.IsNullOrEmpty(uri.Host))
+                throw new GraphQLException("El adjunto debe ser una URL HTTPS de imagen o video.");
+        }
+        else if (effectiveType is PostType.Imagen or PostType.Video)
+            throw new GraphQLException("Añade la URL HTTPS del adjunto.");
         var systemProfile = await GetSystemProfileAsync(db, ct);
         var now = DateTime.UtcNow;
 
@@ -208,12 +221,20 @@ public sealed class CommunityMutation
             Id = Guid.NewGuid(),
             ProfileId = systemProfile.Id,
             Body = body,
-            Type = type ?? PostType.Texto,
+            Type = effectiveType,
+            ImageKey = string.IsNullOrWhiteSpace(mediaUrl) ? null : mediaUrl.Trim(),
             Destination = destination ?? PostDestination.TodasLasComunidades,
             Pinned = pinned,
             PinnedOrder = pinnedOrder,
             CreatedAt = now,
         };
+        if (options is not null)
+        {
+            var poll = new Poll { Id = Guid.NewGuid(), PostId = post.Id, CreatedAt = now };
+            post.Poll = poll;
+            for (var i = 0; i < options.Count; i++)
+                poll.Options.Add(new PollOption { Id = Guid.NewGuid(), PollId = poll.Id, Text = options[i], Position = i });
+        }
         db.Posts.Add(post);
 
         var feedEvent = new FeedEvent
@@ -256,22 +277,11 @@ public sealed class CommunityMutation
     // --- Encuestas (poll posts) ---
 
     /// <summary>
-    /// Crea una publicación de encuesta: el body del post es la pregunta y las
-    /// opciones se guardan en la tabla de poll_options (2 a 4, únicas y no vacías).
-    /// Publica el evento post_added para que el feed de la comunidad se entere.
+    /// Valida el mismo contrato de encuesta para pacientes y anuncios oficiales:
+    /// pregunta de 3–300 caracteres y 2–4 opciones únicas de hasta 100 caracteres.
     /// </summary>
-    public async Task<Post> CreatePollPost(
-        string question,
-        List<string> options,
-        [Service] CommunityDbContext db,
-        [Service] IHttpContextAccessor http,
-        [Service] ITopicEventSender sender,
-        CancellationToken ct,
-        [Service] ICommunityMetricsQueue? metricsQueue = null)
+    private static List<string> ValidatePoll(string question, List<string> options)
     {
-        var profile = await RequireProfileAsync(db, http, ct);
-
-        question = question.Trim();
         if (question.Length < 3 || question.Length > 300)
             throw new GraphQLException("La pregunta debe tener entre 3 y 300 caracteres.");
 
@@ -289,6 +299,23 @@ public sealed class CommunityMutation
             throw new GraphQLException("La encuesta necesita entre 2 y 4 opciones.");
         if (normalized.Any(o => o.Length > 100))
             throw new GraphQLException("Cada opción debe tener máximo 100 caracteres.");
+
+        return normalized;
+    }
+
+    public async Task<Post> CreatePollPost(
+        string question,
+        List<string> options,
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] ITopicEventSender sender,
+        CancellationToken ct,
+        [Service] ICommunityMetricsQueue? metricsQueue = null)
+    {
+        var profile = await RequireProfileAsync(db, http, ct);
+
+        question = question.Trim();
+        var normalized = ValidatePoll(question, options);
 
         var now = DateTime.UtcNow;
         var post = new Post

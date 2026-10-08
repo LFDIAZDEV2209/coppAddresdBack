@@ -217,6 +217,36 @@ var profile = await db.Profiles
             .ToListAsync(ct);
     }
 
+    /// <summary>Directorio ERP paginado: filtra antes de paginar y devuelve el total real.</summary>
+    [Authorize(Policy = "CommunityModerator")]
+    public async Task<ProfilePage> ProfilesPage(
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        CancellationToken ct,
+        string? search = null,
+        ProfileStatus? status = null,
+        ProfileDiagnosis? diagnosis = null,
+        ProfileRegion? region = null,
+        int take = 20,
+        int skip = 0)
+    {
+        if (take is < 1 or > 100 || skip < 0)
+            throw new GraphQLException("Paginación inválida: take debe estar entre 1 y 100 y skip no puede ser negativo.");
+        var currentUserId = CurrentUserId(http);
+        var query = db.Profiles.AsNoTracking()
+            .Where(p => !p.IsSystem && (currentUserId == null || p.UserId != currentUserId));
+        if (!string.IsNullOrWhiteSpace(search))
+            query = query.Where(p => EF.Functions.ILike(EF.Functions.Unaccent(p.DisplayName),
+                EF.Functions.Unaccent($"%{search.Trim()}%")));
+        if (status is not null) query = query.Where(p => p.Status == status);
+        if (diagnosis is not null) query = query.Where(p => p.Diagnosis == diagnosis);
+        if (region is not null) query = query.Where(p => p.Region == region);
+        var total = await query.CountAsync(ct);
+        var items = await query.OrderBy(p => p.CreatedAt).ThenBy(p => p.Id)
+            .Skip(skip).Take(take).ToListAsync(ct);
+        return new ProfilePage(items, total);
+    }
+
     /// <summary>
     /// Publicaciones reportadas con sus reportes asociados. Solo moderadores.
     /// Consultas secuenciales (EF Core no permite operaciones concurrentes sobre un mismo DbContext).

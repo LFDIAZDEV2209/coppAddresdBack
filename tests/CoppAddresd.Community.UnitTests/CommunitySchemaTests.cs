@@ -45,5 +45,10 @@ public sealed class CommunitySchemaTests
         Assert.Contains("bestStreak", sdl);
         Assert.Contains("riskLevel", sdl);
         Assert.Contains("region", sdl);
+        Assert.Contains("profilesPage(", sdl);
+        Assert.Contains("totalCount: Int!", sdl);
+        Assert.Contains("pollOptions: [String!]", sdl);
+        Assert.Contains("mediaUrl: String", sdl);
+        Assert.Contains("DM2HTA", sdl);
     }
 }
