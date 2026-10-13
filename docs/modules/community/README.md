@@ -33,6 +33,23 @@ storage de imágenes. Sin ProjectReferences a otros proyectos del repo.
 El Gateway (:5080) enruta `/api/v1/community/*` y `/storage/*` a este
 servicio. Los clientes nunca lo llaman directo.
 
+## Almacenamiento en producción
+
+El despliegue de Community define `Storage__Provider=S3`,
+`Storage__S3__Region=us-east-2` y
+`Storage__S3__Bucket=cooppadresd-storage-prod`, igual que la API principal.
+Las credenciales provienen del task role existente. Verificar sus permisos
+GetObject/PutObject sobre `community/*` y el CORS del bucket antes de publicar.
+El cliente sube directamente a la URL firmada, sin reenviar su JWT a S3.
+
+QA 2026-10-13: producción devolvía `/storage/community/posts/...` con el
+proveedor Local implícito. El PUT respondía HTTP 463 y encabezados AWS
+remapeados repetidamente, consistente con un bucle de enrutamiento. Un cambio
+solo en la app no corrige esa ruta. Después del despliegue, comprobar que la
+mutación genera una URL S3, que PUT y lectura de la imagen funcionan y que el
+post persiste tras refrescar. Esta configuración no migra archivos locales
+anteriores; preservar y migrar cualquier archivo existente antes del cambio.
+
 ## Autenticación y autorización
 
 - JWT Bearer emitido por el Auth Service (mismo `Jwt:Secret`, issuer y
