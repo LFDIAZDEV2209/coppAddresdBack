@@ -168,6 +168,8 @@ jobs:
               # en el secret cooppadresd/smtp-password (Email__SmtpPassword).
               echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__SmtpUsername\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__From\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"},{\"name\":\"Email__SmtpUseSsl\",\"value\":\"true\"},{\"name\":\"Email__FrontendUrl\",\"value\":\"https://erp.coppadresd.com\"},{\"name\":\"AccountDeletion__AllowedOrigins__0\",\"value\":\"https://www.coppadresd.com\"},{\"name\":\"AccountDeletion__AllowedOrigins__1\",\"value\":\"https://coppadresd.com\"},{\"name\":\"AccountDeletion__HandoffSeconds\",\"value\":\"600\"},{\"name\":\"AccountDeletion__SessionMinutes\",\"value\":\"10\"}]" >> "$GITHUB_OUTPUT"
               echo "extra_secrets=[{\"name\":\"Email__SmtpPassword\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/smtp-password-XjggyI\"}]" >> "$GITHUB_OUTPUT"
+              # Sin AWS SDK en el contenedor: el jq preserva el taskRoleArn de la task def previa.
+              echo "task_role=" >> "$GITHUB_OUTPUT"
               ;;
             api)
               echo "dockerfile=src/CoppAddresd.Api/Dockerfile" >> "$GITHUB_OUTPUT"
@@ -175,6 +177,9 @@ jobs:
               # SOS real: Twilio para SMS y llamada de voz (mismas credenciales del proveedor).
               echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__UserName\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromAddress\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"},{\"name\":\"Sms__Provider\",\"value\":\"Twilio\"},{\"name\":\"Sms__IsEnabled\",\"value\":\"true\"},{\"name\":\"Sms__AccountSid\",\"value\":\"${{ secrets.TWILIO_ACCOUNT_SID }}\"},{\"name\":\"Sms__AuthToken\",\"value\":\"${{ secrets.TWILIO_AUTH_TOKEN }}\"},{\"name\":\"Sms__FromNumber\",\"value\":\"+18654207919\"},{\"name\":\"Sms__MessagingServiceSid\",\"value\":\"\"},{\"name\":\"Voice__Provider\",\"value\":\"Twilio\"},{\"name\":\"Voice__IsEnabled\",\"value\":\"true\"},{\"name\":\"Voice__AccountSid\",\"value\":\"${{ secrets.TWILIO_ACCOUNT_SID }}\"},{\"name\":\"Voice__AuthToken\",\"value\":\"${{ secrets.TWILIO_AUTH_TOKEN }}\"},{\"name\":\"Voice__FromNumber\",\"value\":\"+18654207919\"}]" >> "$GITHUB_OUTPUT"
               echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"},{\"name\":\"Email__Password\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/smtp-password-XjggyI\"}]" >> "$GITHUB_OUTPUT"
+              # La API usa el SDK (storage S3): task role declarativo, no heredado
+              # de la task def previa (incidente I0002: community nació sin él).
+              echo "task_role=arn:aws:iam::933629770820:role/cooppadresd-ecsTaskRole" >> "$GITHUB_OUTPUT"
               ;;
             telemedicine)
               echo "dockerfile=src/Services/CoppAddresd.Telemedicine/Dockerfile" >> "$GITHUB_OUTPUT"
@@ -182,6 +187,8 @@ jobs:
               # AuthService__BaseUrl: validación de sesiones ERP (ErpSessionValidation); sin ella todo token ERP responde 500.
               echo "extra_env=[{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"AuthService__BaseUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               echo "extra_secrets=[]" >> "$GITHUB_OUTPUT"
+              # Sin AWS SDK en el contenedor: el jq preserva el taskRoleArn de la task def previa.
+              echo "task_role=" >> "$GITHUB_OUTPUT"
               ;;
             community)
               echo "dockerfile=src/Services/CoppAddresd.Community/Dockerfile" >> "$GITHUB_OUTPUT"
@@ -190,7 +197,11 @@ jobs:
               # Igual que API: objetos persistentes en S3 y URLs firmadas directas.
               echo "extra_env=[{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"},{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"},{\"name\":\"AuthService__BaseUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               # Community firma URLs locales igual que la API: sin la clave HMAC el contenedor revienta al arrancar.
-              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
+              # Community firma URLs de S3 (imágenes de posts): el task role es
+              # OBLIGATORIO para que el SDK resuelva credenciales. La task def
+              # nació sin role y el clone-forward lo arrastraba → HC0044
+              # 'Unexpected Execution Error' en prod (incidente I0002, 10-13).
+              echo "task_role=arn:aws:iam::933629770820:role/cooppadresd-ecsTaskRole" >> "$GITHUB_OUTPUT"
               ;;
           esac
 
@@ -225,10 +236,15 @@ jobs:
           TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TD_NAME" --region "${{ env.AWS_REGION }}" --query "taskDefinition" --output json)
           NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
           NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" \
+            --arg role "${{ steps.svc.outputs.task_role }}" \
             --argjson envs '${{ steps.svc.outputs.extra_env }}' \
             --argjson secs '${{ steps.svc.outputs.extra_secrets }}' '
             .containerDefinitions[0].image = $img |
             del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes) |
+            # taskRoleArn declarativo: clonar la task def anterior hereda el valor de
+            # la task def original; community nació sin role y el clone-forward lo
+            # arrastraba → Storage S3 sin credenciales → HC0044 en prod (incidente I0002).
+            (if $role != "" then .taskRoleArn = $role else . end) |
             .containerDefinitions[0].environment =
               ((.containerDefinitions[0].environment // []) as $cur |
                (.containerDefinitions[0].secrets // []) as $cursec |
@@ -246,6 +262,7 @@ jobs:
           echo "secrets existentes: $(echo "$TASK_DEF_JSON" | jq -r '[.containerDefinitions[0].secrets[]?.name] | join(",")')"
           echo "envs finales: $(echo "$NEW_TASK_DEF_JSON" | jq -r '[.containerDefinitions[0].environment[]?.name] | join(",")')"
           echo "secrets finales: $(echo "$NEW_TASK_DEF_JSON" | jq -r '[.containerDefinitions[0].secrets[]?.name] | join(",")')"
+          echo "task role: $(echo "$NEW_TASK_DEF_JSON" | jq -r '.taskRoleArn // "(hereda el de la task def previa)")'"
           REGISTERED=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF_JSON" --region "${{ env.AWS_REGION }}")
           echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
           echo "rev=$(echo "$REGISTERED" | jq -r '.taskDefinition.revision')" >> "$GITHUB_OUTPUT"

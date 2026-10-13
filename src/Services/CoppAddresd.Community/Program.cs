@@ -8,24 +8,34 @@ using CoppAddresd.Community.GraphQL.Subscriptions;
 using CoppAddresd.Community.Messages;
 using CoppAddresd.Community.Metrics;
 using CoppAddresd.Community.Persistence;
-using CoppAddresd.Community.Seeders;
 using CoppAddresd.Community.Scheduling;
+using CoppAddresd.Community.Seeders;
 using CoppAddresd.Community.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
-CoppAddresd.Shared.Security.ErpSessionValidationExtensions.AddErpSessionValidation(builder.Services, builder.Configuration);
+CoppAddresd.Shared.Security.ErpSessionValidationExtensions.AddErpSessionValidation(
+    builder.Services,
+    builder.Configuration
+);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection no configurada.");
 
 builder.Services.AddDbContext<CommunityDbContext>(options =>
 {
-    options.UseNpgsql(connectionString, npgsql =>
-        npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community"));
-    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+    options.UseNpgsql(
+        connectionString,
+        npgsql => npgsql.MigrationsHistoryTable("__EFMigrationsHistory", "community")
+    );
+    options.ConfigureWarnings(w =>
+        w.Ignore(
+            Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning
+        )
+    );
 });
 
 builder.Services.AddHttpContextAccessor();
@@ -39,7 +49,8 @@ var secret = jwt["Secret"]!;
 var issuer = jwt["Issuer"]!;
 var audiences = jwt.GetSection("ValidAudiences").Get<string[]>() ?? ["app", "erp"];
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+builder
+    .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.RequireHttpsMetadata = false;
@@ -53,33 +64,43 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudiences = audiences,
             ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero
+            ClockSkew = TimeSpan.Zero,
         };
     });
 builder.Services.AddAuthorization(options =>
 {
-    options.AddPolicy("Community.View", policy =>
-        policy.RequireClaim("permission", "Community.View"));
-    options.AddPolicy("CommunityModerator", policy =>
-        policy.RequireClaim("permission", "Community.Moderate"));
-    options.AddPolicy("Community.Manage", policy =>
-        policy.RequireClaim("permission", "Community.Manage"));
+    options.AddPolicy(
+        "Community.View",
+        policy => policy.RequireClaim("permission", "Community.View")
+    );
+    options.AddPolicy(
+        "CommunityModerator",
+        policy => policy.RequireClaim("permission", "Community.Moderate")
+    );
+    options.AddPolicy(
+        "Community.Manage",
+        policy => policy.RequireClaim("permission", "Community.Manage")
+    );
 });
 
-var origins = builder.Configuration["Cors:Origins"]
-    ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+var origins =
+    builder
+        .Configuration["Cors:Origins"]
+        ?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     ?? ["http://localhost:3000", "http://localhost:5173"];
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("CommunityCors", policy =>
-        policy.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader());
+    options.AddPolicy(
+        "CommunityCors",
+        policy => policy.WithOrigins(origins).AllowAnyMethod().AllowAnyHeader()
+    );
 });
 
-builder.Services
-    .AddGraphQLServer()
+builder
+    .Services.AddGraphQLServer()
     .AddQueryType<CommunityQuery>()
     .AddMutationType<CommunityMutation>()
-.AddSubscriptionType<CommunitySubscription>()
+    .AddSubscriptionType<CommunitySubscription>()
     .AddTypeExtension<ClubQuery>()
     .AddTypeExtension<ClubMutation>()
     .AddTypeExtension<ClubSubscription>()
@@ -93,6 +114,9 @@ builder.Services
     .AddTypeExtension<ClubMediaResolvers>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
+    .AddErrorFilter(sp => new UnhandledExceptionLogErrorFilter(
+        sp.GetRequiredService<ILoggerFactory>().CreateLogger<UnhandledExceptionLogErrorFilter>()
+    ))
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
 
 // Publica posts de clubes PROGRAMADO vencidos (scheduler ligero del servicio).
@@ -131,7 +155,9 @@ using (var scope = app.Services.CreateScope())
     // Contenido demo adicional (polls/imágenes) — idempotente. No-op si
     // CommunityDemo no está configurado con Enabled=true (producción).
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    var demo = builder.Configuration.GetSection(CommunityDemoSettings.SectionName).Get<CommunityDemoSettings>();
+    var demo = builder
+        .Configuration.GetSection(CommunityDemoSettings.SectionName)
+        .Get<CommunityDemoSettings>();
     if (demo is { Enabled: true })
     {
         await CommunityContentSeeder.SeedAsync(db, logger, CancellationToken.None);
