@@ -114,9 +114,7 @@ builder
     .AddTypeExtension<ClubMediaResolvers>()
     .AddAuthorization()
     .AddInMemorySubscriptions()
-    .AddErrorFilter(sp => new UnhandledExceptionLogErrorFilter(
-        sp.GetRequiredService<ILoggerFactory>().CreateLogger<UnhandledExceptionLogErrorFilter>()
-    ))
+    .AddErrorFilter(GraphQLUnhandledExceptionLogger.Handler)
     .AddSocketSessionInterceptor(_ => new SubscriptionAuthInterceptor(builder.Configuration));
 
 // Publica posts de clubes PROGRAMADO vencidos (scheduler ligero del servicio).
@@ -140,6 +138,11 @@ builder.Services.AddHostedService<CommunityMetricsBackfillHostedService>();
 builder.Services.AddHostedService<CommunityMetricsProcessorHostedService>();
 
 var app = builder.Build();
+
+// El filtro de errores del schema usa el logger de la app: las factories de
+// error de HotChocolate v16 se resuelven en un contenedor schema aislado sin
+// ILoggerFactory, así que el logger se inyecta aquí (post-build).
+GraphQLUnhandledExceptionLogger.Configure(app.Services.GetRequiredService<ILoggerFactory>());
 
 using (var scope = app.Services.CreateScope())
 {
