@@ -206,7 +206,8 @@ internal sealed class FakeProgramRepository : IProgramRepository
         int page,
         int pageSize,
         IReadOnlyList<Guid>? scopedPatientIds = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? search = null
     )
     {
         var query = Enrollments.Values.AsEnumerable();

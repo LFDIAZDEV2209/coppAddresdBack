@@ -165,8 +165,6 @@ public sealed class DevProgramContentSeeder(
             await db.SaveChangesAsync(ct);
         }
 
-        await BackfillMissingPodcastFilesAsync(db, ct);
-
         logger.LogInformation(
             "Seed de contenido del programa completado: {Linked} vínculos en {Templates} plantillas",
             totalLinked,
@@ -174,63 +172,4 @@ public sealed class DevProgramContentSeeder(
         );
     }
 
-    /// <summary>
-    /// Los episodios sembrados apuntan a claves como
-    /// <c>media/podcasts/&lt;guid&gt;.mp3</c> que no existen en disco (el
-    /// proveedor Local sirve desde el cwd del Api) y el reproductor del móvil
-    /// recibe 404. Este backfill copia un mp3 real existente bajo
-    /// <c>media/</c> a cada clave faltante: audio de prueba, suficiente para
-    /// validar reproducción end-to-end en todos los locales del equipo.
-    /// Idempotente: solo crea archivos ausentes, nunca sobrescribe.
-    /// </summary>
-    private async Task BackfillMissingPodcastFilesAsync(AppDbContext db, CancellationToken ct)
-    {
-        var keys = await db
-            .MediaItems.AsNoTracking()
-            .Where(m => m.MediaType == MediaType.Podcast && m.Status == MediaStatus.Published)
-            .Select(m => m.StorageKey)
-            .ToListAsync(ct);
-
-        if (keys.Count == 0)
-        {
-            return;
-        }
-
-        var root = Path.GetFullPath(".");
-        var donor = Directory
-            .EnumerateFiles(Path.Combine(root, "media"), "*.mp3", SearchOption.AllDirectories)
-            .FirstOrDefault();
-
-        if (donor is null)
-        {
-            logger.LogWarning("Sin mp3 donante bajo media/: backfill de audio omitido");
-            return;
-        }
-
-        var created = 0;
-        foreach (var key in keys.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var fullPath = Path.GetFullPath(Path.Combine(root, key));
-            if (
-                !fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase)
-                || File.Exists(fullPath)
-            )
-            {
-                continue;
-            }
-
-            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-            File.Copy(donor, fullPath);
-            created++;
-        }
-
-        if (created > 0)
-        {
-            logger.LogInformation(
-                "Backfill de audio: {Created} archivos de prueba creados desde {Donor}",
-                created,
-                Path.GetFileName(donor)
-            );
-        }
-    }
 }

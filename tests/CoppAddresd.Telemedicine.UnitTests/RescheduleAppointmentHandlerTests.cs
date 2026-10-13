@@ -49,6 +49,20 @@ public class RescheduleAppointmentHandlerTests
     }
 
     [Fact]
+    public async Task Handle_SinCambio_NoConsumeLimiteNiGeneraAlerta()
+    {
+        var appointment = TestData.Appointment(start: DateTimeOffset.UtcNow.AddDays(2));
+        _appointments.Items.Add(appointment);
+        var command = new RescheduleAppointmentCommand(appointment.Id,
+            appointment.ScheduledStart, null, null, RescheduleRequestedBy.Admin, TestData.UserId);
+        await Assert.ThrowsAsync<BusinessRuleViolationException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+        Assert.Equal(0, appointment.RescheduleCount);
+        Assert.Empty(appointment.Reschedules);
+        Assert.Empty(_alerts.Items);
+    }
+
+    [Fact]
     public async Task Handle_CitaNoConfirmada_LanzaViolacion()
     {
         var appointment = TestData.Appointment(status: AppointmentStatus.Requested);

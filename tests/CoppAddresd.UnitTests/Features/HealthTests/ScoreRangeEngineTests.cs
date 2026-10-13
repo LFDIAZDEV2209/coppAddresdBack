@@ -122,6 +122,6 @@ public sealed class ScoreRangeEngineTests
         var result = _engine.Classify(50m, []);
 
         Assert.Equal("sin clasificar", result.Label);
-        Assert.Equal(HealthTestSeverity.low, result.Severity);
+        Assert.Null(result.Severity);
     }
 }

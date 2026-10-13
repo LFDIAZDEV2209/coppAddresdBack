@@ -86,6 +86,21 @@ public sealed class MediaLifecycleTests
         await _repository.DidNotReceive().UpdateAsync(Arg.Any<MediaItem>());
     }
 
+    [Fact]
+    public async Task Publish_ArchivoMarcadorDemo_LanzaUnprocessableEntitySinPersistir()
+    {
+        var medium = DraftMedium();
+        medium.StorageKey = MediaPublishRules.DemoStorageKey;
+        _repository.GetByIdAsync(medium.Id).Returns(medium);
+
+        await Assert.ThrowsAsync<UnprocessableEntityException>(() =>
+            CreatePublishHandler().Handle(new PublishMediaItemCommand(medium.Id), default)
+        );
+
+        await _storage.DidNotReceive().HeadObjectAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _repository.DidNotReceive().UpdateAsync(Arg.Any<MediaItem>());
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-5)]

@@ -92,7 +92,8 @@ public sealed class PatientRepository(AppDbContext dbContext) : IPatientReposito
         {
             var pattern = $"%{search}%";
             query = query.Where(x =>
-                EF.Functions.ILike(x.FirstName, pattern)
+                EF.Functions.ILike(x.FirstName + " " + x.LastName, pattern)
+                || EF.Functions.ILike(x.FirstName, pattern)
                 || EF.Functions.ILike(x.LastName, pattern)
                 || EF.Functions.ILike(x.MedicalRecordNumber ?? string.Empty, pattern)
                 || EF.Functions.ILike(x.DocumentNumber ?? string.Empty, pattern)

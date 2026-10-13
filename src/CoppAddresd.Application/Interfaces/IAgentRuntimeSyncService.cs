@@ -43,6 +43,10 @@ public interface IAgentRuntimeSyncService
         AgentDocumentIngestPayload payload,
         CancellationToken ct = default);
 
+    /// <summary>Comprueba un índice retenido al archivar, limitado al documento y su KB.</summary>
+    Task<int?> GetDocumentChunkCountAsync(Guid documentId, Guid knowledgeBaseId,
+        CancellationToken ct = default) => Task.FromResult<int?>(null);
+
     /// <summary>Elimina los chunks de un documento del índice vectorial.</summary>
     Task DeleteDocumentChunksAsync(Guid documentId, CancellationToken ct = default);
 }

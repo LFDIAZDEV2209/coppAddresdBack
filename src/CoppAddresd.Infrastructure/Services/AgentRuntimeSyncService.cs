@@ -124,6 +124,29 @@ public sealed class AgentRuntimeSyncService(
         }
     }
 
+    public async Task<int?> GetDocumentChunkCountAsync(
+        Guid documentId, Guid knowledgeBaseId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(settings.Value.InternalApiKey)) return null;
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"{settings.Value.IngestDocumentEndpoint}/{documentId}/status?knowledge_base_id={knowledgeBaseId}");
+        request.Headers.Add("X-Internal-Key", settings.Value.InternalApiKey);
+        try
+        {
+            using var response = await httpClient.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode) return null;
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            return json.RootElement.TryGetProperty("chunks_created", out var count)
+                && count.TryGetInt32(out var value) ? value : null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception exc) when (exc is HttpRequestException or JsonException or TaskCanceledException)
+        {
+            logger.LogWarning(exc, "No se pudo comprobar el índice de {DocumentId}", documentId);
+            return null;
+        }
+    }
+
     public async Task DeleteDocumentChunksAsync(Guid documentId, CancellationToken ct = default)
     {
         var internalKey = settings.Value.InternalApiKey;

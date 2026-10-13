@@ -41,6 +41,12 @@ public sealed record MediaPublishValidationDto(
 /// </summary>
 public static class MediaPublishRules
 {
+    /// <summary>
+    /// Archivo usado exclusivamente por el dataset de demostración. No es una
+    /// grabación clínica/publicable y no puede entregarse como un episodio.
+    /// </summary>
+    public const string DemoStorageKey = "media/podcasts/demo-copp.mp3";
+
     /// <summary>Content-Types de audio/podcast permitidos.</summary>
     public static readonly string[] AudioMimeTypes =
     [
@@ -68,6 +74,13 @@ public static class MediaPublishRules
         (IsAudio(type) ? AudioMimeTypes : VideoMimeTypes).Contains(
             contentType.Trim().ToLowerInvariant()
         );
+
+    public static bool IsPlaceholderStorageKey(string? storageKey) =>
+        string.Equals(
+            storageKey?.Trim(),
+            DemoStorageKey,
+            StringComparison.OrdinalIgnoreCase
+        );
 }
 
 public sealed class PublishMediaItemCommandHandler(
@@ -84,6 +97,14 @@ public sealed class PublishMediaItemCommandHandler(
         var entity =
             await repository.GetByIdAsync(request.Id, ct)
             ?? throw new NotFoundException($"Medio {request.Id} no encontrado.");
+
+        if (MediaPublishRules.IsPlaceholderStorageKey(entity.StorageKey))
+        {
+            throw new UnprocessableEntityException(
+                "El archivo demo-copp.mp3 es un marcador de posición y no se puede publicar. "
+                    + "Carga la grabación aprobada antes de publicar esta lección."
+            );
+        }
 
         // 1) El binario debe existir físicamente en storage (local o S3).
         var storageHead = await objectStorage.HeadObjectAsync(entity.StorageKey, ct);

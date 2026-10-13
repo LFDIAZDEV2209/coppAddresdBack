@@ -698,11 +698,13 @@ public sealed class DevProgramSeeder(
                 ThumbnailKey = "media/thumbnails/podcast-default.jpg",
                 ContentType = "audio/mpeg",
                 DurationSecs = p.DurationSecs,
-                Status = MediaStatus.Published,
+                // Un registro sembrado no tiene un audio aprobado. Permanece
+                // borrador hasta que el equipo cargue una grabación real.
+                Status = MediaStatus.Draft,
                 SortOrder = p.SortOrder,
                 Day = p.SortOrder,
                 Month = 1,
-                PublishedAt = DateTimeOffset.UtcNow,
+                PublishedAt = null,
                 CreatedAt = DateTimeOffset.UtcNow,
             };
 

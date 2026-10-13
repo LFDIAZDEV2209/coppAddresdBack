@@ -396,7 +396,8 @@ public sealed class ProgramController(
         [FromQuery] ProgramEnrollmentStatus? status,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        [FromQuery] string? search = null
     )
     {
         // Filtro por GUID opcional: texto no-GUID (búsqueda a medias del ERP)
@@ -425,7 +426,7 @@ public sealed class ProgramController(
 
         return Ok(
             await mediator.Send(
-                new ListEnrollmentsQuery(patientFilter, status, page, pageSize, scopedPatientIds),
+                new ListEnrollmentsQuery(patientFilter, status, page, pageSize, scopedPatientIds, search),
                 ct
             )
         );

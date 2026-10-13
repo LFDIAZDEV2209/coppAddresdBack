@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
@@ -435,10 +436,18 @@ public sealed class ProgramRepository(
         int page,
         int pageSize,
         IReadOnlyList<Guid>? scopedPatientIds = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? search = null
     )
     {
         var query = dbContext.ProgramEnrollments.AsNoTracking().AsQueryable();
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var pattern = $"%{search.Trim()}%";
+            query = query.Where(e => e.Patient != null &&
+                (EF.Functions.ILike(e.Patient.FirstName + " " + e.Patient.LastName, pattern)
+                 || EF.Functions.ILike(e.Patient.DocumentNumber ?? "", pattern)));
+        }
 
         if (patientId.HasValue)
         {
@@ -1906,7 +1915,11 @@ public sealed class ProgramRepository(
                 : (
                     await dbContext
                         .MediaItems.AsNoTracking()
-                        .Where(m => mediaIds.Contains(m.Id) && m.Status == MediaStatus.Published)
+                        .Where(m =>
+                            mediaIds.Contains(m.Id)
+                            && m.Status == MediaStatus.Published
+                            && m.StorageKey != MediaPublishRules.DemoStorageKey
+                        )
                         .Select(m => new
                         {
                             m.Id,
@@ -10068,12 +10081,53 @@ public sealed class ProgramRepository(
                 ))
                 .ToArray();
 
+            // La distribución y los promedios son acumulables en el rollup,
+            // pero "mejorando" depende de las dos últimas mediciones de cada
+            // paciente activo. No debe devolverse un cero fijo cuando el
+            // rollup existe: se calcula sobre esa ventana acotada y actual.
+            var activePatientIds = await dbContext
+                .ProgramEnrollments.AsNoTracking()
+                .Where(e => e.Status == ProgramEnrollmentStatus.Active)
+                .Select(e => e.PatientId)
+                .Distinct()
+                .ToListAsync(ct);
+            var latestBmiReadings = await dbContext
+                .ClinicalMeasurements.AsNoTracking()
+                .Join(
+                    dbContext.MeasurementMetrics.AsNoTracking(),
+                    measurement => measurement.MetricId,
+                    metric => metric.Id,
+                    (measurement, metric) => new
+                    {
+                        measurement.PatientId,
+                        metric.Code,
+                        measurement.Value,
+                        measurement.ObservedAt,
+                    }
+                )
+                .Where(reading =>
+                    activePatientIds.Contains(reading.PatientId)
+                    && reading.Code == "bmi"
+                    && reading.Value > 0
+                )
+                .ToListAsync(ct);
+            var rImprovingCount = latestBmiReadings
+                .GroupBy(reading => reading.PatientId)
+                .Count(group =>
+                {
+                    var readings = group
+                        .OrderByDescending(reading => reading.ObservedAt)
+                        .Take(2)
+                        .ToArray();
+                    return readings.Length == 2 && readings[0].Value < readings[1].Value - 0.3m;
+                });
+
             // Si hay datos agregados en rollup, devolvemos DTO fast-path
             return new BiometriaCommunityDto(
                 rAvgImc,
                 rAvgGrasa,
                 rAvgGlucosa,
-                0,
+                rImprovingCount,
                 rImcBuckets,
                 new GrasaDistribution(rGrasaMaleBuckets, rGrasaFemaleBuckets),
                 rGlucBuckets,
@@ -10165,7 +10219,7 @@ public sealed class ProgramRepository(
         decimal? avgGlucosa =
             glucosaByPatient.Count > 0 ? Math.Round(glucosaByPatient.Values.Average(), 1) : null;
 
-        // Improving count: patients with latest BMI < previous BMI (compare two most recent)
+        // Improving count: same threshold as the patient trend classification.
         var allBmiRaw = allBiometriaRaw
             .Where(x => x.Code == "bmi")
             .GroupBy(x => x.PatientId)
@@ -10176,7 +10230,7 @@ public sealed class ProgramRepository(
             .Count(g =>
             {
                 var ordered = g.OrderByDescending(x => x.ObservedAt).ToList();
-                return ordered.Count >= 2 && ordered[0].Value < ordered[1].Value;
+                return ordered.Count >= 2 && ordered[0].Value < ordered[1].Value - 0.3m;
             });
 
         // IMC distribution (OMS 5 categories)

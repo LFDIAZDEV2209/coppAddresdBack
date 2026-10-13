@@ -19,6 +19,7 @@ public sealed class AgentDocumentIndexer(
     public async Task IndexAsync(AgentDocument document, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        var mayRestoreIndex = document.Status is AgentDocumentStatus.Archivado or AgentDocumentStatus.Error;
         // PostgreSQL guarda microsegundos; truncar evita perder la comparación de reserva.
         var ticks = DateTimeOffset.UtcNow.Ticks;
         var startedAt = new DateTimeOffset(ticks - ticks % 10, TimeSpan.Zero);
@@ -31,6 +32,17 @@ public sealed class AgentDocumentIndexer(
         timeout.CancelAfter(IndexTimeout);
         try
         {
+            // Archivar no elimina los chunks. Recuperar un índice verificado evita
+            // depender otra vez del blob o proveedor de embeddings para desarchivar.
+            if (mayRestoreIndex && await runtimeSync.GetDocumentChunkCountAsync(
+                    document.Id, document.KnowledgeBaseId, timeout.Token) is > 0 and var retained)
+            {
+                document.Status = AgentDocumentStatus.Listo;
+                document.ChunksCount = retained;
+                document.ErrorMessage = null;
+                await PersistAsync(document, startedAt);
+                return;
+            }
             await using var stream = await objectStorage.GetObjectAsync(document.StorageKey, timeout.Token);
             using var memory = new MemoryStream();
             await stream.CopyToAsync(memory, timeout.Token);
@@ -55,6 +67,13 @@ public sealed class AgentDocumentIndexer(
             document.ErrorMessage = "La indexación fue interrumpida. Puedes reintentar.";
             await PersistAsync(document, startedAt);
             throw;
+        }
+        catch (FileNotFoundException exc)
+        {
+            logger.LogWarning(exc, "Falta el archivo original de {DocumentId}", document.Id);
+            document.Status = AgentDocumentStatus.Error;
+            document.ChunksCount = null;
+            document.ErrorMessage = "El archivo original no está disponible. Vuelve a cargar el documento.";
         }
         catch (Exception exc)
         {

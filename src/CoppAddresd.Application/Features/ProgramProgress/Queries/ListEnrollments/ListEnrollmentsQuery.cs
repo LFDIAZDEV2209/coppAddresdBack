@@ -17,7 +17,8 @@ public sealed record ListEnrollmentsQuery(
     ProgramEnrollmentStatus? Status = null,
     int Page = 1,
     int PageSize = 20,
-    IReadOnlyList<Guid>? ScopedPatientIds = null) : IRequest<PaginatedEnrollmentsResult>;
+    IReadOnlyList<Guid>? ScopedPatientIds = null,
+    string? Search = null) : IRequest<PaginatedEnrollmentsResult>;
 
 /// <summary>Pagina el listado y normaliza page/pageSize (máx 100, SPEC §6).</summary>
 public sealed class ListEnrollmentsQueryHandler(
@@ -35,7 +36,7 @@ public sealed class ListEnrollmentsQueryHandler(
         }
 
         var (items, total) = await repository.ListEnrollmentsAsync(
-            request.PatientId, request.Status, page, pageSize, request.ScopedPatientIds, ct);
+            request.PatientId, request.Status, page, pageSize, request.ScopedPatientIds, ct, request.Search);
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
         return new PaginatedEnrollmentsResult(items, total, page, pageSize, totalPages);
     }

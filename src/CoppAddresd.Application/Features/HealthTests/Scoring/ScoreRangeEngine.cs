@@ -6,7 +6,7 @@ namespace CoppAddresd.Application.Features.HealthTests.Scoring;
 /// <summary>
 /// Resultado de la clasificación de un valor contra los rangos de una versión.
 /// </summary>
-public sealed record RangeClassification(string Label, HealthTestSeverity Severity);
+public sealed record RangeClassification(string Label, HealthTestSeverity? Severity);
 
 /// <summary>
 /// Motor de interpretación: traduce un valor numérico a etiqueta + severidad
@@ -36,6 +36,6 @@ public sealed class ScoreRangeEngine
             return new RangeClassification(closest.Label, closest.Severity);
         }
 
-        return new RangeClassification("sin clasificar", HealthTestSeverity.low);
+        return new RangeClassification("sin clasificar", null);
     }
 }

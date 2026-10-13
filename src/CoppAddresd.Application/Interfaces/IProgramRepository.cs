@@ -93,7 +93,8 @@ public interface IProgramRepository
         int page,
         int pageSize,
         IReadOnlyList<Guid>? scopedPatientIds = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        string? search = null
     );
 
     // --- Completación de tareas ---

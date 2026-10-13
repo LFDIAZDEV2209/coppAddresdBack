@@ -62,6 +62,24 @@ public sealed class AgentDocumentIndexingTests
     }
 
     [Fact]
+    public async Task Restore_IndiceRetenido_NoRequiereBlobNiNuevosEmbeddings()
+    {
+        var f = new Fixture();
+        f.Document.Status = AgentDocumentStatus.Archivado;
+        f.Storage.Setup(x => x.GetObjectAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FileNotFoundException());
+        f.Runtime.Setup(x => x.GetDocumentChunkCountAsync(f.Document.Id,
+            f.Document.KnowledgeBaseId, It.IsAny<CancellationToken>())).ReturnsAsync(5);
+        await f.Indexer.IndexAsync(f.Document, CancellationToken.None);
+        Assert.Equal(AgentDocumentStatus.Listo, f.Document.Status);
+        Assert.Equal(5, f.Document.ChunksCount);
+        f.Storage.Verify(x => x.GetObjectAsync(It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        f.Runtime.Verify(x => x.IngestDocumentAsync(It.IsAny<AgentDocumentIngestPayload>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task Cancelacion_PersisteEstadoRecuperableConTokenPropio_YSePropaga()
     {
         var f = new Fixture();

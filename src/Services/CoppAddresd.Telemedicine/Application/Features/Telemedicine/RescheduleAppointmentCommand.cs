@@ -88,6 +88,14 @@ public sealed class RescheduleAppointmentCommandHandler(
             ct
         );
 
+        // Un envío sin cambios no es una reprogramación y no consume el cupo.
+        if (request.NewStart == entity.ScheduledStart
+            && (request.DurationMinutes ?? entity.DurationMinutes) == entity.DurationMinutes)
+        {
+            throw new BusinessRuleViolationException(
+                "La nueva fecha y duración coinciden con la cita actual. Selecciona otro horario.");
+        }
+
         if (entity.RescheduleCount >= settings.MaxReschedules)
         {
             throw new BusinessRuleViolationException(
