@@ -426,3 +426,7 @@ asignaciones abiertas; no se deriva de `completedAt`. El ERP muestra «—» cua
 una API anterior no aporta fecha, sin inventar cero días. La clave de caché
 `health-master-v2` evita reutilizar el contrato anterior; mantiene el TTL existente
 30–60 s y el alcance profesional/geográfico.
+
+### Corrección QA 2026-10-13
+
+Si un instrumento no tiene rangos de interpretación activos, `ScoreRangeEngine` devuelve «Sin clasificar» y severidad nula, nunca riesgo bajo por defecto. El ERP debe conservar ese estado incluso para resultados históricos cuya etiqueta indique ausencia de clasificación. La cobertura usa asignaciones, no el universo de pacientes; las evaluaciones pendientes no deben rotularse como pacientes pendientes.

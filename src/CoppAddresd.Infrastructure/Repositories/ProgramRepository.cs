@@ -1918,7 +1918,7 @@ public sealed class ProgramRepository(
                         .Where(m =>
                             mediaIds.Contains(m.Id)
                             && m.Status == MediaStatus.Published
-                            && m.StorageKey != MediaPublishRules.DemoStorageKey
+                            && m.StorageKey.Trim().ToLower() != MediaPublishRules.DemoStorageKey
                         )
                         .Select(m => new
                         {
@@ -2171,31 +2171,9 @@ public sealed class ProgramRepository(
                         && mediaById.TryGetValue(activeMediaId.Value, out var media)
                     )
                     {
-                        var duration = media.DurationSecs ?? 480;
-                        var chapters =
-                            media.Chapters.Count > 0
-                                ? media
-                                    .Chapters.Select(c => new PodcastChapterDto(
-                                        c.AtSeconds,
-                                        c.Label
-                                    ))
-                                    .ToList()
-                                : new List<PodcastChapterDto>
-                                {
-                                    new(0, "Por qué la racha importa"),
-                                    new((int)(duration * 0.2), "Insulina y horarios"),
-                                    new((int)(duration * 0.55), "El circuito de 12 minutos"),
-                                    new((int)(duration * 0.8), "Reto de hoy"),
-                                };
-                        var takeaways =
-                            media.Takeaways.Count > 0
-                                ? media.Takeaways
-                                : new List<string>
-                                {
-                                    "Misma hora · mismo ritual diario",
-                                    "Proteína en cada comida principal",
-                                    "12 minutos bastan si son diarios",
-                                };
+                        var chapters = media.Chapters
+                            .Select(c => new PodcastChapterDto(c.AtSeconds, c.Label)).ToList();
+                        var takeaways = media.Takeaways;
 
                         content = new TodayTaskContentDto(
                             MediaId: activeMediaId.Value,
@@ -2212,7 +2190,8 @@ public sealed class ProgramRepository(
                     }
                     else if (activeMediaId.HasValue)
                     {
-                        content = new TodayTaskContentDto(activeMediaId.Value, null, null, null);
+                        contentUnavailable = true;
+                        content = new TodayTaskContentDto(activeMediaId.Value, null, null, null, ContentUnavailable: true);
                     }
                 }
                 else if (taskCode == TaskCode.nut)
@@ -10085,31 +10064,24 @@ public sealed class ProgramRepository(
             // pero "mejorando" depende de las dos últimas mediciones de cada
             // paciente activo. No debe devolverse un cero fijo cuando el
             // rollup existe: se calcula sobre esa ventana acotada y actual.
-            var activePatientIds = await dbContext
+            var activePatientIds = dbContext
                 .ProgramEnrollments.AsNoTracking()
                 .Where(e => e.Status == ProgramEnrollmentStatus.Active)
                 .Select(e => e.PatientId)
-                .Distinct()
-                .ToListAsync(ct);
-            var latestBmiReadings = await dbContext
-                .ClinicalMeasurements.AsNoTracking()
-                .Join(
-                    dbContext.MeasurementMetrics.AsNoTracking(),
-                    measurement => measurement.MetricId,
-                    metric => metric.Id,
-                    (measurement, metric) => new
+                .Distinct();
+            var latestBmiReadings = await activePatientIds
+                .SelectMany(patientId => dbContext.ClinicalMeasurements.AsNoTracking()
+                    .Where(measurement => measurement.PatientId == patientId
+                        && measurement.Metric != null && measurement.Metric.Code == "bmi" && measurement.Value > 0)
+                    .OrderByDescending(measurement => measurement.ObservedAt)
+                    .ThenByDescending(measurement => measurement.Id)
+                    .Take(2)
+                    .Select(measurement => new
                     {
                         measurement.PatientId,
-                        metric.Code,
                         measurement.Value,
                         measurement.ObservedAt,
-                    }
-                )
-                .Where(reading =>
-                    activePatientIds.Contains(reading.PatientId)
-                    && reading.Code == "bmi"
-                    && reading.Value > 0
-                )
+                    }))
                 .ToListAsync(ct);
             var rImprovingCount = latestBmiReadings
                 .GroupBy(reading => reading.PatientId)

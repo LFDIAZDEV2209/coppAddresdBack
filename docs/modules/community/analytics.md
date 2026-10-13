@@ -155,3 +155,6 @@ dotnet ef migrations add AddCommunityDailyMetrics `
     --startup-project src/Services/CoppAddresd.Community `
     --context CommunityDbContext
 ```
+### Ventana de actividad (QA 2026-10-13)
+
+`FeedToday` representa las últimas 24 horas, no el día calendario. Incluye publicaciones y comentarios del perfil de sistema usado por el ERP. Los perfiles de sistema siguen excluidos de miembros, rachas y XP. Los grupos se comparan por mensajes acumulados. Los registros de redes externas no son métricas verificadas de las plataformas.

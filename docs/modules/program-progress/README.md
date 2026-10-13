@@ -545,3 +545,10 @@ Estas preguntas siguen abiertas en el plan y se recomienda resolver antes de emp
 | `coppAddresdBack/docs/agents/skills/`                 | Skills de estándares del backend (arquitectura, EF, query performance, etc.)                    |
 
 **Inspiración clínica**: los hitos de racha, el multiplicador x2 y el rescate con tareas esenciales siguen la **referencia ADRED** del módulo (citada en `SPEC.md` §16 y §17). La regla "rescate exige tarea esencial" y los hitos 7/11/22/50 son una adaptación ADRED a la economía de congelamientos del programa.
+
+### Correcciones QA del 13 de octubre de 2026
+
+- La búsqueda de inscripciones filtra nombre completo antes de paginar.
+- Los podcasts con la clave conocida `media/podcasts/demo-copp.mp3` quedan fuera del snapshot del paciente y se marcan como contenido no disponible. Publicación, edición publicada y asignación rechazan esa clave; se permite conservarla en borrador/archivo. No se inventan capítulos ni recomendaciones cuando faltan en el medio. Las grabaciones reales siguen pendientes del equipo de contenido.
+- El contador «Mejorando» usa las dos últimas mediciones BMI de pacientes activos y el mismo umbral que el listado. Se evaluó el rollup diario: sumar eventos históricos no representa una tendencia actual. La lectura correlacionada limita en SQL a dos filas por paciente, apoyada en el índice paciente/fecha; no carga todo el historial ni agrega una nueva tabla de snapshots. Debe verificarse en PostgreSQL antes de cerrar QA.
+- Los controles sin plantilla no se consideran enviados; necesitan configuración editorial aprobada.

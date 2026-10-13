@@ -11,6 +11,11 @@ namespace CoppAddresd.Telemedicine.Application.Features.Telemedicine;
 /// </summary>
 internal static class NotificationSupport
 {
+    // Los eventos persistidos usan UTC. Mostrar la zona evita confundirlos
+    // con la hora local del navegador o del teléfono.
+    public static string FormatTime(DateTimeOffset value) =>
+        value.ToUniversalTime().ToString("dd/MM/yyyy HH:mm 'UTC'", System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>
     /// Envía la notificación si hay notificador configurado; captura cualquier
     /// fallo del cliente (red, backend, serialización) y lo registra. La

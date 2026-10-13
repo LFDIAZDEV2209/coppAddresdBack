@@ -150,11 +150,11 @@ public sealed class AppointmentReminderSweeper(
         {
             NotificationDispatchKind.Reminder24h => (
                 "Recordatorio de tu cita",
-                $"Tu cita de telemedicina está programada para el {appointment.ScheduledStart:g}."
+                $"Tu cita de telemedicina está programada para el {NotificationSupport.FormatTime(appointment.ScheduledStart)}."
             ),
             _ => (
                 "Tu cita de telemedicina es pronto",
-                $"Tu cita comienza a las {appointment.ScheduledStart:g}. Ingresa a la sala virtual desde la app."
+                $"Tu cita comienza a las {NotificationSupport.FormatTime(appointment.ScheduledStart)}. Ingresa a la sala virtual desde la app."
             ),
         };
 
@@ -182,7 +182,7 @@ public sealed class AppointmentReminderSweeper(
             NotificationDispatchKind.ProfessionalReminder1h,
             professionalUserId,
             "Cita de telemedicina próxima",
-            $"Tienes una cita de telemedicina a las {appointment.ScheduledStart:g}.",
+            $"Tienes una cita de telemedicina a las {NotificationSupport.FormatTime(appointment.ScheduledStart)}.",
             [TelemedicineNotificationChannel.Push],
             now,
             ct

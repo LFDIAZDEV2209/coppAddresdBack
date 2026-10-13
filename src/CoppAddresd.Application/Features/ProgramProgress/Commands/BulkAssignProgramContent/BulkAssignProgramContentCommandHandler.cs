@@ -136,6 +136,11 @@ public sealed class BulkAssignProgramContentCommandHandler(
             await mediaRepository.GetByIdAsync(request.MediaId, ct)
             ?? throw new NotFoundException($"El medio {request.MediaId} no existe.");
 
+        if (CoppAddresd.Application.Features.Media.MediaPublishRules.IsPlaceholderStorageKey(media.StorageKey))
+        {
+            throw new UnprocessableEntityException("El audio de demostración no se puede asignar. Carga la grabación real.");
+        }
+
         if (media.Status != MediaStatus.Published)
         {
             throw new UnprocessableEntityException(

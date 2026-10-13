@@ -264,7 +264,7 @@ public sealed class StaleSessionSweeper(
                 new TelemedicineNotification(
                     patientUserId,
                     "No asististe a tu cita",
-                    $"No registramos tu ingreso a la cita de telemedicina del {appointment.ScheduledStart:g}. Puedes agendar una nueva cita.",
+                    $"No registramos tu ingreso a la cita de telemedicina del {NotificationSupport.FormatTime(appointment.ScheduledStart)}. Puedes agendar una nueva cita.",
                     [TelemedicineNotificationChannel.Push, TelemedicineNotificationChannel.Sms],
                     NotificationSupport.Data(appointmentId: appointment.Id, screen: "room"),
                     $"appointment:{appointment.Id:N}:noshow"

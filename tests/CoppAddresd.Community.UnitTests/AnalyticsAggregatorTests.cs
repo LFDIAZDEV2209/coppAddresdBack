@@ -248,6 +248,21 @@ public sealed class AnalyticsAggregatorTests
     // ─── ComputeFeedToday ──────────────────────────────────────────────
 
     [Fact]
+    public void ComputeFeedToday_IncludesAnnouncementsWithoutCountingSystemAsMember()
+    {
+        var system = MakeProfile(isSystem: true);
+        system.CreatedAt = BaseNow.AddHours(-1);
+        var result = AnalyticsAggregator.ComputeFeedToday(
+            [system], [MakePost(system.Id, BaseNow.AddMinutes(-5))],
+            [MakeComment(system.Id, BaseNow.AddMinutes(-2))], [],
+            [MakeXpEntry(system.Id, 10)], BaseNow);
+        Assert.Equal(1, result.Posts);
+        Assert.Equal(1, result.Comments);
+        Assert.Equal(0, result.NewMembers);
+        Assert.Equal(0, result.XpDelivered);
+    }
+
+    [Fact]
     public void ComputeFeedToday_EmptyData_ReturnsZeros()
     {
         var result = AnalyticsAggregator.ComputeFeedToday([], [], [], [], [], BaseNow);

@@ -919,3 +919,7 @@ microservicio los autoriza por introspección al Auth cuando la petición lleva
 el header `X-Clinic-Id` (lo envía el ERP). Pueden ver su bandeja de
 solicitudes, confirmar/rechazar y operar agenda, salas y encuentros de sus
 pacientes.
+
+### Regresiones QA 2026-10-13
+
+Reprogramar al mismo instante y duración se rechaza antes de consumir el límite de reprogramaciones o emitir alertas. Las fechas de notificaciones se muestran como `dd/MM/yyyy HH:mm UTC`, con cultura invariante, para no confundir la hora del servidor con la del dispositivo. La prueba de video de dos dispositivos sigue pendiente de despliegue y verificación real.

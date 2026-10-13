@@ -71,6 +71,22 @@ public sealed class MediaLifecycleTests
 
     // ===================== Publish: validación estricta (422) =====================
 
+    [Theory]
+    [InlineData(MediaStatus.Published, false)]
+    [InlineData(MediaStatus.Draft, true)]
+    [InlineData(MediaStatus.Archived, true)]
+    public void DemoMedia_CreateAndUpdate_OnlyAllowUnpublishedStates(MediaStatus status, bool valid)
+    {
+        var create = new CreateMediaItemCommand("QA", null, "QA", MediaType.Podcast,
+            MediaCategory.Biologia, MediaPublishRules.DemoStorageKey, null,
+            "audio/mpeg", 10, 60, status, 1, 1, 1);
+        var update = new UpdateMediaItemCommand(Guid.NewGuid(), "QA", null, "QA", MediaType.Podcast,
+            MediaCategory.Biologia, MediaPublishRules.DemoStorageKey, null,
+            "audio/mpeg", 10, 60, status, 1, 1, 1);
+        Assert.Equal(valid, new CreateMediaItemCommandValidator().Validate(create).IsValid);
+        Assert.Equal(valid, new UpdateMediaItemCommandValidator().Validate(update).IsValid);
+    }
+
     [Fact]
     public async Task Publish_ArchivoInexistenteEnStorage_LanzaUnprocessableEntity()
     {

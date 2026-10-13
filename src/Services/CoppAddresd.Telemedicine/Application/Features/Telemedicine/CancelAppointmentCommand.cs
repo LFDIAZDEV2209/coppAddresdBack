@@ -164,7 +164,7 @@ public sealed class CancelAppointmentCommandHandler(
                 new TelemedicineNotification(
                     notifyUserId,
                     "Cita cancelada",
-                    $"La cita del {entity.ScheduledStart:g} fue cancelada: {request.Reason}",
+                    $"La cita del {NotificationSupport.FormatTime(entity.ScheduledStart)} fue cancelada: {request.Reason}",
                     [TelemedicineNotificationChannel.Push],
                     NotificationSupport.Data(appointmentId: entity.Id, screen: "room"),
                     $"appointment:{entity.Id:N}:cancelled"

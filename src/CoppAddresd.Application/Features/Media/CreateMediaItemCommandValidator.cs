@@ -31,6 +31,11 @@ public sealed class CreateMediaItemCommandValidator : AbstractValidator<CreateMe
 
         RuleFor(x => x.Status).IsInEnum().WithMessage("Estado inválido.");
 
+        RuleFor(x => x.StorageKey)
+            .Must(key => !MediaPublishRules.IsPlaceholderStorageKey(key))
+            .When(x => x.Status == MediaStatus.Published)
+            .WithMessage("El audio de demostración no se puede publicar. Carga la grabación real.");
+
         RuleFor(x => x.SortOrder).GreaterThanOrEqualTo(0);
     }
 }

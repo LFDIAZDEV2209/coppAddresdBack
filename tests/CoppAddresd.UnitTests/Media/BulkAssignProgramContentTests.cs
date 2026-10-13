@@ -235,6 +235,16 @@ public sealed class BulkAssignProgramContentTests
     }
 
     [Fact]
+    public async Task Handle_DemoPublicado_NoSePuedeAsignar()
+    {
+        var media = PublishedPodcast();
+        media.StorageKey = CoppAddresd.Application.Features.Media.MediaPublishRules.DemoStorageKey;
+        _mediaRepository.GetByIdAsync(media.Id).Returns(media);
+        var command = new BulkAssignProgramContentCommand("Template", Guid.NewGuid(), 1, 2, [1], media.Id);
+        await Assert.ThrowsAsync<UnprocessableEntityException>(() => CreateHandler().Handle(command, default));
+    }
+
+    [Fact]
     public async Task Handle_InscripcionInexistente_LanzaNotFound()
     {
         var media = PublishedPodcast();

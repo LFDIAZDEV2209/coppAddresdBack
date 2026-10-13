@@ -689,7 +689,7 @@ var profile = await db.Profiles
         CancellationToken ct)
     {
         var now = DateTime.UtcNow;
-        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToListAsync(ct);
+        var profiles = await db.Profiles.Where(p => p.Status == ProfileStatus.Active).ToListAsync(ct);
         var posts = await db.Posts.ToListAsync(ct);
         var comments = await db.Comments.ToListAsync(ct);
         var likes = await db.Likes.ToListAsync(ct);
@@ -1068,4 +1068,3 @@ var profile = await db.Profiles
         return null;
     }
 }
-

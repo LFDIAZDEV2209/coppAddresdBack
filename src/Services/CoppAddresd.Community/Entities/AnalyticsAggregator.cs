@@ -191,8 +191,9 @@ public static class AnalyticsAggregator
         var activeNonSystem = profiles.Where(p => p.Status == ProfileStatus.Active && !p.IsSystem).ToList();
         var activeIds = new HashSet<Guid>(activeNonSystem.Select(p => p.Id));
 
-        var windowPosts = posts.Count(p => p.DeletedAt == null && p.CreatedAt >= window24h && activeIds.Contains(p.ProfileId));
-        var windowComments = comments.Count(c => c.DeletedAt == null && c.CreatedAt >= window24h && activeIds.Contains(c.ProfileId));
+        var activityIds = profiles.Where(p => p.Status == ProfileStatus.Active).Select(p => p.Id).ToHashSet();
+        var windowPosts = posts.Count(p => p.DeletedAt == null && p.CreatedAt >= window24h && activityIds.Contains(p.ProfileId));
+        var windowComments = comments.Count(c => c.DeletedAt == null && c.CreatedAt >= window24h && activityIds.Contains(c.ProfileId));
         var windowLikes = likes.Count(l => l.CreatedAt >= window24h && activeIds.Contains(l.ProfileId));
 
         // Perfiles creados en la ventana (newMembers)

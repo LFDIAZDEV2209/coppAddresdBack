@@ -88,7 +88,7 @@ internal static class AlertMaterializer
             AlertType.NewAppointment,
             AlertSeverity.Info,
             "Nueva cita asignada",
-            $"{patientName} · {specialtyName} · {scheduledStart:g}.",
+            $"{patientName} · {specialtyName} · {NotificationSupport.FormatTime(scheduledStart)}.",
             appointmentId
         );
 
@@ -104,7 +104,7 @@ internal static class AlertMaterializer
             AlertType.AppointmentRescheduled,
             AlertSeverity.Warning,
             "Cita reprogramada",
-            $"La cita de {patientName} se reprogramó para {newStart:g}.",
+            $"La cita de {patientName} se reprogramó para {NotificationSupport.FormatTime(newStart)}.",
             appointmentId
         );
 

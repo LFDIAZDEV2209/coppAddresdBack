@@ -117,6 +117,15 @@ public class AlertMaterializerTests
     }
 
     [Fact]
+    public void AppointmentRescheduled_ExplicitaUtcIndependienteDelOffset()
+    {
+        var local = new DateTimeOffset(2026, 10, 14, 9, 0, 0, TimeSpan.FromHours(-5));
+        var alert = AlertMaterializer.AppointmentRescheduled(Recipient, AppointmentId, "QA", local);
+        Assert.NotNull(alert);
+        Assert.Contains("14/10/2026 14:00 UTC", alert.Body);
+    }
+
+    [Fact]
     public void AppointmentCancelled_IncluyeRazon()
     {
         var alert = AlertMaterializer.AppointmentCancelled(
