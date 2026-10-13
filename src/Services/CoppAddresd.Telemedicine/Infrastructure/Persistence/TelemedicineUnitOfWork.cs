@@ -33,7 +33,9 @@ public sealed class TelemedicineUnitOfWork(TelemedicineDbContext dbContext) : IT
             }
             catch
             {
-                await transaction.RollbackAsync(ct);
+                await transaction.RollbackAsync(CancellationToken.None);
+                // No reutilizar entidades/eventos que la transacción deshizo.
+                dbContext.ChangeTracker.Clear();
                 throw;
             }
         });

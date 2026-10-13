@@ -784,6 +784,12 @@ public sealed class FakeRequestRepository : IRequestRepository
 /// <summary>Repositorio de salas/sesiones/webhooks en memoria.</summary>
 public sealed class FakeRoomRepository : IRoomRepository
 {
+    public Task<IReadOnlyList<VirtualRoom>> ListActiveRoomsAsync(
+        Guid? afterId, int take, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<VirtualRoom>>(Rooms
+            .Where(r => r.Sessions.Any(s => s.Status == TelemedicineSessionStatus.Active)
+                && (!afterId.HasValue || r.Id.CompareTo(afterId.Value) > 0))
+            .OrderBy(r => r.Id).Take(take).ToList());
     public List<VirtualRoom> Rooms { get; } = [];
     public List<TelemedicineSession> Sessions { get; } = [];
     public List<TelemedicineWebhookEvent> WebhookEvents { get; } = [];

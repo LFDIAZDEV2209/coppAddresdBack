@@ -84,6 +84,7 @@ public static class DependencyInjection
         // Barrido periódico de sesiones estancadas: cierra citas InProgress cuyo
         // fin programado ya pasó (más la gracia de la ventana de sala efectiva).
         services.AddScoped<StaleSessionSweeper>();
+        services.AddScoped<ProviderRoomReconciler>();
         services.AddHostedService<StaleSessionSweepHostedService>();
 
         // F2: barrido de recordatorios de citas confirmadas (push/SMS vía backend)

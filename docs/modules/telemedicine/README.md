@@ -923,3 +923,21 @@ pacientes.
 ### Regresiones QA 2026-10-13
 
 Reprogramar al mismo instante y duración se rechaza antes de consumir el límite de reprogramaciones o emitir alertas. Las fechas de notificaciones se muestran como `dd/MM/yyyy HH:mm UTC`, con cultura invariante, para no confundir la hora del servidor con la del dispositivo. La prueba de video de dos dispositivos sigue pendiente de despliegue y verificación real.
+
+### Conciliación de salas terminadas en el proveedor (QA 2026-10-13)
+
+El barrido de cinco minutos consulta las salas con sesiones activas, por páginas
+keyset de 100 (PK de sala, índices existentes de sesión `status`/`room_id`). Si
+Twilio confirma `completed`, recupera la transición `room-ended` aunque la cita
+se haya iniciado antes de la fecha programada. Usa la hora de cierre del proveedor
+para la duración; una respuesta ausente, desconocida o `in-progress` no cierra nada.
+No impone una duración máxima nueva ni desconecta llamadas activas.
+
+La consulta remota queda fuera de la transacción. La clave única existente de
+`room-ended` serializa conciliadores concurrentes y webhooks tardíos; sala, sesión
+y cita se guardan atómicamente, y los eventos de los rollups existentes se emiten
+tras el commit. Un rollback limpia el tracking para no reintentar entidades
+fallidas al procesar la siguiente sala. No requiere migración.
+
+Validación: regresiones de estado/fecha/idempotencia/cancelación y PostgreSQL real
+con 205 salas y dos conciliadores concurrentes, incluidas todas las páginas.

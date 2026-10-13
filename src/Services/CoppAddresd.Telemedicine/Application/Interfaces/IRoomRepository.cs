@@ -79,6 +79,10 @@ public interface IRoomRepository
         CancellationToken ct = default
     );
 
+    /// <summary>Salas con sesiones activas, paginadas por PK para conciliar callbacks perdidos.</summary>
+    Task<IReadOnlyList<VirtualRoom>> ListActiveRoomsAsync(
+        Guid? afterId, int take, CancellationToken ct = default);
+
     /// <summary>Cuenta las sesiones de video activas (KPI del dashboard admin).</summary>
     Task<int> CountActiveSessionsAsync(CancellationToken ct = default);
 

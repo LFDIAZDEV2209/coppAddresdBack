@@ -42,6 +42,8 @@ public sealed class StaleSessionSweepHostedService(
         try
         {
             using var scope = scopeFactory.CreateScope();
+            var reconciler = scope.ServiceProvider.GetRequiredService<ProviderRoomReconciler>();
+            await reconciler.ReconcileAsync(DateTimeOffset.UtcNow, ct);
             var sweeper = scope.ServiceProvider.GetRequiredService<StaleSessionSweeper>();
             var closed = await sweeper.SweepAsync(DateTimeOffset.UtcNow, ct);
             if (closed > 0)

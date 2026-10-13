@@ -15,6 +15,16 @@ namespace CoppAddresd.Telemedicine.Infrastructure.Repositories;
 /// </summary>
 public sealed class RoomRepository(TelemedicineDbContext dbContext) : IRoomRepository
 {
+    public async Task<IReadOnlyList<VirtualRoom>> ListActiveRoomsAsync(
+        Guid? afterId, int take, CancellationToken ct = default)
+    {
+        var query = dbContext.Rooms.AsNoTracking()
+            .Where(r => r.Sessions.Any(s => s.Status == TelemedicineSessionStatus.Active));
+        if (afterId is { } cursor)
+            query = query.Where(r => r.Id.CompareTo(cursor) > 0);
+        return await query.OrderBy(r => r.Id).Take(Math.Clamp(take, 1, 100)).ToListAsync(ct);
+    }
+
     public async Task<VirtualRoom?> GetByAppointmentIdAsync(
         Guid appointmentId,
         bool includeSessions = false,
