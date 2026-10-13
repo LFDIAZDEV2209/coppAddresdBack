@@ -197,6 +197,7 @@ jobs:
               # Igual que API: objetos persistentes en S3 y URLs firmadas directas.
               echo "extra_env=[{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"},{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Cors__Origins\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"},{\"name\":\"AuthService__BaseUrl\",\"value\":\"http://cooppadresd-alb-269201785.us-east-2.elb.amazonaws.com\"}]" >> "$GITHUB_OUTPUT"
               # Community firma URLs locales igual que la API: sin la clave HMAC el contenedor revienta al arrancar.
+              echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"}]" >> "$GITHUB_OUTPUT"
               # Community firma URLs de S3 (imágenes de posts): el task role es
               # OBLIGATORIO para que el SDK resuelva credenciales. La task def
               # nació sin role y el clone-forward lo arrastraba → HC0044
@@ -235,15 +236,18 @@ jobs:
           TD_NAME="cooppadresd-${{ matrix.service }}"
           TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TD_NAME" --region "${{ env.AWS_REGION }}" --query "taskDefinition" --output json)
           NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
+          # taskRoleArn declarativo: clonar la task def anterior hereda el valor de
+          # la task def original; community nació sin role y el clone-forward lo
+          # arrastraba → Storage S3 sin credenciales → HC0044 en prod (incidente I0002
+          # 2026-10-13). El jq deja el taskRoleArn en null solo cuando el servicio no
+          # declara task_role (auth/telemedicine no usan el SDK de AWS).
+          # Sin comments dentro del programa jq (portabilidad de versiones).
           NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" \
             --arg role "${{ steps.svc.outputs.task_role }}" \
             --argjson envs '${{ steps.svc.outputs.extra_env }}' \
             --argjson secs '${{ steps.svc.outputs.extra_secrets }}' '
             .containerDefinitions[0].image = $img |
             del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes) |
-            # taskRoleArn declarativo: clonar la task def anterior hereda el valor de
-            # la task def original; community nació sin role y el clone-forward lo
-            # arrastraba → Storage S3 sin credenciales → HC0044 en prod (incidente I0002).
             (if $role != "" then .taskRoleArn = $role else . end) |
             .containerDefinitions[0].environment =
               ((.containerDefinitions[0].environment // []) as $cur |
@@ -262,7 +266,7 @@ jobs:
           echo "secrets existentes: $(echo "$TASK_DEF_JSON" | jq -r '[.containerDefinitions[0].secrets[]?.name] | join(",")')"
           echo "envs finales: $(echo "$NEW_TASK_DEF_JSON" | jq -r '[.containerDefinitions[0].environment[]?.name] | join(",")')"
           echo "secrets finales: $(echo "$NEW_TASK_DEF_JSON" | jq -r '[.containerDefinitions[0].secrets[]?.name] | join(",")')"
-          echo "task role: $(echo "$NEW_TASK_DEF_JSON" | jq -r '.taskRoleArn // "(hereda el de la task def previa)")'"
+          echo "task role: $(echo "$NEW_TASK_DEF_JSON" | jq -r '.taskRoleArn // "sin-task-role-hereda-previo"')"
           REGISTERED=$(aws ecs register-task-definition --cli-input-json "$NEW_TASK_DEF_JSON" --region "${{ env.AWS_REGION }}")
           echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
           echo "rev=$(echo "$REGISTERED" | jq -r '.taskDefinition.revision')" >> "$GITHUB_OUTPUT"
