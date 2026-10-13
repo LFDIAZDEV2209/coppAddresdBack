@@ -1801,7 +1801,16 @@ public sealed class ProgramController(
     /// </summary>
     [HttpGet("erp/biometria/export/csv")]
     [RequirePermission("Program.View")]
-    public async Task<IActionResult> ExportBiometriaCsv(CancellationToken ct)
+    public async Task<IActionResult> ExportBiometriaCsv(
+        [FromQuery] string? search = null,
+        [FromQuery] string? gender = null,
+        [FromQuery] string? imcCategory = null,
+        [FromQuery] string? glucosaCategory = null,
+        [FromQuery] string? grasaCategory = null,
+        [FromQuery] string? trend = null,
+        [FromQuery] Guid? cityId = null,
+        [FromQuery] string? stateAbbr = null,
+        CancellationToken ct = default)
     {
         Response.ContentType = "text/csv; charset=utf-8";
         Response.Headers["Content-Disposition"] =
@@ -1815,7 +1824,8 @@ public sealed class ProgramController(
             ct
         );
 
-        var rows = mediator.CreateStream(new StreamBiometriaPatientsExportQuery(), ct);
+        var rows = mediator.CreateStream(new StreamBiometriaPatientsExportQuery(
+            search, gender, imcCategory, glucosaCategory, grasaCategory, trend, cityId, stateAbbr), ct);
         await foreach (var row in rows.WithCancellation(ct))
         {
             await Response.WriteAsync(

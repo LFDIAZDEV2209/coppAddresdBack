@@ -10797,6 +10797,7 @@ public sealed class ProgramRepository(
         var total = allItems.Count;
         var items = allItems
             .OrderBy(i => i.Name)
+            .ThenBy(i => i.PatientId)
             .Skip((Math.Max(1, page) - 1) * pageSize)
             .Take(Math.Clamp(pageSize, 1, 100))
             .ToList();

@@ -552,3 +552,12 @@ Estas preguntas siguen abiertas en el plan y se recomienda resolver antes de emp
 - Los podcasts con la clave conocida `media/podcasts/demo-copp.mp3` quedan fuera del snapshot del paciente y se marcan como contenido no disponible. Publicación, edición publicada y asignación rechazan esa clave; se permite conservarla en borrador/archivo. No se inventan capítulos ni recomendaciones cuando faltan en el medio. Las grabaciones reales siguen pendientes del equipo de contenido.
 - El contador «Mejorando» usa las dos últimas mediciones BMI de pacientes activos y el mismo umbral que el listado. Se evaluó el rollup diario: sumar eventos históricos no representa una tendencia actual. La lectura correlacionada limita en SQL a dos filas por paciente, apoyada en el índice paciente/fecha; no carga todo el historial ni agrega una nueva tabla de snapshots. Debe verificarse en PostgreSQL antes de cerrar QA.
 - Los controles sin plantilla no se consideran enviados; necesitan configuración editorial aprobada.
+
+### Corrección QA: exporte de biometría (2026-10-13)
+
+`GET /api/v1/program/erp/biometria/export/csv` conserva los filtros del listado
+(`search`, `gender`, `imcCategory`, `glucosaCategory`, `grasaCategory`, `trend`,
+`cityId`, `stateAbbr`) y recorre páginas de 100 registros hasta el total filtrado.
+Antes solicitaba `int.MaxValue` al listado, cuyo límite de 100 truncaba el archivo.
+El orden incorpora `PatientId` como desempate. La regresión del handler verifica
+205 filas, propagación de todos los filtros y cancelación antes de consultar.
