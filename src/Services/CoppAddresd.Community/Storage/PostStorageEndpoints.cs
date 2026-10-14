@@ -8,8 +8,8 @@ namespace CoppAddresd.Community.Storage;
 /// - <c>PUT /storage/community/posts/{**key}</c>: subida con Bearer (JWT de la app).
 /// - <c>GET /storage/community/posts/{**key}</c>: lectura con URL firmada (sig+exp)
 ///   para que el <c>&lt;img&gt;</c> del navegador no necesite header Authorization.
-/// Con el proveedor S3 el navegador sube/lee directo al bucket vía URLs firmadas
-/// y estos endpoints quedan como respaldo local (proveedor Local).
+/// Las URLs firmadas de S3 siguen disponibles. Estos endpoints también
+/// transmiten al proveedor S3 cuando el navegador requiere el proxy autenticado.
 /// </summary>
 public static class PostStorageEndpoints
 {
@@ -65,19 +65,22 @@ public static class PostStorageEndpoints
         // de lo contrario no captura los segmentos previos de la ruta del grupo.
         // El GET es público (su auth es la firma sig+exp, para que el <img> del
         // navegador no necesite el header Authorization); el PUT exige JWT.
-        var group = app.MapGroup("/storage");
-
-        group
-            .MapPut("/{**key}", PutPostImageAsync)
-            .RequireAuthorization()
-            .WithName("PutPostImage")
-            .DisableAntiforgery();
-
-        group
-            .MapGet("/{**key}", GetPostImageAsync)
-            .WithName("GetPostImage");
+        MapStorageGroup(app.MapGroup("/storage"), "");
+        // Alias bajo el prefijo Community: evita la ruta pública /storage
+        // cuando el ingress comparte ese prefijo con otros servicios.
+        MapStorageGroup(app.MapGroup("/api/v1/community/storage"), "Community");
 
         return app;
+    }
+
+    private static void MapStorageGroup(RouteGroupBuilder group, string prefix)
+    {
+        group.MapPut("/{**key}", PutPostImageAsync)
+            .RequireAuthorization()
+            .WithName($"{prefix}PutPostImage")
+            .DisableAntiforgery();
+        group.MapGet("/{**key}", GetPostImageAsync)
+            .WithName($"{prefix}GetPostImage");
     }
 
     /// <summary>Valida una clave de imagen/publicación (prefijo reservado y seguro).</summary>
