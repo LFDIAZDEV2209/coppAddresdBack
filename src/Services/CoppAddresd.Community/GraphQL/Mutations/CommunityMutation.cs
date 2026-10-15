@@ -67,7 +67,7 @@ public sealed class CommunityMutation
 
         var extension = System.IO.Path.GetExtension(fileName).ToLowerInvariant();
         if (!PostStorageEndpoints.IsAllowedImageExtension(extension)
-            || extension is ".mp4" or ".webm")
+            || extension is ".mp4" or ".webm" or ".mov")
             throw new GraphQLException("Formato no permitido para la foto.");
 
         var key = $"{prefix}{Guid.NewGuid():N}{extension}";
@@ -114,7 +114,7 @@ public sealed class CommunityMutation
 
         // Derive post type: explicit type wins; otherwise infer from imageKey extension.
         var effectiveType = type ?? (!string.IsNullOrWhiteSpace(imageKey)
-            ? System.IO.Path.GetExtension(imageKey).ToLowerInvariant() is ".mp4" or ".webm"
+            ? System.IO.Path.GetExtension(imageKey).ToLowerInvariant() is ".mp4" or ".webm" or ".mov"
                 ? PostType.Video
                 : PostType.Imagen
             : PostType.Texto);

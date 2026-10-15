@@ -40,13 +40,14 @@ public static class PostStorageEndpoints
             "image/heif",
             "video/mp4",
             "video/webm",
+            "video/quicktime",
         };
 
     private static readonly HashSet<string> AllowedExtensions =
         new(StringComparer.OrdinalIgnoreCase)
         {
             ".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif",
-            ".mp4", ".webm",
+            ".mp4", ".webm", ".mov",
         };
 
     /// <summary>Valida el content-type del adjunto (imagen o video permitidos).</summary>
@@ -57,7 +58,7 @@ public static class PostStorageEndpoints
     public static bool IsAllowedImageExtension(string extension) => AllowedExtensions.Contains(extension);
 
     private static bool IsVideoContentType(string contentType)
-        => contentType.Split(';')[0].Trim().ToLowerInvariant() is "video/mp4" or "video/webm";
+        => contentType.Split(';')[0].Trim().ToLowerInvariant() is "video/mp4" or "video/webm" or "video/quicktime";
 
     public static IEndpointRouteBuilder MapPostStorageEndpoints(this IEndpointRouteBuilder app)
     {

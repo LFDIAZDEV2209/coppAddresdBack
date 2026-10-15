@@ -93,6 +93,6 @@ public sealed class PostImageUrlResolver
             return post.Type == PostType.Video ? "VIDEO" : "IMAGE";
 
         var extension = System.IO.Path.GetExtension(post.ImageKey).ToLowerInvariant();
-        return extension is ".mp4" or ".webm" ? "VIDEO" : "IMAGE";
+        return extension is ".mp4" or ".webm" or ".mov" ? "VIDEO" : "IMAGE";
     }
 }

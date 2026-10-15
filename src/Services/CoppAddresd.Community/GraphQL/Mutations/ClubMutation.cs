@@ -192,7 +192,7 @@ public sealed class ClubMutation
 
         var extension = System.IO.Path.GetExtension(fileName).ToLowerInvariant();
         if (!PostStorageEndpoints.IsAllowedImageExtension(extension)
-            || extension is ".mp4" or ".webm")
+            || extension is ".mp4" or ".webm" or ".mov")
             throw new GraphQLException("Formato no permitido para la imagen.");
 
         var key = $"{prefix}{Guid.NewGuid():N}{extension}";
@@ -617,7 +617,7 @@ public sealed class ClubMutation
             throw new GraphQLException("La imagen adjunta no es válida.");
 
         var effectiveType = input.Type ?? (!string.IsNullOrWhiteSpace(input.ImageKey)
-            ? System.IO.Path.GetExtension(input.ImageKey).ToLowerInvariant() is ".mp4" or ".webm" ? PostType.Video : PostType.Imagen
+            ? System.IO.Path.GetExtension(input.ImageKey).ToLowerInvariant() is ".mp4" or ".webm" or ".mov" ? PostType.Video : PostType.Imagen
             : PostType.Texto);
 
         var scheduled = input.ScheduledFor.HasValue && input.ScheduledFor.Value > DateTime.UtcNow;
