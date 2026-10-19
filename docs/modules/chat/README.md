@@ -172,8 +172,17 @@ al cliente como error genérico:
 ### Request
 
 ```csharp
-record ChatRequestDto(string Message, string? Agent = null, string? ThreadId = null, string? AgentTypeId = null);
+record ChatRequestDto(string Message, string? Agent = null, string? ThreadId = null, string? AgentTypeId = null, string? Language = null);
 ```
+
+**`language`** (2026-10-19): idioma de la app del paciente (`"es"` | `"en"`) enviado
+por `antares-paciente` en cada turno (body JSON). El gateway lo propaga al AI
+Service vía `ChatRequest.language` (`AiServiceClient` lo serializa como
+`language` snake_case, se omite cuando es null — compatible con AI Services
+anteriores). El AI Service inyecta una instrucción explícita de idioma por
+turno que gana sobre el espejo y el historial: cambiar el idioma en la app
+toma efecto en la respuesta siguiente **sin crear un thread nuevo**. Null ⇒
+comportamiento byte-idéntico al histórico (espejo del idioma del usuario).
 
 ### Feedback (Fase 9)
 

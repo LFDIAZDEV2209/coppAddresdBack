@@ -42,7 +42,8 @@ public class ChatController : ControllerBase
                 request.Agent,
                 request.ThreadId,
                 request.AgentTypeId,
-                AuthenticatedUserId
+                AuthenticatedUserId,
+                request.Language
             );
             var result = await _mediator.Send(command, ct);
             return Ok(result);
@@ -78,7 +79,8 @@ public class ChatController : ControllerBase
                 request.Agent,
                 request.ThreadId,
                 request.AgentTypeId,
-                AuthenticatedUserId
+                AuthenticatedUserId,
+                request.Language
             );
             var chunks = await _mediator.Send(command, ct);
 
@@ -279,5 +281,6 @@ public record ChatRequestDto(
     string Message,
     string? Agent = null,
     string? ThreadId = null,
-    string? AgentTypeId = null
+    string? AgentTypeId = null,
+    string? Language = null
 );

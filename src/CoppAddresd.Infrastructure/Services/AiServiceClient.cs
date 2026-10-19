@@ -58,6 +58,9 @@ public class AiServiceClient : IAiServiceClient
             // Contexto de control abierto (fase 2): JsonOpts omite el campo cuando
             // es null (contrato = hoy); un ai-service anterior ignora el campo.
             control_context = request.ControlContext,
+            // Idioma de la app del paciente ('es' | 'en'): JsonOpts omite el campo
+            // cuando es null (comportamiento byte-idéntico para clientes viejos).
+            language = request.Language,
         };
 
     /// <summary>

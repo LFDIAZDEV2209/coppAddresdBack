@@ -101,6 +101,25 @@ public class AiServiceClientTests
         Assert.DoesNotContain("agent_type_id", request.Body);
         Assert.DoesNotContain("user_id", request.Body);
         Assert.DoesNotContain("control_context", request.Body);
+        Assert.DoesNotContain("language", request.Body);
+    }
+
+    [Fact]
+    public async Task ChatAsync_envia_language_cuando_no_es_null()
+    {
+        // Idioma de la app ('es' | 'en'): señal explícita por turno para el
+        // AI Service (cambio de idioma a mitad de conversación). Null ⇒ el
+        // campo se omite (comportamiento byte-idéntico para clientes viejos).
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"answer":"x","thread_id":"t"}"""),
+        });
+        var client = BuildClient(handler);
+
+        await client.ChatAsync(new ChatRequest(Message: "hola", Language: "en"));
+
+        using var json = JsonDocument.Parse(handler.Requests.Single().Body);
+        Assert.Equal("en", json.RootElement.GetProperty("language").GetString());
     }
 
     [Fact]

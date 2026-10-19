@@ -48,7 +48,11 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
             request.ThreadId,
             request.AgentTypeId,
             request.UserId,
-            openControl?.Payload);
+            openControl?.Payload,
+            // Idioma de la app del paciente ('es' | 'en'): señal explícita por
+            // turno para el AI Service (permite cambiar de idioma a mitad de
+            // conversación). Null ⇒ el AI Service mantiene su espejo.
+            request.Language);
 
         try
         {

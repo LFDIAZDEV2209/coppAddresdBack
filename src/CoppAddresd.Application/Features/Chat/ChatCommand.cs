@@ -8,7 +8,8 @@ public record ChatCommand(
     string? Agent = null,
     string? ThreadId = null,
     string? AgentTypeId = null,
-    string? UserId = null)
+    string? UserId = null,
+    string? Language = null)
     : IRequest<ChatResult>;
 
 /// <summary>

@@ -13,7 +13,8 @@ public record ChatRequest(
     string? ThreadId = null,
     string? AgentTypeId = null,
     string? UserId = null,
-    object? ControlContext = null);
+    object? ControlContext = null,
+    string? Language = null);
 
 /// <summary>
 /// Contexto de control de programa abierto adjunto al request de chat (fase 2,
