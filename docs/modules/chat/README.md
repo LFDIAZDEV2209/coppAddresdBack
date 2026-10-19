@@ -275,3 +275,16 @@ Pruebas: `AgentDocumentIndexingTests`, `AgentDocumentIndexLeaseTests` (SQL real
 SQLite), `AgentRuntimeSyncServiceTests` y `ChatFeedbackClientTests`. No requiere
 migración de esquema. Las calificaciones siguen enviando `executionId` al
 runtime; la asociación por respuesta se corrige allí.
+
+## Sesión de voz (ElevenLabs)
+
+`POST /api/v1/chat/voice/session` → `VoiceSessionCommand(UserId, PatientId,
+ThreadId, Language)` → ai-service `/internal/voice/session`.
+
+`VoiceSessionRequestDto(string? ThreadId, string? Language = null)`: el
+`Language` ('es' | 'en') es el idioma de la app — el AI Service hace PATCH de
+`conversation_config.agent.{language, first_message}` del agente ElevenLabs
+ANTES de emitir el signed URL (con sesiones por signed URL los overrides del
+cliente no aplican). Fail-open: si el PATCH falla, la sesión continúa con la
+config vigente del agente. Detalle y caveats:
+`ai-service/docs/elevenlabs/agent-config.md`.

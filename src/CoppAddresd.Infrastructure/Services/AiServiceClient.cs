@@ -380,6 +380,10 @@ public class AiServiceClient : IAiServiceClient
             user_id = request.UserId,
             patient_id = request.PatientId,
             thread_id = request.ThreadId,
+            // Idioma de la app ('es' | 'en'): el ai-service deja el agente de
+            // voz hablando ese idioma antes de emitir el signed URL. Null ⇒
+            // se omite (JsonOpts omit-null) y el ai-service no toca la config.
+            language = request.Language,
         };
 
         using var httpRequest = new HttpRequestMessage(

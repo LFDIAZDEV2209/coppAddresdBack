@@ -143,7 +143,8 @@ public class ChatController : ControllerBase
             var command = new VoiceSessionCommand(
                 userId,
                 PatientId: null,
-                ThreadId: request.ThreadId
+                ThreadId: request.ThreadId,
+                Language: request.Language
             );
             var result = await _mediator.Send(command, ct);
             return Ok(result);

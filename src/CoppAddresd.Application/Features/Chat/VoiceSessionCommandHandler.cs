@@ -30,7 +30,7 @@ public sealed class VoiceSessionCommandHandler(
         );
 
         var result = await aiService.CreateVoiceSessionAsync(
-            new VoiceSessionInternalRequest(request.UserId, request.PatientId, request.ThreadId),
+            new VoiceSessionInternalRequest(request.UserId, request.PatientId, request.ThreadId, request.Language),
             ct
         );
 

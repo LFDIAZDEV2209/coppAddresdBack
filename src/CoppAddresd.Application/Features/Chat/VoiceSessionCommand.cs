@@ -8,9 +8,11 @@ namespace CoppAddresd.Application.Features.Chat;
 /// Comando de apertura de sesión de voz (ElevenLabs Agents). El backend
 /// valida identidad/estado/rate limit/auditoría y el ai-service emite el
 /// signed URL temporal. El <c>UserId</c> proviene del JWT en el controller,
-/// nunca del body del cliente.
+/// nunca del body del cliente. El <c>Language</c> ('es' | 'en') es el idioma
+/// de la app: el ai-service deja el agente hablando ese idioma antes de
+/// emitir el signed URL.
 /// </summary>
-public record VoiceSessionCommand(string UserId, string? PatientId, string? ThreadId)
+public record VoiceSessionCommand(string UserId, string? PatientId, string? ThreadId, string? Language = null)
     : IRequest<VoiceSessionResponseDto>;
 
 /// <summary>
@@ -28,5 +30,8 @@ public sealed class VoiceSessionCommandValidator : AbstractValidator<VoiceSessio
         RuleFor(x => x.PatientId)
             .MaximumLength(64)
             .WithMessage("PatientId no debe superar 64 caracteres.");
+        RuleFor(x => x.Language)
+            .MaximumLength(8)
+            .WithMessage("Language no debe superar 8 caracteres.");
     }
 }
