@@ -172,8 +172,14 @@ al cliente como error genérico:
 ### Request
 
 ```csharp
-record ChatRequestDto(string Message, string? Agent = null, string? ThreadId = null, string? AgentTypeId = null);
+record ChatRequestDto(string Message, string? Agent = null, string? ThreadId = null, string? AgentTypeId = null, string? ControlContext = null, string? Language = null);
 ```
+
+`Language` ('es' | 'en', opcional): idioma de la app del paciente. Viaja al AI
+Service en cada turno (`language`, omitido si null) y allí GANA sobre la regla
+de espejo del prompt y sobre el historial: cambiar el idioma en la app toma
+efecto en el siguiente turno del mismo thread, sin crear hilo nuevo. Con null
+el payload queda byte-idéntico al histórico (backwards compatible).
 
 ### Feedback (Fase 9)
 
@@ -203,6 +209,19 @@ data: {"content": " mundo"}
 event: done
 data: {}
 ```
+
+## Sesión de voz (ElevenLabs)
+
+`POST /api/v1/chat/voice/session` → `VoiceSessionCommand(UserId, PatientId,
+ThreadId, Language)` → ai-service `/internal/voice/session`.
+
+`VoiceSessionRequestDto(string? ThreadId, string? Language = null)`: el
+`Language` ('es' | 'en') es el idioma de la app — el AI Service hace PATCH de
+`conversation_config.agent.{language, first_message}` del agente ElevenLabs
+ANTES de emitir el signed URL (con sesiones por signed URL los overrides del
+cliente no aplican). Fail-open: si el PATCH falla, la sesión continúa con la
+config vigente del agente. Detalle y caveats:
+`ai-service/docs/elevenlabs/agent-config.md`.
 
 ## Testing
 
