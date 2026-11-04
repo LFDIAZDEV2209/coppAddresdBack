@@ -28,7 +28,8 @@ public sealed class SosSmsDispatcher(
     INotificationDedupeRepository dedupe,
     AppDbContext dbContext,
     IOptions<SosWebhookSettings> webhookSettings,
-    ILogger<SosSmsDispatcher> logger
+    ILogger<SosSmsDispatcher> logger,
+    ISosLocationLinkService? locationLinks = null
 ) : ISosSmsDispatcher
 {
     /// <summary>Timeout estricto por intento (D3): 5 segundos.</summary>
@@ -37,12 +38,16 @@ public sealed class SosSmsDispatcher(
     /// <summary>Hasta 2 reintentos tras el primer intento (3 intentos totales).</summary>
     private const int MaxRetries = 2;
 
-    public async Task<SosChannelStatus> DispatchAsync(
+    public Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default)
+        => SosRecipientDispatch.RunAsync(alert, "sms", dedupe, dbContext, DispatchOneAsync, logger, ct);
+
+    private async Task<SosChannelStatus> DispatchOneAsync(
         SosAlert alert,
+        SosAlertRecipient? recipient,
         CancellationToken ct = default
     )
     {
-        var dedupeKey = $"sos:sms:{alert.Id}";
+        var dedupeKey = SosRecipientDispatch.Key("sms", alert.Id, recipient);
         var existing = await dedupe.GetByKeyAsync(dedupeKey, ct);
         if (
             existing?.SmsStatus is not null
@@ -56,11 +61,12 @@ public sealed class SosSmsDispatcher(
                 existing.SmsStatus,
                 alert.Id
             );
-            return alert.SmsChannelStatus;
+            return Enum.TryParse<SosChannelStatus>(existing.SmsStatus, true, out var previous) ? previous : alert.SmsChannelStatus;
         }
 
-        var body = SosSmsTemplate.Build(alert);
+        var body = SosSmsTemplate.Build(alert, locationLinks?.CreateLink(alert));
         var callbackUrl = BuildStatusCallbackUrl(alert.Id);
+        if (callbackUrl is not null && recipient is not null) callbackUrl += $"&recipientId={recipient.Id}";
 
         var finalStatus = SosChannelStatus.Fallido;
         string? detail = null;
@@ -93,6 +99,7 @@ public sealed class SosSmsDispatcher(
 
                     if (result.Success)
                     {
+                        if (recipient is not null) recipient.SmsProviderMessageId = result.ProviderMessageId;
                         finalStatus = SosChannelStatus.Enviado;
                         detail = null;
                         break;
@@ -157,6 +164,7 @@ public sealed class SosSmsDispatcher(
             a => a.SmsChannelStatus = finalStatus,
             a => a.SmsUpdatedAt = DateTime.UtcNow,
             a => a.SmsDetail = detail,
+            recipient,
             ct
         );
 
@@ -181,11 +189,13 @@ public sealed class SosSmsDispatcher(
         Action<SosAlert> setStatus,
         Action<SosAlert> setTimestamp,
         Action<SosAlert> setDetail,
+        SosAlertRecipient? recipient,
         CancellationToken ct
     )
     {
         try
         {
+            if (recipient is not null) { setStatus(alert); setTimestamp(alert); setDetail(alert); return; }
             var tracked = await dbContext.SosAlerts.FirstOrDefaultAsync(x => x.Id == alert.Id, ct);
             if (tracked is null)
             {
@@ -211,43 +221,26 @@ public sealed class SosSmsDispatcher(
 }
 
 /// <summary>
-/// Plantilla del SMS de SOS enriquecido: 100% server-side. Incluye nombre
-/// completo, edad, documento, signos vitales (demo), ubicación con enlace a
-/// Maps y referencia correlacionada. El cuerpo NUNCA se registra en logs
-/// (REQ-SOS-06).
+/// SMS breve y accionable. No incluye documento, referencia interna ni
+/// coordenadas sueltas. El cuerpo NUNCA se registra en logs (REQ-SOS-06).
 /// </summary>
 public static class SosSmsTemplate
 {
-    public static string Build(SosAlert alert)
+    public static string Build(SosAlert alert, string? locationUrl = null)
     {
         var patient = alert.Patient;
         var name = SosMessageFormatting.FullName(patient, "Tu contacto");
-        var age = SosMessageFormatting.Age(patient?.DateOfBirth);
-        var document = string.IsNullOrWhiteSpace(patient?.DocumentNumber)
-            ? null
-            : patient!.DocumentNumber!.Trim();
-
         var lines = new List<string>
         {
-            $"🚨 SOS CoppAdresd — {name}"
-                + (age is null ? string.Empty : $", {age} años")
-                + (document is null ? string.Empty : $", doc {document}")
-                + $", activó una emergencia el {SosMessageFormatting.FormatAlertTime(alert.CreatedAt)}.",
+            "SOS | Copp Adresd",
+            $"{name} necesita tu ayuda. Llámale ahora.",
         };
-
+        var phone = SosMessageFormatting.PatientPhone(patient);
+        if (phone is not null) lines.Add($"Llamar: {phone}");
+        var maps = SosMessageFormatting.LocationLink(alert, locationUrl);
+        lines.Add(maps is null ? "Ubicación no compartida." : $"Ver ubicación: {maps}");
         var vitals = SosMessageFormatting.SmsVitals(alert);
-        if (vitals is not null)
-        {
-            lines.Add(vitals);
-        }
-
-        var maps = SosMessageFormatting.MapsLink(alert);
-        lines.Add(maps is null ? "Ubicación no disponible" : $"Ubicación: {maps}");
-
-        lines.Add(
-            $"Contacta a {SosMessageFormatting.FirstName(patient, name)} de inmediato. Ref {alert.Id.ToString()[..8]}."
-        );
-
+        if (vitals is not null) lines.Add(vitals);
         return string.Join("\n", lines);
     }
 }

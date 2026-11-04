@@ -1,12 +1,16 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Infrastructure.Persistence;
+using CoppAddresd.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Infrastructure.Repositories;
 
 public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessRepository
 {
+    public async Task<string?> GetPatientTimezoneAsync(Guid patientId, CancellationToken ct = default)
+        => await dbContext.ProgramEnrollments.AsNoTracking().Where(e => e.PatientId == patientId)
+            .OrderByDescending(e => e.CreatedAt).Select(e => e.Timezone).FirstOrDefaultAsync(ct);
     // --- Nutrition Plans ---
 
     public async Task<NutritionPlan?> GetPlanByIdAsync(Guid id, CancellationToken ct = default)
@@ -18,12 +22,16 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
 
     public async Task<(IReadOnlyList<NutritionPlan> Items, int Total)> ListPlansAsync(
         bool? isTemplate, string? search, string? status, Guid? patientId,
-        int page, int pageSize, CancellationToken ct = default)
+        int page, int pageSize, Guid? professionalId = null, CancellationToken ct = default)
     {
         var query = dbContext.NutritionPlans
             .AsNoTracking()
             .Include(x => x.Patient)
             .AsQueryable();
+
+        if (professionalId is { } professional)
+            query = query.Where(p => p.IsTemplate && p.PatientId == null || !p.IsTemplate && p.PatientId != null && dbContext.PatientProfessionalAssignments.Any(a =>
+                a.PatientId == p.PatientId && a.ProfessionalId == professional && a.Status == "Active"));
 
         if (patientId.HasValue && !isTemplate.HasValue)
         {
@@ -58,6 +66,7 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
     public async Task<NutritionPlan> AddPlanAsync(NutritionPlan plan, CancellationToken ct = default)
     {
         dbContext.NutritionPlans.Add(plan);
+        if (!plan.IsTemplate) dbContext.NutritionPlanReviewEvents.Add(NutritionPlanWorkflow.Event(plan, "created", plan.CreatedBy));
         await dbContext.SaveChangesAsync(ct);
         return plan;
     }
@@ -93,11 +102,18 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
     public async Task UpdatePlanAsync(NutritionPlan plan, CancellationToken ct = default)
     {
         dbContext.NutritionPlans.Update(plan);
-        await dbContext.SaveChangesAsync(ct);
+        dbContext.Entry(plan).Property(p => p.Revision).OriginalValue = plan.Revision - 1;
+        if (!plan.IsTemplate) dbContext.NutritionPlanReviewEvents.Add(NutritionPlanWorkflow.Event(plan, "modified", plan.UpdatedBy));
+        try { await dbContext.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("El plan cambió. Actualiza y revisa su última versión.");
+        }
     }
 
     public async Task DeletePlanAsync(NutritionPlan plan, CancellationToken ct = default)
     {
+        if (!plan.IsTemplate) dbContext.NutritionPlanReviewEvents.Add(NutritionPlanWorkflow.Event(plan, "deleted", plan.UpdatedBy));
         dbContext.NutritionPlans.Remove(plan);
         await dbContext.SaveChangesAsync(ct);
     }
@@ -321,13 +337,17 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
 
     public async Task<(IReadOnlyList<NutritionPlanAssignment> Items, int Total)> ListPlanAssignmentsAsync(
         Guid? patientId, Guid? planId, string? status,
-        int page, int pageSize, CancellationToken ct = default)
+        int page, int pageSize, Guid? professionalId = null, CancellationToken ct = default)
     {
         var query = dbContext.NutritionPlanAssignments
             .AsNoTracking()
             .Include(x => x.Patient)
             .Include(x => x.Plan)
             .AsQueryable();
+
+        if (professionalId is { } professional)
+            query = query.Where(p => dbContext.PatientProfessionalAssignments.Any(a =>
+                a.PatientId == p.PatientId && a.ProfessionalId == professional && a.Status == "Active"));
 
         if (patientId.HasValue)
             query = query.Where(x => x.PatientId == patientId.Value);

@@ -1,4 +1,5 @@
 using Serilog.Context;
+using CoppAddresd.Api.Security;
 
 namespace CoppAddresd.Api.Middleware;
 
@@ -29,7 +30,7 @@ public sealed class CorrelationIdMiddleware(
         using (logger.BeginScope(new Dictionary<string, object>
         {
             ["CorrelationId"] = correlationId,
-            ["RequestPath"] = context.Request.Path.ToString(),
+            ["RequestPath"] = RequestLogPath.Redact(context.Request.Path),
             ["RequestMethod"] = context.Request.Method,
         }))
         {

@@ -229,3 +229,28 @@ GET    /api/v1/patients?state=CA           # el listado acepta `state` (selecci�
 - Frontend: `yarn lint` + `npx tsc --noEmit` + `yarn build` verdes; QA funcional
   con Playwright (tabs, filtro de estado cruzado, toggle con confirmación y
   roundtrip, tablero con datos reales).
+
+## Perfil móvil: dos contactos y opción sin seguro
+
+`PatientSelfProfileDto` y `UpdateMyPatientProfileRequest` incluyen
+`secondaryEmergencyContact?` (`name`, `relationship`, `phone`, `email`). El
+contacto principal mantiene los campos planos previos del contrato. En la columna
+`emergency_contact`, el principal permanece en la raíz JSON para compatibilidad
+con SOS y el opcional se almacena en `secondary`. El segundo contacto no cambia
+los destinatarios del despacho SOS actual.
+
+La app exige nombre y teléfono del primero. El segundo puede quedar totalmente
+vacío; comenzarlo exige nombre/teléfono y correo válido cuando se proporciona.
+Actualizar los contactos desde self-service valida también longitudes y formato.
+Omitir el segundo conserva el dato anterior; enviar un objeto con campos vacíos
+lo elimina. La edición del principal desde un ERP anterior conserva el segundo.
+
+`clearInsurer: true` permite seleccionar «Sin seguro médico» y eliminar la
+aseguradora existente. `insurerId: null` sin esa señal conserva la semántica de
+clientes anteriores. No se almacenan nombres de aseguradora como IDs.
+
+La configuración EF amplía `app.patient_profiles.emergency_contact` de
+varchar(500) a text: dos contactos pueden exceder el límite anterior, especialmente
+con Unicode. Aplicar la migración compartida de planes/contactos antes de usar
+el nuevo contrato. `PatientEmergencyContactsTests` cubre persistencia, contrato
+SOS, borrado explícito, datos parciales y la compatibilidad anterior.

@@ -144,6 +144,9 @@ public sealed class BulkAssignProgramContentCommandHandler(
             );
         }
 
+        if (media.MediaType == MediaType.Image)
+            throw new UnprocessableEntityException("Las imágenes de ejercicios no se pueden asignar como podcasts del programa.");
+
         var weekdays = request.Weekdays.Distinct().OrderBy(d => d).ToArray();
         var totalWeeksTargeted = request.ToWeek - request.FromWeek + 1;
 

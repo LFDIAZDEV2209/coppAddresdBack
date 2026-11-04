@@ -472,6 +472,10 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         await dbContext.SaveChangesAsync(ct);
     }
 
+    public async Task<bool> CancelAssignmentIfOpenAsync(Guid assignmentId, CancellationToken ct = default)
+        => await dbContext.HealthTestAssignments.Where(a => a.Id == assignmentId && a.Status != HealthTestAssignmentStatus.completed)
+            .ExecuteUpdateAsync(update => update.SetProperty(a => a.Status, HealthTestAssignmentStatus.cancelled), ct) == 1;
+
     // --- Asignaciones de batería ---
 
     public async Task<HealthTestBatteryAssignment?> GetBatteryAssignmentByIdAsync(

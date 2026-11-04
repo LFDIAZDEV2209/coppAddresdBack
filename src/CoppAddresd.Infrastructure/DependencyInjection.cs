@@ -69,6 +69,8 @@ public static class DependencyInjection
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
+        services.AddHttpClient<IAssessmentProfileAnalysis, AssessmentProfileAnalysis>(client =>
+        { client.Timeout = TimeSpan.FromSeconds(80); client.MaxResponseContentBufferSize = 131072; });
         services.AddScoped<IHealthTestNotificationRepository, HealthTestNotificationRepository>();
         services.AddSingleton<IHealthTestTemplateRenderer, HealthTestTemplateRenderer>();
 
@@ -220,6 +222,8 @@ public static class DependencyInjection
         AddDistributedCache(services, configuration);
 
         AddSosServices(services, configuration);
+        services.AddScoped<INutritionPlanWorkflow, NutritionPlanWorkflow>();
+        services.AddHostedService<NutritionPlanGenerationWorker>();
 
         return services;
     }
@@ -237,6 +241,8 @@ public static class DependencyInjection
     )
     {
         services.AddScoped<ISosAlertRepository, SosAlertRepository>();
+        services.AddSingleton<ISosLocationLinkService, SosLocationLinkService>();
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<ISosRateLimiter, SosRateLimitingService>();
         services.AddScoped<ISosSmsDispatcher, SosSmsDispatcher>();
         services.AddScoped<ISosVoiceDispatcher, SosVoiceDispatcher>();

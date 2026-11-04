@@ -115,7 +115,10 @@ public sealed class UpdatePatientCommandHandler(
         entity.StateId = request.StateId;
         entity.CountryId = request.CountryId;
         entity.PostalCode = PatientOptions.Normalize(request.PostalCode);
-        entity.EmergencyContact = EmergencyContactCodec.Serialize(request.EmergencyContact);
+        var contact = request.EmergencyContact;
+        if (contact is not null && contact.Secondary is null)
+            contact = contact with { Secondary = EmergencyContactCodec.Deserialize(entity.EmergencyContact)?.Secondary };
+        entity.EmergencyContact = EmergencyContactCodec.Serialize(contact);
         entity.InsurerId = request.InsurerId;
         entity.MemberId = PatientOptions.Normalize(request.MemberId);
         entity.MaritalStatus = PatientOptions.Normalize(request.MaritalStatus);

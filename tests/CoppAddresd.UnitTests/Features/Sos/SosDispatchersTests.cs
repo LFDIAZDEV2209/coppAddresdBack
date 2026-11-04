@@ -44,6 +44,23 @@ public sealed class SosDispatchersTests
     // ===================== SMS =====================
 
     [Fact]
+    public async Task Sms_ConEnlaceCompartido_EnviaUbicacionSinCoordenadasEnElTexto()
+    {
+        var sms = Substitute.For<ISmsSender>();
+        sms.IsConfigured.Returns(true);
+        sms.SendAsync(PhoneE164, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new SmsSendResult(true, "SM123", null));
+        var links = Substitute.For<ISosLocationLinkService>();
+        var alert = NewAlert();
+        const string link = "https://erp.example.test/api/v1/sos/maps/opaque-example";
+        links.CreateLink(alert).Returns(link);
+        var dispatcher = new SosSmsDispatcher(sms, _dedupe, CreateDbContext(), Options.Create(new SosWebhookSettings()), NullLogger<SosSmsDispatcher>.Instance, links);
+
+        await dispatcher.DispatchAsync(alert);
+
+        await sms.Received(1).SendAsync(PhoneE164, Arg.Is<string>(body => body.Contains(link) && !body.Contains("4.711") && !body.Contains("74.0721")), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Sms_Exitoso_MarcaEnviadoYDedupePersistente()
     {
         var sms = Substitute.For<ISmsSender>();
@@ -545,9 +562,43 @@ public sealed class SosDispatchersTests
     // ===================== Correo =====================
 
     [Fact]
-    public async Task Correo_Exitoso_MarcaEnviadoYUsaElMismoTextoDelSms()
+    public async Task Correo_ConEnlaceCompartido_UsaElBotonDelMapaSinCoordenadas()
     {
         var email = Substitute.For<IEmailService>();
+        email.IsConfigured.Returns(true);
+        var alert = NewAlert();
+        alert.Patient!.EmergencyContact = "{\"email\":\"correo@test.com\"}";
+        var links = Substitute.For<ISosLocationLinkService>();
+        const string link = "https://erp.example.test/api/v1/sos/maps/opaque-example";
+        links.CreateLink(alert).Returns(link);
+        var dispatcher = new SosEmailDispatcher(email, _dedupe, NullLogger<SosEmailDispatcher>.Instance, links);
+
+        await dispatcher.DispatchAsync(alert);
+
+        await email.Received(1).SendEmailAsync("correo@test.com", SosEmailTemplate.Subject, Arg.Is<string>(html => html.Contains(link) && System.Net.WebUtility.HtmlDecode(html).Contains("Ver ubicación en el mapa") && !html.Contains("4.711") && !html.Contains("74.0721")), true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Correo_TransporteNoConfigurado_NoSimulaEntregaNiInvocaProveedor()
+    {
+        var email = Substitute.For<IEmailService>();
+        email.IsConfigured.Returns(false);
+        var alert = NewAlert();
+        alert.Patient!.EmergencyContact = "{\"email\":\"correo@test.com\"}";
+        var dispatcher = new SosEmailDispatcher(email, _dedupe, NullLogger<SosEmailDispatcher>.Instance);
+
+        var status = await dispatcher.DispatchAsync(alert);
+
+        Assert.Equal(SosChannelStatus.NoConfigurado, status);
+        await email.DidNotReceiveWithAnyArgs().SendEmailAsync(default!, default!, default!, default, default);
+        await _dedupe.Received(1).UpsertAsync($"sos:email:{alert.Id}", Guid.Empty, null, null, null, "noconfigurado", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Correo_Exitoso_MarcaEnviadoYUsaPlantillaHtmlPropia()
+    {
+        var email = Substitute.For<IEmailService>();
+        email.IsConfigured.Returns(true);
         _dedupe
             .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((NotificationDedupeKey?)null);
@@ -563,15 +614,15 @@ public sealed class SosDispatchersTests
 
         var status = await dispatcher.DispatchAsync(alert, CancellationToken.None);
 
-        // (REQ-SOS-03) Mismo texto que el SMS, al correo del contacto.
+        // Plantilla HTML con acciones visibles, al correo real del contacto.
         Assert.Equal(SosChannelStatus.Enviado, status);
         await email
             .Received(1)
             .SendEmailAsync(
                 "correo@test.com",
-                Arg.Any<string>(),
-                SosSmsTemplate.Build(alert),
-                false,
+                SosEmailTemplate.Subject,
+                SosEmailTemplate.BuildHtml(alert),
+                true,
                 Arg.Any<CancellationToken>()
             );
         await _dedupe
@@ -591,6 +642,7 @@ public sealed class SosDispatchersTests
     public async Task Correo_SinCorreoEnElContacto_MarcaNoConfigurado()
     {
         var email = Substitute.For<IEmailService>();
+        email.IsConfigured.Returns(true);
         _dedupe
             .GetByKeyAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns((NotificationDedupeKey?)null);
@@ -626,6 +678,7 @@ public sealed class SosDispatchersTests
     public async Task Correo_YaEnviadoNoSeReenviaAunqueElProcesadorReintente()
     {
         var email = Substitute.For<IEmailService>();
+        email.IsConfigured.Returns(true);
         var alert = NewAlert();
         _dedupe
             .GetByKeyAsync($"sos:email:{alert.Id}", Arg.Any<CancellationToken>())
@@ -656,6 +709,7 @@ public sealed class SosDispatchersTests
     public async Task Correo_FalloDelProveedor_MarcaFallidoSinLanzar()
     {
         var email = Substitute.For<IEmailService>();
+        email.IsConfigured.Returns(true);
         email
             .SendEmailAsync(
                 Arg.Any<string>(),

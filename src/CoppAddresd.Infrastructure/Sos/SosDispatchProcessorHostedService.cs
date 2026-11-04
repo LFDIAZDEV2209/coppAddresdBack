@@ -131,7 +131,7 @@ public sealed class SosDispatchProcessorHostedService(
                         ? key["sos:voice:".Length..]
                         : key["sos:email:".Length..];
 
-                if (Guid.TryParse(alertIdText, out var alertId))
+                if (Guid.TryParse(alertIdText.Split(':')[0], out var alertId))
                 {
                     await queue.EnqueueAsync(alertId, ct);
                 }

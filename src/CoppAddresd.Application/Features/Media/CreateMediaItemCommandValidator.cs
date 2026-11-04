@@ -21,6 +21,10 @@ public sealed class CreateMediaItemCommandValidator : AbstractValidator<CreateMe
             .MaximumLength(1024);
 
         RuleFor(x => x.ContentType).MaximumLength(100);
+        RuleFor(x => x.ContentType)
+            .Must(value => value is not null && MediaPublishRules.IsAllowedContentType(MediaType.Image, value))
+            .When(x => x.MediaType == MediaType.Image)
+            .WithMessage("La imagen debe ser JPEG, PNG, WebP o GIF.");
 
         RuleFor(x => x.FileSizeBytes).GreaterThanOrEqualTo(0).When(x => x.FileSizeBytes.HasValue);
 

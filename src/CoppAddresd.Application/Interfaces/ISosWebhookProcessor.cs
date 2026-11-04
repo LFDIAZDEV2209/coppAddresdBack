@@ -32,7 +32,8 @@ public interface ISosWebhookProcessor
         string url,
         string signature,
         IReadOnlyDictionary<string, string> form,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Guid? recipientId = null
     );
 
     /// <summary>
@@ -44,6 +45,7 @@ public interface ISosWebhookProcessor
         string url,
         string signature,
         IReadOnlyDictionary<string, string> form,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Guid? recipientId = null
     );
 }

@@ -9,4 +9,6 @@ public enum MediaType
     Podcast = 1,
     Video = 2,
     Audio = 3,
+    /// <summary>Imagen educativa, por ejemplo la técnica de un ejercicio.</summary>
+    Image = 4,
 }

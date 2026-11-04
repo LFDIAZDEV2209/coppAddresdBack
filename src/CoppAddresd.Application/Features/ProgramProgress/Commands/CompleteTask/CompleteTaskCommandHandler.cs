@@ -70,7 +70,8 @@ public sealed class CompleteTaskCommandHandler(
             request.Barriers,
             request.ContentFingerprint,
             Vitals: request.Vitals,
-            ActorId: request.ActorId);
+            ActorId: request.ActorId,
+            Emotional: request.Emotional);
 
         var result = await repository.CompleteTaskAsync(input, ct);
 

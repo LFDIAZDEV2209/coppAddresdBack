@@ -184,11 +184,12 @@ public sealed class ActivateSosAlertHandler(
             Spo2 = request.Vitals?.Spo2,
             BloodPressure = request.Vitals?.BloodPressure,
             DestinationPhoneE164 = e164,
+            Recipients = SosSupport.SnapshotRecipients(profile.EmergencyContact),
         };
 
         // Outbox: sms + una fila por profesional asignado (destinatarios del push).
         var staffUserIds = await repository.GetAssignedStaffUserIdsAsync(request.PatientId, ct);
-        var dedupeKeys = BuildDedupeKeys(alert.Id, staffUserIds);
+        var dedupeKeys = BuildDedupeKeys(alert.Id, staffUserIds, alert.Recipients.Count);
 
         var outcome = await repository.AddWithOutboxAsync(alert, dedupeKeys, ct);
 
@@ -258,7 +259,8 @@ public sealed class ActivateSosAlertHandler(
     /// <summary>Claves de outbox: una por canal (sms, voz, correo) y una por destinatario push.</summary>
     public static IReadOnlyList<string> BuildDedupeKeys(
         Guid alertId,
-        IReadOnlyList<Guid> staffUserIds
+        IReadOnlyList<Guid> staffUserIds,
+        int recipientCount = 1
     )
     {
         var keys = new List<string>(3 + staffUserIds.Count)
@@ -268,6 +270,9 @@ public sealed class ActivateSosAlertHandler(
             $"sos:email:{alertId}",
         };
         keys.AddRange(staffUserIds.Distinct().Select(userId => $"sos:push:{alertId}:{userId}"));
+        for (var slot = 1; slot < recipientCount; slot++)
+            foreach (var channel in new[] { "sms", "voice", "email" })
+                keys.Add($"sos:{channel}:{alertId}:{slot}");
         return keys;
     }
 }

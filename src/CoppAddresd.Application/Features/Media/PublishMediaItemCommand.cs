@@ -60,12 +60,16 @@ public static class MediaPublishRules
     /// <summary>Tamaño máximo de un medio de video: 1 GB.</summary>
     public const long MaxVideoBytes = 1024L * 1024 * 1024;
 
+    public static readonly string[] ImageMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    public const long MaxImageBytes = 20L * 1024 * 1024;
+
     public static bool IsAudio(MediaType type) => type is MediaType.Podcast or MediaType.Audio;
 
-    public static long MaxBytes(MediaType type) => IsAudio(type) ? MaxAudioBytes : MaxVideoBytes;
+    public static long MaxBytes(MediaType type) => type == MediaType.Image
+        ? MaxImageBytes : IsAudio(type) ? MaxAudioBytes : MaxVideoBytes;
 
     public static bool IsAllowedContentType(MediaType type, string contentType) =>
-        (IsAudio(type) ? AudioMimeTypes : VideoMimeTypes).Contains(
+        (type == MediaType.Image ? ImageMimeTypes : IsAudio(type) ? AudioMimeTypes : VideoMimeTypes).Contains(
             contentType.Trim().ToLowerInvariant()
         );
 }
@@ -106,7 +110,9 @@ public sealed class PublishMediaItemCommandHandler(
 
         if (!MediaPublishRules.IsAllowedContentType(entity.MediaType, contentType))
         {
-            var allowed = MediaPublishRules.IsAudio(entity.MediaType)
+            var allowed = entity.MediaType == MediaType.Image
+                ? string.Join(", ", MediaPublishRules.ImageMimeTypes)
+                : MediaPublishRules.IsAudio(entity.MediaType)
                 ? string.Join(", ", MediaPublishRules.AudioMimeTypes)
                 : string.Join(", ", MediaPublishRules.VideoMimeTypes);
             throw new UnprocessableEntityException(
@@ -134,7 +140,7 @@ public sealed class PublishMediaItemCommandHandler(
         }
 
         // 4) Duración: mayor a 0.
-        if (entity.DurationSecs is null or <= 0)
+        if (entity.MediaType != MediaType.Image && entity.DurationSecs is null or <= 0)
         {
             throw new UnprocessableEntityException(
                 "La duración en segundos debe ser mayor a 0 para poder publicar la lección."

@@ -2,27 +2,33 @@ using CoppAddresd.Application.Features.Sos;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
+using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
 
 namespace CoppAddresd.Infrastructure.Services;
 
 /// <summary>
-/// Despacha el canal de correo de una alerta SOS (REQ-SOS-03): reutiliza el
-/// texto del SMS (plantilla fija server-side) y lo envía al correo del
+/// Despacha el canal de correo de una alerta SOS (REQ-SOS-03): genera una
+/// plantilla HTML propia y la envía al correo del
 /// contacto de emergencia con dedupe durable <c>sos:email:{alertId}</c>.
 /// Nunca lanza: devuelve el estado final del canal.
 /// </summary>
 public sealed class SosEmailDispatcher(
     IEmailService emailService,
     INotificationDedupeRepository dedupe,
-    ILogger<SosEmailDispatcher> logger
+    ILogger<SosEmailDispatcher> logger,
+    ISosLocationLinkService? locationLinks = null,
+    AppDbContext? dbContext = null
 ) : ISosEmailDispatcher
 {
     private const string PendienteStatus = "pendiente";
 
-    public async Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default)
+    public Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default)
+        => SosRecipientDispatch.RunAsync(alert, "email", dedupe, dbContext, DispatchOneAsync, logger, ct);
+
+    private async Task<SosChannelStatus> DispatchOneAsync(SosAlert alert, SosAlertRecipient? recipient, CancellationToken ct)
     {
-        var dedupeKey = $"sos:email:{alert.Id}";
+        var dedupeKey = SosRecipientDispatch.Key("email", alert.Id, recipient);
 
         var existing = await dedupe.GetByKeyAsync(dedupeKey, ct);
         if (
@@ -44,7 +50,7 @@ public sealed class SosEmailDispatcher(
                 : SosChannelStatus.Enviado;
         }
 
-        var target = SosSupport.ExtractEmergencyContactEmail(alert.Patient?.EmergencyContact);
+        var target = recipient is null ? SosSupport.ExtractEmergencyContactEmail(alert.Patient?.EmergencyContact) : recipient.Email;
         SosChannelStatus finalStatus;
 
         if (string.IsNullOrWhiteSpace(target))
@@ -52,16 +58,21 @@ public sealed class SosEmailDispatcher(
             finalStatus = SosChannelStatus.NoConfigurado;
             logger.LogWarning("SOS correo sin destino configurado: alertId={AlertId}.", alert.Id);
         }
+        else if (!emailService.IsConfigured)
+        {
+            finalStatus = SosChannelStatus.NoConfigurado;
+            logger.LogWarning("SOS correo sin transporte configurado: alertId={AlertId}.", alert.Id);
+        }
         else
         {
-            var body = SosSmsTemplate.Build(alert);
+            var body = SosEmailTemplate.BuildHtml(alert, locationLinks?.CreateLink(alert));
             try
             {
                 await emailService.SendEmailAsync(
                     target,
-                    "🚨 SOS CoppAddresd — alerta de emergencia",
+                    SosEmailTemplate.Subject,
                     body,
-                    isHtml: false,
+                    isHtml: true,
                     cancellationToken: ct
                 );
                 finalStatus = SosChannelStatus.Enviado;
@@ -69,7 +80,7 @@ public sealed class SosEmailDispatcher(
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 finalStatus = SosChannelStatus.Fallido;
-                logger.LogError(ex, "SOS correo falló: alertId={AlertId}.", alert.Id);
+                logger.LogError("SOS correo falló: alertId={AlertId}, exceptionType={ExceptionType}.", alert.Id, ex.GetType().Name);
             }
         }
 

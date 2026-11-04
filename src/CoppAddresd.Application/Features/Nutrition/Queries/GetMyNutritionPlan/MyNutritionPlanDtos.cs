@@ -22,7 +22,11 @@ public sealed record MyNutritionPlanDto(
     string? Allergens,
     string? MealTiming,
     string Status,
-    List<MyNutritionPlanDayDto> Days
+    List<MyNutritionPlanDayDto> Days,
+    DateOnly? StartDate = null,
+    DateOnly? EndDate = null,
+    int? CurrentDay = null,
+    int? Revision = null
 );
 
 /// <summary>

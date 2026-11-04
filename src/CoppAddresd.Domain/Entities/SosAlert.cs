@@ -151,4 +151,5 @@ public sealed class SosAlert
     // Navigation
 
     public PatientProfile? Patient { get; set; }
+    public List<SosAlertRecipient> Recipients { get; set; } = [];
 }

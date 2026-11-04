@@ -28,6 +28,7 @@ public sealed class SosAlertConfiguration : IEntityTypeConfiguration<SosAlert>
         builder.ToTable("sos_alerts", "app");
 
         builder.HasKey(x => x.Id);
+        builder.Navigation(x => x.Recipients).AutoInclude();
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
 
         builder.Property(x => x.PatientId).HasColumnName("patient_id");

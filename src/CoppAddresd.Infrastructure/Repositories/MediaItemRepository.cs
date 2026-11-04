@@ -163,6 +163,17 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
             counts[mediaId] = counts.GetValueOrDefault(mediaId) + weekCount;
         }
 
+        // Las demostraciones también son referencias activas: eliminarlas no
+        // puede dejar al paciente sin la técnica que su profesional asignó.
+        var exerciseCounts = await dbContext.RoutineExercises.AsNoTracking()
+            .Where(e => e.MediaId != null).GroupBy(e => e.MediaId!.Value)
+            .Select(group => new { MediaId = group.Key, Count = group.Count() }).ToListAsync(ct);
+        var routineCounts = await dbContext.ExerciseRoutines.AsNoTracking()
+            .Where(r => r.MediaId != null).GroupBy(r => r.MediaId!.Value)
+            .Select(group => new { MediaId = group.Key, Count = group.Count() }).ToListAsync(ct);
+        foreach (var row in exerciseCounts.Concat(routineCounts))
+            counts[row.MediaId] = counts.GetValueOrDefault(row.MediaId) + row.Count;
+
         return new MediaUsageSnapshot(counts, new HashSet<Guid>(counts.Keys));
     }
 
@@ -203,12 +214,21 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
             .ToList();
 
         var enrollmentRefs = await QuerySnapshotMediaReferencesAsync(mediaId, ct);
+        var routineRefs = await dbContext.RoutineExercises.AsNoTracking()
+            .Where(e => e.MediaId == mediaId)
+            .Select(e => new MediaRoutineReferenceDto(e.RoutineId, e.Routine.Name, e.Id, e.Name))
+            .ToListAsync(ct);
+        routineRefs.AddRange(await dbContext.ExerciseRoutines.AsNoTracking()
+            .Where(r => r.MediaId == mediaId)
+            .Select(r => new MediaRoutineReferenceDto(r.Id, r.Name, null, null))
+            .ToListAsync(ct));
 
         return new MediaReferencesDto(
             mediaId,
-            templateRefs.Count + enrollmentRefs.Count,
+            templateRefs.Count + enrollmentRefs.Count + routineRefs.Count,
             templateRefs,
-            enrollmentRefs
+            enrollmentRefs,
+            routineRefs
         );
     }
 

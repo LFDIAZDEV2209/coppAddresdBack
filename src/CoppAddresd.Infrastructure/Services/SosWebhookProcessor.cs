@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,8 @@ public sealed class SosWebhookProcessor(
         string url,
         string signature,
         IReadOnlyDictionary<string, string> form,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Guid? recipientId = null
     ) =>
         ProcessAsync(
             alertId,
@@ -36,7 +38,8 @@ public sealed class SosWebhookProcessor(
             form,
             voiceSettings.Value.AuthToken,
             isVoice: true,
-            ct
+            ct,
+            recipientId
         );
 
     /// <inheritdoc />
@@ -45,7 +48,8 @@ public sealed class SosWebhookProcessor(
         string url,
         string signature,
         IReadOnlyDictionary<string, string> form,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        Guid? recipientId = null
     ) =>
         ProcessAsync(
             alertId,
@@ -54,7 +58,8 @@ public sealed class SosWebhookProcessor(
             form,
             smsSettings.Value.AuthToken,
             isVoice: false,
-            ct
+            ct,
+            recipientId
         );
 
     private async Task<SosWebhookOutcome> ProcessAsync(
@@ -64,7 +69,8 @@ public sealed class SosWebhookProcessor(
         IReadOnlyDictionary<string, string> form,
         string authToken,
         bool isVoice,
-        CancellationToken ct
+        CancellationToken ct,
+        Guid? recipientId
     )
     {
         if (
@@ -89,14 +95,21 @@ public sealed class SosWebhookProcessor(
             return SosWebhookOutcome.NotFound;
         }
 
-        var alert = await dbContext.SosAlerts.FirstOrDefaultAsync(
+        var stored = await dbContext.SosAlerts.FirstOrDefaultAsync(
             x => x.Id == alertId.Value,
             ct
         );
-        if (alert is null)
+        if (stored is null)
         {
             return SosWebhookOutcome.NotFound;
         }
+
+        var recipient = recipientId.HasValue
+            ? stored.Recipients.FirstOrDefault(r => r.Id == recipientId.Value)
+            : stored.Recipients.FirstOrDefault(r => r.ContactOrder == 0);
+        if (recipientId.HasValue && recipient is null) return SosWebhookOutcome.NotFound;
+        // El callback del respaldo nunca modifica el estado de entrega del principal.
+        var alert = recipient is { ContactOrder: > 0 } ? new SosAlert { Id = stored.Id } : stored;
 
         if (isVoice)
         {
@@ -136,6 +149,18 @@ public sealed class SosWebhookProcessor(
             alert.SmsUpdatedAt = DateTime.UtcNow;
         }
 
+        if (recipient is not null)
+        {
+            if (isVoice)
+            {
+                recipient.VoiceCallStatus = alert.VoiceCallStatus ?? recipient.VoiceCallStatus;
+                recipient.VoiceAnsweredBy = alert.VoiceAnsweredBy ?? recipient.VoiceAnsweredBy;
+                recipient.VoiceDurationSeconds = alert.VoiceDurationSeconds ?? recipient.VoiceDurationSeconds;
+                recipient.VoiceProviderCallId = alert.VoiceProviderCallId ?? recipient.VoiceProviderCallId;
+                recipient.VoiceUpdatedAt = DateTime.UtcNow;
+            }
+            else { recipient.SmsDeliveryStatus = alert.SmsDeliveryStatus ?? recipient.SmsDeliveryStatus; recipient.SmsUpdatedAt = DateTime.UtcNow; }
+        }
         await dbContext.SaveChangesAsync(ct);
 
         logger.LogInformation(

@@ -7,6 +7,9 @@ namespace CoppAddresd.Application.Interfaces;
 /// </summary>
 public interface IEmailService
 {
+    /// <summary>El transporte puede entregar correo real; las implementaciones log-only devuelven false.</summary>
+    bool IsConfigured => true;
+
     /// <summary>
     /// Sends an email using the specified email message details.
     /// </summary>

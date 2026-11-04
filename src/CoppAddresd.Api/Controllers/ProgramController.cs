@@ -183,7 +183,8 @@ public sealed class ProgramController(
                 request.Barriers,
                 request.ContentFingerprint,
                 ActorId: actorContext.UserId,
-                Vitals: request.Vitals
+                Vitals: request.Vitals,
+                Emotional: request.Emotional
             ),
             ct
         );
@@ -2004,6 +2005,20 @@ public sealed class ProgramController(
 
             var resolvedThumbnail = await ResolveMediaUrlAsync(task.Content.ThumbnailUrl, ct);
             var resolvedMedia = await ResolveMediaUrlAsync(task.Content.MediaUrl, ct);
+            IReadOnlyList<ExerciseItemDto>? exercises = null;
+            if (task.Content.Exercises is { } assignedExercises)
+            {
+                var resolvedExercises = new List<ExerciseItemDto>(assignedExercises.Count);
+                foreach (var exercise in assignedExercises)
+                {
+                    resolvedExercises.Add(exercise with
+                    {
+                        MediaUrl = await ResolveMediaUrlAsync(exercise.MediaUrl, ct),
+                        ThumbnailUrl = await ResolveMediaUrlAsync(exercise.ThumbnailUrl, ct),
+                    });
+                }
+                exercises = resolvedExercises;
+            }
 
             tasks.Add(
                 task with
@@ -2012,6 +2027,7 @@ public sealed class ProgramController(
                     {
                         ThumbnailUrl = resolvedThumbnail,
                         MediaUrl = resolvedMedia,
+                        Exercises = exercises,
                     },
                 }
             );
@@ -2086,7 +2102,8 @@ public sealed record CompleteTaskRequest(
     short? MoodScore,
     string? Barriers,
     string? ContentFingerprint,
-    VitalsPayload? Vitals = null
+    VitalsPayload? Vitals = null,
+    EmotionalAssessmentPayload? Emotional = null
 );
 
 /// <summary>

@@ -50,10 +50,13 @@ public sealed class SosWebhooksController(
 
         var alertIdRaw = Request.Query["alertId"].FirstOrDefault();
         var alertId = Guid.TryParse(alertIdRaw, out var parsed) ? parsed : (Guid?)null;
+        var recipientRaw = Request.Query["recipientId"].FirstOrDefault();
+        if (recipientRaw is not null && !Guid.TryParse(recipientRaw, out _)) return NotFound();
+        var recipientId = Guid.TryParse(recipientRaw, out var recipient) ? recipient : (Guid?)null;
 
         var outcome = isVoice
-            ? await processor.ProcessVoiceAsync(alertId, url, signature, form, ct)
-            : await processor.ProcessSmsAsync(alertId, url, signature, form, ct);
+            ? await processor.ProcessVoiceAsync(alertId, url, signature, form, ct, recipientId)
+            : await processor.ProcessSmsAsync(alertId, url, signature, form, ct, recipientId);
 
         return outcome switch
         {
