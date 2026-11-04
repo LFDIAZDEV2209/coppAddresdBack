@@ -1825,6 +1825,11 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
         await dbContext.SaveChangesAsync(ct);
     }
 
+    public Task<HealthTestAssignment?> GetAssignmentForSubmitAsync(Guid id, CancellationToken ct) =>
+        dbContext.HealthTestAssignments.FromSqlInterpolated(
+            $"SELECT * FROM app.health_test_assignments WHERE id = {id} FOR UPDATE")
+            .FirstOrDefaultAsync(ct);
+
     // --- Transacción multi-paso (submit) ---
 
     public async Task<int> SaveChangesAsync(CancellationToken ct = default) =>

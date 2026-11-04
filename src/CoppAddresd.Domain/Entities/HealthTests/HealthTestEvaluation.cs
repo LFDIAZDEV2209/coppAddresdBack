@@ -25,6 +25,9 @@ public sealed class HealthTestEvaluation
 
     public DateTime? CompletedAt { get; set; }
 
+    /// <summary>Clave opcional del submit aceptado; permite reproducirlo sin recalcular resultados.</summary>
+    public string? ClientRequestId { get; set; }
+
     public decimal? Score { get; set; }
 
     public decimal? ScorePercentage { get; set; }

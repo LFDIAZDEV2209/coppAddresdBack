@@ -53,14 +53,15 @@ namespace CoppAddresd.Infrastructure.Repositories;
 /// compute-on-read). Los parámetros son opcionales para no romper los call
 /// sites de tests que construyen el repositorio sin DI.
 /// </summary>
-public sealed class ProgramRepository(
+public sealed partial class ProgramRepository(
     AppDbContext dbContext,
     IConfiguration configuration,
     IHealthScoreCalculator? healthScoreCalculator = null,
     ITransformationScoreCalculator? transformationScoreCalculator = null,
     IGamifiedNotificationService? gamifiedNotificationService = null,
     IProgramContentResolver? programContentResolver = null,
-    IProgramAdaptationEngine? programAdaptationEngine = null
+    IProgramAdaptationEngine? programAdaptationEngine = null,
+    IProgramAssignmentNoticeRepository? assignmentNotices = null
 ) : IProgramRepository
 {
     private const int MaxFreezes = 3;
@@ -140,6 +141,11 @@ public sealed class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
+                _ = await dbContext.PatientProfiles.FromSqlInterpolated(
+                    $"SELECT * FROM app.patient_profiles WHERE id = {patientId} FOR UPDATE").SingleAsync(ct);
+                if (await dbContext.ProgramEnrollments.AsNoTracking().AnyAsync(e => e.PatientId == patientId
+                    && (e.Status == ProgramEnrollmentStatus.Active || e.Status == ProgramEnrollmentStatus.PendingAssignment), ct))
+                    throw new BusinessRuleViolationException("PATIENT_ALREADY_ENROLLED: el paciente ya tiene una inscripción activa o pendiente.");
                 var template =
                     await dbContext
                         .ProgramTemplates.AsNoTracking()
@@ -241,6 +247,41 @@ public sealed class ProgramRepository(
                 throw;
             }
         });
+    }
+
+    public async Task<ProgramEnrollment> CreatePendingAssignmentAsync(Guid patientId, string templateCode, CancellationToken ct)
+    {
+        if (dbContext.Database.CurrentTransaction is null)
+            throw new InvalidOperationException("La inscripción pendiente requiere la transacción del evento.");
+        var patient = await dbContext.PatientProfiles.AsNoTracking().SingleAsync(p => p.Id == patientId, ct);
+        var template = await dbContext.ProgramTemplates.AsNoTracking()
+            .SingleAsync(t => t.Code == templateCode && t.Status == TemplateStatus.Active, ct);
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(patient.Timezone);
+        var now = DateTime.UtcNow;
+        var start = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(now, zone));
+        var enrollment = new ProgramEnrollment
+        {
+            Id = Guid.NewGuid(), PatientId = patientId, TemplateId = template.Id,
+            Timezone = patient.Timezone, Status = ProgramEnrollmentStatus.PendingAssignment,
+            CurrentWeekNumber = 0, StartLocalDate = start, StartedAt = now, CreatedAt = now,
+        };
+        dbContext.ProgramEnrollments.Add(enrollment);
+        dbContext.StreakStates.Add(new StreakState { EnrollmentId = enrollment.Id });
+        for (var week = 1; week <= template.TotalWeeks; week++)
+        {
+            var date = start.AddDays((week - 1) * 7);
+            dbContext.ProgramWeeks.Add(new ProgramWeek
+            {
+                Id = Guid.NewGuid(), EnrollmentId = enrollment.Id, WeekNumber = week,
+                Status = ProgramWeekStatus.Locked, WeekStartDateLocal = date,
+                WeekEndDateLocal = date.AddDays(6), TasksSnapshot = EmptySnapshot(),
+                TemplateVersionAtStart = template.Version, CreatedAt = now,
+            });
+        }
+        await dbContext.HealthScores.Where(h => h.PatientId == patientId).ExecuteDeleteAsync(ct);
+        await dbContext.TransformationScores.Where(h => h.PatientId == patientId).ExecuteDeleteAsync(ct);
+        await dbContext.SaveChangesAsync(ct);
+        return enrollment;
     }
 
     public async Task<ProgramEnrollment> PauseAsync(

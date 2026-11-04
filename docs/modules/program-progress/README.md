@@ -1,4 +1,4 @@
-﻿# Programa del Paciente — Gamificación y Progreso (ANTARES / COPP-ADRESD)
+# Programa del Paciente — Gamificación y Progreso (ANTARES / COPP-ADRESD)
 
 Documento de contexto para el módulo de **Progreso del Programa** del paciente: el recorrido gamificado de 83 semanas que acompaña a los pacientes de obesidad, diabetes y riesgo cardiovascular de la aseguradora. Aquí encontrarás **qué hace, por qué lo hace y qué reglas lo rigen** desde la perspectiva del producto y del negocio. Los detalles técnicos (modelo de datos, endpoints, migraciones, tareas) viven en [`PLAN.md`](./PLAN.md), [`SPEC.md`](./SPEC.md) y [`TASKS.md`](./TASKS.md).
 
@@ -561,3 +561,170 @@ Estas preguntas siguen abiertas en el plan y se recomienda resolver antes de emp
 Antes solicitaba `int.MaxValue` al listado, cuyo límite de 100 truncaba el archivo.
 El orden incorpora `PatientId` como desempate. La regresión del handler verifica
 205 filas, propagación de todos los filtros y cancelación antes de consultar.
+
+### Asignación post-tests: catálogo y persistencia (paquete 1)
+
+`AddProgramAssignmentCatalog` incorpora `app.program_conditions`,
+`app.program_assignment_rules` y `app.program_assignment_recommendations`.
+El seed embebido usa `ON CONFLICT (code) DO NOTHING`: conserva cambios curados por DML.
+Hay cinco condiciones clínicas activas con fuentes de REQ-PAA-01 y dos filas de
+referencia no asignables, PHQ-9 y GAD-7 (`criteria.assignable=false`, inactivas),
+para narrativa y alertas. No existen reglas de asignación para estas escalas.
+Las cuatro reglas activas usan nombres exactos del catálogo nutricional y de rutinas;
+Movimiento deja al motor futuro la resolución de dificultad 1/2/3, sin inventar
+umbrales AMAF. La combinación hipertensión + apnea moderada/severa queda desactivada.
+
+La recomendación guarda `profile_snapshot` reproducible (D-03), `proposal` con
+`matchedRules`, versión del motor, narrativas ES/EN y autoría/fechas. El snapshot
+se captura una sola vez al generar la recomendación; no debe recalcularse al leer.
+El índice parcial permite una recomendación no desestimada por inscripción y
+conserva las desestimadas como historial. La FK compuesta impide cruzar pacientes.
+`PendingAssignment=5` expone y persiste `CurrentWeekNumber=0`; el único cambio a una
+tabla existente, autorizado, adapta su CHECK para exigir 0 en pendiente y >=1 en
+los demás estados. El default SQL de inscripciones manuales sigue siendo 1; EF
+usa sentinel -1 para enviar explícitamente el 0 pendiente. No se implementan aún
+hooks, handlers, motor, notificaciones ni cambios de índices de inscripciones.
+El paquete 2 serializa la inscripción manual y automática con un lock del perfil
+y comprueba Active/PendingAssignment dentro de la transacción, evitando carreras
+sin modificar el índice único existente.
+El rollback restaura el CHECK anterior; requiere que no queden inscripciones en
+semana 0 (este paquete no crea ninguna).
+
+### Asignación post-tests: hook, motor y narrativa (paquete 2)
+
+`Program:Assignment:Enabled` vale true por defecto en Development y false en
+otros entornos; un valor explícito prevalece y `IOptionsMonitor` permite recarga.
+El flag apagado omite consulta de completitud, publicación y consumidor.
+`SubmitEvaluationCommandHandler` es el nombre real del submit de tests en este
+repositorio. Publica `BatteryCompletedEvent` mediante MediatR después de que su
+transacción haga commit. El hook y el consumidor capturan fallos con Warning:
+una inscripción fallida nunca revierte la evaluación clínica. No hay reconciliador
+ni endpoints de asignación en este paquete.
+
+El request de submit admite `clientRequestId` opcional (100 caracteres). Se guarda
+en la evaluación; replay de la misma asignación y clave devuelve los resultados
+persistidos, sin scoring ni eventos duplicados. Sin clave o con otra clave se
+conserva el rechazo de la asignación completada. El submit bloquea la asignación;
+el evento bloquea el perfil antes de comprobar Active/PendingAssignment. La
+inscripción manual comparte ese lock. El evento crea inscripción, StreakState,
+semanas Locked sin snapshot horneado y recomendación `proposed` en una transacción
+propia con estrategia de ejecución Npgsql. `CurrentWeekNumber=0`; zona horaria de
+`patient_profiles.timezone`. `StartedAt` y fechas semanales son provisionales en
+pendiente; ApplyAssignment deberá fijar las fechas definitivas al activar.
+La migración `AddProgramAssignmentPatientContext` añade timezone (default IANA
+America/Bogota) y la clave opcional del submit; no altera resultados históricos.
+
+El snapshot congela resultados score/subscale/indicator, severidad, biometría num
+real de Historia Clínica (pregunta, valor, unidad y límites) y criterios/fuentes
+consultados. Sin valor o con unidad/rango incompatible no se activa la condición;
+IMC puede derivarse de peso kg y talla m/cm. No se interpretan opciones categóricas
+como glucosa medida ni se asume confirmación de diabetes. La matriz admite
+all/any, field/op/value, condición principal y `subscaleRanges` opcional
+(`testCode`, `code`, `min`, `max`). Gana la mayor prioridad, luego mayor peso y
+código ordinal ascendente, por dimensión de contenido. Targets inexistentes
+conservan el default de plantilla. Los planes deben ser templates Active y las
+rutinas Active. `matchedRules` conserva id/código, criterio, fuente, prioridad,
+peso, nombres y qué dimensión ganó; los IDs del contenido se resuelven en runtime.
+
+Movimiento usa suma de subescalas / suma de máximos publicados. Cortes operativos
+aprobados: primer tercio → Caminata Activa/Flexibilidad y Movilidad; segundo →
+Full Body/Core; tercero → Cardio HIIT. Se configuran con
+`MovementLowMaxPercentage` y `MovementMediumMaxPercentage`; no son umbrales de
+una guía clínica. Sin máximos no se inventa intensidad. La propuesta registra
+la política usada. Las condiciones de seguridad conocidas limitan el ejercicio;
+PHQ-9/GAD-7 siguen siendo referencias, sin asignación de contenido.
+
+Narrativa (3.3): canal acotado de IDs post-commit y `ProgramNarrativeWorker` con
+reintentos limitados (default 3). `ProgramNarrativeClient` llama a
+`POST /internal/program/assignment-narrative` con X-Internal-Key y políticas Polly
+compartidas (3 retries exponenciales y circuit breaker tras 5 fallos/30 s).
+Contrato alineado con `ai-service/app/schemas/program_narrative.py`: entrada
+`{profile_snapshot, proposal, language:"es", source_refs:[]}`; salida
+`{narratives:{es,en}}`. Las fuentes proceden de condiciones activas del snapshot,
+se recortan espacios y se excluyen vacíos, duplicados y referencias de más de
+500 caracteres; máximo 100, o `[]` si no hay. Ambas narrativas son obligatorias,
+de hasta 2000 caracteres. El cliente adapta el wrapper a ES/EN para persistir;
+ModelName queda null porque el servicio no lo publica.
+La respuesta no puede modificar contenido. Se pasa a pending-narrative al
+procesar y se vuelve a proposed al guardar ambos idiomas; tras fallo definitivo
+permanece pending-narrative con snapshot/propuesta íntegros. Una decisión clínica
+concurrente no se reabre. El canal es en memoria: una caída del proceso puede
+perder trabajo encolado; la propuesta es durable, pero la recuperación tras
+reinicio y la regeneración requieren el paquete posterior. Si el canal está
+lleno, se conserva proposed y se registra Warning. No se implementan aquí
+jobs de reconciliación, fallback, ApplyAssignment, endpoints ERP ni notificaciones.
+
+Verificación: integración con commits reales en BD aislada (9 tests, replays
+concurrentes, rollback tras crear enrollment y recuperación concurrente),
+unit tests de flags/motor/fallos y simulación HTTP local de Postman (200/503).
+La simulación verifica el contrato propuesto; el endpoint Python 3.1 no se ha
+implementado ni validado en este paquete. No se agregan KPIs ni agregaciones:
+se evaluó CQRS y no corresponde introducir otro rollup para estas operaciones.
+
+Consulta exacta de completitud (también constante `ProgramAssignmentRepository.CompletedBatterySql`):
+
+```sql
+SELECT ba.id AS "Value"
+FROM app.health_test_battery_assignments ba
+JOIN app.health_test_batteries b ON b.id = ba.battery_id
+WHERE ba.patient_id = @patientId AND ba.id = @batteryAssignmentId
+  AND ba.status <> 'cancelled'
+  AND b.code = 'bateria-inicial' AND b.is_active AND b.auto_assign_on_patient_create
+  AND EXISTS (SELECT 1 FROM app.health_test_battery_items i
+              WHERE i.battery_id = b.id AND i.is_required)
+  AND NOT EXISTS (
+      SELECT 1 FROM app.health_test_battery_items i
+      WHERE i.battery_id = b.id AND i.is_required
+        AND NOT EXISTS (
+            SELECT 1 FROM app.health_test_assignments a
+            JOIN app.health_test_versions v ON v.id = a.version_id
+            JOIN app.health_test_evaluations e ON e.assignment_id = a.id
+            WHERE a.battery_assignment_id = ba.id AND a.patient_id = ba.patient_id
+              AND v.instrument_id = i.instrument_id
+              AND (i.version_id IS NULL OR i.version_id = a.version_id)
+              AND a.status = 'completed' AND e.status = 'completed'
+              AND e.patient_id = ba.patient_id AND e.version_id = a.version_id))
+```
+
+### Asignación post-tests: cola ERP, activación, fallback y avisos (paquete 3)
+
+Implementadas 2.6, 2.7, 2.8 y 2.10. Contratos REST, alcances, caché, transacciones,
+reintentos y evidencia: [Asignación post-tests — paquete 3](./assignments.md).
+La migración aditiva `AddProgramAssignmentRecoveryAndNotices` persiste claims e
+inbox/outbox bilingüe. No modifica la UI del ERP ni los PUT semanales existentes.
+
+### Desestimar una recomendación desde la ficha ERP
+
+`POST /api/v1/program/assignments/{id}/dismiss` exige Program.Enroll y el mismo
+alcance anti-IDOR de ficha/apply. Cambia solo propuestas pendientes a dismissed,
+con autor y fecha, y devuelve la ficha actualizada. Replay 200 sin cambios;
+la inscripción queda PendingAssignment y el fallback sigue excluyendo dismissed.
+Contrato completo: [asignación post-tests](./assignments.md).
+
+### Fixture local de asignación (solo Development)
+
+Ejecutar `./scripts/seed_program_assignment_qa.ps1 -Environment Development` con
+el contenedor local `coppAddresd` en ejecución. El wrapper usa exclusivamente
+`docker exec`, usuario `app_user`, BD `coppaddresd`; rechaza Production. El SQL
+`scripts/seed_program_assignment_qa.sql` exige además `qa_environment=Development`,
+la identidad del paciente de QA y conexión por socket local. No forma parte de
+migraciones ni se ejecuta al arrancar servicios.
+
+Para `PRUEBA NOMBRE` (`b6928024-89b4-4838-b57d-0e9519bf8eb5`) crea una inscripción
+PendingAssignment con semana actual cero, racha vacía y 12 semanas Locked con
+snapshot `[]`. Lee la batería inicial completa y las últimas evaluaciones de
+cada instrumento; calcula los máximos desde las opciones y usa únicamente
+`value_text` numéricos de historia clínica. Copia el contrato camelCase del motor,
+las reglas activas y sus fuentes; resuelve contenido por nombre. La recomendación
+queda pending-narrative con `engine_version=assignment-v1`. Una repetición conserva
+IDs, timestamps, snapshot, propuesta y decisiones clínicas ya existentes.
+
+Este fixture permite explícitamente una inscripción pendiente adicional al
+programa activo preexistente del paciente, que conserva intacto. Es un escenario
+de QA de la cola/ficha: activar la pendiente mientras siga otro programa activo
+está sujeto a las restricciones normales del módulo. No modifica evaluaciones,
+no envía avisos y no llama a IA. El SQL no puede encolar el Channel en memoria:
+el worker recupera ahora la deuda de narrativa desde PostgreSQL al arrancar y por
+lotes, sujeto al flag y al debounce. La ficha puede solicitar una regeneración
+explícita con `POST /api/v1/program/assignments/{id}/regenerate-narrative`.
+Contrato y filtros: [asignación post-tests](./assignments.md#recuperación-y-regeneración-de-narrativa-qa-2026-11-04).

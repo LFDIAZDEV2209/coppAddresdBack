@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Configuration;
@@ -25,6 +26,15 @@ namespace CoppAddresd.Api.Extensions;
 
 public static class ApplicationServiceExtensions
 {
+    /// <summary>Default por entorno, override explícito y recarga del flag sin redeploy.</summary>
+    public static IServiceCollection AddProgramAssignmentSettings(this IServiceCollection services,
+        IConfiguration configuration, bool isDevelopment)
+    {
+        services.AddOptions<ProgramAssignmentSettings>().Configure(o => o.Enabled = isDevelopment)
+            .Bind(configuration.GetSection(ProgramAssignmentSettings.SectionName));
+        return services;
+    }
+
     public const string CorsPolicyName = "AllowAll";
 
     public static IServiceCollection AddCoppAddresdApplicationServices(
@@ -102,6 +112,23 @@ public static class ApplicationServiceExtensions
 
         services
             .AddHttpClient<IFoodAiClient, FoodAiClient>()
+            .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
+
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        services.AddScoped<IProgramAssignmentNotifier,CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramAssignmentNotifier>();
+        services.AddScoped<CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramAssignmentJob>();
+        services.AddSingleton<CoppAddresd.Application.Features.ProgramProgress.Assignment.AssignmentEngine>();
+        services.AddScoped<CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramNarrativeProcessor>();
+        services.AddScoped<CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramNarrativeRecovery>();
+        services.AddSingleton<IProgramNarrativeQueue, ProgramNarrativeQueue>();
+        services.AddSingleton<ProgramNarrativeResilience>();
+        services.AddHostedService<ProgramNarrativeWorker>();
+        services.AddHttpClient<IProgramNarrativeClient, ProgramNarrativeClient>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+            client.BaseAddress = new Uri(settings.BaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+        }).AddPolicyHandler((sp, _) => sp.GetRequiredService<ProgramNarrativeResilience>().Policy)
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddScoped<IImageStorage, LocalImageStorage>();

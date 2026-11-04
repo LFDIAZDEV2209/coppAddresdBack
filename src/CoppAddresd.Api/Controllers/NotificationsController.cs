@@ -102,6 +102,17 @@ public class NotificationsController(IMediator mediator) : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Inbox ERP por identidad del JWT; incluye copy ES/EN y enlace a la ficha.</summary>
+    [HttpGet("inbox")]
+    [CoppAddresd.Api.Authorization.RequirePermission("Program.Enroll")]
+    public async Task<ActionResult<CoppAddresd.Application.Features.ProgramProgress.Assignment.AssignmentInboxPage>> Inbox(
+        [FromServices] CoppAddresd.Application.Interfaces.IProgramAssignmentNoticeRepository notices,
+        [FromQuery] int page=1,[FromQuery] int pageSize=20,CancellationToken ct=default)
+    {
+        if (CurrentUserId() is not Guid userId) return Unauthorized();
+        return Ok(await notices.ListInboxAsync(userId,Math.Clamp(page,1,1_000_000),Math.Clamp(pageSize,1,100),ct));
+    }
+
     private Guid? CurrentUserId()
     {
         var value = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

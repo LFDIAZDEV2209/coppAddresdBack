@@ -16,7 +16,7 @@ public sealed class ProgramEnrollmentConfiguration : IEntityTypeConfiguration<Pr
     {
         builder.ToTable("program_enrollments", "app", t =>
         {
-            t.HasCheckConstraint("ck_program_enrollments_current_week_positive", "\"current_week_number\" >= 1");
+            t.HasCheckConstraint("ck_program_enrollments_current_week_positive", "(\"status\" = 'PendingAssignment' AND \"current_week_number\" = 0) OR (\"status\" <> 'PendingAssignment' AND \"current_week_number\" >= 1)");
         });
 
         builder.HasKey(x => x.Id);
@@ -52,6 +52,8 @@ public sealed class ProgramEnrollmentConfiguration : IEntityTypeConfiguration<Pr
 
         builder.Property(x => x.CurrentWeekNumber)
             .HasColumnName("current_week_number")
+            .HasSentinel(-1)
+            .UsePropertyAccessMode(PropertyAccessMode.Property)
             .HasDefaultValue(1);
 
         builder.Property(x => x.CompletedAt)

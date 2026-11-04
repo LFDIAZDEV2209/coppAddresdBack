@@ -1,0 +1,7 @@
+# Solo QA local; contrato canónico en ai-service/app/schemas/program_narrative.py.
+simulation: program-assignment-narrative
+routing: header
+mocks:
+  - name: program-assignment-narrative
+    routeKey: narrative
+    path: postman/mocks/program-assignment-narrative

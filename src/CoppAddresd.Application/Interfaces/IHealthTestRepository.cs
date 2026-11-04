@@ -101,6 +101,10 @@ public interface IHealthTestRepository
     Task DeleteBatteryItemsByBatteryIdAsync(Guid batteryId, CancellationToken ct = default);
 
     // --- Asignaciones ---
+    /// <summary>Bloquea la asignación dentro de la transacción del submit para serializar replays concurrentes.</summary>
+    Task<HealthTestAssignment?> GetAssignmentForSubmitAsync(Guid id, CancellationToken ct)
+        => GetAssignmentByIdAsync(id, ct);
+
     Task<HealthTestAssignment?> GetAssignmentByIdAsync(Guid id, CancellationToken ct = default);
     Task<HealthTestAssignment?> GetAssignmentWithDetailsAsync(
         Guid id,

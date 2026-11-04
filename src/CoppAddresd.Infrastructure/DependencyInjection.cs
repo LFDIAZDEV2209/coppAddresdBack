@@ -68,6 +68,9 @@ public static class DependencyInjection
         services.AddScoped<IWellnessRepository, WellnessRepository>();
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
+        services.AddScoped<IProgramAssignmentRepository, ProgramAssignmentRepository>();
+        services.AddScoped<IProgramAssignmentOperationsRepository, ProgramAssignmentOperationsRepository>();
+        services.AddScoped<IProgramAssignmentNoticeRepository, ProgramAssignmentNoticeRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
         services.AddScoped<IHealthTestNotificationRepository, HealthTestNotificationRepository>();
         services.AddSingleton<IHealthTestTemplateRenderer, HealthTestTemplateRenderer>();

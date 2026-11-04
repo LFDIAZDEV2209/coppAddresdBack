@@ -430,3 +430,17 @@ una API anterior no aporta fecha, sin inventar cero días. La clave de caché
 ### Corrección QA 2026-10-13
 
 Si un instrumento no tiene rangos de interpretación activos, `ScoreRangeEngine` devuelve «Sin clasificar» y severidad nula, nunca riesgo bajo por defecto. El ERP debe conservar ese estado incluso para resultados históricos cuya etiqueta indique ausencia de clasificación. La cobertura usa asignaciones, no el universo de pacientes; las evaluaciones pendientes no deben rotularse como pacientes pendientes.
+
+### Cierre de batería inicial y asignación del programa (paquete 2)
+
+Tras confirmar el submit, `SubmitEvaluationCommandHandler` consulta los ítems
+required de `bateria-inicial` activa con auto_assign_on_patient_create=true.
+La completitud exige asignación y evaluación completed para cada instrumento,
+dentro de la misma asignación de batería y paciente; no usa contador ni el estado
+resumido del padre. Si existe al menos un requerido y ninguno falta, publica
+`BatteryCompletedEvent` en la request, fuera de la transacción clínica.
+El flag Program:Assignment:Enabled apaga el hook. Los fallos son best-effort y no
+alteran la respuesta del submit. `clientRequestId` opcional permite replay de la
+evaluación completada, sin recalcular ni duplicar resultados. Los resultados de
+las evaluaciones existentes conservan su versión y su alcance. Detalles y SQL:
+[Asignación post-tests](../program-progress/README.md).

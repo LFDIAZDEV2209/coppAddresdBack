@@ -2385,6 +2385,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("assignment_id");
 
+                    b.Property<string>("ClientRequestId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("client_request_id");
+
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("completed_at");
@@ -5066,6 +5071,14 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("surgery_history");
 
+                    b.Property<string>("Timezone")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasDefaultValue("America/Bogota")
+                        .HasColumnName("timezone");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("updated_at");
@@ -6842,6 +6855,361 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("nutrition_intake_logs", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentNotice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<bool>("ChatCompleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("chat_completed");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("DeliveredAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("delivered_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("lease_until");
+
+                    b.Property<string>("Link")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("link");
+
+                    b.Property<string>("MessageEn")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message_en");
+
+                    b.Property<string>("MessageEs")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("message_es");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<bool>("PushCompleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("push_completed");
+
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("read_at");
+
+                    b.Property<Guid>("RecommendationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recommendation_id");
+
+                    b.Property<string>("TitleEn")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title_en");
+
+                    b.Property<string>("TitleEs")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title_es");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasDatabaseName("ix_program_assignment_notices_pending")
+                        .HasFilter("delivered_at IS NULL");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_program_assignment_notices_user_created");
+
+                    b.HasIndex("RecommendationId", "UserId", "Kind")
+                        .IsUnique()
+                        .HasDatabaseName("uq_program_assignment_notices_rec_user_kind");
+
+                    b.ToTable("program_assignment_notices", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentRecommendation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<DateTime?>("AppliedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("applied_at");
+
+                    b.Property<Guid?>("AppliedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("applied_by");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<DateTime?>("DismissedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("dismissed_at");
+
+                    b.Property<Guid?>("DismissedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dismissed_by");
+
+                    b.Property<string>("EngineVersion")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("engine_version");
+
+                    b.Property<Guid>("EnrollmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("enrollment_id");
+
+                    b.Property<string>("ModelName")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("model_name");
+
+                    b.Property<string>("NarrativeEn")
+                        .HasColumnType("text")
+                        .HasColumnName("narrative_en");
+
+                    b.Property<string>("NarrativeEs")
+                        .HasColumnType("text")
+                        .HasColumnName("narrative_es");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("ProfileSnapshot")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("profile_snapshot");
+
+                    b.Property<string>("Proposal")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("proposal");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasDefaultValue("proposed")
+                        .HasColumnName("state");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EnrollmentId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_program_assignment_recommendations_enrollment")
+                        .HasFilter("state <> 'dismissed'");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_program_assignment_recommendations_patient_id");
+
+                    b.HasIndex("EnrollmentId", "PatientId")
+                        .HasDatabaseName("ix_program_assignment_recommendations_enrollment_patient");
+
+                    b.HasIndex("State", "CreatedAt")
+                        .HasDatabaseName("ix_program_assignment_recommendations_state_created_at");
+
+                    b.ToTable("program_assignment_recommendations", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_program_assignment_recommendations_state", "state IN ('proposed', 'pending-narrative', 'applied', 'edited', 'dismissed', 'fallback')");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentRecovery", b =>
+                {
+                    b.Property<Guid>("BatteryAssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("battery_assignment_id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("BatteryAssignmentId");
+
+                    b.ToTable("program_assignment_recoveries", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("ConditionCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("condition_code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Criteria")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("criteria");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer")
+                        .HasColumnName("priority");
+
+                    b.Property<string>("Target")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("target");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<decimal>("Weight")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(10, 4)
+                        .HasColumnType("numeric(10,4)")
+                        .HasDefaultValue(1m)
+                        .HasColumnName("weight");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_program_assignment_rules_code");
+
+                    b.HasIndex("ConditionCode")
+                        .HasDatabaseName("ix_program_assignment_rules_condition_code");
+
+                    b.ToTable("program_assignment_rules", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramCondition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("Criteria")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("criteria");
+
+                    b.Property<string>("Icd10Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("icd10_code");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("NameEn")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name_en");
+
+                    b.Property<string>("NameEs")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name_es");
+
+                    b.Property<string>("SourceRef")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("source_ref");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasAlternateKey("Code")
+                        .HasName("uq_program_conditions_code");
+
+                    b.ToTable("program_conditions", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>
                 {
                     b.Property<Guid>("Id")
@@ -7071,7 +7439,7 @@ namespace CoppAddresd.Infrastructure.Migrations
 
                     b.ToTable("program_enrollments", "app", t =>
                         {
-                            t.HasCheckConstraint("ck_program_enrollments_current_week_positive", "\"current_week_number\" >= 1");
+                            t.HasCheckConstraint("ck_program_enrollments_current_week_positive", "(\"status\" = 'PendingAssignment' AND \"current_week_number\" = 0) OR (\"status\" <> 'PendingAssignment' AND \"current_week_number\" >= 1)");
                         });
                 });
 
@@ -9773,6 +10141,51 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("HabitCheck");
 
                     b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentNotice", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentRecommendation", null)
+                        .WithMany()
+                        .HasForeignKey("RecommendationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentRecommendation", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramEnrollment", "Enrollment")
+                        .WithMany()
+                        .HasForeignKey("EnrollmentId", "PatientId")
+                        .HasPrincipalKey("Id", "PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Enrollment");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentRecovery", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.HealthTests.HealthTestBatteryAssignment", null)
+                        .WithMany()
+                        .HasForeignKey("BatteryAssignmentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramAssignmentRule", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.ProgramProgress.ProgramCondition", null)
+                        .WithMany()
+                        .HasForeignKey("ConditionCode")
+                        .HasPrincipalKey("Code")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.ProgramProgress.ProgramControl", b =>

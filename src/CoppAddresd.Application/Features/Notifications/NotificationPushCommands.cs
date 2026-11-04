@@ -14,7 +14,10 @@ public record SendPushNotificationCommand(
     Guid UserId,
     string Title,
     string Body,
-    string? AgentTypeId = null
+    string? AgentTypeId = null,
+    bool SkipPush = false,
+    bool SkipChat = false,
+    IReadOnlyDictionary<string,string>? Data = null
 ) : IRequest<SendPushNotificationResult>;
 
 /// <summary>Resumen del envío de la notificación push.</summary>
@@ -46,7 +49,7 @@ public sealed class SendPushNotificationCommandHandler(
         CancellationToken ct
     )
     {
-        var tokens = await repository.GetByUserIdAsync(request.UserId, ct);
+        var tokens = request.SkipPush ? [] : await repository.GetByUserIdAsync(request.UserId, ct);
         if (tokens.Count == 0)
         {
             logger.LogInformation(
@@ -62,6 +65,8 @@ public sealed class SendPushNotificationCommandHandler(
             ["thread_id"] = $"proactive-{request.UserId}",
             ["type"] = "chat",
         };
+
+        if (request.Data is not null) foreach (var item in request.Data) data[item.Key]=item.Value;
 
         var agentTypeId = string.IsNullOrWhiteSpace(request.AgentTypeId)
             ? "base"
@@ -124,6 +129,8 @@ public sealed class SendPushNotificationCommandHandler(
         string? threadId = null;
         try
         {
+            if (!request.SkipChat)
+            {
             var proactive = await aiService.ProactiveMessageAsync(
                 request.UserId,
                 request.Body,
@@ -132,6 +139,7 @@ public sealed class SendPushNotificationCommandHandler(
                 ct
             );
             threadId = proactive.ThreadId;
+            }
         }
         catch (Exception ex)
         {

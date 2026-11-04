@@ -1,0 +1,11 @@
+version: 1
+id: 09b187ca-f78b-43b1-b8c8-d2d2089d5382
+name: program-assignment-narrative
+slug: program-assignment-narrative
+protocol: http
+port: 4500
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true
