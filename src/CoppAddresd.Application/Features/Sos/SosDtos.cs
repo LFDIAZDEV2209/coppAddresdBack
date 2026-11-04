@@ -31,7 +31,8 @@ public record SosAlertDto(
     string? VoiceCallStatus = null,
     string? VoiceAnsweredBy = null,
     int? VoiceDurationSeconds = null,
-    string? EmailChannelStatus = null
+    string? EmailChannelStatus = null,
+    IReadOnlyList<SosRecipientDto>? Recipients = null
 )
 {
     public static SosAlertDto FromEntity(SosAlert alert)
@@ -59,7 +60,11 @@ public record SosAlertDto(
             alert.VoiceCallStatus,
             alert.VoiceAnsweredBy,
             alert.VoiceDurationSeconds,
-            alert.EmailChannelStatus.ToString()
+            alert.EmailChannelStatus.ToString(),
+            Recipients: alert.Recipients.OrderBy(r => r.ContactOrder).Select(r => new SosRecipientDto(
+                r.Id, r.ContactOrder, r.PhoneE164 is null ? null : MaskPhone(r.PhoneE164),
+                r.SmsChannelStatus.ToString(), r.VoiceChannelStatus.ToString(), r.EmailChannelStatus,
+                r.SmsDeliveryStatus, r.VoiceCallStatus)).ToArray()
         );
     }
 
@@ -79,6 +84,10 @@ public record SosAlertDto(
         return "+" + new string('*', digits.Length - 4) + digits[^4..];
     }
 }
+
+public sealed record SosRecipientDto(Guid Id, int ContactOrder, string? MaskedPhone,
+    string SmsChannelStatus, string VoiceChannelStatus, string? EmailChannelStatus,
+    string? SmsDeliveryStatus, string? VoiceCallStatus);
 
 /// <summary>
 /// Signos vitales reportados por la app al activar el SOS. Opcionales:

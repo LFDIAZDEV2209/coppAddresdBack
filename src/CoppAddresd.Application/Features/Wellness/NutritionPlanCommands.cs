@@ -10,7 +10,7 @@ namespace CoppAddresd.Application.Features.Wellness;
 
 public record ListNutritionPlansQuery(
     bool? IsTemplate = null, string? Search = null, string? Status = null,
-    Guid? PatientId = null, int Page = 1, int PageSize = 20)
+    Guid? PatientId = null, int Page = 1, int PageSize = 20, Guid? ProfessionalId = null)
     : IRequest<PaginatedNutritionPlanResult>;
 
 public sealed class ListNutritionPlansQueryHandler(
@@ -20,7 +20,7 @@ public sealed class ListNutritionPlansQueryHandler(
     {
         var (items, total) = await repository.ListPlansAsync(
             request.IsTemplate, request.Search, request.Status, request.PatientId,
-            Math.Max(1, request.Page), Math.Clamp(request.PageSize, 1, 100), ct);
+            Math.Max(1, request.Page), Math.Clamp(request.PageSize, 1, 100), request.ProfessionalId, ct);
 
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)Math.Clamp(request.PageSize, 1, 100)));
 
@@ -63,12 +63,15 @@ public sealed class CreateNutritionPlanCommandHandler(
             Name = r.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(r.Description) ? null : r.Description.Trim(),
             TargetCondition = string.IsNullOrWhiteSpace(r.TargetCondition) ? null : r.TargetCondition.Trim(),
-            DurationDays = r.DurationDays,
+            DurationDays = r.IsTemplate ? r.DurationDays : 30,
             DailyCalorieTarget = r.DailyCalorieTarget,
+            DailyProteinTarget = r.DailyProteinTarget, DailyCarbsTarget = r.DailyCarbsTarget,
+            DailyFatTarget = r.DailyFatTarget, DailyFiberTarget = r.DailyFiberTarget,
+            Allergens = r.Allergens, MealTiming = r.MealTiming,
             IsTemplate = r.IsTemplate,
-            PatientId = r.PatientId,
+            PatientId = r.IsTemplate ? null : r.PatientId,
             SourcePlanId = r.SourcePlanId,
-            Status = r.Status,
+            Status = r.IsTemplate ? r.Status : NutritionPlanStatus.Draft,
             CreatedBy = request.CreatedBy,
             CreatedAt = DateTime.UtcNow,
         };
@@ -83,7 +86,8 @@ public sealed class CreateNutritionPlanCommandHandler(
                 MealType = d.MealType,
                 Description = string.IsNullOrWhiteSpace(d.Description) ? null : d.Description.Trim(),
                 Foods = string.IsNullOrWhiteSpace(d.Foods) ? null : d.Foods.Trim(),
-                Calories = d.Calories,
+                Calories = d.Calories, ProteinG = d.ProteinG, CarbsG = d.CarbsG,
+                FatG = d.FatG, FiberG = d.FiberG, WaterMl = d.WaterMl,
                 Notes = string.IsNullOrWhiteSpace(d.Notes) ? null : d.Notes.Trim(),
                 SortOrder = d.SortOrder,
                 MediaId = d.MediaId,
@@ -91,44 +95,21 @@ public sealed class CreateNutritionPlanCommandHandler(
             }).ToList();
         }
 
-        // Modo personalizado: el plan se asigna al paciente en la misma
-        // transacción que su creación (nunca un plan sin asignación).
-        NutritionPlanAssignment? assignment = null;
-
-        if (r.PatientId is not null && !r.IsTemplate)
-        {
-            assignment = new NutritionPlanAssignment
-            {
-                Id = Guid.NewGuid(),
-                PatientId = r.PatientId.Value,
-                PlanId = plan.Id,
-                StartDate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc),
-                EndDate = null,
-                Status = AssignmentStatus.Active,
-                Notes = null,
-                CreatedBy = request.CreatedBy,
-                CreatedAt = DateTime.UtcNow,
-            };
-
-            await repository.AddPlanWithAssignmentAsync(plan, assignment, ct);
-        }
-        else
-        {
-            await repository.AddPlanAsync(plan, ct);
-        }
+        // El borrador nunca crea una asignación: solo la aprobación clínica publica el ciclo.
+        await repository.AddPlanAsync(plan, ct);
 
         logger.LogInformation("NutritionPlan creado: {Id} ({Name})", plan.Id, plan.Name);
 
         var created = await repository.GetPlanByIdAsync(plan.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer el plan creado.");
 
-        return NutritionPlanDto.FromEntity(created, assignment?.Id);
+        return NutritionPlanDto.FromEntity(created);
     }
 }
 
 // --- Update Nutrition Plan ---
 
-public record UpdateNutritionPlanCommand(Guid Id, UpdateNutritionPlanRequest Request)
+public record UpdateNutritionPlanCommand(Guid Id, UpdateNutritionPlanRequest Request, Guid? UpdatedBy = null)
     : IRequest<NutritionPlanDto?>;
 
 public sealed class UpdateNutritionPlanCommandHandler(
@@ -141,12 +122,27 @@ public sealed class UpdateNutritionPlanCommandHandler(
         if (plan is null) return null;
 
         var r = request.Request;
+        if (!plan.IsTemplate && (r.Revision is null || r.Revision != plan.Revision))
+            throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("El plan cambió. Actualiza y revisa su última versión.");
+        if (plan.GenerationStatus is "queued" or "generating")
+            throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("Espera a que termine la generación del borrador.");
+        return await repository.ExecuteInTransactionAsync(async transactionCt =>
+        {
+        plan.UpdatedBy = request.UpdatedBy;
+        plan.Revision++;
+        plan.ReviewStatus = "pending_review";
+        plan.ApprovedAt = null;
+        plan.ApprovedBy = null;
+        if (plan.GenerationStatus == "failed") plan.GenerationStatus = null;
         plan.Name = r.Name.Trim();
         plan.Description = string.IsNullOrWhiteSpace(r.Description) ? null : r.Description.Trim();
         plan.TargetCondition = string.IsNullOrWhiteSpace(r.TargetCondition) ? null : r.TargetCondition.Trim();
-        plan.DurationDays = r.DurationDays;
+        plan.DurationDays = plan.IsTemplate ? r.DurationDays : 30;
         plan.DailyCalorieTarget = r.DailyCalorieTarget;
-        plan.Status = r.Status;
+        plan.DailyProteinTarget = r.DailyProteinTarget; plan.DailyCarbsTarget = r.DailyCarbsTarget;
+        plan.DailyFatTarget = r.DailyFatTarget; plan.DailyFiberTarget = r.DailyFiberTarget;
+        plan.Allergens = r.Allergens; plan.MealTiming = r.MealTiming;
+        plan.Status = plan.IsTemplate ? r.Status : NutritionPlanStatus.Draft;
         plan.UpdatedAt = DateTime.UtcNow;
 
         // Reemplazar días si se proporcionan
@@ -163,7 +159,8 @@ public sealed class UpdateNutritionPlanCommandHandler(
                 MealType = d.MealType,
                 Description = string.IsNullOrWhiteSpace(d.Description) ? null : d.Description.Trim(),
                 Foods = string.IsNullOrWhiteSpace(d.Foods) ? null : d.Foods.Trim(),
-                Calories = d.Calories,
+                Calories = d.Calories, ProteinG = d.ProteinG, CarbsG = d.CarbsG,
+                FatG = d.FatG, FiberG = d.FiberG, WaterMl = d.WaterMl,
                 Notes = string.IsNullOrWhiteSpace(d.Notes) ? null : d.Notes.Trim(),
                 SortOrder = d.SortOrder,
                 MediaId = d.MediaId,
@@ -181,12 +178,13 @@ public sealed class UpdateNutritionPlanCommandHandler(
             ?? throw new InvalidOperationException("No se pudo leer el plan actualizado.");
 
         return NutritionPlanDto.FromEntity(updated);
+        }, ct);
     }
 }
 
 // --- Delete Nutrition Plan ---
 
-public record DeleteNutritionPlanCommand(Guid Id) : IRequest<bool>;
+public record DeleteNutritionPlanCommand(Guid Id, Guid? DeletedBy = null) : IRequest<bool>;
 
 public sealed class DeleteNutritionPlanCommandHandler(
     IWellnessRepository repository,
@@ -197,6 +195,7 @@ public sealed class DeleteNutritionPlanCommandHandler(
         var plan = await repository.GetPlanByIdAsync(request.Id, ct);
         if (plan is null) return false;
 
+        plan.UpdatedBy = request.DeletedBy;
         await repository.DeletePlanAsync(plan, ct);
 
         logger.LogInformation("NutritionPlan eliminado: {Id}", request.Id);
@@ -224,12 +223,15 @@ public sealed class CloneNutritionPlanCommandHandler(
             Name = source.Name,
             Description = source.Description,
             TargetCondition = source.TargetCondition,
-            DurationDays = source.DurationDays,
+            DurationDays = request.PatientId.HasValue ? 30 : source.DurationDays,
             DailyCalorieTarget = source.DailyCalorieTarget,
+            DailyProteinTarget = source.DailyProteinTarget, DailyCarbsTarget = source.DailyCarbsTarget,
+            DailyFatTarget = source.DailyFatTarget, DailyFiberTarget = source.DailyFiberTarget,
+            Allergens = source.Allergens, MealTiming = source.MealTiming,
             IsTemplate = false,
             PatientId = request.PatientId,
             SourcePlanId = source.Id,
-            Status = NutritionPlanStatus.Active,
+            Status = NutritionPlanStatus.Draft,
             CreatedBy = request.CreatedBy,
             CreatedAt = DateTime.UtcNow,
             Days = source.Days.Select(d => new NutritionPlanDay
@@ -240,7 +242,8 @@ public sealed class CloneNutritionPlanCommandHandler(
                 MealType = d.MealType,
                 Description = d.Description,
                 Foods = d.Foods,
-                Calories = d.Calories,
+                Calories = d.Calories, ProteinG = d.ProteinG, CarbsG = d.CarbsG,
+                FatG = d.FatG, FiberG = d.FiberG, WaterMl = d.WaterMl,
                 Notes = d.Notes,
                 SortOrder = d.SortOrder,
                 MediaId = d.MediaId,
@@ -248,32 +251,7 @@ public sealed class CloneNutritionPlanCommandHandler(
             }).ToList(),
         };
 
-        // Modo personalizado: el plan clonado se asigna al paciente en la misma
-        // transacción que su creación (nunca un plan sin asignación), igual que
-        // el flujo de creación. Sin paciente, se clona solo la plantilla.
-        NutritionPlanAssignment? assignment = null;
-
-        if (request.PatientId is { } patientId)
-        {
-            assignment = new NutritionPlanAssignment
-            {
-                Id = Guid.NewGuid(),
-                PatientId = patientId,
-                PlanId = cloned.Id,
-                StartDate = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Utc),
-                EndDate = null,
-                Status = AssignmentStatus.Active,
-                Notes = null,
-                CreatedBy = request.CreatedBy,
-                CreatedAt = DateTime.UtcNow,
-            };
-
-            await repository.AddPlanWithAssignmentAsync(cloned, assignment, ct);
-        }
-        else
-        {
-            await repository.AddPlanAsync(cloned, ct);
-        }
+        await repository.AddPlanAsync(cloned, ct);
 
         logger.LogInformation("NutritionPlan clonado: {SourceId} → {ClonedId} (Paciente: {PatientId})",
             source.Id, cloned.Id, request.PatientId);
@@ -281,6 +259,6 @@ public sealed class CloneNutritionPlanCommandHandler(
         var created = await repository.GetPlanByIdAsync(cloned.Id, ct)
             ?? throw new InvalidOperationException("No se pudo leer el plan clonado.");
 
-        return NutritionPlanDto.FromEntity(created, assignment?.Id);
+        return NutritionPlanDto.FromEntity(created);
     }
 }

@@ -141,6 +141,8 @@ public interface IHealthTestRepository
         CancellationToken ct = default
     );
     Task UpdateAssignmentAsync(HealthTestAssignment assignment, CancellationToken ct = default);
+    /// <summary>Cancelación atómica: nunca sobrescribe una evaluación ya completada.</summary>
+    Task<bool> CancelAssignmentIfOpenAsync(Guid assignmentId, CancellationToken ct = default);
 
     // --- Asignaciones de batería ---
     Task<HealthTestBatteryAssignment?> GetBatteryAssignmentByIdAsync(

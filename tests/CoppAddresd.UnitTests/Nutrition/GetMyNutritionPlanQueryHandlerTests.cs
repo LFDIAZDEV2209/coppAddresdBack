@@ -31,13 +31,14 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
             Status = "Activo",
         };
 
-    private static NutritionPlan BuildPlan() =>
+    private static NutritionPlan BuildPlan(Guid patientId) =>
         new()
         {
             Id = Guid.NewGuid(),
             Name = "Plan control glucémico",
+            PatientId = patientId, ApprovedAt = DateTime.UtcNow, ApprovedBy = Guid.NewGuid(), ReviewStatus = "approved",
             TargetCondition = "Diabetes",
-            DurationDays = 7,
+            DurationDays = 30,
             DailyCalorieTarget = 1800,
             DailyProteinTarget = 90m,
             DailyCarbsTarget = 200m,
@@ -103,7 +104,7 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
     {
         // Arrange: paciente con asignación activa vigente.
         var patient = BuildPatient();
-        var plan = BuildPlan();
+        var plan = BuildPlan(patient.Id);
         _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
         _wellness
             .ListPlanAssignmentsByPatientAsync(patient.Id, Arg.Any<CancellationToken>())
@@ -117,6 +118,7 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
         // Assert: contrato reducido completo y orden DayNumber/SortOrder.
         Assert.NotNull(result);
         Assert.Equal(plan.Id, result.Id);
+        Assert.Equal(plan.Revision, result.Revision);
         Assert.Equal("Plan control glucémico", result.Name);
         Assert.Equal("Active", result.Status);
         Assert.Equal(2500, result.DailyWaterMl);
@@ -136,8 +138,8 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
     {
         // Arrange: dos asignaciones activas solapadas.
         var patient = BuildPatient();
-        var oldPlan = BuildPlan();
-        var newPlan = BuildPlan();
+        var oldPlan = BuildPlan(patient.Id);
+        var newPlan = BuildPlan(patient.Id);
         _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
         _wellness
             .ListPlanAssignmentsByPatientAsync(patient.Id, Arg.Any<CancellationToken>())

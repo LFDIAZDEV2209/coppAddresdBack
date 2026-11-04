@@ -291,8 +291,12 @@ public sealed class CancelAssignmentCommandHandler(IHealthTestRepository reposit
             return null;
         }
 
+        if (assignment.Status == HealthTestAssignmentStatus.completed)
+            throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("Una evaluación completada conserva su historial clínico; asigna una nueva evaluación si requiere seguimiento.");
+
+        if (!await repository.CancelAssignmentIfOpenAsync(assignment.Id, ct))
+            throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("La evaluación cambió o ya fue completada. Actualiza antes de cancelarla.");
         assignment.Status = HealthTestAssignmentStatus.cancelled;
-        await repository.UpdateAssignmentAsync(assignment, ct);
         return HealthTestAssignmentDto.FromEntity(assignment);
     }
 }

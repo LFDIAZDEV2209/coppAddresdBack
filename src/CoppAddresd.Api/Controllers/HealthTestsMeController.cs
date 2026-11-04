@@ -9,6 +9,7 @@ using CoppAddresd.Domain.Enums.HealthTests;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace CoppAddresd.Api.Controllers;
 
@@ -29,6 +30,33 @@ public class HealthTestsMeController(
 ) : ControllerBase
 {
     // ===================== MIS ASIGNACIONES =====================
+
+    [HttpGet("profile-analysis")]
+    public Task<ActionResult<AssessmentProfileGuidance>> GetProfileAnalysis(
+        [FromServices] IAssessmentProfileAnalysis analysis, CancellationToken ct, [FromQuery] string language = "es")
+        => ProfileAnalysisAsync(analysis, language, false, ct);
+
+    [HttpPost("profile-analysis")]
+    [EnableRateLimiting("assessment-analysis")]
+    public Task<ActionResult<AssessmentProfileGuidance>> GenerateProfileAnalysis(
+        [FromServices] IAssessmentProfileAnalysis analysis, CancellationToken ct, [FromQuery] string language = "es")
+        => ProfileAnalysisAsync(analysis, language, true, ct);
+
+    private async Task<ActionResult<AssessmentProfileGuidance>> ProfileAnalysisAsync(
+        IAssessmentProfileAnalysis analysis, string language, bool generate, CancellationToken ct)
+    {
+        if (language is not ("es" or "en")) return BadRequest(new { message = "Idioma no válido." });
+        var patientId = await ResolvePatientOr404Async(ct);
+        if (patientId is null) return NotFound();
+        if (actorContext.UserId is not { } userId) return Unauthorized();
+        try
+        {
+            var result = await analysis.GetAsync(patientId.Value, userId, language, generate, ct);
+            return result is null ? NotFound(new { message = "Aún no hay un análisis disponible para estas evaluaciones." }) : Ok(result);
+        }
+        catch (AssessmentAnalysisUnavailableException)
+        { return StatusCode(503, new { message = "Vita no pudo preparar el análisis. Tus resultados siguen disponibles; intenta de nuevo." }); }
+    }
 
     /// <summary>
     /// Tests del paciente: pendientes, en curso y completados (shape TestMeta

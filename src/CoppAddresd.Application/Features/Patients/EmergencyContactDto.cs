@@ -13,12 +13,24 @@ public sealed record EmergencyContactDto(
     string? Name,
     string? Relationship,
     string? Phone,
-    string? Email);
+    string? Email,
+    SecondaryEmergencyContactDto? Secondary = null);
+
+/// <summary>Segundo contacto opcional; el contacto principal conserva el contrato SOS.</summary>
+public sealed record SecondaryEmergencyContactDto(string? Name, string? Relationship, string? Phone, string? Email);
 
 public sealed class EmergencyContactValidator : AbstractValidator<EmergencyContactDto>
 {
     public EmergencyContactValidator()
     {
+        RuleFor(x => x.Secondary).Custom((secondary, context) =>
+        {
+            if (secondary is null || new[] { secondary.Name, secondary.Relationship, secondary.Phone, secondary.Email }.All(string.IsNullOrWhiteSpace)) return;
+            if (string.IsNullOrWhiteSpace(secondary.Name) || string.IsNullOrWhiteSpace(secondary.Phone)) context.AddFailure("El segundo contacto requiere nombre y teléfono.");
+            if (secondary.Name?.Length > 200 || secondary.Relationship?.Length > 100 || secondary.Phone?.Length > 20 || secondary.Email?.Length > 320) context.AddFailure("Revisa los datos del segundo contacto.");
+            if (!string.IsNullOrWhiteSpace(secondary.Email) && !System.Net.Mail.MailAddress.TryCreate(secondary.Email.Trim(), out _)) context.AddFailure("El correo del segundo contacto no tiene un formato válido.");
+        });
+
         RuleFor(x => x.Name)
             .MaximumLength(200);
 
@@ -62,6 +74,7 @@ public static class EmergencyContactCodec
             relationship = PatientOptions.Normalize(contact.Relationship),
             phone,
             email = PatientOptions.Normalize(contact.Email),
+            secondary = NormalizeSecondary(contact.Secondary),
         };
 
         return JsonSerializer.Serialize(payload);
@@ -87,12 +100,21 @@ public static class EmergencyContactCodec
                 ReadString(root, "name"),
                 ReadString(root, "relationship"),
                 ReadString(root, "phone"),
-                ReadString(root, "email"));
+                ReadString(root, "email"),
+                root.TryGetProperty("secondary", out var secondary) && secondary.ValueKind == JsonValueKind.Object
+                    ? new SecondaryEmergencyContactDto(ReadString(secondary, "name"), ReadString(secondary, "relationship"), ReadString(secondary, "phone"), ReadString(secondary, "email"))
+                    : null);
         }
         catch (JsonException)
         {
             return new EmergencyContactDto(trimmed, null, null, null);
         }
+    }
+
+    private static object? NormalizeSecondary(SecondaryEmergencyContactDto? contact)
+    {
+        if (contact is null || (string.IsNullOrWhiteSpace(contact.Name) && string.IsNullOrWhiteSpace(contact.Phone))) return null;
+        return new { name = PatientOptions.Normalize(contact.Name), relationship = PatientOptions.Normalize(contact.Relationship), phone = PatientOptions.Normalize(contact.Phone), email = PatientOptions.Normalize(contact.Email) };
     }
 
     private static string? ReadString(JsonElement root, string property)

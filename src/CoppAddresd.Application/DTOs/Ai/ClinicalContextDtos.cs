@@ -12,7 +12,12 @@ public record ClinicalContextDto(
     IReadOnlyList<string> Allergies,
     IReadOnlyList<string> Diagnoses,
     IReadOnlyList<string> Medications,
-    ClinicalLifestyleDto Lifestyle);
+    ClinicalLifestyleDto Lifestyle,
+    IReadOnlyList<ClinicalAssessmentDto>? Assessments = null);
+
+/// <summary>Resultados persistidos de baterías; sin identidad ni respuestas abiertas.</summary>
+public sealed record ClinicalAssessmentDto(string Code, string? Label, decimal? Value,
+    string? Qualifier, string? Severity, DateTime ObservedAt);
 
 /// <summary>Datos demográficos y de estilo de vida del paciente para la IA.</summary>
 public record ClinicalPatientDto(

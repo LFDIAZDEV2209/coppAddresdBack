@@ -117,6 +117,7 @@ public static class RoleSeeder
         "ClinicAdmin",
         "ClinicalDirector",
         "Professional",
+        "NutritionReviewer",
         "Nurse",
         "Receptionist",
         "CareCoordinator",
@@ -399,6 +400,13 @@ public static class RoleSeeder
         string[] Permissions
     )[] DefaultRoles =
     [
+        (
+            "NutritionReviewer",
+            "Nutricionista revisor: valida y aprueba planes de sus pacientes asignados",
+            [PermissionCodes.WellnessView, PermissionCodes.WellnessManage,
+             PermissionCodes.NutritionPlansApprove, PermissionCodes.PatientsViewOwn,
+             PermissionCodes.HealthTestsViewOwn]
+        ),
         (
             "OrganizationAdmin",
             "Administra la organización: estructura, empleados y profesionales",

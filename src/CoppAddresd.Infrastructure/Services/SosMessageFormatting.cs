@@ -4,9 +4,8 @@ using CoppAddresd.Domain.Entities;
 namespace CoppAddresd.Infrastructure.Services;
 
 /// <summary>
-/// Formateo compartido de los mensajes SOS enriquecidos (SMS y voz):
-/// identidad del paciente, edad, documento, signos vitales (demo), enlace a
-/// Maps y marca de tiempo. Solo se usan datos de la alerta y del paciente;
+/// Formateo compartido de mensajes SOS: identidad del paciente, lecturas
+/// reportadas, enlaces y fecha. Solo se usan datos de la alerta y del paciente;
 /// el resultado nunca se registra en logs (REQ-SOS-06).
 /// </summary>
 internal static class SosMessageFormatting
@@ -27,7 +26,7 @@ internal static class SosMessageFormatting
 
         var parts = new[] { patient.FirstName, patient.LastName }
             .Where(part => !string.IsNullOrWhiteSpace(part))
-            .Select(part => part!.Trim())
+            .Select(part => SingleLine(part!))
             .ToArray();
 
         return parts.Length == 0 ? fallback : string.Join(" ", parts);
@@ -36,7 +35,7 @@ internal static class SosMessageFormatting
     /// <summary>Primer nombre con fallback, para el llamado a la acción.</summary>
     public static string FirstName(PatientProfile? patient, string fallback = "el paciente")
     {
-        var first = patient?.FirstName?.Trim();
+        var first = patient?.FirstName is { } value ? SingleLine(value) : null;
         return string.IsNullOrWhiteSpace(first) ? fallback : first;
     }
 
@@ -66,44 +65,83 @@ internal static class SosMessageFormatting
             .Add(ColombiaOffset)
             .ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
 
-    /// <summary>Enlace a Google Maps con las coordenadas y precisión, o null sin GPS.</summary>
+    /// <summary>Hora universal explícita: sin zona del dispositivo no se inventa una hora local.</summary>
+    public static string FormatMessageTime(DateTime createdAtUtc)
+    {
+        var utc = createdAtUtc.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(createdAtUtc, DateTimeKind.Utc)
+            : createdAtUtc.ToUniversalTime();
+        return utc.ToString("dd MMM yyyy · HH:mm 'UTC'", CultureInfo.GetCultureInfo("es"));
+    }
+
+    /// <summary>Enlace válido de Google Maps; la precisión no forma parte de una URL.</summary>
     public static string? MapsLink(SosAlert alert)
     {
-        if (alert.Latitude is null || alert.Longitude is null)
+        if (alert.Latitude is not { } latitude || alert.Longitude is not { } longitude
+            || !double.IsFinite(latitude) || !double.IsFinite(longitude)
+            || latitude is < -90 or > 90 || longitude is < -180 or > 180)
         {
             return null;
         }
 
-        var lat = alert.Latitude.Value.ToString("F6", CultureInfo.InvariantCulture);
-        var lng = alert.Longitude.Value.ToString("F6", CultureInfo.InvariantCulture);
-        var accuracy = alert.AccuracyMeters is null
-            ? string.Empty
-            : $" (±{Math.Round(alert.AccuracyMeters.Value, MidpointRounding.AwayFromZero)} m)";
-
-        return $"https://maps.google.com/?q={lat},{lng}{accuracy}";
+        var lat = latitude.ToString("0.######", CultureInfo.InvariantCulture);
+        var lng = longitude.ToString("0.######", CultureInfo.InvariantCulture);
+        return $"https://maps.google.com/?q={lat},{lng}";
     }
 
-    /// <summary>Línea de vitales para el SMS, ej. "Vitales: FC 140 lpm · SpO2 94% · PA 160/110".</summary>
-    public static string? SmsVitals(SosAlert alert)
-    {
-        var parts = new List<string>();
-        if (alert.HeartRate is not null)
-        {
-            parts.Add($"FC {alert.HeartRate} lpm");
-        }
+    /// <summary>Admite un enlace HTTPS emitido por el servidor; nunca esquemas ejecutables.</summary>
+    public static string? LocationLink(SosAlert alert, string? locationUrl = null) =>
+        Uri.TryCreate(locationUrl, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && string.IsNullOrEmpty(uri.UserInfo)
+        && !locationUrl!.Any(char.IsControl)
+            ? uri.AbsoluteUri
+            : MapsLink(alert);
 
+    /// <summary>Teléfono del paciente, distinto del destinatario de la alerta; no adivina el país.</summary>
+    public static string? PatientPhone(PatientProfile? patient)
+    {
+        if (string.IsNullOrWhiteSpace(patient?.PhoneNumber)) return null;
+        var raw = patient.PhoneNumber.Trim();
+        if (raw.Skip(1).Contains('+')) return null;
+        if (raw.Any(character => !char.IsAsciiDigit(character) && character is not ('+' or ' ' or '-' or '(' or ')' or '.')))
+        {
+            return null;
+        }
+        var digits = new string(raw.Where(char.IsAsciiDigit).ToArray());
+        if (!raw.StartsWith('+'))
+        {
+            var prefix = patient.PhoneCountryCode?.Trim().TrimStart('+');
+            if (string.IsNullOrEmpty(prefix) || prefix.Length > 3 || !prefix.All(char.IsAsciiDigit)) return null;
+            digits = prefix + digits;
+        }
+        return digits.Length is >= 8 and <= 15 && digits[0] != '0' ? "+" + digits : null;
+    }
+
+    /// <summary>Únicamente lecturas persistidas; nunca completa datos faltantes.</summary>
+    public static IReadOnlyList<(string Label, string Value)> ReportedVitals(SosAlert alert)
+    {
+        var parts = new List<(string, string)>();
+        if (alert.HeartRate is not null) parts.Add(("Pulso", $"{alert.HeartRate} lpm"));
         if (alert.Spo2 is not null)
         {
-            parts.Add($"SpO2 {alert.Spo2}%");
+            parts.Add(("Oxígeno", $"{alert.Spo2}%"));
         }
 
         if (!string.IsNullOrWhiteSpace(alert.BloodPressure))
         {
-            parts.Add($"PA {alert.BloodPressure.Trim()}");
+            parts.Add(("Presión", $"{SingleLine(alert.BloodPressure)} mmHg"));
         }
-
-        return parts.Count == 0 ? null : "Vitales: " + string.Join(" · ", parts);
+        return parts;
     }
+
+    public static string? SmsVitals(SosAlert alert)
+    {
+        var readings = ReportedVitals(alert);
+        return readings.Count == 0 ? null : "Lecturas compartidas: " + string.Join(" · ", readings.Select(reading => $"{reading.Label} {reading.Value}"));
+    }
+
+    public static string SingleLine(string value) => string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>
     /// Frase de vitales para TTS, ej. "Frecuencia cardíaca 140, saturación de

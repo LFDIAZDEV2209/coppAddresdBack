@@ -10,8 +10,8 @@ using Npgsql;
 namespace CoppAddresd.Infrastructure.Services;
 
 /// <summary>
-/// Despacha el canal de correo de una alerta SOS (REQ-SOS-03): reutiliza el
-/// texto del SMS (plantilla fija server-side) y lo envía al correo del
+/// Despacha el canal de correo de una alerta SOS (REQ-SOS-03): genera una
+/// plantilla HTML propia y la envía al correo del
 /// contacto de emergencia con dedupe durable <c>sos:email:{alertId}</c>.
 /// Sin correo registrado el canal queda <c>SinDestino</c> (distinto de
 /// <c>NoConfigurado</c> = proveedor de correo ausente) y NO se envía nada.
@@ -20,15 +20,24 @@ namespace CoppAddresd.Infrastructure.Services;
 public sealed class SosEmailDispatcher(
     IEmailService emailService,
     INotificationDedupeRepository dedupe,
-    AppDbContext dbContext,
-    ILogger<SosEmailDispatcher> logger
+    ILogger<SosEmailDispatcher> logger,
+    ISosLocationLinkService? locationLinks = null,
+    AppDbContext? dbContext = null
 ) : ISosEmailDispatcher
 {
+    // Compatibilidad con consumidores que ya inyectaban el contexto antes del logger.
+    public SosEmailDispatcher(IEmailService emailService, INotificationDedupeRepository dedupe,
+        AppDbContext dbContext, ILogger<SosEmailDispatcher> logger)
+        : this(emailService, dedupe, logger, null, dbContext) { }
+
     private const string PendienteStatus = "pendiente";
 
-    public async Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default)
+    public Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default)
+        => SosRecipientDispatch.RunAsync(alert, "email", dedupe, dbContext, DispatchOneAsync, logger, ct);
+
+    private async Task<SosChannelStatus> DispatchOneAsync(SosAlert alert, SosAlertRecipient? recipient, CancellationToken ct)
     {
-        var dedupeKey = $"sos:email:{alert.Id}";
+        var dedupeKey = SosRecipientDispatch.Key("email", alert.Id, recipient);
 
         var existing = await dedupe.GetByKeyAsync(dedupeKey, ct);
         if (
@@ -51,17 +60,13 @@ public sealed class SosEmailDispatcher(
 
             // Backfill: alertas despachadas antes de persistir el canal en la
             // fila (la columna existe desde la migración AddSosEmailChannelStatus).
-            await UpdateAlertChannelAsync(alert, processed, ct);
+            if (recipient is null) await UpdateAlertChannelAsync(alert, processed, ct);
             return processed;
         }
 
-        // Destino: snapshot congelado en la activación; fallback al perfil
-        // para alertas creadas antes de que existiera el snapshot.
-        var target =
-            alert.DestinationEmail
-            ?? SosSupport.NormalizeEmail(
-                SosSupport.ExtractEmergencyContactEmail(alert.Patient?.EmergencyContact)
-            );
+        var target = recipient is not null ? recipient.Email :
+            alert.DestinationEmail ?? SosSupport.NormalizeEmail(
+                SosSupport.ExtractEmergencyContactEmail(alert.Patient?.EmergencyContact));
         SosChannelStatus finalStatus;
 
         if (string.IsNullOrWhiteSpace(target))
@@ -72,16 +77,21 @@ public sealed class SosEmailDispatcher(
                 alert.Id
             );
         }
+        else if (!emailService.IsConfigured)
+        {
+            finalStatus = SosChannelStatus.NoConfigurado;
+            logger.LogWarning("SOS correo sin transporte configurado: alertId={AlertId}.", alert.Id);
+        }
         else
         {
-            var body = SosSmsTemplate.Build(alert);
+            var body = SosEmailTemplate.BuildHtml(alert, locationLinks?.CreateLink(alert));
             try
             {
                 await emailService.SendEmailAsync(
                     target,
-                    "🚨 SOS CoppAddresd — alerta de emergencia",
+                    SosEmailTemplate.Subject,
                     body,
-                    isHtml: false,
+                    isHtml: true,
                     cancellationToken: ct
                 );
                 finalStatus = SosChannelStatus.Enviado;
@@ -89,7 +99,7 @@ public sealed class SosEmailDispatcher(
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 finalStatus = SosChannelStatus.Fallido;
-                logger.LogError(ex, "SOS correo falló: alertId={AlertId}.", alert.Id);
+                logger.LogError("SOS correo falló: alertId={AlertId}, exceptionType={ExceptionType}.", alert.Id, ex.GetType().Name);
             }
         }
 
@@ -103,7 +113,7 @@ public sealed class SosEmailDispatcher(
             ct: ct
         );
 
-        await UpdateAlertChannelAsync(alert, finalStatus, ct);
+        if (recipient is null) await UpdateAlertChannelAsync(alert, finalStatus, ct);
 
         logger.LogInformation(
             "SOS correo despachado: alertId={AlertId} estado={Status}.",
@@ -121,6 +131,8 @@ public sealed class SosEmailDispatcher(
         CancellationToken ct
     )
     {
+        alert.EmailChannelStatus = status;
+        if (dbContext is null) return;
         try
         {
             var tracked = await dbContext.SosAlerts.FirstOrDefaultAsync(x => x.Id == alert.Id, ct);

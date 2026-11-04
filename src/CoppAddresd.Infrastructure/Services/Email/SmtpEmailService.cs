@@ -17,6 +17,13 @@ public sealed class SmtpEmailService : IEmailService
     private readonly ILogger<SmtpEmailService> _logger;
     private readonly EmailOptions _options;
 
+    public bool IsConfigured => _options.Enabled
+        && !string.IsNullOrWhiteSpace(_options.SmtpHost)
+        && _options.SmtpPort is > 0 and <= 65535
+        && !string.IsNullOrWhiteSpace(_options.FromAddress)
+        && !string.IsNullOrWhiteSpace(_options.UserName)
+        && !string.IsNullOrWhiteSpace(_options.Password);
+
     public SmtpEmailService(
         ILogger<SmtpEmailService> logger,
         IOptions<EmailOptions> options)
@@ -28,11 +35,11 @@ public sealed class SmtpEmailService : IEmailService
     public async Task SendEmailAsync(EmailMessageDto message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_options.Enabled)
         {
-            _logger.LogInformation("Email sending is disabled (Email:Enabled = false). Skipping email to {Recipients}.",
-                string.Join(", ", message.To));
+            _logger.LogInformation("Envío de correo deshabilitado por configuración.");
             return;
         }
 
@@ -47,21 +54,10 @@ public sealed class SmtpEmailService : IEmailService
         }
 
         // Defensive check: If credentials are not configured, log a warning and fall back safely
-        if (string.IsNullOrWhiteSpace(_options.UserName) || string.IsNullOrWhiteSpace(_options.Password))
+        if (!IsConfigured)
         {
             _logger.LogWarning(
-                "SMTP credentials are not configured in EmailOptions (UserName or Password is empty). " +
-                "Falling back to log-only delivery for email to {Recipients} with subject '{Subject}'.",
-                string.Join(", ", message.To), message.Subject);
-
-            _logger.LogInformation(
-                "[SMTP-FALLBACK-LOG] Email Content:\n" +
-                "  To: {To}\n" +
-                "  Subject: {Subject}\n" +
-                "  Body Snippet: {BodySnippet}",
-                string.Join(", ", message.To),
-                message.Subject,
-                message.Body.Length > 200 ? string.Concat(message.Body.AsSpan(0, 200), "...") : message.Body);
+                "El transporte SMTP no está configurado; no se realiza entrega.");
 
             return;
         }
@@ -111,17 +107,19 @@ public sealed class SmtpEmailService : IEmailService
 
         try
         {
-            _logger.LogInformation("Sending email via SMTP ({Host}:{Port}) to {Recipients} with subject '{Subject}'...",
-                _options.SmtpHost, _options.SmtpPort, string.Join(", ", message.To), message.Subject);
+            _logger.LogInformation("Enviando correo mediante SMTP a {RecipientCount} destinatarios.", message.To.Count);
 
             await client.SendMailAsync(mailMessage, cancellationToken);
 
-            _logger.LogInformation("Successfully sent email via SMTP to {Recipients}.", string.Join(", ", message.To));
+            _logger.LogInformation("Correo aceptado por el transporte SMTP.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send email via SMTP host '{Host}:{Port}' to {Recipients}.",
-                _options.SmtpHost, _options.SmtpPort, string.Join(", ", message.To));
+            _logger.LogError("El envío SMTP falló: exceptionType={ExceptionType}.", ex.GetType().Name);
             throw;
         }
     }

@@ -55,13 +55,13 @@ public sealed class ListSosAlertsForStaffHandler(ISosAlertRepository repository)
 /// <summary>Alerta activa del paciente autenticado (aud=app) o null.</summary>
 public record GetActiveSosAlertQuery(Guid PatientId) : IRequest<SosAlertDto?>;
 
-public sealed class GetActiveSosAlertHandler(ISosAlertRepository repository)
+public sealed class GetActiveSosAlertHandler(ISosAlertRepository repository, INotificationDedupeRepository? dedupe = null)
     : IRequestHandler<GetActiveSosAlertQuery, SosAlertDto?>
 {
     public async Task<SosAlertDto?> Handle(GetActiveSosAlertQuery request, CancellationToken ct)
     {
         var alert = await repository.GetActiveByPatientAsync(request.PatientId, ct);
-        return alert is null ? null : SosAlertDto.FromEntity(alert);
+        return alert is null ? null : await SosChannelReadModel.ReadAsync(alert, dedupe, ct);
     }
 }
 
@@ -71,7 +71,7 @@ public sealed class GetActiveSosAlertHandler(ISosAlertRepository repository)
 /// </summary>
 public record GetSosAlertQuery(Guid PatientId, Guid AlertId) : IRequest<SosAlertDto?>;
 
-public sealed class GetSosAlertHandler(ISosAlertRepository repository)
+public sealed class GetSosAlertHandler(ISosAlertRepository repository, INotificationDedupeRepository? dedupe = null)
     : IRequestHandler<GetSosAlertQuery, SosAlertDto?>
 {
     public async Task<SosAlertDto?> Handle(GetSosAlertQuery request, CancellationToken ct)
@@ -82,7 +82,7 @@ public sealed class GetSosAlertHandler(ISosAlertRepository repository)
             return null;
         }
 
-        return SosAlertDto.FromEntity(alert);
+        return await SosChannelReadModel.ReadAsync(alert, dedupe, ct);
     }
 }
 
@@ -96,7 +96,7 @@ public record GetSosAlertForStaffQuery(Guid AlertId, SosStaffActor Staff)
 
 public sealed record SosStaffAlertResult(SosTransitionOutcome Outcome, SosAlertDto? Alert);
 
-public sealed class GetSosAlertForStaffHandler(ISosAlertRepository repository)
+public sealed class GetSosAlertForStaffHandler(ISosAlertRepository repository, INotificationDedupeRepository? dedupe = null)
     : IRequestHandler<GetSosAlertForStaffQuery, SosStaffAlertResult>
 {
     public async Task<SosStaffAlertResult> Handle(
@@ -121,7 +121,25 @@ public sealed class GetSosAlertForStaffHandler(ISosAlertRepository repository)
             );
 
         return scoped
-            ? new SosStaffAlertResult(SosTransitionOutcome.Transited, SosAlertDto.FromEntity(alert))
+            ? new SosStaffAlertResult(SosTransitionOutcome.Transited, await SosChannelReadModel.ReadAsync(alert, dedupe, ct))
             : new SosStaffAlertResult(SosTransitionOutcome.Forbidden, null);
+    }
+}
+
+internal static class SosChannelReadModel
+{
+    internal static async Task<SosAlertDto> ReadAsync(
+        CoppAddresd.Domain.Entities.SosAlert alert,
+        INotificationDedupeRepository? dedupe,
+        CancellationToken ct)
+    {
+        var dto = SosAlertDto.FromEntity(alert);
+        if (dedupe is null) return dto;
+        var channel = await dedupe.GetByKeyAsync($"sos:email:{alert.Id}", ct);
+        return dto with
+        {
+            EmailChannelStatus = Enum.TryParse<SosChannelStatus>(channel?.EmailStatus, true, out var status)
+                ? status.ToString() : null,
+        };
     }
 }

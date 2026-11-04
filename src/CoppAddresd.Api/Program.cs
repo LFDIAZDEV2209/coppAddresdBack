@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.BackgroundJobs;
 using CoppAddresd.Api.Extensions;
@@ -72,6 +73,24 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.ConfigureCors(builder.Configuration);
 builder.Services.ConfigureJwtAuthentication(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
+// Solo el enlace público de ubicación tiene este límite; el protocolo SOS
+// autenticado conserva sus cuotas y su ruta de activación existentes.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("assessment-analysis", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 3, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("sos-location-links", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        }));
+});
 
 // Handler de propagación de correlation ID: AddHttpMessageHandler<T> resuelve
 // el handler desde DI (obligatorio registrarlo explícitamente).
@@ -231,6 +250,7 @@ app.UseCors(ApplicationServiceExtensions.CorsPolicyName);
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 app.MapHealthChecks("/health");
 

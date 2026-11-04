@@ -310,11 +310,12 @@ public class RoleSeederTests
         var totalRoles = await h.Db.Roles.CountAsync();
         var totalAssignments = await h.Db.RolePermissions.CountAsync();
 
-        Assert.Equal(9, totalRoles); // 9 DefaultRoles (Admin lo crea AdminSeeder, no corre aquí)
+        Assert.Equal(10, totalRoles); // Incluye NutritionReviewer; Admin lo crea AdminSeeder.
         Assert.True(totalAssignments > 0);
 
         // Los roles legado no deben existir.
         var names = await h.Db.Roles.AsNoTracking().Select(r => r.Name).ToListAsync();
+        Assert.Contains("NutritionReviewer", names);
         Assert.DoesNotContain("Physician", names);
         Assert.DoesNotContain("Nutritionist", names);
         Assert.DoesNotContain("Psychologist", names);

@@ -81,7 +81,7 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
         builder
             .Property(x => x.EmergencyContact)
             .HasColumnName("emergency_contact")
-            .HasMaxLength(500);
+            .HasColumnType("text");
 
         builder.Property(x => x.InsurerId).HasColumnName("insurer_id");
 

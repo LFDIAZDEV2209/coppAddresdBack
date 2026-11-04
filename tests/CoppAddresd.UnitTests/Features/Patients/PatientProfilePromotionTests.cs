@@ -28,9 +28,9 @@ public class PatientProfilePromotionTests
             DateOfBirth: null,
             Email: null,
             Phone: "5551234567",
-            EmergencyName: null,
-            EmergencyRelationship: null,
-            EmergencyPhone: null,
+            EmergencyName: "Contacto Prueba",
+            EmergencyRelationship: "Amigo/a",
+            EmergencyPhone: "+573001234567",
             EmergencyEmail: null,
             InsurerId: null,
             MemberId: null

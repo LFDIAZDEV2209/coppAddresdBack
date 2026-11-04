@@ -83,6 +83,20 @@ public sealed class NutritionPlanConfiguration : IEntityTypeConfiguration<Nutrit
             .HasColumnName("updated_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(x => x.Revision).HasColumnName("revision").HasDefaultValue(1).IsConcurrencyToken();
+        builder.Property(x => x.UpdatedBy).HasColumnName("updated_by");
+        builder.Property(x => x.ApprovedBy).HasColumnName("approved_by");
+        builder.Property(x => x.ApprovedAt).HasColumnName("approved_at").HasColumnType("timestamptz");
+        builder.Property(x => x.ReviewStatus).HasColumnName("review_status").HasMaxLength(30).HasDefaultValue("pending_review");
+        builder.Property(x => x.GenerationKey).HasColumnName("generation_key").HasMaxLength(120);
+        builder.Property(x => x.GenerationStatus).HasColumnName("generation_status").HasMaxLength(30);
+        builder.Property(x => x.GenerationAttempts).HasColumnName("generation_attempts");
+        builder.Property(x => x.GenerationLeaseUntil).HasColumnName("generation_lease_until").HasColumnType("timestamptz");
+        builder.Property(x => x.GenerationNextAttemptAt).HasColumnName("generation_next_attempt_at").HasColumnType("timestamptz");
+        builder.Property(x => x.AssessmentSnapshot).HasColumnName("assessment_snapshot").HasColumnType("jsonb");
+        builder.HasIndex(x => x.GenerationKey).IsUnique().HasDatabaseName("uq_nutrition_plans_generation_key");
+        builder.HasIndex(x => new { x.GenerationStatus, x.GenerationNextAttemptAt }).HasDatabaseName("ix_nutrition_plans_generation_queue");
+
         // Indexes
         builder.HasIndex(x => x.IsTemplate)
             .HasDatabaseName("ix_nutrition_plans_is_template");

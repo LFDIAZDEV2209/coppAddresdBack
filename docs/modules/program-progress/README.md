@@ -561,3 +561,22 @@ Estas preguntas siguen abiertas en el plan y se recomienda resolver antes de emp
 Antes solicitaba `int.MaxValue` al listado, cuyo límite de 100 truncaba el archivo.
 El orden incorpora `PatientId` como desempate. La regresión del handler verifica
 205 filas, propagación de todos los filtros y cancelación antes de consultar.
+## Evaluación emocional del protocolo (Diomedes)
+
+`POST /api/v1/program/tasks/complete` acepta el campo aditivo `emotional`
+solamente para `taskCode=emocional`. Incluye `stressScore` y `motivationScore`
+(1–10, opcionales), `sleepMinutes` (0–1440), `sleepSource` (`manual` o
+`wearable`), `sleepRecordedAt` obligatorio cuando procede del wearable y
+`notes` (hasta 2000 caracteres). Se conserva el `moodScore` obligatorio (1–5)
+y la barrera opcional del contrato anterior.
+
+El repositorio conserva todos los valores enviados en `emotional_records.notes`
+con texto clínico legible, origen y fecha del sueño; mantiene las notas previas
+si ya existían. No agrega columnas ni supone respuestas para campos omitidos.
+La transacción/idempotencia de la completación y XP no cambia. La app ofrece
+solo sueño del dispositivo real seleccionado con fecha de despertar de hoy;
+una corrección manual elimina la procedencia y fecha del wearable.
+
+Verificación: `EmotionalAssessmentPayloadTests`, `CompleteTaskHandlerTests` y
+`ProgramRepositoryTests.TareaEmocional_PersisteRegistroEmocionalYAnimoDelDia`.
+Este último se ejecuta con PostgreSQL aislado mediante `COP_TEST_DB_CONNECTION`.

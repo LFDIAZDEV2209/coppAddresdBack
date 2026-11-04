@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CoppAddresd.Application.Features.Patients.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
@@ -25,7 +24,8 @@ public record PatientSelfProfileDto(
     string EmergencyPhone,
     string EmergencyEmail,
     Guid? InsurerId,
-    string MemberId
+    string MemberId,
+    SecondaryEmergencyContactDto? SecondaryEmergencyContact = null
 );
 
 public record GetMyPatientProfileQuery(Guid UserId) : IRequest<PatientSelfProfileDto?>;
@@ -57,7 +57,9 @@ public record UpdateMyPatientProfileCommand(
     string? EmergencyPhone,
     string? EmergencyEmail,
     Guid? InsurerId,
-    string? MemberId
+    string? MemberId,
+    SecondaryEmergencyContactDto? SecondaryEmergencyContact = null,
+    bool ClearInsurer = false
 ) : IRequest<UpdateMyPatientProfileResult>;
 
 public record UpdateMyPatientProfileResult(
@@ -83,15 +85,27 @@ public sealed class UpdateMyPatientProfileCommandHandler(
             return new(false, "La fecha de nacimiento no puede ser futura.", null);
         if (!string.IsNullOrWhiteSpace(request.Email) && !request.Email.Contains('@'))
             return new(false, "Correo electrónico inválido.", null);
-        if (
-            request.EmergencyName is { Length: > 0 }
-            && string.IsNullOrWhiteSpace(request.EmergencyPhone)
-        )
-            return new(false, "El contacto de emergencia requiere teléfono.", null);
+        var editsPrimary = request.EmergencyName is not null || request.EmergencyRelationship is not null
+            || request.EmergencyPhone is not null || request.EmergencyEmail is not null;
+        if (editsPrimary && (string.IsNullOrWhiteSpace(request.EmergencyName) || string.IsNullOrWhiteSpace(request.EmergencyPhone)))
+            return new(false, "El contacto principal requiere nombre y teléfono.", null);
+        if (editsPrimary && !ValidContact(request.EmergencyName, request.EmergencyRelationship, request.EmergencyPhone, request.EmergencyEmail))
+            return new(false, "Revisa los datos del contacto principal.", null);
+        var secondary = request.SecondaryEmergencyContact;
+        var hasSecondary = secondary is not null && new[] { secondary.Name, secondary.Relationship, secondary.Phone, secondary.Email }.Any(value => !string.IsNullOrWhiteSpace(value));
+        if (hasSecondary && (string.IsNullOrWhiteSpace(secondary!.Name) || string.IsNullOrWhiteSpace(secondary.Phone)
+            || !ValidContact(secondary.Name, secondary.Relationship, secondary.Phone, secondary.Email)))
+            return new(false, "El segundo contacto requiere nombre y teléfono válidos.", null);
 
         var patient = await patients.GetByUserIdAsync(request.UserId, ct);
         if (patient is null)
             return new(false, "No hay un perfil de paciente vinculado a tu cuenta.", null);
+
+        var savedPrimary = EmergencyContactCodec.Deserialize(patient.EmergencyContact);
+        if (patient.Status == "Pendiente" && !editsPrimary
+            && (savedPrimary is null || string.IsNullOrWhiteSpace(savedPrimary.Name) || string.IsNullOrWhiteSpace(savedPrimary.Phone)
+                || !ValidContact(savedPrimary.Name, savedPrimary.Relationship, savedPrimary.Phone, savedPrimary.Email)))
+            return new(false, "El contacto principal requiere nombre y teléfono.", null);
 
         if (request.DateOfBirth.HasValue)
             patient.DateOfBirth = request.DateOfBirth.Value;
@@ -99,34 +113,22 @@ public sealed class UpdateMyPatientProfileCommandHandler(
             patient.Email = request.Email.Trim();
         if (!string.IsNullOrWhiteSpace(request.Phone))
             patient.PhoneNumber = request.Phone.Trim();
-        if (request.InsurerId.HasValue)
-            patient.InsurerId = request.InsurerId.Value;
+        if (request.InsurerId.HasValue || request.ClearInsurer)
+            patient.InsurerId = request.InsurerId;
         if (request.MemberId is not null)
             patient.MemberId = request.MemberId.Trim();
 
-        // Contacto de emergencia: JSON en emergency_contact (varchar). Al menos
-        // nombre o teléfono; null explícito borra el contacto.
-        if (
-            request.EmergencyName is not null
-            || request.EmergencyRelationship is not null
-            || request.EmergencyPhone is not null
-            || request.EmergencyEmail is not null
-        )
+        // JSON compatible con SOS: el principal sigue en raíz y el opcional es secondary.
+        if (editsPrimary || secondary is not null)
         {
-            var hasContent =
-                !string.IsNullOrWhiteSpace(request.EmergencyName)
-                || !string.IsNullOrWhiteSpace(request.EmergencyPhone);
-            patient.EmergencyContact = hasContent
-                ? JsonSerializer.Serialize(
-                    new
-                    {
-                        name = request.EmergencyName?.Trim(),
-                        relationship = request.EmergencyRelationship?.Trim(),
-                        phone = request.EmergencyPhone?.Trim(),
-                        email = request.EmergencyEmail?.Trim(),
-                    }
-                )
-                : null;
+            var previous = EmergencyContactCodec.Deserialize(patient.EmergencyContact);
+            var primary = editsPrimary
+                ? new EmergencyContactDto(request.EmergencyName, request.EmergencyRelationship, request.EmergencyPhone, request.EmergencyEmail)
+                : previous;
+            if (primary is null || string.IsNullOrWhiteSpace(primary.Name) || string.IsNullOrWhiteSpace(primary.Phone)) return new(false, "El contacto principal requiere nombre y teléfono.", null);
+            patient.EmergencyContact = EmergencyContactCodec.Serialize(primary with {
+                Secondary = secondary is null ? previous?.Secondary : hasSecondary ? secondary : null
+            });
         }
 
         // Onboarding self-service completado: un registro provisional del ERP
@@ -144,6 +146,7 @@ public sealed class UpdateMyPatientProfileCommandHandler(
         {
             await patients.UpdateAsync(patient, ct);
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             logger.LogError(
@@ -175,45 +178,20 @@ public sealed class UpdateMyPatientProfileCommandHandler(
         );
         return new(true, null, PatientSelfProfileMapper.FromEntity(patient));
     }
+    private static bool ValidContact(string? name, string? relationship, string? phone, string? email)
+    {
+        if (name?.Length > 200 || relationship?.Length > 100 || phone?.Length > 20 || email?.Length > 320) return false;
+        var digits = phone?.Count(char.IsAsciiDigit) ?? 0;
+        if (digits is < 7 or > 15 || !System.Text.RegularExpressions.Regex.IsMatch(phone ?? "", @"^\+?[0-9().\s-]+$")) return false;
+        return string.IsNullOrWhiteSpace(email) || System.Net.Mail.MailAddress.TryCreate(email.Trim(), out _);
+    }
 }
 
 public static class PatientSelfProfileMapper
 {
     public static PatientSelfProfileDto FromEntity(PatientProfile patient)
     {
-        string? name = null,
-            rel = null,
-            phone = null,
-            email = null;
-        if (!string.IsNullOrWhiteSpace(patient.EmergencyContact))
-        {
-            try
-            {
-                var ec = JsonSerializer.Deserialize<JsonElement>(patient.EmergencyContact);
-                name =
-                    ec.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String
-                        ? n.GetString()
-                        : null;
-                rel =
-                    ec.TryGetProperty("relationship", out var r)
-                    && r.ValueKind == JsonValueKind.String
-                        ? r.GetString()
-                        : null;
-                phone =
-                    ec.TryGetProperty("phone", out var p) && p.ValueKind == JsonValueKind.String
-                        ? p.GetString()
-                        : null;
-                email =
-                    ec.TryGetProperty("email", out var e) && e.ValueKind == JsonValueKind.String
-                        ? e.GetString()
-                        : null;
-            }
-            catch (JsonException)
-            {
-                // Contacto legacy con formato libre: se expone como texto plano en name.
-                name = patient.EmergencyContact;
-            }
-        }
+        var contact = EmergencyContactCodec.Deserialize(patient.EmergencyContact);
 
         return new PatientSelfProfileDto(
             patient.Id,
@@ -223,12 +201,13 @@ public static class PatientSelfProfileMapper
             patient.DateOfBirth,
             patient.Email ?? string.Empty,
             patient.PhoneNumber ?? string.Empty,
-            name ?? string.Empty,
-            rel ?? string.Empty,
-            phone ?? string.Empty,
-            email ?? string.Empty,
+            contact?.Name ?? string.Empty,
+            contact?.Relationship ?? string.Empty,
+            contact?.Phone ?? string.Empty,
+            contact?.Email ?? string.Empty,
             patient.InsurerId,
-            patient.MemberId ?? string.Empty
+            patient.MemberId ?? string.Empty,
+            contact?.Secondary
         );
     }
 }

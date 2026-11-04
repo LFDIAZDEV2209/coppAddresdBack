@@ -1952,7 +1952,11 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
                     null,
                     MoodScore: 4,
                     Barriers: "fatiga",
-                    null
+                    null,
+                    Emotional: new EmotionalAssessmentPayload(StressScore: 3, MotivationScore: 8,
+                        SleepMinutes: 427, SleepSource: "wearable",
+                        SleepRecordedAt: new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc),
+                        Notes: "Descansé mejor anoche.")
                 )
             );
         }
@@ -1971,6 +1975,11 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Equal(4, emotional.MoodScore);
         Assert.Equal("fatiga", emotional.Barriers);
         Assert.Equal(_patientId, emotional.PatientId);
+        Assert.Contains("Estrés: 3/10.", emotional.Notes);
+        Assert.Contains("Motivación: 8/10.", emotional.Notes);
+        Assert.Contains("427 minutos (wearable)", emotional.Notes);
+        Assert.Contains("2026-11-03T12:00:00.0000000Z", emotional.Notes);
+        Assert.Contains("Descansé mejor anoche.", emotional.Notes);
 
         var checkin = await verifyDb
             .DailyCheckIns.AsNoTracking()

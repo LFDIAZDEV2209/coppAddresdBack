@@ -1,4 +1,6 @@
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Features.Wellness;
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -48,18 +50,13 @@ public sealed class ProgramContentResolver(
 
         if (activePlanAssignment is not null)
         {
-            nutritionPlanId = activePlanAssignment.PlanId;
+            var plan = await wellnessRepository.GetPlanByIdAsync(activePlanAssignment.PlanId, ct);
+            if (plan is not null && plan.PatientId == patientId && NutritionPlanReviewRules.IsPublished(plan))
+            {
+                resolvedDayNumber = NutritionPlanReviewRules.MenuDay(plan, activePlanAssignment.StartDate, localDate);
+                if (resolvedDayNumber is not null) nutritionPlanId = plan.Id;
+            }
 
-            // Cargar días del plan una sola vez (anti N+1: batch by plan, skill n-plus-one).
-            // ListPlanDaysAsync ya existe en IWellnessRepository y trae todos los
-            // NutritionPlanDay del plan.
-            var planDays = await wellnessRepository
-                .ListPlanDaysAsync(activePlanAssignment.PlanId, ct);
-
-            // Mapear weekday local (ISO 8601: 1=Lun..7=Dom) al DayNumber del plan
-            var weekday = ToIsoWeekday(localDate);
-            var matchingDay = planDays.FirstOrDefault(d => d.DayNumber == weekday);
-            resolvedDayNumber = matchingDay?.DayNumber;
         }
 
         // --- 3. Resolver rutina de ejercicio activa ---
@@ -112,7 +109,7 @@ public sealed class ProgramContentResolver(
             .ListAssignmentsByPatientAsync(patientId, ct);
 
         var result = new Dictionary<DateOnly, ProgramContentResolution>();
-        var planDaysCache = new Dictionary<Guid, HashSet<int>>();
+        var planCache = new Dictionary<Guid, NutritionPlan?>();
 
         for (var date = from; date <= to; date = date.AddDays(1))
         {
@@ -136,21 +133,19 @@ public sealed class ProgramContentResolver(
             int? resolvedDayNumber = null;
             if (activePlanAssignment is not null)
             {
-                if (!planDaysCache.TryGetValue(activePlanAssignment.PlanId, out var days))
+                if (!planCache.TryGetValue(activePlanAssignment.PlanId, out var plan))
                 {
-                    var planDays = await wellnessRepository
-                        .ListPlanDaysAsync(activePlanAssignment.PlanId, ct);
-                    days = planDays.Select(d => d.DayNumber).ToHashSet();
-                    planDaysCache[activePlanAssignment.PlanId] = days;
+                    plan = await wellnessRepository.GetPlanByIdAsync(activePlanAssignment.PlanId, ct);
+                    planCache[activePlanAssignment.PlanId] = plan;
                 }
+                if (plan is not null && plan.PatientId == patientId)
+                    resolvedDayNumber = NutritionPlanReviewRules.MenuDay(plan, activePlanAssignment.StartDate, date);
 
-                var weekday = ToIsoWeekday(date);
-                resolvedDayNumber = days.Contains(weekday) ? weekday : null;
             }
 
             result[date] = new ProgramContentResolution
             {
-                NutritionPlanId = activePlanAssignment?.PlanId,
+                NutritionPlanId = resolvedDayNumber is not null ? activePlanAssignment?.PlanId : null,
                 NutritionPlanDayNumber = resolvedDayNumber,
                 ExerciseRoutineId = activeRoutineAssignment?.RoutineId,
             };

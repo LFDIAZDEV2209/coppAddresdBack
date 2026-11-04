@@ -8,11 +8,12 @@ namespace CoppAddresd.Application.Interfaces;
 /// </summary>
 public interface IWellnessRepository
 {
+    Task<string?> GetPatientTimezoneAsync(Guid patientId, CancellationToken ct = default) => Task.FromResult<string?>(null);
     // --- Nutrition Plans ---
     Task<NutritionPlan?> GetPlanByIdAsync(Guid id, CancellationToken ct = default);
     Task<(IReadOnlyList<NutritionPlan> Items, int Total)> ListPlansAsync(
         bool? isTemplate, string? search, string? status, Guid? patientId,
-        int page, int pageSize, CancellationToken ct = default);
+        int page, int pageSize, Guid? professionalId = null, CancellationToken ct = default);
     Task<NutritionPlan> AddPlanAsync(NutritionPlan plan, CancellationToken ct = default);
     Task UpdatePlanAsync(NutritionPlan plan, CancellationToken ct = default);
     Task DeletePlanAsync(NutritionPlan plan, CancellationToken ct = default);
@@ -68,7 +69,7 @@ public interface IWellnessRepository
     Task<NutritionPlanAssignment?> GetPlanAssignmentByIdAsync(Guid id, CancellationToken ct = default);
     Task<(IReadOnlyList<NutritionPlanAssignment> Items, int Total)> ListPlanAssignmentsAsync(
         Guid? patientId, Guid? planId, string? status,
-        int page, int pageSize, CancellationToken ct = default);
+        int page, int pageSize, Guid? professionalId = null, CancellationToken ct = default);
     Task<IReadOnlyList<NutritionPlanAssignment>> ListPlanAssignmentsByPatientAsync(Guid patientId, CancellationToken ct = default);
     Task<NutritionPlanAssignment> AddPlanAssignmentAsync(NutritionPlanAssignment assignment, CancellationToken ct = default);
     Task UpdatePlanAssignmentAsync(NutritionPlanAssignment assignment, CancellationToken ct = default);

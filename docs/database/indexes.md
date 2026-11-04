@@ -84,6 +84,20 @@ _La migración `AddHealthTestGeoRollups` (2026-09-15) crea `ix_patient_profiles_
 
 _(Registros creados con la migración `InitialAuditSchema`; se documentarán más índices conforme existan tablas de negocio y queries reales. GIN sobre `jsonb` descartado por ahora: sin queries de filtrado por contenido.)_
 
+## Nutrición: outbox y revisión clínica
+
+Migración `20261103214607_AddNutritionReviewWorkflowAndEmergencyContacts`:
+
+| Índice | Tabla | Columnas / tipo | Uso | Costo |
+|---|---|---|---|---|
+| `uq_nutrition_plans_generation_key` | `app.nutrition_plans` | `generation_key`, B-tree único (null permitido) | Reserva idempotente de un borrador por paciente/ciclo entre réplicas | Una entrada por plan generado; las plantillas/manuales no reservan ciclo |
+| `ix_nutrition_plans_generation_queue` | `app.nutrition_plans` | `generation_status, generation_next_attempt_at`, B-tree | Consumo acotado de trabajo pendiente y reintentos | Escritura al reclamar/finalizar un intento |
+| `ix_nutrition_plan_review_events_plan_time` | `app.nutrition_plan_review_events` | `plan_id, occurred_at`, B-tree | Historial de decisiones por plan, ordenado y limitado a200eventos | Una inserción por decisión/modificación; no duplica índices de FK |
+
+Se reutilizan los índices de paciente en baterías, asignaciones y planes.
+La revisión optimista usa `nutrition_plans.revision` como token; no necesita
+un índice adicional porque la actualización se dirige por la PK.
+
 ## Recordatorio de reglas
 
 - FKs: índice obligatorio (PostgreSQL no lo crea solo).

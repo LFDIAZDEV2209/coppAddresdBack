@@ -98,6 +98,16 @@ public sealed class BulkAssignProgramContentTests
     // ===================== Validaciones de entrada =====================
 
     [Fact]
+    public async Task Handle_ImagenDeEjercicio_NoSeAsignaComoPodcast()
+    {
+        var medium = PublishedPodcast();
+        medium.MediaType = MediaType.Image;
+        _mediaRepository.GetByIdAsync(medium.Id).Returns(medium);
+        await Assert.ThrowsAsync<UnprocessableEntityException>(() => CreateHandler().Handle(
+            new BulkAssignProgramContentCommand("Template", Guid.NewGuid(), 1, 2, [1], medium.Id), default));
+    }
+
+    [Fact]
     public async Task Validator_TargetTypeInvalido_Rechaza()
     {
         var validator = new BulkAssignProgramContentCommandValidator();
