@@ -135,6 +135,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ProgramTemplate> ProgramTemplates => Set<ProgramTemplate>();
     public DbSet<WeeklyDayTemplate> WeeklyDayTemplates => Set<WeeklyDayTemplate>();
     public DbSet<ProgramEnrollment> ProgramEnrollments => Set<ProgramEnrollment>();
+    public DbSet<ProgramAssignmentRecovery> ProgramAssignmentRecoveries => Set<ProgramAssignmentRecovery>();
+    public DbSet<ProgramAssignmentNotice> ProgramAssignmentNotices => Set<ProgramAssignmentNotice>();
+    public DbSet<ProgramCondition> ProgramConditions => Set<ProgramCondition>();
+    public DbSet<ProgramAssignmentRule> ProgramAssignmentRules => Set<ProgramAssignmentRule>();
+    public DbSet<ProgramAssignmentRecommendation> ProgramAssignmentRecommendations => Set<ProgramAssignmentRecommendation>();
+
     public DbSet<ProgramWeek> ProgramWeeks => Set<ProgramWeek>();
     public DbSet<DailyCheckIn> DailyCheckIns => Set<DailyCheckIn>();
     public DbSet<TaskCompletion> TaskCompletions => Set<TaskCompletion>();

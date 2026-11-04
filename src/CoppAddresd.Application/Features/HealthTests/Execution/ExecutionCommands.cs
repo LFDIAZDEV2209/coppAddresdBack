@@ -1,3 +1,6 @@
+using CoppAddresd.Application.Common;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using CoppAddresd.Application.Features.HealthTests.Events;
 using CoppAddresd.Application.Features.HealthTests.Scoring;
 using CoppAddresd.Application.Interfaces;
@@ -72,7 +75,7 @@ public sealed class StartEvaluationCommandHandler(IHealthTestRepository reposito
 
 public record SubmitAnswerInput(Guid QuestionId, Guid? AnswerOptionId, string? ValueText);
 
-public record SubmitEvaluationRequest(IReadOnlyList<SubmitAnswerInput> Answers);
+public record SubmitEvaluationRequest(IReadOnlyList<SubmitAnswerInput> Answers, string? ClientRequestId = null);
 
 public record SubmitEvaluationCommand(Guid AssignmentId, SubmitEvaluationRequest Request)
     : IRequest<HealthTestEvaluationDto>;
@@ -85,7 +88,10 @@ public sealed class SubmitEvaluationCommandHandler(
     AlertEngine alertEngine,
     IHealthTestMetricsQueue? metricsQueue = null,
     INutritionPlanWorkflow? nutritionWorkflow = null,
-    Microsoft.Extensions.Logging.ILogger<SubmitEvaluationCommandHandler>? logger = null
+    IPublisher? publisher = null,
+    IProgramAssignmentRepository? assignmentRepository = null,
+    IOptionsMonitor<ProgramAssignmentSettings>? assignmentSettings = null,
+    ILogger<SubmitEvaluationCommandHandler>? logger = null
 ) : IRequestHandler<SubmitEvaluationCommand, HealthTestEvaluationDto>
 {
     public async Task<HealthTestEvaluationDto> Handle(
@@ -96,14 +102,27 @@ public sealed class SubmitEvaluationCommandHandler(
         var result = await repository.ExecuteInTransactionAsync(
             async () =>
             {
-                var assignment = await repository.GetAssignmentByIdAsync(request.AssignmentId, ct);
+                var assignment = assignmentRepository is null
+                    ? await repository.GetAssignmentByIdAsync(request.AssignmentId, ct)
+                    : await repository.GetAssignmentForSubmitAsync(request.AssignmentId, ct);
                 if (assignment is null)
                 {
                     throw new InvalidOperationException("La asignación no existe.");
                 }
 
+                if (request.Request.ClientRequestId?.Length > 100)
+                    throw new InvalidOperationException("clientRequestId admite como máximo 100 caracteres.");
+                if (assignment.Status == HealthTestAssignmentStatus.cancelled)
+                    throw new InvalidOperationException("La asignación está cancelada.");
                 if (assignment.Status == HealthTestAssignmentStatus.completed)
                 {
+                    var completedId = await repository.GetEvaluationByAssignmentAsync(assignment.Id, ct);
+                    var completed = completedId.HasValue
+                        ? await repository.GetEvaluationWithDetailsAsync(completedId.Value, ct) : null;
+                    if (!string.IsNullOrWhiteSpace(request.Request.ClientRequestId)
+                        && completed?.ClientRequestId == request.Request.ClientRequestId
+                        && completed.Status == HealthTestEvaluationStatus.completed)
+                        return HealthTestEvaluationDto.FromEntity(completed);
                     throw new InvalidOperationException("La asignación ya está completada.");
                 }
 
@@ -284,6 +303,7 @@ public sealed class SubmitEvaluationCommandHandler(
                 }
 
                 // Cierra la evaluación y la asignación.
+                evaluation.ClientRequestId = request.Request.ClientRequestId;
                 evaluation.Status = HealthTestEvaluationStatus.completed;
                 evaluation.CompletedAt = DateTime.UtcNow;
                 evaluation.Score = output.Score;
@@ -331,6 +351,25 @@ public sealed class SubmitEvaluationCommandHandler(
             {
                 if (logger is not null) Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(logger,
                     "El reconciliador retomará nutrición tras la batería: tipo={ExceptionType}", ex.GetType().Name);
+            }
+        }
+
+        // D-01: la transacción clínica ya hizo COMMIT y fue liberada por el repositorio.
+        // Cualquier fallo del hook (incluida la cancelación posterior al commit) se registra
+        // y conserva el resultado clínico. El token se propaga a todas las operaciones.
+        if (assignmentSettings?.CurrentValue.Enabled == true && publisher is not null && assignmentRepository is not null)
+        {
+            try
+            {
+                var assignment = await repository.GetAssignmentByIdAsync(result.AssignmentId, ct);
+                if (assignment?.BatteryAssignmentId is Guid batteryAssignmentId
+                    && !await assignmentRepository.HasCurrentEnrollmentAsync(result.PatientId, ct)
+                    && await assignmentRepository.FindCompletedInitialBatteryAsync(result.PatientId, batteryAssignmentId, ct) is Guid completed)
+                    await publisher.Publish(new BatteryCompletedEvent(result.PatientId, completed), ct);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Program.AssignmentHookFailed EvaluationId={EvaluationId}", result.Id);
             }
         }
         return result;

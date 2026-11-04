@@ -40,6 +40,8 @@ public sealed class HealthTestEvaluationConfiguration
             .HasColumnName("completed_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(x => x.ClientRequestId).HasColumnName("client_request_id").HasMaxLength(100);
+
         builder.Property(x => x.Score).HasColumnName("score").HasColumnType("numeric(10,2)");
 
         builder

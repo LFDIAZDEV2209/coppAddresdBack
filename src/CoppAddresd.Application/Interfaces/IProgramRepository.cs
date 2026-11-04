@@ -48,6 +48,15 @@ public interface IProgramRepository
         CancellationToken ct = default
     );
 
+    /// <summary>Crea semanas bloqueadas y racha dentro de la transacción del evento, sin activar contenido.</summary>
+    Task<ProgramEnrollment> CreatePendingAssignmentAsync(Guid patientId, string templateCode, CancellationToken ct)
+        => throw new NotSupportedException("Inscripción pendiente no implementada.");
+
+    /// <summary>Activa semana 1 y su contenido en una transacción idempotente compartida con fallback.</summary>
+    Task<CoppAddresd.Application.Features.ProgramProgress.Assignment.AppliedAssignmentDto?> ActivateAssignmentAsync(
+        CoppAddresd.Application.Features.ProgramProgress.Assignment.AssignmentActivationInput input, CancellationToken ct)
+        => throw new NotSupportedException("Activación de asignación no implementada.");
+
     /// <summary>Pausa la inscripción (Active → Paused). Requiere estado Active.</summary>
     Task<ProgramEnrollment> PauseAsync(
         Guid enrollmentId,

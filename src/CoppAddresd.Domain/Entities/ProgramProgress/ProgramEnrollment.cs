@@ -27,8 +27,14 @@ public sealed class ProgramEnrollment
     /// <summary>Lunes (en zona del paciente) de la semana 1.</summary>
     public DateOnly StartLocalDate { get; set; }
 
-    /// <summary>Semana actual (1..TotalWeeks). Avanza con el tick diario o al completar una semana perfecta.</summary>
-    public int CurrentWeekNumber { get; set; } = 1;
+    private int _currentWeekNumber = 1;
+
+    /// <summary>Semana actual: 0 mientras PendingAssignment; 1..TotalWeeks en curso.</summary>
+    public int CurrentWeekNumber
+    {
+        get => Status == ProgramEnrollmentStatus.PendingAssignment ? 0 : _currentWeekNumber;
+        set => _currentWeekNumber = value;
+    }
 
     /// <summary>Se fija cuando current_week_number = total_weeks y la última semana pasa a Completed.</summary>
     public DateTime? CompletedAt { get; set; }

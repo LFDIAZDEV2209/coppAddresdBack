@@ -106,3 +106,33 @@ un índice adicional porque la actualización se dirige por la PK.
 - Validación con `EXPLAIN (ANALYZE, BUFFERS)` antes/después.
 - Producción: `CREATE INDEX CONCURRENTLY` (no bloquea) — fuera de transacción (skill `migrations`).
 - Evitar índices redundantes cubiertos por un compuesto.
+
+## Asignación del programa post-tests (paquete 1)
+
+| Índice | Tabla app | Columnas | Tipo | Motivo / consulta | Impacto esperado | Costo potencial |
+|---|---|---|---|---|---|---|
+| uq_program_conditions_code | program_conditions | code | UNIQUE B-tree (clave alternativa) | DML idempotente y FK de reglas por código | Resolución única | Una entrada por condición |
+| ix_program_assignment_rules_code | program_assignment_rules | code | UNIQUE B-tree | Seed idempotente, trazabilidad y desempate | Código estable | Una entrada por regla |
+| ix_program_assignment_rules_condition_code | program_assignment_rules | condition_code | B-tree | FK y reglas por condición | Evita escaneo al validar referencias | Una entrada por regla |
+| uq_program_assignment_recommendations_enrollment | program_assignment_recommendations | enrollment_id WHERE state <> 'dismissed' | UNIQUE parcial B-tree | Una recomendación no desestimada por inscripción | Idempotencia concurrente | Escritura al cambiar state |
+| ix_program_assignment_recommendations_enrollment_patient | program_assignment_recommendations | enrollment_id, patient_id | B-tree | FK compuesta y consulta por inscripción/paciente; incluye historial desestimado | Protege consistencia sin escanear historial | Una entrada por recomendación |
+| ix_program_assignment_recommendations_patient_id | program_assignment_recommendations | patient_id | B-tree | FK y ficha por paciente | Búsqueda acotada | Una entrada por recomendación |
+| ix_program_assignment_recommendations_state_created_at | program_assignment_recommendations | state, created_at | B-tree | Cola por estado/antigüedad y fallback | Lectura ordenada y por rango | Una entrada por recomendación |
+
+Los índices se crean sobre tablas nuevas vacías dentro de la transacción de la
+migración. No se añade GIN: el motor leerá el pequeño catálogo, sin consultas
+masivas por rutas JSON. La cola y su EXPLAIN se validarán al implementar el paquete 2.
+
+## Recuperación y avisos de asignación (paquete 3)
+
+| Índice | Tabla app | Columnas | Tipo | Motivo / consulta | Impacto esperado | Costo potencial |
+|---|---|---|---|---|---|---|
+| PK_program_assignment_recoveries | program_assignment_recoveries | battery_assignment_id | PK B-tree | FK y claim/backoff por batería; NOT EXISTS del reconciliador | Un intento coordinado por batería | Escritura por reintento |
+| uq_program_assignment_notices_rec_user_kind | program_assignment_notices | recommendation_id,user_id,kind | UNIQUE B-tree | Dedupe transaccional y FK por recomendación | Sin avisos duplicados por apply/replay | Una entrada por destinatario |
+| ix_program_assignment_notices_user_created | program_assignment_notices | user_id,created_at | B-tree | Inbox del destinatario ordenado | Paginación por usuario | Una entrada por aviso |
+| ix_program_assignment_notices_pending | program_assignment_notices | next_attempt_at WHERE delivered_at IS NULL | B-tree parcial | Lote pendiente y reintentos de entrega | Solo subconjunto no entregado | Actualización por intento/confirmación |
+
+Se crean en tablas nuevas vacías. La cola usa los índices previos state/created_at
+y las claves de perfil/paciente; severidad JSON y días de espera son derivados
+al ordenar antes de paginar. No se añade GIN ni rollup de dashboard. Recoveries
+se busca por PK de batería; no se añade índice redundante de next_attempt_at.

@@ -68,6 +68,8 @@ if (!args.Contains("--migrate"))
     builder.Services.AddSingleton(new StorageSignatureService(storageSignatureKey));
 }
 
+// El flag se resuelve por entorno y admite override/reload desde configuración.
+builder.Services.AddProgramAssignmentSettings(builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.ConfigureCors(builder.Configuration);
@@ -160,6 +162,7 @@ builder.Services.AddHostedService<ReconcileStreakHostedService>();
 // job periódico configurable vía Program:Controls (Enabled, TickMinutes,
 // ventana local, plantillas). Push FCM + mensaje proactivo en el chat.
 builder.Services.AddHostedService<ProgramControlHostedService>();
+builder.Services.AddHostedService<ProgramAssignmentHostedService>();
 
 // Health check de conectividad con PostgreSQL. AddDbContextCheck requiere el
 // paquete Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore

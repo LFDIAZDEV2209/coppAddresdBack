@@ -30,6 +30,7 @@
   <EmbeddedResource Include="Migrations\Seed\AddDocumentCatalogs.sql" />
   <EmbeddedResource Include="Migrations\Seed\AddServerCatalogs.sql" />
   <EmbeddedResource Include="Migrations\Seed\AddHealthTestsCatalogSeed.sql" />
+    <EmbeddedResource Include="Migrations\Seed\AddProgramAssignmentCatalog.sql" />
   </ItemGroup>
 
   <ItemGroup>

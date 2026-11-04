@@ -68,6 +68,9 @@ public static class DependencyInjection
         services.AddScoped<IWellnessRepository, WellnessRepository>();
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
+        services.AddScoped<IProgramAssignmentRepository, ProgramAssignmentRepository>();
+        services.AddScoped<IProgramAssignmentOperationsRepository, ProgramAssignmentOperationsRepository>();
+        services.AddScoped<IProgramAssignmentNoticeRepository, ProgramAssignmentNoticeRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
         services.AddHttpClient<IAssessmentProfileAnalysis, AssessmentProfileAnalysis>(client =>
         { client.Timeout = TimeSpan.FromSeconds(80); client.MaxResponseContentBufferSize = 131072; });

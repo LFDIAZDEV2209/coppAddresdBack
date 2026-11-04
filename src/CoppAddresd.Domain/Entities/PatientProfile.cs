@@ -33,6 +33,9 @@ public sealed class PatientProfile
     /// <summary>Género declarado (Femenino, Masculino...).</summary>
     public string? Gender { get; set; }
 
+    /// <summary>Zona horaria IANA del paciente para su programa y calendario local.</summary>
+    public string Timezone { get; set; } = "America/Bogota";
+
     /// <summary>Etnia del catálogo demográfico (FK, categorías OMB).</summary>
     public Guid? EthnicityId { get; set; }
 

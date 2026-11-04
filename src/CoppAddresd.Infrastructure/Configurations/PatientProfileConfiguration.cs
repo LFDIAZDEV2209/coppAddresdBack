@@ -38,6 +38,8 @@ public sealed class PatientProfileConfiguration : IEntityTypeConfiguration<Patie
 
         builder.Property(x => x.Gender).HasColumnName("gender").HasMaxLength(10);
 
+        builder.Property(x => x.Timezone).HasColumnName("timezone").HasMaxLength(64).HasDefaultValue("America/Bogota");
+
         builder.Property(x => x.EthnicityId).HasColumnName("ethnicity_id");
 
         builder.Property(x => x.BloodTypeId).HasColumnName("blood_type_id");
