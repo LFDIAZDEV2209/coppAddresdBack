@@ -2089,35 +2089,42 @@ public sealed partial class ProgramRepository(
                         r.Name,
                         Exercises = r
                             .Exercises.OrderBy(e => e.SortOrder)
-                            .Select(e => new ExerciseItemDto(
-                                e.Name,
-                                e.Description,
-                                e.Sets,
-                                e.Repetitions,
-                                e.DurationSecs,
-                                e.RestSeconds,
-                                e.TargetMuscle,
-                                e.Equipment,
-                                e.Tips,
-                                e.SortOrder,
-                                e.Media != null && e.Media.Status == MediaStatus.Published
-                                    && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.MediaId : null,
-                                e.Media != null && e.Media.Status == MediaStatus.Published
-                                    && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.StorageKey : null,
-                                e.Media != null && e.Media.Status == MediaStatus.Published
-                                    && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.ThumbnailKey : null,
-                                e.Media != null && e.Media.Status == MediaStatus.Published
-                                    && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.MediaType.ToString() : null,
-                                e.WeightKg,
-                                e.Tempo,
-                                e.Rpe
-                            ))
+                            .Select(e => new
+                            {
+                                HasConfiguredMedia = e.MediaId != null,
+                                Content = new ExerciseItemDto(
+                                    e.Name,
+                                    e.Description,
+                                    e.Sets,
+                                    e.Repetitions,
+                                    e.DurationSecs,
+                                    e.RestSeconds,
+                                    e.TargetMuscle,
+                                    e.Equipment,
+                                    e.Tips,
+                                    e.SortOrder,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.MediaId : null,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.StorageKey : null,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.ThumbnailKey : null,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.MediaType.ToString() : null,
+                                    e.WeightKg,
+                                    e.Tempo,
+                                    e.Rpe
+                                )
+                            })
                             .ToList(),
                     })
                     .FirstOrDefaultAsync(ct);
 
                 resolvedRoutineName = routineData?.Name;
-                resolvedExercises = routineData?.Exercises;
+                resolvedExercises = routineData?.Exercises.Select(e => e.Content with
+                {
+                    ReferenceVideo = !e.HasConfiguredMedia ? CoppAddresd.Application.DTOs.ExerciseReferenceVideo.ForExercise(e.Content.Name) : null,
+                }).ToList();
             }
         }
 

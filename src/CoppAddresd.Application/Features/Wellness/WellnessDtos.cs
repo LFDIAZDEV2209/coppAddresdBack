@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CoppAddresd.Application.DTOs;
 using CoppAddresd.Domain.Enums;
 
 namespace CoppAddresd.Application.Features.Wellness;
@@ -151,7 +152,7 @@ public record RoutineExerciseDto(
     int? DurationSecs, decimal? WeightKg,
     string? TargetMuscle, string? Equipment,
     string? Tempo, int? Rpe, string? Tips,
-    Guid? MediaId, int SortOrder)
+    Guid? MediaId, int SortOrder, ExerciseReferenceVideo? ReferenceVideo = null)
 {
     public static RoutineExerciseDto FromEntity(Domain.Entities.RoutineExercise e) => new(
         e.Id, e.Name, e.Description,
@@ -159,7 +160,7 @@ public record RoutineExerciseDto(
         e.DurationSecs, e.WeightKg,
         e.TargetMuscle, e.Equipment,
         e.Tempo, e.Rpe, e.Tips,
-        e.MediaId, e.SortOrder);
+        e.MediaId, e.SortOrder, e.MediaId is null ? ExerciseReferenceVideo.ForExercise(e.Name) : null);
 }
 
 public record CreateExerciseRoutineRequest(

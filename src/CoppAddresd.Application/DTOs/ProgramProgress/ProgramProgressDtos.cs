@@ -210,7 +210,8 @@ public sealed record ExerciseItemDto(
     string? MediaType = null,
     decimal? WeightKg = null,
     string? Tempo = null,
-    int? Rpe = null
+    int? Rpe = null,
+    ExerciseReferenceVideo? ReferenceVideo = null
 );
 
 /// <summary>
