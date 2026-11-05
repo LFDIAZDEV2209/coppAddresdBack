@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Security.Claims;
 using System.Text;
 using CoppAddresd.Auth.Configuration;
@@ -55,6 +56,7 @@ public static class ServiceCollectionExtensions
         .AddEntityFrameworkStores<AuthDbContext>()
         .AddDefaultTokenProviders();
 
+        services.Replace(ServiceDescriptor.Scoped<IUserValidator<ApplicationUser>, PatientUserValidator>());
         return services;
     }
 

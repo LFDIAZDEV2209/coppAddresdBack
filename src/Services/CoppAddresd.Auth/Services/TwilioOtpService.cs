@@ -131,7 +131,7 @@ public class TwilioOtpService : ITwilioOtpService
         }
         catch (ApiException ex) when (!ct.IsCancellationRequested)
         {
-            throw MapApiException(ex);
+            throw MapApiException(ex, verificationCheck: true);
         }
         catch (TwilioException ex) when (!ct.IsCancellationRequested)
         {
@@ -171,9 +171,12 @@ public class TwilioOtpService : ITwilioOtpService
     /// conservando solo información útil para el mapeo HTTP (kind, status y
     /// código de error de Twilio). El mensaje se limita a un detalle seguro.
     /// </summary>
-    private TwilioOtpException MapApiException(ApiException ex)
+    private TwilioOtpException MapApiException(ApiException ex, bool verificationCheck = false)
     {
-        var kind = ex.Status >= 500
+        var missingVerification = verificationCheck && ((ex.Code == 20404 && ex.Status == 404) || ex.Code == 60431);
+        var kind = missingVerification
+            ? TwilioOtpErrorKind.VerificationExpired
+            : ex.Status >= 500
             ? TwilioOtpErrorKind.ProviderUnavailable
             : ex.Status == 429
                 ? TwilioOtpErrorKind.RateLimited

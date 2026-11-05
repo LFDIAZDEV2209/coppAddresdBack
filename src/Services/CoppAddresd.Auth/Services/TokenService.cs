@@ -38,11 +38,13 @@ public class TokenService : ITokenService
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Email, user.Email!),
             new(ClaimTypes.Name, $"{user.FirstName} {user.LastName}"),
             new("security_stamp", user.SecurityStamp ?? string.Empty),
             new("application_session_version", applicationSessionVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
         };
+
+        if (!string.IsNullOrWhiteSpace(user.Email))
+            claims.Add(new Claim(ClaimTypes.Email, user.Email));
 
         foreach (var role in roles)
         {

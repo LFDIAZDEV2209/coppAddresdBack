@@ -291,6 +291,7 @@ public class OtpService : IOtpService
             .OrderByDescending(o => o.CreatedAt)
             .FirstOrDefaultAsync(ct);
 
+        string? verifiedPhone = null;
         if (otp is not null)
         {
             // Flujo EMAIL local sin cambios: expiración, intentos y hash local.
@@ -378,6 +379,7 @@ public class OtpService : IOtpService
                 return null;
             }
 
+            verifiedPhone = phone.Target;
             _otpProtection.RegisterVerifySucceeded(clientIp, phone.Target);
             _logger.LogInformation(
                 "OTP phone verification approved for document {Document}",
@@ -386,7 +388,7 @@ public class OtpService : IOtpService
         }
 
         // Aprovisionamiento: usuario + vínculo con el perfil + acceso a la app.
-        var user = await FindOrCreateUserAsync(patient, ct);
+        var user = await FindOrCreateUserAsync(patient, verifiedPhone, ct);
         var application = await EnsureApplicationAccessAsync(user.Id, request.Application, ct);
         if (application is null)
         {
@@ -589,9 +591,11 @@ public class OtpService : IOtpService
 
     private async Task<ApplicationUser> FindOrCreateUserAsync(
         PatientLookupResult patient,
+        string? verifiedPhone,
         CancellationToken ct
     )
     {
+        var email = string.IsNullOrWhiteSpace(patient.Email) ? null : patient.Email.Trim();
         // Ya vinculado a un usuario de Identity: usarlo directamente.
         if (patient.UserId is Guid existingUserId)
         {
@@ -604,9 +608,9 @@ public class OtpService : IOtpService
 
         // ¿Existe ya un usuario con el correo del paciente (creado desde ERP)?
         // Si es así se vincula el perfil del paciente a ese usuario.
-        if (!string.IsNullOrWhiteSpace(patient.Email))
+        if (email is not null)
         {
-            var byEmail = await _userManager.FindByEmailAsync(patient.Email);
+            var byEmail = await _userManager.FindByEmailAsync(email);
             if (byEmail is not null)
             {
                 await LinkPatientAsync(patient.Id, byEmail.Id, ct);
@@ -614,21 +618,20 @@ public class OtpService : IOtpService
             }
         }
 
-        // Provisiona un nuevo usuario. El login futuro usa el flujo OTP por
-        // identificación: el password se genera aleatorio (inutilizable) y el
-        // usuario solo puede entrar verificando su identidad por OTP.
-        var userName = !string.IsNullOrWhiteSpace(patient.Email)
-            ? patient.Email
-            : $"p-{patient.DocumentNumber}";
+        // Sin correo, la identidad usa el id estable del paciente y solo admite
+        // el celular que acaba de aprobar Twilio. No se inventa una dirección.
+        var userName = email ?? $"patient-{patient.Id:N}";
 
         var user = new ApplicationUser
         {
             UserName = userName,
-            Email = string.IsNullOrWhiteSpace(patient.Email) ? null : patient.Email,
+            Email = email,
+            PhoneNumber = verifiedPhone,
+            PhoneNumberConfirmed = verifiedPhone is not null,
             FirstName = patient.FirstName,
             LastName = patient.LastName,
             IsActive = true,
-            EmailConfirmed = true,
+            EmailConfirmed = email is not null && verifiedPhone is null,
         };
 
         var result = await _userManager.CreateAsync(user);

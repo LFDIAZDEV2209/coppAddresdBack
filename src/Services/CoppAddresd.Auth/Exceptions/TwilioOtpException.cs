@@ -26,7 +26,10 @@ public enum TwilioOtpErrorKind
     RateLimited,
 
     /// <summary>Error genérico devuelto por Twilio.</summary>
-    ProviderError
+    ProviderError,
+
+    /// <summary>Verificación ya consumida, vencida o inexistente al comprobar el código.</summary>
+    VerificationExpired
 }
 
 /// <summary>

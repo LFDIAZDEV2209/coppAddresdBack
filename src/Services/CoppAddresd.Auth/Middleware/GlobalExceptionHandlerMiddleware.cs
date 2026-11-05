@@ -78,6 +78,10 @@ public class GlobalExceptionHandlerMiddleware
                     (StatusCodes.Status503ServiceUnavailable, "Service Unavailable",
                         "La verificación por SMS no está disponible. Intenta más tarde."),
 
+                TwilioOtpErrorKind.VerificationExpired =>
+                    (StatusCodes.Status400BadRequest, "Bad Request",
+                        "Este código ya se usó o venció. Solicita uno nuevo."),
+
                 // Error genérico del proveedor.
                 _ => (StatusCodes.Status502BadGateway, "Bad Gateway",
                     "El proveedor de verificación no pudo completar la operación. Intenta más tarde."),
