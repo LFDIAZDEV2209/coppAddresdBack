@@ -92,6 +92,29 @@ public class FoodAiClientSendImageTests
         Assert.Equal("basic_reference", portion.Method);
         Assert.Null(result.Foods[1].Portion);
         Assert.Null(result.Foods[1].Segmentation);
+        Assert.Null(result.Provider);
+        Assert.Null(result.Foods[0].NutritionQuery);
+        Assert.Null(result.Foods[0].NameEn);
+        Assert.Null(result.Foods[0].EstimatedNutrients);
+    }
+
+    [Fact]
+    public async Task SendImageAsync_parsea_nombres_bilingues_y_query_independiente()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"analysis_id":"3f3f0f0f-1111-2222-3333-444444444444","provider":"llm","foods":[{"name":"Arroz con pollo","name_en":"Chicken and rice","nutrition_query":"chicken rice cooked","estimated_nutrients_per_100g":{"calories":150,"protein_g":10,"carbs_g":20,"fat_g":3,"fiber_g":1},"confidence":0.86,"portion":{"portion_size":"unknown","estimated_grams":200,"min_grams":150,"max_grams":250,"confidence":0.7,"method":"llm_estimate"}}]}"""),
+        });
+        var result = await BuildClient(handler).SendImageAsync(
+            Guid.NewGuid(), new MemoryStream(ImageBytes), "plato.png", "image/png");
+        Assert.Equal("llm", result.Provider);
+        var food = Assert.Single(result.Foods);
+        Assert.Equal("Arroz con pollo", food.Name);
+        Assert.Equal("Chicken and rice", food.NameEn);
+        Assert.Equal("chicken rice cooked", food.NutritionQuery);
+        Assert.Equal("llm_estimate", food.Portion!.Method);
+        Assert.Equal(new EstimatedNutrientsDto(150m, 10m, 20m, 3m, 1m), food.EstimatedNutrients);
+        Assert.Null(food.Segmentation);
     }
 
     [Fact]

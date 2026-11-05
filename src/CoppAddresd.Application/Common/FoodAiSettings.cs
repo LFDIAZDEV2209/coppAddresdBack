@@ -11,10 +11,10 @@ public class FoodAiSettings
     public string BaseUrl { get; set; } = "http://localhost:8010";
 
     /// <summary>
-    /// Timeout global del HttpClient. La inferencia YOLO en CPU puede tardar
-    /// 5–15 s; el health check tiene su propio límite interno (3 s).
+    /// Presupuesto para dos proveedores LLM (30 s cada uno), fallback local
+    /// y persistencia. Configurable por FoodAi__TimeoutSeconds.
     /// </summary>
-    public int TimeoutSeconds { get; set; } = 60;
+    public int TimeoutSeconds { get; set; } = 120;
     public string HealthEndpoint { get; set; } = "/health";
     public string AnalyzeEndpoint { get; set; } = "/analyze";
 

@@ -90,8 +90,11 @@ public class AnalyzeFoodImageCommandHandler
             ct
         );
 
-        // Nutrición: única fuente en PostgreSQL (.NET). Por alimento →
-        // provider (100 g) → calculadora (gramos estimados) → rango y totales.
+        _logger.LogInformation("FoodAi analysis_id={AnalysisId} provider={Provider}",
+            analysisId, result.Provider ?? "legacy");
+
+        // Nutrición: USDA prioritario; aproximaciones del LLM solo sin entrada.
+        // Por alimento → valores por 100 g → gramos estimados → rango y totales.
         var foods = new List<DetectedFoodDto>(result.Foods.Count);
         foreach (var food in result.Foods)
         {
@@ -157,7 +160,8 @@ public class AnalyzeFoodImageCommandHandler
             foods,
             summary.Summary,
             summary.SummaryRange,
-            intake
+            intake,
+            result.Provider
         );
     }
 
@@ -290,18 +294,44 @@ public class AnalyzeFoodImageCommandHandler
             return new FoodNutritionResult(null, null, "portion_unavailable");
         }
 
-        var per100g = await _nutritionProvider.GetNutritionAsync(food.Name, ct);
+        var per100g = await _nutritionProvider.GetNutritionAsync(food.NutritionQuery ?? food.Name, ct);
+        var estimated = false;
+        if (per100g is null && food.EstimatedNutrients is { } nutrients
+            && nutrients.Calories is >= 0 and <= 1000
+            && nutrients.ProteinG is >= 0 and <= 100 && nutrients.CarbsG is >= 0 and <= 100
+            && nutrients.FatG is >= 0 and <= 100 && nutrients.FiberG is >= 0 and <= 100)
+        {
+            estimated = true;
+            per100g = new FoodNutritionDto(food.Name, 100m,
+                nutrients.Calories, nutrients.ProteinG, nutrients.CarbsG, nutrients.FatG, nutrients.FiberG,
+                0m, 0m, "llm_estimate", "llm-estimate-v1");
+        }
         if (per100g is null)
         {
             return new FoodNutritionResult(null, null, "unavailable");
         }
 
-        return _nutritionCalculator.Calculate(
+        var calculated = _nutritionCalculator.Calculate(
             per100g,
             food.Portion.EstimatedGrams,
             food.Portion.MinGrams,
             food.Portion.MaxGrams
         );
+        if (!estimated)
+        {
+            return calculated with { NutritionSource = "usda" };
+        }
+
+        // El LLM solo entrega cinco macros: azúcar y sodio no se conocen.
+        // Se eliminan los ceros internos de la calculadora antes de publicar/persistir.
+        NutritionValueDto WithoutUnknowns(NutritionValueDto value) => value with { Sugar = null, Sodium = null };
+        return calculated with
+        {
+            NutritionSource = "llm_estimate",
+            Nutrition = calculated.Nutrition is { } value ? WithoutUnknowns(value) : null,
+            NutritionRange = calculated.NutritionRange is { } range
+                ? new NutritionRangeDto(WithoutUnknowns(range.Min), WithoutUnknowns(range.Max)) : null,
+        };
     }
 
     /// <summary>
@@ -343,14 +373,19 @@ public class AnalyzeFoodImageCommandHandler
                 MidpointRounding.AwayFromZero
             );
 
+        decimal? SumOptional(Func<NutritionValueDto, decimal?> selector) =>
+            available.Any(f => selector(f.NutritionResult!.Nutrition!) is null)
+                ? null
+                : Math.Round(available.Sum(f => selector(f.NutritionResult!.Nutrition!)!.Value), 2, MidpointRounding.AwayFromZero);
+
         var summary = new NutritionValueDto(
             Calories: Sum(n => n.Calories),
             Protein: Sum(n => n.Protein),
             Carbohydrates: Sum(n => n.Carbohydrates),
             Fat: Sum(n => n.Fat),
             Fiber: Sum(n => n.Fiber),
-            Sugar: Sum(n => n.Sugar),
-            Sodium: Sum(n => n.Sodium)
+            Sugar: SumOptional(n => n.Sugar),
+            Sodium: SumOptional(n => n.Sodium)
         );
 
         NutritionValueDto? SumRange(
@@ -377,8 +412,8 @@ public class AnalyzeFoodImageCommandHandler
                 ),
                 Fat: Math.Round(values.Sum(v => v.Fat), 2, MidpointRounding.AwayFromZero),
                 Fiber: Math.Round(values.Sum(v => v.Fiber), 2, MidpointRounding.AwayFromZero),
-                Sugar: Math.Round(values.Sum(v => v.Sugar), 2, MidpointRounding.AwayFromZero),
-                Sodium: Math.Round(values.Sum(v => v.Sodium), 2, MidpointRounding.AwayFromZero)
+                Sugar: values.Any(v => v.Sugar is null) ? null : Math.Round(values.Sum(v => v.Sugar!.Value), 2, MidpointRounding.AwayFromZero),
+                Sodium: values.Any(v => v.Sodium is null) ? null : Math.Round(values.Sum(v => v.Sodium!.Value), 2, MidpointRounding.AwayFromZero)
             );
         }
 

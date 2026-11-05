@@ -25,5 +25,6 @@ public record AnalyzeFoodImageResult(
     IReadOnlyList<DetectedFoodDto> Foods,
     NutritionValueDto? Summary = null,
     NutritionRangeDto? SummaryRange = null,
-    MealIntakeDto? Intake = null
+    MealIntakeDto? Intake = null,
+    string? Provider = null
 );

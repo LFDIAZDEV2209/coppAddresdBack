@@ -9,8 +9,8 @@ public record NutritionValueDto(
     decimal Carbohydrates,
     decimal Fat,
     decimal Fiber,
-    decimal Sugar,
-    decimal Sodium
+    decimal? Sugar,
+    decimal? Sodium
 );
 
 /// <summary>Rango nutricional derivado del rango de gramos de la porción.</summary>
@@ -38,5 +38,6 @@ public record FoodNutritionResult(
     NutritionRangeDto? NutritionRange,
     string NutritionStatus,
     string? Source = null,
-    string? SourceVersion = null
+    string? SourceVersion = null,
+    string? NutritionSource = null
 );

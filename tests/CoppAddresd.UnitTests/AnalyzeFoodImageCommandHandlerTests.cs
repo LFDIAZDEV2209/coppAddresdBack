@@ -33,6 +33,11 @@ public class AnalyzeFoodImageCommandHandlerTests
 
     private sealed class FakeFoodAiClient : IFoodAiClient
     {
+        public string? NutritionQuery { get; set; }
+        public string? NameEn { get; set; }
+        public string? Provider { get; set; }
+        public EstimatedNutrientsDto? EstimatedNutrients { get; set; }
+        public IReadOnlyList<DetectedFoodDto>? TestFoods { get; set; }
         public FoodAiAnalyzeResult? SentResult { get; private set; }
         public Guid? SentAnalysisId { get; private set; }
 
@@ -46,12 +51,14 @@ public class AnalyzeFoodImageCommandHandlerTests
             SentAnalysisId = analysisId;
             SentResult = new FoodAiAnalyzeResult(
                 analysisId.ToString(), "completed", "food-detector-v1", "food-segmenter-v1", "detector-based-v1", 182,
-                [new DetectedFoodDto(
+                TestFoods ?? [new DetectedFoodDto(
                     "pizza", 0.94, new BoundingBoxDto(120, 80, 300, 180),
                     Segmentation: new SegmentationDto(
                         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
                         44970),
-                    Portion: new PortionDto("large", 128, 118, 160, 0.55, "basic_reference"))]);
+                    Portion: new PortionDto("large", 128, 118, 160, 0.55, "basic_reference"),
+                    NutritionQuery: NutritionQuery, NameEn: NameEn,
+                    EstimatedNutrients: EstimatedNutrients)], Provider: Provider);
             return Task.FromResult(SentResult);
         }
     }
@@ -59,9 +66,16 @@ public class AnalyzeFoodImageCommandHandlerTests
     private sealed class FakeNutritionProvider : INutritionProvider
     {
         public FoodNutritionDto? Result { get; set; }
+        public string? RequestedKey { get; private set; }
+        public CancellationToken ReceivedToken { get; private set; }
+        public Dictionary<string, FoodNutritionDto>? Results { get; set; }
 
         public Task<FoodNutritionDto?> GetNutritionAsync(string foodKey, CancellationToken ct = default)
-            => Task.FromResult(Result);
+        {
+            RequestedKey = foodKey;
+            ReceivedToken = ct;
+            return Task.FromResult(Results?.GetValueOrDefault(foodKey) ?? Result);
+        }
     }
 
     private static readonly byte[] Png1x1 = Convert.FromBase64String(
@@ -109,6 +123,32 @@ public class AnalyzeFoodImageCommandHandlerTests
             analysisRepository ?? new FakeAnalysisRepository(),
             NullLogger<AnalyzeFoodImageCommandHandler>.Instance);
 
+    [Theory]
+    [InlineData("chicken and rice", "llm", "Chicken and rice", "chicken and rice")]
+    [InlineData(null, null, null, "pizza")]
+    public async Task Handle_resuelve_USDA_con_query_o_nombre_y_conserva_idiomas(
+        string? query, string? provider, string? nameEn, string expectedKey)
+    {
+        var client = new FakeFoodAiClient { NutritionQuery = query, NameEn = nameEn, Provider = provider };
+        var nutrition = new FakeNutritionProvider();
+        var repository = new FakeAnalysisRepository();
+        var handler = BuildHandler(client: client, nutritionProvider: nutrition, analysisRepository: repository);
+        using var cts = new CancellationTokenSource();
+        var result = await handler.Handle(
+            new AnalyzeFoodImageCommand(new MemoryStream(Png1x1), "plato.png", "image/png", Png1x1.Length), cts.Token);
+
+        Assert.Equal(expectedKey, nutrition.RequestedKey);
+        Assert.Equal(cts.Token, nutrition.ReceivedToken);
+        Assert.Equal(provider, result.Provider);
+        var food = Assert.Single(result.Foods);
+        Assert.Equal(query, food.NutritionQuery);
+        Assert.Equal(nameEn, food.NameEn);
+        Assert.Equal("pizza", food.Name);
+        Assert.Equal("unavailable", food.NutritionResult!.NutritionStatus);
+        Assert.Null(result.Summary);
+        Assert.Equal("pizza", Assert.Single(Assert.Single(repository.Saved).Items).Name);
+    }
+
     [Fact]
     public async Task Handle_imagen_valida_genera_analysis_id_y_envia_al_servicio()
     {
@@ -129,6 +169,69 @@ public class AnalyzeFoodImageCommandHandlerTests
         Assert.True(Guid.TryParse(result.AnalysisId, out _));
         Assert.Equal(storage.SavedAnalysisId, client.SentAnalysisId);
         Assert.Equal("bandeja.png", storage.SavedFileName);
+    }
+
+    [Theory]
+    [InlineData(true, 340.48, "usda")]
+    [InlineData(false, 192, "llm_estimate")]
+    public async Task Handle_prioriza_USDA_y_sin_entrada_usa_estimacion(
+        bool usdaHit, double calories, string source)
+    {
+        var client = new FakeFoodAiClient
+        {
+            Provider = "llm", NutritionQuery = "pizza cheese",
+            EstimatedNutrients = new EstimatedNutrientsDto(150m, 10m, 20m, 3m, 1m),
+        };
+        var nutrition = new FakeNutritionProvider
+        {
+            Result = usdaHit ? new FoodNutritionDto("pizza", 100m, 266m, 11m, 33m, 10m, 2m, 3m, 598m, "USDA FoodData Central", "v1") : null,
+        };
+        var repository = new FakeAnalysisRepository();
+        var result = await BuildHandler(client: client, nutritionProvider: nutrition, analysisRepository: repository).Handle(
+            new AnalyzeFoodImageCommand(new MemoryStream(Png1x1), "plato.png", "image/png", Png1x1.Length), CancellationToken.None);
+        var food = Assert.Single(result.Foods);
+        Assert.Equal("available", food.NutritionResult!.NutritionStatus);
+        Assert.Equal(source, food.NutritionResult.NutritionSource);
+        Assert.Equal((decimal)calories, food.NutritionResult.Nutrition!.Calories);
+        Assert.Equal((decimal)calories, result.Summary!.Calories);
+        Assert.Equal((decimal)calories, result.Intake!.Calories);
+        Assert.NotNull(result.SummaryRange);
+        var saved = Assert.Single(Assert.Single(repository.Saved).Items);
+        Assert.Equal(usdaHit ? "USDA FoodData Central" : "llm_estimate", saved.Source);
+        if (!usdaHit)
+        {
+            Assert.Null(food.NutritionResult.Nutrition.Sugar);
+            Assert.Null(food.NutritionResult.Nutrition.Sodium);
+            Assert.Null(saved.Sugar);
+            Assert.Null(result.Summary.Sodium);
+        }
+    }
+
+    [Fact]
+    public async Task Handle_totales_mixtos_incluyen_USDA_y_estimados()
+    {
+        var estimates = new EstimatedNutrientsDto(150m, 10m, 20m, 3m, 1m);
+        var client = new FakeFoodAiClient
+        {
+            Provider = "llm", TestFoods = [
+                new DetectedFoodDto("pizza", 0.9, new BoundingBoxDto(0, 0, 0, 0),
+                    Portion: new PortionDto("unknown", 100, 80, 120, 0.7, "llm_estimate"), EstimatedNutrients: estimates),
+                new DetectedFoodDto("sancocho", 0.8, new BoundingBoxDto(0, 0, 0, 0),
+                    Portion: new PortionDto("unknown", 200, 150, 250, 0.7, "llm_estimate"), EstimatedNutrients: estimates),
+            ],
+        };
+        var nutrition = new FakeNutritionProvider
+        {
+            Results = new() { ["pizza"] = new FoodNutritionDto("pizza", 100m, 266m, 11m, 33m, 10m, 2m, 3m, 598m, "USDA FoodData Central", "v1") },
+        };
+        var result = await BuildHandler(client: client, nutritionProvider: nutrition).Handle(
+            new AnalyzeFoodImageCommand(new MemoryStream(Png1x1), "plato.png", "image/png", Png1x1.Length), CancellationToken.None);
+        Assert.Equal("usda", result.Foods[0].NutritionResult!.NutritionSource);
+        Assert.Equal("llm_estimate", result.Foods[1].NutritionResult!.NutritionSource);
+        Assert.Equal(566m, result.Summary!.Calories);
+        Assert.Equal(31m, result.Intake!.ProteinG);
+        Assert.Equal(437.8m, result.SummaryRange!.Min.Calories);
+        Assert.Equal(694.2m, result.SummaryRange.Max.Calories);
     }
 
     [Fact]

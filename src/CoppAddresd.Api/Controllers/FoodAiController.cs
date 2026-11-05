@@ -101,6 +101,7 @@ public class FoodAiController : ControllerBase
                 {
                     analysisId = result.AnalysisId,
                     status = result.Status,
+                    provider = result.Provider,
                     modelVersion = result.ModelVersion,
                     segModelVersion = result.SegModelVersion,
                     classifierVersion = result.ClassifierVersion,
@@ -108,6 +109,8 @@ public class FoodAiController : ControllerBase
                     foods = result.Foods.Select(f => new
                     {
                         name = f.Name,
+                        nutritionQuery = f.NutritionQuery,
+                        nameEn = f.NameEn,
                         confidence = f.Confidence,
                         boundingBox = f.BoundingBox,
                         segmentation = f.Segmentation,
@@ -115,6 +118,7 @@ public class FoodAiController : ControllerBase
                         nutrition = f.NutritionResult?.Nutrition,
                         nutritionRange = f.NutritionResult?.NutritionRange,
                         nutritionStatus = f.NutritionResult?.NutritionStatus,
+                        nutritionSource = f.NutritionResult?.NutritionSource,
                         source = f.NutritionResult?.Source,
                         sourceVersion = f.NutritionResult?.SourceVersion,
                     }),
@@ -322,6 +326,8 @@ public class FoodAiController : ControllerBase
                 .Select(i => new
                 {
                     name = i.Name,
+                    nutritionSource = i.NutritionStatus == "available"
+                        ? (i.Source == "llm_estimate" ? "llm_estimate" : "usda") : null,
                     confidence = i.DetectionConfidence,
                     boundingBox = new
                     {

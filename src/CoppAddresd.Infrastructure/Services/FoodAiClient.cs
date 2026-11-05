@@ -128,8 +128,12 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
                         f.Portion.MinGrams,
                         f.Portion.MaxGrams,
                         f.Portion.Confidence,
-                        RequireValue(f.Portion.Method))))
-            .ToList());
+                        RequireValue(f.Portion.Method)),
+                NutritionQuery: f.NutritionQuery,
+                NameEn: f.NameEn,
+                EstimatedNutrients: f.EstimatedNutrients))
+            .ToList(),
+            body.Provider);
         }
         catch (JsonException ex)
         {
@@ -143,6 +147,7 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
 
     private sealed class FoodAiAnalyzeResponseJson
     {
+        public string? Provider { get; set; }
         public string? AnalysisId { get; set; }
         public string? Status { get; set; }
         public string? ModelVersion { get; set; }
@@ -154,6 +159,10 @@ var body = await response.Content.ReadFromJsonAsync<FoodAiAnalyzeResponseJson>(
 
     private sealed class DetectedFoodJson
     {
+        public string? NutritionQuery { get; set; }
+        public string? NameEn { get; set; }
+        [JsonPropertyName("estimated_nutrients_per_100g")]
+        public EstimatedNutrientsDto? EstimatedNutrients { get; set; }
         public string? Name { get; set; }
         public double Confidence { get; set; }
         public BoundingBoxJson? BoundingBox { get; set; }
