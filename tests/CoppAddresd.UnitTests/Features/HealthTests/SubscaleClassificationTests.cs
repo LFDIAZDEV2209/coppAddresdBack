@@ -25,8 +25,10 @@ public sealed class SubscaleClassificationTests
         Assert.True(engine.Matches(condition, result));
     }
 
-    [Fact]
-    public async Task Submit_TotalAlto_NoAplicaRangosDelTotalASubescalas()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Submit_TotalAlto_NoAplicaRangosDelTotalASubescalas(bool assignmentEnabled)
     {
         var version = new HealthTestVersion
         {
@@ -59,7 +61,7 @@ public sealed class SubscaleClassificationTests
         var assignment = new HealthTestAssignment
         {
             Id = Guid.NewGuid(), PatientId = Guid.NewGuid(), VersionId = version.Id,
-            Status = HealthTestAssignmentStatus.in_progress,
+            Status = HealthTestAssignmentStatus.in_progress, BatteryAssignmentId = Guid.NewGuid(),
         };
         var evaluation = new HealthTestEvaluation
         {
@@ -68,6 +70,9 @@ public sealed class SubscaleClassificationTests
         };
         var repository = new Mock<IHealthTestRepository>();
         repository.Setup(r => r.GetAssignmentByIdAsync(assignment.Id, It.IsAny<CancellationToken>())).ReturnsAsync(assignment);
+        repository.Setup(r => r.GetAssignmentForSubmitAsync(assignment.Id, It.IsAny<CancellationToken>())).ReturnsAsync(assignment);
+        repository.Setup(r => r.ListAssignmentsByBatteryAssignmentAsync(assignment.BatteryAssignmentId!.Value,
+            It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<HealthTestAssignment>());
         repository.Setup(r => r.GetEvaluationByAssignmentAsync(assignment.Id, It.IsAny<CancellationToken>())).ReturnsAsync(evaluation.Id);
         repository.Setup(r => r.GetEvaluationWithDetailsAsync(evaluation.Id, It.IsAny<CancellationToken>())).ReturnsAsync(evaluation);
         repository.Setup(r => r.GetVersionWithDetailsAsync(version.Id, It.IsAny<CancellationToken>())).ReturnsAsync(version);
@@ -82,10 +87,22 @@ public sealed class SubscaleClassificationTests
         using var services = new ServiceCollection()
             .AddKeyedSingleton<IScoreStrategy, SubscaleScoreStrategy>(HealthTestScoringStrategy.subscale)
             .BuildServiceProvider();
+        var publisher = new Mock<MediatR.IPublisher>();
+        var assignments = new Mock<IProgramAssignmentRepository>();
+        assignments.Setup(x => x.FindCompletedInitialBatteryAsync(assignment.PatientId, assignment.BatteryAssignmentId!.Value,
+            It.IsAny<CancellationToken>())).ReturnsAsync(assignment.BatteryAssignmentId);
+        assignments.Setup(x => x.HasCurrentEnrollmentAsync(assignment.PatientId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var settings = new Mock<Microsoft.Extensions.Options.IOptionsMonitor<CoppAddresd.Application.Common.ProgramAssignmentSettings>>();
+        settings.SetupGet(x => x.CurrentValue).Returns(new CoppAddresd.Application.Common.ProgramAssignmentSettings { Enabled = assignmentEnabled });
         var handler = new SubmitEvaluationCommandHandler(repository.Object, new ScoreStrategyRegistry(services),
-            new ScoreRangeEngine(), new IndicatorEngine(), new AlertEngine());
+            new ScoreRangeEngine(), new IndicatorEngine(), new AlertEngine(), publisher: publisher.Object,
+            assignmentRepository: assignments.Object, assignmentSettings: settings.Object);
 
         var dto = await handler.Handle(new(assignment.Id, new(answers)), CancellationToken.None);
+        // Nutrition recibe el hecho clínico incluso con gate deshabilitado e inscripción ya existente.
+        publisher.Verify(x => x.Publish(It.Is<CoppAddresd.Application.Features.HealthTests.Events.BatteryCompletedEvent>(
+            e => e.PatientId == assignment.PatientId && e.BatteryAssignmentId == assignment.BatteryAssignmentId),
+            It.IsAny<CancellationToken>()), Times.Once);
 
         var total = Assert.Single(evaluation.Results, r => r.ResultType == HealthTestResultType.score);
         Assert.Equal(20m, total.Value);

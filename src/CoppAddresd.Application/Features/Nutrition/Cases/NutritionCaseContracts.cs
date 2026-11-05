@@ -15,7 +15,8 @@ public sealed record NutritionEdit(NutritionTargets? Targets = null, IReadOnlyLi
     string? Instructions = null, string? InstructionsEn = null, bool ConfirmManualEdits = false, int? SourceDay = null);
 public sealed record NutritionCaseCommand(NutritionOperation Operation, Guid PatientId, Guid? Id, int? Revision,
     NutritionActor Actor, NutritionGenerateInput? Generate = null, NutritionEdit? Edit = null,
-    string? Comment = null, bool CriticalConfirmed = false, DateOnly? StartDate = null) : IRequest<NutritionView>;
+    string? Comment = null, bool CriticalConfirmed = false, DateOnly? StartDate = null,
+    Guid? CorrelationId = null, Guid? BatteryAssignmentId = null) : IRequest<NutritionView>;
 public sealed record GetNutritionCaseQuery(Guid PatientId, Guid Id, NutritionActor Actor) : IRequest<NutritionView>;
 public sealed record ListNutritionCasesQuery(Guid PatientId, NutritionActor Actor, int Page = 1, int PageSize = 20) : IRequest<IReadOnlyList<NutritionView>>;
 public sealed record NutritionHistoryQuery(Guid PatientId, Guid Id, NutritionActor Actor) : IRequest<IReadOnlyList<NutritionPrescriptionEvent>>;

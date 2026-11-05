@@ -470,3 +470,34 @@ El filtro amplio necesita COP_TEST_DB_CONNECTION a una base aislada con
 migraciones Auth/API para los tests antiguos de FoodAI; Workflow crea además
 una base propia por caso. No se usan BD de pacientes reales ni se cambian los
 14 fallos históricos ajenos. Las rutas anteriores y el DTO móvil no cambian.
+
+## Ola 6: borrador automático y reserva durable
+
+`BatteryCompletedEvent` se emite tras el commit clínico sin depender del flag de
+asignación ni de la existencia de una inscripción. El consumidor legacy mantiene
+su propio gate. `NutritionBatteryCompletedHandler` valida la batería inicial y
+reserva `(patient_id,battery_assignment_id)`; el worker invoca el caso Generate
+con identidad técnica `system:nutrition`, sin aprobar. Un reconciliador independiente
+recupera hechos perdidos desde baterías persistidas, en lotes de 25 por minuto.
+
+La reserva usa estados `pending/generating/ready/failed`, lease de tres minutos,
+claim token, cinco intentos y espera de un minuto tras fallo. El ID de reserva es
+también el ID del borrador: reiniciar después de guardar el plan pero antes de
+confirmar la reserva reutiliza exactamente ese plan y su evento. La transacción
+del agregado y la confirmación de outbox son cortas y separadas; el estado puede
+quedar transitoriamente generating, nunca crear otro borrador por ese corte.
+La IA se invoca antes de la transacción y su fallback queda identificado.
+
+La batería inicial activa/autoasignada pertenece al productor nuevo, aun si no llegó
+su evento; también se excluyen pacientes con reserva. Así el worker legacy no
+encola ni procesa otro plan por anticiparse al evento. Publicaciones y datos
+legacy existentes se conservan; el productor viejo sigue para sus otros pacientes.
+La identidad técnica tiene GUID reservado `00000000-0000-0000-0000-000000000061`,
+sin usuario autenticable ni permiso de aprobar; la bitácora lo identifica con
+comentario `system:nutrition`. GUC transmite SYSTEM, user_id NULL y user_role
+system:nutrition; el scope restaura la identidad al salir. El trigger excluye
+claim_token. No se alteran el handler legacy, ECS, la app ni su DTO.
+
+La migración agrega únicamente `app.nutrition_draft_reservations`; Down conserva
+la tabla por diseño y documenta retirada manual. Up idempotente permite reaplicar
+tras rollback del binario sin perder reservas ni tocar datos legacy.

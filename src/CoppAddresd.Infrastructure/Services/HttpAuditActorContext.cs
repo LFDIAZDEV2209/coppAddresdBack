@@ -16,14 +16,17 @@ public sealed class HttpAuditActorContext(IHttpContextAccessor httpContextAccess
     private ClaimsPrincipal? User => httpContextAccessor.HttpContext?.User;
 
     public AuditActorType ActorType =>
-        User?.Identity?.IsAuthenticated == true ? AuditActorType.User : AuditActorType.System;
+        CoppAddresd.Application.Features.Nutrition.Cases.NutritionSystemActor.IsActive ? AuditActorType.System
+            : User?.Identity?.IsAuthenticated == true ? AuditActorType.User : AuditActorType.System;
 
     public Guid? UserId =>
-        Guid.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
+        CoppAddresd.Application.Features.Nutrition.Cases.NutritionSystemActor.IsActive ? null
+            : Guid.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
 
-    public string? UserEmail => User?.FindFirstValue(ClaimTypes.Email);
+    public string? UserEmail => CoppAddresd.Application.Features.Nutrition.Cases.NutritionSystemActor.IsActive ? null : User?.FindFirstValue(ClaimTypes.Email);
 
-    public string? UserRole => User?.FindFirstValue(ClaimTypes.Role);
+    public string? UserRole => CoppAddresd.Application.Features.Nutrition.Cases.NutritionSystemActor.IsActive
+        ? CoppAddresd.Application.Features.Nutrition.Cases.NutritionSystemActor.Name : User?.FindFirstValue(ClaimTypes.Role);
 
     public string? IpAddress =>
         httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();

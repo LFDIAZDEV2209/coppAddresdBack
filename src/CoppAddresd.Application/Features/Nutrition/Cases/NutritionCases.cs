@@ -50,6 +50,15 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
     public async Task<NutritionView> ExecuteAsync(NutritionCaseCommand command, CancellationToken ct)
     {
         var context = await AccessAsync(command.PatientId, command.Actor, ct);
+        if (command.CorrelationId is { } correlation)
+        {
+            if (command.Actor.UserId != NutritionSystemActor.Id || !NutritionSystemActor.IsActive
+                || command.Operation != NutritionOperation.Generate) throw new ForbiddenException("Correlación reservada al generador técnico.");
+            context = context with { BatteryId = command.BatteryAssignmentId };
+            if (await repository.GetByIdAsync(correlation, ct) is { } existing)
+                return existing.PatientId == command.PatientId ? View(existing, context, await FoodsAsync(ct))
+                    : throw new ForbiddenException("Correlación inválida.");
+        }
         if (command.Operation is NutritionOperation.Approve or NutritionOperation.Return ? !command.Actor.CanApprove : !command.Actor.CanManage)
             throw new ForbiddenException("El actor no tiene permiso para esta acción.");
         if (command.Comment?.Length > 4000) Invalid("Comentario demasiado largo.");
@@ -73,6 +82,12 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             NutritionPrescription plan;
             if (command.Operation == NutritionOperation.Generate)
             {
+                if (command.CorrelationId is { } reservedId)
+                {
+                    // El lock de paciente serializa la publicación de dos workers con la misma correlación.
+                    if (await repository.GetByIdAsync(reservedId, txCt) is { } existing) return View(existing, currentContext, engine);
+                    generated!.Id = reservedId;
+                }
                 plan = generated!; plan.CreatedBy = command.Actor.UserId;
                 if (!currentContext.TestsComplete) plan.Provisional = true;
                 await repository.AddAsync(plan, txCt);
@@ -303,7 +318,8 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
         var flags = Flags(plan, engine);
         await store.AddEventAsync(new() { PrescriptionId = plan.Id, ActorUserId = command.Actor.UserId,
             OccurredAt = clock.GetUtcNow().UtcDateTime, Action = action ?? command.Operation.ToString().ToLowerInvariant(), Revision = plan.Revision,
-            Comment = command.Comment, CriticalCount = flags.Count(f => f.S == "crit"), CriticalConfirmed = command.CriticalConfirmed,
+            Comment = command.Actor.UserId == NutritionSystemActor.Id ? NutritionSystemActor.Name : command.Comment,
+            CriticalCount = flags.Count(f => f.S == "crit"), CriticalConfirmed = command.CriticalConfirmed,
             AutoApproved = action is null && command.Operation == NutritionOperation.Approve && plan.CreatedBy == command.Actor.UserId,
             SnapshotJson = Write(new { plan.Id, plan.PatientId, plan.CycleId, plan.Version, plan.Revision, plan.State, plan.Provisional,
                 plan.IsPublished, plan.StartDate, plan.EndDate, plan.ManualEditsConfirmed, plan.ClinicalProfileJson, plan.TargetsJson,
