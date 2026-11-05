@@ -1,0 +1,439 @@
+[
+  {
+    "id": "base-maria",
+    "input": {
+      "edad": 38,
+      "sexo": "F",
+      "peso": 68.5,
+      "talla": 161,
+      "imc": 26.4,
+      "hba1c": 5.9,
+      "mov": "MARCHA",
+      "nutRiesgo": "moderado",
+      "sleepRF": 0,
+      "sleepNivel": "fragil",
+      "adh": "A3",
+      "riesgoNum": 2,
+      "estres": "moderado",
+      "objetivo": "perder"
+    },
+    "weight": {
+      "fase": "perder",
+      "metaKg": 62.2,
+      "metaImc": 24,
+      "thr": 25,
+      "low": 18.5,
+      "lowKg": 48,
+      "kgLeft": 6.3,
+      "old": false,
+      "auto": true
+    },
+    "targets": {
+      "K": 1850,
+      "C": 217,
+      "P": 93,
+      "F": 68,
+      "fi": 26,
+      "vasos": 10,
+      "bmr": 1340,
+      "tdee": 2077,
+      "deficit": 0.1,
+      "floor": 1200,
+      "fase": "perder",
+      "metaKg": 62.2,
+      "kgLeft": 6.3,
+      "wkKg": 0.2,
+      "semanas": 32
+    },
+    "flags": [
+      {
+        "s": "info",
+        "m": "HbA1c 5.9% (prediabetes): carbohidratos complejos, fibra y proteína en cada comida."
+      },
+      {
+        "s": "info",
+        "m": "Sueño frágil: cena liviana ≥ 2–3 h antes de dormir; sin cafeína después de las 2 PM."
+      }
+    ]
+  },
+  {
+    "id": "hombre-imc40",
+    "input": {
+      "edad": 45,
+      "sexo": "M",
+      "peso": 120,
+      "talla": 170,
+      "imc": 41.5,
+      "hba1c": 5.6,
+      "mov": "RAÍZ",
+      "nutRiesgo": "moderado",
+      "sleepRF": 0,
+      "sleepNivel": "fragil",
+      "adh": "A3",
+      "riesgoNum": 2,
+      "estres": "moderado",
+      "objetivo": "perder"
+    },
+    "weight": {
+      "fase": "perder",
+      "metaKg": 69.4,
+      "metaImc": 24,
+      "thr": 25,
+      "low": 18.5,
+      "lowKg": 53.5,
+      "kgLeft": 50.6,
+      "old": false,
+      "auto": true
+    },
+    "targets": {
+      "K": 2000,
+      "C": 240,
+      "P": 144,
+      "F": 52,
+      "fi": 28,
+      "vasos": 12,
+      "bmr": 2043,
+      "tdee": 2655,
+      "deficit": 0.25,
+      "floor": 1500,
+      "fase": "perder",
+      "metaKg": 69.4,
+      "kgLeft": 50.6,
+      "wkKg": 0.6,
+      "semanas": 85
+    },
+    "flags": [
+      {
+        "s": "crit",
+        "m": "IMC ≥ 35: plan debe ser supervisado individualmente."
+      },
+      {
+        "s": "info",
+        "m": "Sueño frágil: cena liviana ≥ 2–3 h antes de dormir; sin cafeína después de las 2 PM."
+      }
+    ]
+  },
+  {
+    "id": "mayor-65",
+    "input": {
+      "edad": 65,
+      "sexo": "F",
+      "peso": 80,
+      "talla": 160,
+      "imc": 31.3,
+      "hba1c": 6.5,
+      "mov": "DESPERTAR",
+      "nutRiesgo": "moderado",
+      "sleepRF": 0,
+      "sleepNivel": "fragil",
+      "adh": "A3",
+      "riesgoNum": 4,
+      "estres": "moderado",
+      "objetivo": "perder"
+    },
+    "weight": {
+      "fase": "perder",
+      "metaKg": 66.6,
+      "metaImc": 26,
+      "thr": 27.5,
+      "low": 23,
+      "lowKg": 58.9,
+      "kgLeft": 13.4,
+      "old": true,
+      "auto": true
+    },
+    "targets": {
+      "K": 1400,
+      "C": 158,
+      "P": 96,
+      "F": 43,
+      "fi": 25,
+      "vasos": 11,
+      "bmr": 1314,
+      "tdee": 1577,
+      "deficit": 0.1,
+      "floor": 1200,
+      "fase": "perder",
+      "metaKg": 66.6,
+      "kgLeft": 13.4,
+      "wkKg": 0.2,
+      "semanas": 67
+    },
+    "flags": [
+      {
+        "s": "crit",
+        "m": "Riesgo cardiometabólico MUY ALTO: revisión individual obligatoria."
+      },
+      {
+        "s": "crit",
+        "m": "HbA1c en rango diabético: validar plan con médico tratante."
+      },
+      {
+        "s": "info",
+        "m": "Adulto mayor: déficit moderado (≤10 %) y proteína alta para conservar masa muscular."
+      },
+      {
+        "s": "info",
+        "m": "Sueño frágil: cena liviana ≥ 2–3 h antes de dormir; sin cafeína después de las 2 PM."
+      }
+    ]
+  },
+  {
+    "id": "mantenimiento",
+    "input": {
+      "edad": 38,
+      "sexo": "F",
+      "peso": 60,
+      "talla": 165,
+      "imc": 22,
+      "hba1c": 5.6,
+      "mov": "FLUJO",
+      "nutRiesgo": "moderado",
+      "sleepRF": 0,
+      "sleepNivel": "fragil",
+      "adh": "A3",
+      "riesgoNum": 2,
+      "estres": "moderado",
+      "objetivo": "mantener"
+    },
+    "weight": {
+      "fase": "mantener",
+      "metaKg": 65.3,
+      "metaImc": 24,
+      "thr": 25,
+      "low": 18.5,
+      "lowKg": 50.4,
+      "kgLeft": 0,
+      "old": false,
+      "auto": true
+    },
+    "targets": {
+      "K": 1750,
+      "C": 210,
+      "P": 88,
+      "F": 62,
+      "fi": 25,
+      "vasos": 8,
+      "bmr": 1280,
+      "tdee": 1760,
+      "deficit": 0,
+      "floor": 1200,
+      "fase": "mantener",
+      "metaKg": 65.3,
+      "kgLeft": 0,
+      "wkKg": 0,
+      "semanas": 0
+    },
+    "flags": [
+      {
+        "s": "info",
+        "m": "Sueño frágil: cena liviana ≥ 2–3 h antes de dormir; sin cafeína después de las 2 PM."
+      }
+    ]
+  },
+  {
+    "id": "bajo-peso",
+    "input": {
+      "edad": 38,
+      "sexo": "F",
+      "peso": 45,
+      "talla": 170,
+      "imc": 15.6,
+      "hba1c": 5.4,
+      "mov": "MARCHA",
+      "nutRiesgo": "moderado",
+      "sleepRF": 0,
+      "sleepNivel": "fragil",
+      "adh": "A3",
+      "riesgoNum": 2,
+      "estres": "moderado",
+      "objetivo": "perder"
+    },
+    "weight": {
+      "fase": "subir",
+      "metaKg": 69.4,
+      "metaImc": 24,
+      "thr": 25,
+      "low": 18.5,
+      "lowKg": 53.5,
+      "kgLeft": 0,
+      "old": false,
+      "auto": true
+    },
+    "targets": {
+      "K": 1950,
+      "C": 236,
+      "P": 90,
+      "F": 72,
+      "fi": 27,
+      "vasos": 8,
+      "bmr": 1162,
+      "tdee": 1800,
+      "deficit": -0.08,
+      "floor": 1200,
+      "fase": "subir",
+      "metaKg": 69.4,
+      "kgLeft": 0,
+      "wkKg": 0,
+      "semanas": 0
+    },
+    "flags": [
+      {
+        "s": "crit",
+        "m": "IMC 15.6 por debajo del rango saludable: no se aplica déficit; valoración médica y nutricional individual."
+      },
+      {
+        "s": "info",
+        "m": "Sueño frágil: cena liviana ≥ 2–3 h antes de dormir; sin cafeína después de las 2 PM."
+      }
+    ]
+  },
+  {
+    "id": "override",
+    "input": {
+      "edad": 38,
+      "sexo": "F",
+      "peso": 68.5,
+      "talla": 161,
+      "imc": 26.4,
+      "hba1c": 5.9,
+      "mov": "MARCHA",
+      "nutRiesgo": "moderado",
+      "sleepRF": 0,
+      "sleepNivel": "fragil",
+      "adh": "A3",
+      "riesgoNum": 2,
+      "estres": "moderado",
+      "objetivo": "perder",
+      "kcal": 1201,
+      "protG": 200,
+      "carbPct": 0.6,
+      "fiber": 10,
+      "vasos": 4,
+      "deficit": 0
+    },
+    "weight": {
+      "fase": "perder",
+      "metaKg": 62.2,
+      "metaImc": 24,
+      "thr": 25,
+      "low": 18.5,
+      "lowKg": 48,
+      "kgLeft": 6.3,
+      "old": false,
+      "auto": true
+    },
+    "targets": {
+      "K": 1201,
+      "C": 180,
+      "P": 200,
+      "F": -35,
+      "fi": 10,
+      "vasos": 4,
+      "bmr": 1340,
+      "tdee": 2077,
+      "deficit": 0,
+      "floor": 1200,
+      "fase": "perder",
+      "metaKg": 62.2,
+      "kgLeft": 6.3,
+      "wkKg": 0,
+      "semanas": 0
+    },
+    "flags": [
+      {
+        "s": "warn",
+        "m": "IMC 26.4 sobre el rango saludable y el plan está en mantenimiento (meta 62.2 kg)."
+      },
+      {
+        "s": "info",
+        "m": "HbA1c 5.9% (prediabetes): carbohidratos complejos, fibra y proteína en cada comida."
+      },
+      {
+        "s": "info",
+        "m": "Sueño frágil: cena liviana ≥ 2–3 h antes de dormir; sin cafeína después de las 2 PM."
+      }
+    ]
+  },
+  {
+    "id": "limites-y-alertas",
+    "input": {
+      "edad": 38,
+      "sexo": "F",
+      "peso": 100,
+      "talla": 170,
+      "imc": 35,
+      "hba1c": 6.5,
+      "mov": "MARCHA",
+      "nutRiesgo": "alto",
+      "sleepRF": 2,
+      "sleepNivel": "fragil",
+      "adh": "A1",
+      "riesgoNum": 4,
+      "estres": "muy_elevado",
+      "objetivo": "perder"
+    },
+    "weight": {
+      "fase": "perder",
+      "metaKg": 69.4,
+      "metaImc": 24,
+      "thr": 25,
+      "low": 18.5,
+      "lowKg": 53.5,
+      "kgLeft": 30.6,
+      "old": false,
+      "auto": true
+    },
+    "targets": {
+      "K": 2400,
+      "C": 282,
+      "P": 120,
+      "F": 88,
+      "fi": 34,
+      "vasos": 12,
+      "bmr": 1712,
+      "tdee": 2653,
+      "deficit": 0.1,
+      "floor": 1200,
+      "fase": "perder",
+      "metaKg": 69.4,
+      "kgLeft": 30.6,
+      "wkKg": 0.2,
+      "semanas": 153
+    },
+    "flags": [
+      {
+        "s": "crit",
+        "m": "Conducta alimentaria de riesgo (alimentación emocional): evitar dieta restrictiva; coordinar con psicología."
+      },
+      {
+        "s": "crit",
+        "m": "2 señales de posible apnea del sueño: valoración médica antes de intensificar el plan."
+      },
+      {
+        "s": "crit",
+        "m": "Riesgo cardiometabólico MUY ALTO: revisión individual obligatoria."
+      },
+      {
+        "s": "crit",
+        "m": "HbA1c en rango diabético: validar plan con médico tratante."
+      },
+      {
+        "s": "crit",
+        "m": "IMC ≥ 35: plan debe ser supervisado individualmente."
+      },
+      {
+        "s": "warn",
+        "m": "Estrés muy elevado: puede afectar la adherencia; reforzar acompañamiento."
+      },
+      {
+        "s": "info",
+        "m": "Adherencia baja: plan simplificado con 2 menús rotativos por comida."
+      },
+      {
+        "s": "info",
+        "m": "Sueño frágil: cena liviana ≥ 2–3 h antes de dormir; sin cafeína después de las 2 PM."
+      }
+    ]
+  }
+]
