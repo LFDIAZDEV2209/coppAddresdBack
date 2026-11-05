@@ -351,3 +351,22 @@ sin análisis ficticio. La llamada externa a IA queda fuera de una transacción.
 El hash incorpora resultados vigentes y versión de guía, y la unicidad permite
 reutilizar una respuesta concurrente. Un cambio de cuenta/idioma descarta
 respuestas en vuelo en la app. Los DTO internos de IA no llevan identificadores.
+
+## Composición self-service de prescripciones (Ola 3)
+
+`GET /api/v1/me/nutrition-plan` mantiene exactamente `MyNutritionPlanDto`,
+sus días y comidas. Se resuelve el paciente por JWT y el día mediante
+`patient_profiles.timezone` y `TimeProvider`. Primero se busca una prescripción
+`aprobado`, publicada y vigente (ventana inclusiva de hasta 30 días); gana el
+inicio más reciente y luego el UUID mayor. Esa prescripción prevalece incluso
+si una asignación legacy vigente empezó después. Sin prescripción vigente,
+se conserva la lectura legacy aprobada, con el mismo desempate.
+
+El adaptador proyecta metas, revisión, fechas, día actual, agua y alimentos con
+gramos/unidades; calcula macros por comida mediante Atwater y los redondeos
+del motor. Los tipos siguen siendo `Desayuno`, `Almuerzo`, `Snack` (merienda)
+y `Cena`. Las indicaciones se incluyen en notas si la comida no tiene notas.
+No se inventan alérgenos ni condición clínica. El nombre estable es
+«Plan nutricional». La consulta EF carga el grafo completo sin consultas por
+comida. Contrato, coexistencia, cancelación, fechas locales y desempates
+están cubiertos en las suites de lectura y PostgreSQL de Nutrition.

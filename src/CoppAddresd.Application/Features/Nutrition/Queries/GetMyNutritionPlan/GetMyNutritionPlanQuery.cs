@@ -1,5 +1,7 @@
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.Features.Wellness;
+using CoppAddresd.Application.Features.Nutrition.Engine;
+using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
 using CoppAddresd.Domain.Exceptions;
 using MediatR;
@@ -20,7 +22,9 @@ public sealed record GetMyNutritionPlanQuery(Guid UserId) : IRequest<MyNutrition
 public sealed class GetMyNutritionPlanQueryHandler(
     IPatientRepository patients,
     IWellnessRepository wellness,
-    ILogger<GetMyNutritionPlanQueryHandler> logger
+    ILogger<GetMyNutritionPlanQueryHandler> logger,
+    INutritionPrescriptionRepository prescriptions,
+    TimeProvider clock
 ) : IRequestHandler<GetMyNutritionPlanQuery, MyNutritionPlanDto?>
 {
     public async Task<MyNutritionPlanDto?> Handle(
@@ -28,6 +32,7 @@ public sealed class GetMyNutritionPlanQueryHandler(
         CancellationToken ct
     )
     {
+        ct.ThrowIfCancellationRequested();
         // 1) Identidad: paciente del JWT vía patient_profiles.user_id.
         // Sin perfil → 404, nunca datos de otro paciente (anti-IDOR).
         var patient = await patients.GetByUserIdAsync(request.UserId, ct);
@@ -43,8 +48,8 @@ public sealed class GetMyNutritionPlanQueryHandler(
         // plan). Misma regla que ProgramContentResolver: Status Active, ventana
         // de fechas vigente (hoy local) y, en solapamiento, gana el inicio
         // más reciente y luego el identificador mayor.
-        var zone = await wellness.GetPatientTimezoneAsync(patient.Id, ct);
-        var now = DateTime.UtcNow;
+        var zone = patient.Timezone;
+        var now = clock.GetUtcNow().UtcDateTime;
         if (!string.IsNullOrWhiteSpace(zone))
         {
             try { now = TimeZoneInfo.ConvertTimeFromUtc(now, TimeZoneInfo.FindSystemTimeZoneById(zone)); }
@@ -52,6 +57,10 @@ public sealed class GetMyNutritionPlanQueryHandler(
             catch (InvalidTimeZoneException) { }
         }
         var today = DateOnly.FromDateTime(now);
+        // La publicación vigente nueva tiene prioridad sobre cualquier asignación legacy.
+        // Borradores y ciclos futuros/vencidos nunca ocultan una asignación vigente.
+        var prescription = await prescriptions.GetCurrentPublishedAsync(patient.Id, today, ct);
+        if (prescription is not null) return Compose(prescription, today, ct);
         var assignments = await wellness.ListPlanAssignmentsByPatientAsync(patient.Id, ct);
         var active = assignments
             .Where(a =>
@@ -137,5 +146,35 @@ public sealed class GetMyNutritionPlanQueryHandler(
             today.DayNumber - DateOnly.FromDateTime(active.StartDate).DayNumber + 1,
             plan.Revision
         );
+    }
+
+    private static MyNutritionPlanDto Compose(NutritionPrescription plan, DateOnly today, CancellationToken ct)
+    {
+        var foods = plan.Meals.SelectMany(x => x.Items).Select(x => x.FoodItem!)
+            .DistinctBy(x => x.Id).ToDictionary(x => x.Id);
+        var engine = new NutritionEngine(foods);
+        var days = plan.Meals.GroupBy(x => x.DayNumber).OrderBy(x => x.Key).Select(day =>
+            new MyNutritionPlanDayDto(day.Key, plan.WaterMl ?? 2000,
+                day.OrderBy(x => x.ScheduledTime).ThenBy(x => x.MealType, StringComparer.Ordinal).ThenBy(x => x.Id)
+                    .Select((meal, order) =>
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        var items = meal.Items.OrderBy(x => x.SortOrder).ThenBy(x => x.Id).ToArray();
+                        var macros = engine.SumItems(items.Select(x => new NutritionItem(x.FoodItemId, x.Grams)));
+                        // Snack es el valor histórico del contrato móvil para la merienda.
+                        var type = meal.MealType switch { "des" => MealType.Desayuno, "alm" => MealType.Almuerzo,
+                            "mer" => MealType.Snack, "cen" => MealType.Cena,
+                            _ => throw new InvalidOperationException("Tipo de comida nutricional desconocido.") };
+                        return new MyNutritionPlanMealDto(type.ToString(), meal.MenuName,
+                            string.Join("; ", items.Select(x => $"{foods[x.FoodItemId].Name}: {engine.QtyText(new(x.FoodItemId, x.Grams))}")),
+                            (int)macros.K, (decimal)macros.P, (decimal)macros.C, (decimal)macros.F,
+                            (decimal)macros.Fi, meal.WaterMl, meal.Notes ?? plan.Instructions, order + 1);
+                    }).ToList())).ToList();
+        return new(plan.Id, "Plan nutricional", null, 30, plan.CalorieTarget is { } k ? (int)NutritionEngine.R0(k) : null,
+            (decimal?)plan.ProteinTarget, (decimal?)plan.CarbsTarget, (decimal?)plan.FatTarget, (decimal?)plan.FiberTarget,
+            plan.WaterMl ?? 2000, null,
+            string.Join(", ", plan.Meals.OrderBy(x => x.ScheduledTime).Select(x => x.ScheduledTime.ToString("HH:mm")).Distinct()),
+            NutritionPlanStatus.Active.ToString(), days, plan.StartDate, plan.EndDate,
+            today.DayNumber - plan.StartDate!.Value.DayNumber + 1, plan.Revision);
     }
 }

@@ -143,7 +143,8 @@ public sealed partial class NutritionPlanWorkflowTests : IAsyncLifetime
         await ai.Received(1).GeneratePlanAsync("nutrition", Arg.Is<ClinicalContextDto>(c => c.Assessments != null && c.Assessments.Any(a => a.Code == "nutrition_habits" && a.Value == 42)), Arg.Any<IReadOnlyList<RestrictionDto>>(), Arg.Any<CancellationToken>());
         Assert.Equal("pending_review", (await workflow.GetStatusAsync(patient.UserId!.Value, "America/Bogota", CancellationToken.None)).Status);
         var patients = Substitute.For<IPatientRepository>(); patients.GetByUserIdAsync(patient.UserId.Value, Arg.Any<CancellationToken>()).Returns(patient);
-        var query = new GetMyNutritionPlanQueryHandler(patients, new WellnessRepository(db), NullLogger<GetMyNutritionPlanQueryHandler>.Instance);
+        var query = new GetMyNutritionPlanQueryHandler(patients, new WellnessRepository(db), NullLogger<GetMyNutritionPlanQueryHandler>.Instance,
+            new NutritionPrescriptionRepository(db), TimeProvider.System);
         Assert.Null(await query.Handle(new(patient.UserId.Value), CancellationToken.None));
     }
 

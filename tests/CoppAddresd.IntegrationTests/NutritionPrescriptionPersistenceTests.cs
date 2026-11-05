@@ -6,11 +6,54 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 
 namespace CoppAddresd.IntegrationTests;
 
 public sealed partial class NutritionPlanWorkflowTests
 {
+    [NutritionPostgresFact]
+    public async Task SelfService_PublishedSelection_LocalBoundaries_Ties_AndLegacyCoexistence()
+    {
+        await using var db = Context(); var patient = await PatientAsync(db); var other = await PatientAsync(db);
+        patient.Timezone = "America/Bogota"; await db.SaveChangesAsync();
+        var today = new DateOnly(2026, 11, 5);
+        var repository = new NutritionPrescriptionRepository(db);
+        async Task<NutritionPrescription> Add(Guid patientId, DateOnly start, string id)
+        {
+            var p = Prescription(patientId); p.Id = Guid.Parse(id); p.State = "aprobado"; p.IsPublished = true;
+            p.StartDate = start; p.EndDate = start.AddDays(29); p.ApprovedBy = p.CreatedBy; p.ApprovedAt = DateTime.UtcNow;
+            await repository.AddAsync(p, CancellationToken.None); return p;
+        }
+        await Add(patient.Id, today.AddDays(-29), "10000000-0000-0000-0000-000000000001");
+        await Add(patient.Id, today.AddDays(-1), "20000000-0000-0000-0000-000000000001");
+        var winner = await Add(patient.Id, today.AddDays(-1), "30000000-0000-0000-0000-000000000001");
+        await Add(patient.Id, today.AddDays(1), "40000000-0000-0000-0000-000000000001");
+        await Add(other.Id, today, "50000000-0000-0000-0000-000000000001");
+        await Add(patient.Id, today.AddDays(-30), "60000000-0000-0000-0000-000000000001");
+        await repository.AddAsync(Prescription(patient.Id), CancellationToken.None);
+        var selected = (await repository.GetCurrentPublishedAsync(patient.Id, today, CancellationToken.None))!;
+        Assert.Equal(winner.Id, selected.Id);
+        Assert.NotNull(Assert.Single(Assert.Single(selected.Meals).Items).FoodItem);
+        var legacy = await DraftAsync(db, patient.Id); legacy.ReviewStatus = "approved";
+        legacy.ApprovedBy = Guid.NewGuid(); legacy.ApprovedAt = DateTime.UtcNow;
+        db.NutritionPlanAssignments.Add(new() { PatientId = patient.Id, PlanId = legacy.Id,
+            StartDate = DateTime.SpecifyKind(today.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc), Status = AssignmentStatus.Active });
+        await db.SaveChangesAsync();
+        var patients = NSubstitute.Substitute.For<CoppAddresd.Application.Interfaces.IPatientRepository>();
+        patients.GetByUserIdAsync(patient.UserId!.Value, NSubstitute.Arg.Any<CancellationToken>()).Returns(patient);
+        var query = new CoppAddresd.Application.Features.Nutrition.Queries.GetMyNutritionPlan.GetMyNutritionPlanQueryHandler(patients,
+            new WellnessRepository(db), NullLogger<CoppAddresd.Application.Features.Nutrition.Queries.GetMyNutritionPlan.GetMyNutritionPlanQueryHandler>.Instance,
+            repository, new NutritionClock(new(2026, 11, 6, 2, 0, 0, TimeSpan.Zero)));
+        var result = (await query.Handle(new(patient.UserId.Value), CancellationToken.None))!;
+        Assert.Equal(winner.Id, result.Id); Assert.Equal(2, result.CurrentDay); Assert.Equal(30, result.DurationDays);
+        Assert.Equal(30, (await repository.GetCurrentPublishedAsync(patient.Id, today.AddDays(30), CancellationToken.None))!.EndDate!.Value.DayNumber
+            - today.AddDays(1).DayNumber + 1);
+        Assert.Null(await repository.GetCurrentPublishedAsync(patient.Id, today.AddDays(31), CancellationToken.None));
+        using var cancel = new CancellationTokenSource(); cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.GetCurrentPublishedAsync(patient.Id, today, cancel.Token));
+    }
+
     private static NutritionPrescription Prescription(Guid patientId) => new()
     {
         PatientId = patientId, CreatedBy = Guid.NewGuid(), Provisional = true, CalorieTarget = 1350,

@@ -23,6 +23,15 @@ public sealed class NutritionPrescriptionRepository(AppDbContext db) : INutritio
             .Skip((Math.Max(1, page) - 1) * Math.Clamp(pageSize, 1, 100))
             .Take(Math.Clamp(pageSize, 1, 100)).ToListAsync(ct);
 
+    public async Task<NutritionPrescription?> GetCurrentPublishedAsync(Guid patientId, DateOnly today, CancellationToken ct)
+        => await db.NutritionPrescriptions.AsNoTracking()
+            .Where(x => x.PatientId == patientId && x.IsPublished && x.State == "aprobado"
+                && x.StartDate <= today && x.EndDate >= today && x.StartDate > today.AddDays(-30))
+            .OrderByDescending(x => x.StartDate).ThenByDescending(x => x.Id)
+            .Include(x => x.Meals.OrderBy(m => m.DayNumber).ThenBy(m => m.ScheduledTime))
+            .ThenInclude(x => x.Items.OrderBy(i => i.SortOrder).ThenBy(i => i.Id))
+            .ThenInclude(x => x.FoodItem).AsSplitQuery().FirstOrDefaultAsync(ct);
+
     public async Task AddAsync(NutritionPrescription prescription, CancellationToken ct)
     {
         db.NutritionPrescriptions.Add(prescription);

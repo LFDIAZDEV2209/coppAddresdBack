@@ -16,11 +16,64 @@ namespace CoppAddresd.UnitTests.Nutrition;
 /// </summary>
 public sealed class GetMyNutritionPlanQueryHandlerTests
 {
+    private sealed class FixedClock : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(2026, 11, 6, 2, 0, 0, TimeSpan.Zero);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Composition_LocalDate_Coexistence_AndFrozenJsonContract(bool published)
+    {
+        var patient = BuildPatient(); patient.Timezone = "America/Bogota";
+        _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
+        var repository = Substitute.For<INutritionPrescriptionRepository>();
+        var today = new DateOnly(2026, 11, 5);
+        var legacy = BuildPlan(patient.Id);
+        _wellness.ListPlanAssignmentsByPatientAsync(patient.Id, Arg.Any<CancellationToken>())
+            .Returns(new[] { BuildAssignment(patient.Id, legacy.Id, AssignmentStatus.Active, new(2026, 11, 5)) });
+        _wellness.GetPlanByIdAsync(legacy.Id, Arg.Any<CancellationToken>()).Returns(legacy);
+        var prescription = new NutritionPrescription { PatientId = patient.Id, StartDate = today.AddDays(-29), EndDate = today,
+            CalorieTarget = 1500, WaterMl = 2250, Revision = 7, Instructions = "Indicaciones",
+            Meals = [new() { DayNumber = 30, MealType = "mer", ScheduledTime = new(16, 0),
+                Items = [new() { FoodItemId = "avena", Grams = 50, FoodItem = new() { Id = "avena", Name = "Avena",
+                    Carbs100 = 60, Protein100 = 10, Fat100 = 8, Fiber100 = 6, Calories100 = 999 } }] }] };
+        repository.GetCurrentPublishedAsync(patient.Id, today, Arg.Any<CancellationToken>())
+            .Returns(published ? prescription : null);
+        using var source = new CancellationTokenSource();
+        var query = new GetMyNutritionPlanQueryHandler(_patients, _wellness,
+            Substitute.For<ILogger<GetMyNutritionPlanQueryHandler>>(), repository, new FixedClock());
+        var result = (await query.Handle(new(Guid.NewGuid()), source.Token))!;
+        Assert.Equal(published ? prescription.Id : legacy.Id, result.Id);
+        Assert.Equal("Active", result.Status);
+        await repository.Received(1).GetCurrentPublishedAsync(patient.Id, today, source.Token);
+        if (published)
+        {
+            Assert.Equal(30, result.CurrentDay); Assert.Equal(7, result.Revision);
+            var meal = Assert.Single(Assert.Single(result.Days).Meals);
+            Assert.Equal("Snack", meal.MealType); Assert.Equal("Avena: 50 g", meal.Foods);
+            Assert.Equal(176, meal.Calories); Assert.Equal(30m, meal.CarbsG); Assert.Equal(5m, meal.ProteinG);
+            Assert.Equal(4m, meal.FatG); Assert.Equal(3m, meal.FiberG); Assert.Equal("Indicaciones", meal.Notes);
+            await _wellness.DidNotReceive().ListPlanAssignmentsByPatientAsync(patient.Id, Arg.Any<CancellationToken>());
+        }
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(result,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.Equal("id,name,targetCondition,durationDays,dailyCalorieTarget,dailyProteinTarget,dailyCarbsTarget,dailyFatTarget,dailyFiberTarget,dailyWaterMl,allergens,mealTiming,status,days,startDate,endDate,currentDay,revision",
+            string.Join(',', json.EnumerateObject().Select(x => x.Name)));
+        Assert.Equal("dayNumber,dailyWaterMl,meals", string.Join(',', json.GetProperty("days")[0].EnumerateObject().Select(x => x.Name)));
+        Assert.Equal("mealType,description,foods,calories,proteinG,carbsG,fatG,fiberG,waterMl,notes,sortOrder",
+            string.Join(',', json.GetProperty("days")[0].GetProperty("meals")[0].EnumerateObject().Select(x => x.Name)));
+        source.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query.Handle(new(Guid.NewGuid()), source.Token));
+    }
+
     private readonly IPatientRepository _patients = Substitute.For<IPatientRepository>();
     private readonly IWellnessRepository _wellness = Substitute.For<IWellnessRepository>();
 
     private GetMyNutritionPlanQueryHandler BuildHandler() =>
-        new(_patients, _wellness, Substitute.For<ILogger<GetMyNutritionPlanQueryHandler>>());
+        new(_patients, _wellness, Substitute.For<ILogger<GetMyNutritionPlanQueryHandler>>(),
+            Substitute.For<INutritionPrescriptionRepository>(), TimeProvider.System);
 
     private static PatientProfile BuildPatient(Guid? id = null) =>
         new()

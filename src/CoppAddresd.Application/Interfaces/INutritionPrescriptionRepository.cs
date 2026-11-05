@@ -7,6 +7,7 @@ public interface INutritionPrescriptionRepository
 {
     Task<IReadOnlyList<NutritionFoodItem>> ListFoodsAsync(CancellationToken ct);
     Task<NutritionPrescription?> GetByIdAsync(Guid id, CancellationToken ct);
+    Task<NutritionPrescription?> GetCurrentPublishedAsync(Guid patientId, DateOnly today, CancellationToken ct);
     Task<IReadOnlyList<NutritionPrescription>> ListByPatientAsync(Guid patientId, int page, int pageSize, CancellationToken ct);
     Task AddAsync(NutritionPrescription prescription, CancellationToken ct);
     Task UpdateAsync(NutritionPrescription prescription, CancellationToken ct);
