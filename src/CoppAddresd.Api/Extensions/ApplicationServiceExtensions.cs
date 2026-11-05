@@ -370,6 +370,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<IAuthorizationHandler, AudienceAuthorizationHandler>();
         services
             .AddAuthorizationBuilder()
+            .AddPolicy(NutritionPolicies.Staff, NutritionPolicies.Configure)
             .AddPolicy(
                 SosPolicies.AppPatient,
                 policy =>

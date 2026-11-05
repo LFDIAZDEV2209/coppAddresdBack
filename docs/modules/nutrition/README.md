@@ -2,6 +2,22 @@
 
 ## Ola 2: motor y prescripciones profesionales
 
+Los catálogos de Auth y API conservan los permisos legacy y añaden
+`Nutrition.Manage` (generar/editar/versionar/enviar/regenerar) y
+`Nutrition.Approve` (aprobar/devolver). Ambos permiten leer bajo alcance. El
+rol funcional `NutritionReviewer` recibe ambas capacidades y mantiene acceso
+solo a pacientes asignados; no obtiene `Patients.View` global. El Admin usa el
+catálogo completo. No hay migración de Auth: su seeder es idempotente.
+
+La política `NutritionErpStaff` exige audiencia `erp` e identificador válido.
+Las capacidades se resuelven con `ICurrentContext.HasPermissionAsync`, incluyendo
+introspección scoped; Application comprueba la capacidad específica y luego
+`patient_professionals` activo. Únicamente el claim global `Patients.View`
+habilita alcance global. La revocación de la asignación durante la llamada a IA
+impide persistir. Los tests HTTP firman JWT, verifican 401/403/404 y demuestran
+que el cuerpo no puede modificar actor ni capacidades. Los tests PostgreSQL
+verifican alcance real, independencia del aprobador y cancelación sin escritura.
+
 `NutritionStateMachine` declara las transiciones de borrador/devuelto a revisión
 y de revisión a aprobación/devolución; cualquier escritura de una versión
 aprobada requiere versionado. La vigencia se calcula con la zona IANA del
@@ -59,8 +75,9 @@ del origen. La cancelación del cliente no se convierte en fallback.
 La migración `20261105145334_AddNutritionPrescriptions` añade únicamente cuatro
 tablas de `app`: `nutrition_food_items`, `nutrition_prescriptions`,
 `nutrition_prescription_meals` y `nutrition_prescription_items`. Conserva tablas,
-asignaciones y datos legacy. Esta etapa no activa motor, endpoints ni publicación
-del modelo nuevo; ese trabajo pertenece a los grupos 3–4 del change.
+asignaciones y datos legacy. Los grupos 1–2 dejaron el modelo sin motor ni
+endpoints; la Ola 2 incorpora motor y CQRS ERP. El adaptador móvil y el cutover
+siguen pendientes en las tareas 4.3 y 4.5 de la Ola 3.
 
 Una fila de prescripción identifica paciente, ciclo y versión; guarda estado,
 provisionalidad, vigencia local (`date`), metas, indicaciones ES/EN y autoría.

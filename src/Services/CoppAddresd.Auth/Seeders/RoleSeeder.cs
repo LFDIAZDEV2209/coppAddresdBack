@@ -404,7 +404,8 @@ public static class RoleSeeder
             "NutritionReviewer",
             "Nutricionista revisor: valida y aprueba planes de sus pacientes asignados",
             [PermissionCodes.WellnessView, PermissionCodes.WellnessManage,
-             PermissionCodes.NutritionPlansApprove, PermissionCodes.PatientsViewOwn,
+             PermissionCodes.NutritionPlansApprove, PermissionCodes.NutritionManage, PermissionCodes.NutritionApprove,
+               PermissionCodes.PatientsViewOwn,
              PermissionCodes.HealthTestsViewOwn]
         ),
         (

@@ -50,7 +50,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
     public async Task<NutritionView> ExecuteAsync(NutritionCaseCommand command, CancellationToken ct)
     {
         var context = await AccessAsync(command.PatientId, command.Actor, ct);
-        if (command.Operation == NutritionOperation.Approve ? !command.Actor.CanApprove : !command.Actor.CanManage)
+        if (command.Operation is NutritionOperation.Approve or NutritionOperation.Return ? !command.Actor.CanApprove : !command.Actor.CanManage)
             throw new ForbiddenException("El actor no tiene permiso para esta acción.");
         if (command.Comment?.Length > 4000) Invalid("Comentario demasiado largo.");
         var engine = await FoodsAsync(ct);
@@ -166,7 +166,9 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
         var p = (manual ?? fallback ?? new NutritionPatient(weight!.Value, height!.Value, age, sex!, 0)) with
         {
             Peso = weight!.Value, Talla = height!.Value, Edad = age, Sexo = sex!, BirthDate = birth,
-            Imc = NutritionEngine.R1(weight.Value / Math.Pow(height.Value / 100, 2)),
+            // El prototipo acepta IMC medido independiente; solo derivarlo si no existe.
+            Imc = manual is { Imc: > 0 } ? manual.Imc : Biometric(["bmi", "imc"], "kg/m2")
+                ?? Measurement(["bmi", "imc"], "kg/m2") ?? NutritionEngine.R1(weight.Value / Math.Pow(height.Value / 100, 2)),
             Hba1c = manual?.Hba1c ?? Biometric(["a1c", "hba1c"], "%") ?? Measurement(["a1c", "hba1c"], "%") ?? fallback?.Hba1c
         };
         ValidatePatient(p);
@@ -201,7 +203,8 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             || draft.Source is not ("llm" or "deterministic_fallback")
             || new[] { draft.Narratives.Es, draft.Narratives.En, draft.Instructions.Es, draft.Instructions.En }.Any(string.IsNullOrWhiteSpace)
             || new[] { draft.Narratives.Es, draft.Narratives.En, draft.Instructions.Es, draft.Instructions.En }.Any(x => x.Length > 4000)
-            || draft.Menus.Count != request.Menus.Count || draft.Menus.Select(x => x.Key).Distinct().Count() != request.Menus.Count
+            || draft.Menus.Count != request.Menus.Count || draft.Menus.Any(m => m is null)
+            || draft.Menus.Select(x => x.Key).Distinct().Count() != request.Menus.Count
             || !draft.Menus.Select(x => x.Key).Order().SequenceEqual(request.Menus.Select(x => x.Key).Order())
             || draft.Menus.Any(m => m is null || m.Name is null || m.Name.Length is 0 or > 200 || m.Items is null || m.Items.Count is 0 or > 20
                 || m.Items.Any(i => i is null || !request.CatalogIds.Contains(i.FoodId) || !double.IsFinite(i.Grams) || i.Grams <= 0 || i.Grams > 2000))) return false;

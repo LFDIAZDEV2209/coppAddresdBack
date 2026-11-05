@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace CoppAddresd.Api.Controllers;
 
 [ApiController]
-[Authorize]
+[Authorize(Policy = NutritionPolicies.Staff)]
 [Route("api/v1/nutrition/patients/{patientId:guid}/prescriptions")]
 public sealed class NutritionController(IMediator mediator, ICurrentContext context) : ControllerBase
 {
@@ -30,10 +30,10 @@ public sealed class NutritionController(IMediator mediator, ICurrentContext cont
             await ActorAsync(ct), Generate: input), ct);
         return CreatedAtAction(nameof(Get), new { patientId, id = plan.Id }, plan);
     }
-    [HttpPost("{id:guid}/{action}")]
-    public async Task<IActionResult> Act(Guid patientId, Guid id, string action, [FromBody] NutritionActionRequest input, CancellationToken ct)
+    [HttpPost("{id:guid}/{verb}")]
+    public async Task<IActionResult> Act(Guid patientId, Guid id, string verb, [FromBody] NutritionActionRequest input, CancellationToken ct)
     {
-        var operation = action switch { "save" => NutritionOperation.Save, "apply-day" => NutritionOperation.ApplyDay,
+        var operation = verb switch { "save" => NutritionOperation.Save, "apply-day" => NutritionOperation.ApplyDay,
             "create-version" => NutritionOperation.CreateVersion, "submit" => NutritionOperation.Submit,
             "approve" => NutritionOperation.Approve, "return" => NutritionOperation.Return,
             "regenerate" => NutritionOperation.Regenerate, _ => throw new NotFoundException("Acción no encontrada.") };
@@ -43,7 +43,7 @@ public sealed class NutritionController(IMediator mediator, ICurrentContext cont
     private async Task<NutritionActor> ActorAsync(CancellationToken ct) => new(
         context.UserId ?? throw new UnauthorizedAccessException(), await context.GetProfessionalIdAsync(ct),
         User.HasClaim(PermissionClaimTypes.Permission, PermissionCodes.PatientsView),
-        await context.HasPermissionAsync("Nutrition.Manage", ct), await context.HasPermissionAsync("Nutrition.Approve", ct));
+        await context.HasPermissionAsync(PermissionCodes.NutritionManage, ct), await context.HasPermissionAsync(PermissionCodes.NutritionApprove, ct));
 }
 public sealed record NutritionActionRequest(int Revision, NutritionEdit? Edit = null,
     NutritionGenerateInput? Generate = null, string? Comment = null, bool CriticalConfirmed = false, DateOnly? StartDate = null);

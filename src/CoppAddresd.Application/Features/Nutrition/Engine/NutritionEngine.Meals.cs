@@ -64,6 +64,7 @@ public sealed partial class NutritionEngine(IReadOnlyDictionary<string, Nutritio
     }
     public NutritionItem[] SolveMeal(NutritionMenu template, NutritionMealTarget target, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var key = FormattableString.Invariant($"{template.Name}|{R0(target.C)}|{R0(target.P)}|{R0(target.F)}|{R0(target.Fi)}");
         if (cache.TryGetValue(key, out var saved)) return saved.ToArray();
         NutritionItem[] Build(double[] scale) => template.Items.Select(item => new NutritionItem(item.Id,

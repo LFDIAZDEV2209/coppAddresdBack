@@ -82,14 +82,19 @@ public sealed partial class NutritionPlanWorkflowTests
     public async Task Cqrs_BadLlmMenuFallsBackToDeterministicPlan()
     {
         await using var db = Context(); var patient = await PatientAsync(db); var client = Substitute.For<INutritionDraftClient>();
+        var attempt = 0;
         client.GenerateAsync(Arg.Any<NutritionDraftRequest>(), Arg.Any<CancellationToken>()).Returns(call =>
             new NutritionDraftResponse(new("Inventado", "Invented"), new("Inventado", "Invented"),
-                call.Arg<NutritionDraftRequest>().Menus.Select(m => m with { Items = [new("no-existe", 20)] }).ToArray(), "llm"));
-        var plan = await Cases(db, client: client).ExecuteAsync(new(NutritionOperation.Generate, patient.Id, null, null,
-            NutritionAdmin, CompleteNutritionInput), CancellationToken.None);
-        Assert.Equal("deterministic_fallback", plan.NarrativeSource);
-        Assert.DoesNotContain(plan.Meals.SelectMany(m => m.Items), i => i.FoodItemId == "no-existe");
-        Assert.Equal(120, plan.Meals.Count);
+                call.Arg<NutritionDraftRequest>().Menus.Select(m => attempt switch
+                { 0 => m with { Items = [new("no-existe", 20)] }, 1 => null!, _ => m with { Items = null! } }).ToArray(), "llm"));
+        for (attempt = 0; attempt < 3; attempt++)
+        {
+            var plan = await Cases(db, client: client).ExecuteAsync(new(NutritionOperation.Generate, patient.Id, null, null,
+                NutritionAdmin, CompleteNutritionInput), CancellationToken.None);
+            Assert.Equal("deterministic_fallback", plan.NarrativeSource);
+            Assert.DoesNotContain(plan.Meals.SelectMany(m => m.Items), i => i.FoodItemId == "no-existe");
+            Assert.Equal(120, plan.Meals.Count);
+        }
     }
 
     [NutritionPostgresFact]

@@ -50,6 +50,17 @@ public class RoleSeederTests
     }
 
     [Fact]
+    public async Task NutritionReviewer_HasSeparateManageAndApprove_WithoutGlobalPatientAccess()
+    {
+        using var h = new Harness(); await SeedAsync(h); await SeedAsync(h);
+        var permissions = await GetRolePermissionCodesAsync(h, "NutritionReviewer");
+        Assert.Contains(CoppAddresd.Auth.Constants.PermissionCodes.NutritionManage, permissions);
+        Assert.Contains(CoppAddresd.Auth.Constants.PermissionCodes.NutritionApprove, permissions);
+        Assert.DoesNotContain(CoppAddresd.Auth.Constants.PermissionCodes.PatientsView, permissions);
+        Assert.Equal(permissions.Count, permissions.Distinct().Count());
+    }
+
+    [Fact]
     public async Task Seed_ProduceRolesConsolidadosYFuncionales()
     {
         using var h = new Harness();

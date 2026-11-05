@@ -33,20 +33,20 @@ public sealed class NutritionCaseStore(AppDbContext db) : INutritionCaseStore
 
     public async Task<T> ExecuteAsync<T>(Guid patientId, Func<CancellationToken, Task<T>> operation, CancellationToken ct)
     {
-        return await db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        return await db.Database.CreateExecutionStrategy().ExecuteAsync(async strategyCt =>
         {
             db.ChangeTracker.Clear();
-            await using var tx = await db.Database.BeginTransactionAsync(ct);
-            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM app.patient_profiles WHERE id = {patientId} FOR UPDATE", ct);
+            await using var tx = await db.Database.BeginTransactionAsync(strategyCt);
+            await db.Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM app.patient_profiles WHERE id = {patientId} FOR UPDATE", strategyCt);
             try
             {
-                var result = await operation(ct); await tx.CommitAsync(ct); return result;
+                var result = await operation(strategyCt); await tx.CommitAsync(strategyCt); return result;
             }
             catch (DbUpdateConcurrencyException)
             {
                 throw new BusinessRuleViolationException("La prescripción cambió; vuelve a cargar la revisión.");
             }
-        });
+        }, ct);
     }
     public async Task<int> NextVersionAsync(Guid cycleId, CancellationToken ct)
         => (await db.NutritionPrescriptions.Where(x => x.CycleId == cycleId).MaxAsync(x => (int?)x.Version, ct) ?? 0) + 1;
