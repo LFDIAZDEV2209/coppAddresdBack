@@ -1,0 +1,2927 @@
+{
+  "input": {
+    "edad": 57,
+    "sexo": "F",
+    "peso": 78,
+    "talla": 158,
+    "imc": 31.2,
+    "hba1c": 6.4,
+    "mov": "DESPERTAR",
+    "riesgoNum": 4,
+    "sleepRF": 3,
+    "sleepNivel": "prioritario",
+    "estres": "elevado",
+    "adh": "A2",
+    "nutRiesgo": "moderado",
+    "objetivo": "perder"
+  },
+  "targets": {
+    "K": 1350,
+    "C": 152,
+    "P": 94,
+    "F": 41,
+    "fi": 25,
+    "vasos": 11,
+    "bmr": 1322,
+    "tdee": 1586,
+    "deficit": 0.15,
+    "floor": 1200,
+    "fase": "perder",
+    "metaKg": 59.9,
+    "kgLeft": 18.1,
+    "wkKg": 0.2,
+    "semanas": 91
+  },
+  "days": [
+    {
+      "d": 1,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 2,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 3,
+      "tpl": {
+        "des": 2,
+        "alm": 0,
+        "mer": 3,
+        "cen": 1
+      },
+      "des": [
+        {
+          "id": "yogur",
+          "g": 135
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "chia",
+          "g": 5
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "alm": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "brocoli",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ],
+      "mer": [
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "ensalada",
+          "g": 200
+        },
+        {
+          "id": "panint",
+          "g": 45
+        },
+        {
+          "id": "aguacate",
+          "g": 35
+        }
+      ]
+    },
+    {
+      "d": 4,
+      "tpl": {
+        "des": 3,
+        "alm": 1,
+        "mer": 0,
+        "cen": 2
+      },
+      "des": [
+        {
+          "id": "panint",
+          "g": 30
+        },
+        {
+          "id": "cottage",
+          "g": 130
+        },
+        {
+          "id": "aguacate",
+          "g": 50
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "manzana",
+          "g": 180
+        }
+      ],
+      "alm": [
+        {
+          "id": "salmon",
+          "g": 100
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "brocoli",
+          "g": 120
+        },
+        {
+          "id": "aceite",
+          "g": 4.5
+        }
+      ],
+      "mer": [
+        {
+          "id": "manzana",
+          "g": 180
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "atun",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "espinaca",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 5,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 6,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 7,
+      "tpl": {
+        "des": 2,
+        "alm": 0,
+        "mer": 3,
+        "cen": 1
+      },
+      "des": [
+        {
+          "id": "yogur",
+          "g": 135
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "chia",
+          "g": 5
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "alm": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "brocoli",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ],
+      "mer": [
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "ensalada",
+          "g": 200
+        },
+        {
+          "id": "panint",
+          "g": 45
+        },
+        {
+          "id": "aguacate",
+          "g": 35
+        }
+      ]
+    },
+    {
+      "d": 8,
+      "tpl": {
+        "des": 3,
+        "alm": 1,
+        "mer": 0,
+        "cen": 2
+      },
+      "des": [
+        {
+          "id": "panint",
+          "g": 30
+        },
+        {
+          "id": "cottage",
+          "g": 130
+        },
+        {
+          "id": "aguacate",
+          "g": 50
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "manzana",
+          "g": 180
+        }
+      ],
+      "alm": [
+        {
+          "id": "salmon",
+          "g": 100
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "brocoli",
+          "g": 120
+        },
+        {
+          "id": "aceite",
+          "g": 4.5
+        }
+      ],
+      "mer": [
+        {
+          "id": "manzana",
+          "g": 180
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "atun",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "espinaca",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 9,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 10,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 11,
+      "tpl": {
+        "des": 2,
+        "alm": 0,
+        "mer": 3,
+        "cen": 1
+      },
+      "des": [
+        {
+          "id": "yogur",
+          "g": 135
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "chia",
+          "g": 5
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "alm": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "brocoli",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ],
+      "mer": [
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "ensalada",
+          "g": 200
+        },
+        {
+          "id": "panint",
+          "g": 45
+        },
+        {
+          "id": "aguacate",
+          "g": 35
+        }
+      ]
+    },
+    {
+      "d": 12,
+      "tpl": {
+        "des": 3,
+        "alm": 1,
+        "mer": 0,
+        "cen": 2
+      },
+      "des": [
+        {
+          "id": "panint",
+          "g": 30
+        },
+        {
+          "id": "cottage",
+          "g": 130
+        },
+        {
+          "id": "aguacate",
+          "g": 50
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "manzana",
+          "g": 180
+        }
+      ],
+      "alm": [
+        {
+          "id": "salmon",
+          "g": 100
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "brocoli",
+          "g": 120
+        },
+        {
+          "id": "aceite",
+          "g": 4.5
+        }
+      ],
+      "mer": [
+        {
+          "id": "manzana",
+          "g": 180
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "atun",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "espinaca",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 13,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 14,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 15,
+      "tpl": {
+        "des": 2,
+        "alm": 0,
+        "mer": 3,
+        "cen": 1
+      },
+      "des": [
+        {
+          "id": "yogur",
+          "g": 135
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "chia",
+          "g": 5
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "alm": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "brocoli",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ],
+      "mer": [
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "ensalada",
+          "g": 200
+        },
+        {
+          "id": "panint",
+          "g": 45
+        },
+        {
+          "id": "aguacate",
+          "g": 35
+        }
+      ]
+    },
+    {
+      "d": 16,
+      "tpl": {
+        "des": 3,
+        "alm": 1,
+        "mer": 0,
+        "cen": 2
+      },
+      "des": [
+        {
+          "id": "panint",
+          "g": 30
+        },
+        {
+          "id": "cottage",
+          "g": 130
+        },
+        {
+          "id": "aguacate",
+          "g": 50
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "manzana",
+          "g": 180
+        }
+      ],
+      "alm": [
+        {
+          "id": "salmon",
+          "g": 100
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "brocoli",
+          "g": 120
+        },
+        {
+          "id": "aceite",
+          "g": 4.5
+        }
+      ],
+      "mer": [
+        {
+          "id": "manzana",
+          "g": 180
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "atun",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "espinaca",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 17,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 18,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 19,
+      "tpl": {
+        "des": 2,
+        "alm": 0,
+        "mer": 3,
+        "cen": 1
+      },
+      "des": [
+        {
+          "id": "yogur",
+          "g": 135
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "chia",
+          "g": 5
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "alm": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "brocoli",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ],
+      "mer": [
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "ensalada",
+          "g": 200
+        },
+        {
+          "id": "panint",
+          "g": 45
+        },
+        {
+          "id": "aguacate",
+          "g": 35
+        }
+      ]
+    },
+    {
+      "d": 20,
+      "tpl": {
+        "des": 3,
+        "alm": 1,
+        "mer": 0,
+        "cen": 2
+      },
+      "des": [
+        {
+          "id": "panint",
+          "g": 30
+        },
+        {
+          "id": "cottage",
+          "g": 130
+        },
+        {
+          "id": "aguacate",
+          "g": 50
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "manzana",
+          "g": 180
+        }
+      ],
+      "alm": [
+        {
+          "id": "salmon",
+          "g": 100
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "brocoli",
+          "g": 120
+        },
+        {
+          "id": "aceite",
+          "g": 4.5
+        }
+      ],
+      "mer": [
+        {
+          "id": "manzana",
+          "g": 180
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "atun",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "espinaca",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 21,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 22,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 23,
+      "tpl": {
+        "des": 2,
+        "alm": 0,
+        "mer": 3,
+        "cen": 1
+      },
+      "des": [
+        {
+          "id": "yogur",
+          "g": 135
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "chia",
+          "g": 5
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "alm": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "brocoli",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ],
+      "mer": [
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "ensalada",
+          "g": 200
+        },
+        {
+          "id": "panint",
+          "g": 45
+        },
+        {
+          "id": "aguacate",
+          "g": 35
+        }
+      ]
+    },
+    {
+      "d": 24,
+      "tpl": {
+        "des": 3,
+        "alm": 1,
+        "mer": 0,
+        "cen": 2
+      },
+      "des": [
+        {
+          "id": "panint",
+          "g": 30
+        },
+        {
+          "id": "cottage",
+          "g": 130
+        },
+        {
+          "id": "aguacate",
+          "g": 50
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "manzana",
+          "g": 180
+        }
+      ],
+      "alm": [
+        {
+          "id": "salmon",
+          "g": 100
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "brocoli",
+          "g": 120
+        },
+        {
+          "id": "aceite",
+          "g": 4.5
+        }
+      ],
+      "mer": [
+        {
+          "id": "manzana",
+          "g": 180
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "atun",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "espinaca",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 25,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 26,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 27,
+      "tpl": {
+        "des": 2,
+        "alm": 0,
+        "mer": 3,
+        "cen": 1
+      },
+      "des": [
+        {
+          "id": "yogur",
+          "g": 135
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "chia",
+          "g": 5
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "alm": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "brocoli",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ],
+      "mer": [
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "pollo",
+          "g": 100
+        },
+        {
+          "id": "ensalada",
+          "g": 200
+        },
+        {
+          "id": "panint",
+          "g": 45
+        },
+        {
+          "id": "aguacate",
+          "g": 35
+        }
+      ]
+    },
+    {
+      "d": 28,
+      "tpl": {
+        "des": 3,
+        "alm": 1,
+        "mer": 0,
+        "cen": 2
+      },
+      "des": [
+        {
+          "id": "panint",
+          "g": 30
+        },
+        {
+          "id": "cottage",
+          "g": 130
+        },
+        {
+          "id": "aguacate",
+          "g": 50
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "manzana",
+          "g": 180
+        }
+      ],
+      "alm": [
+        {
+          "id": "salmon",
+          "g": 100
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "brocoli",
+          "g": 120
+        },
+        {
+          "id": "aceite",
+          "g": 4.5
+        }
+      ],
+      "mer": [
+        {
+          "id": "manzana",
+          "g": 180
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "yogur",
+          "g": 100
+        }
+      ],
+      "cen": [
+        {
+          "id": "atun",
+          "g": 80
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "frijol",
+          "g": 80
+        },
+        {
+          "id": "espinaca",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    },
+    {
+      "d": 29,
+      "tpl": {
+        "des": 0,
+        "alm": 2,
+        "mer": 1,
+        "cen": 3
+      },
+      "des": [
+        {
+          "id": "avena",
+          "g": 30
+        },
+        {
+          "id": "banano",
+          "g": 120
+        },
+        {
+          "id": "clara",
+          "g": 132
+        },
+        {
+          "id": "almendras",
+          "g": 15
+        },
+        {
+          "id": "te",
+          "g": 200
+        }
+      ],
+      "alm": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "camote",
+          "g": 105
+        },
+        {
+          "id": "platano",
+          "g": 80
+        },
+        {
+          "id": "ensalada",
+          "g": 150
+        },
+        {
+          "id": "aguacate",
+          "g": 65
+        }
+      ],
+      "mer": [
+        {
+          "id": "yogur",
+          "g": 100
+        },
+        {
+          "id": "frutos",
+          "g": 90
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ],
+      "cen": [
+        {
+          "id": "tofu",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "quinoa",
+          "g": 80
+        },
+        {
+          "id": "nueces",
+          "g": 10
+        }
+      ]
+    },
+    {
+      "d": 30,
+      "tpl": {
+        "des": 1,
+        "alm": 3,
+        "mer": 2,
+        "cen": 0
+      },
+      "des": [
+        {
+          "id": "huevo",
+          "g": 50
+        },
+        {
+          "id": "panint",
+          "g": 75
+        },
+        {
+          "id": "aguacate",
+          "g": 30
+        },
+        {
+          "id": "espinaca",
+          "g": 40
+        },
+        {
+          "id": "papaya",
+          "g": 115
+        }
+      ],
+      "alm": [
+        {
+          "id": "pavo",
+          "g": 100
+        },
+        {
+          "id": "lentejas",
+          "g": 120
+        },
+        {
+          "id": "arroz",
+          "g": 100
+        },
+        {
+          "id": "vegcoc",
+          "g": 150
+        },
+        {
+          "id": "aceite",
+          "g": 9
+        }
+      ],
+      "mer": [
+        {
+          "id": "hummus",
+          "g": 30
+        },
+        {
+          "id": "zanahoria",
+          "g": 100
+        },
+        {
+          "id": "cottage",
+          "g": 80
+        },
+        {
+          "id": "panint",
+          "g": 30
+        }
+      ],
+      "cen": [
+        {
+          "id": "tilapia",
+          "g": 110
+        },
+        {
+          "id": "vegcoc",
+          "g": 200
+        },
+        {
+          "id": "camote",
+          "g": 100
+        },
+        {
+          "id": "aceite",
+          "g": 6.75
+        }
+      ]
+    }
+  ],
+  "totals": [
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    },
+    {
+      "k": 1543,
+      "c": 173,
+      "p": 119,
+      "f": 41,
+      "fi": 35
+    },
+    {
+      "k": 1565,
+      "c": 183,
+      "p": 102,
+      "f": 47,
+      "fi": 37
+    },
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    },
+    {
+      "k": 1543,
+      "c": 173,
+      "p": 119,
+      "f": 41,
+      "fi": 35
+    },
+    {
+      "k": 1565,
+      "c": 183,
+      "p": 102,
+      "f": 47,
+      "fi": 37
+    },
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    },
+    {
+      "k": 1543,
+      "c": 173,
+      "p": 119,
+      "f": 41,
+      "fi": 35
+    },
+    {
+      "k": 1565,
+      "c": 183,
+      "p": 102,
+      "f": 47,
+      "fi": 37
+    },
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    },
+    {
+      "k": 1543,
+      "c": 173,
+      "p": 119,
+      "f": 41,
+      "fi": 35
+    },
+    {
+      "k": 1565,
+      "c": 183,
+      "p": 102,
+      "f": 47,
+      "fi": 37
+    },
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    },
+    {
+      "k": 1543,
+      "c": 173,
+      "p": 119,
+      "f": 41,
+      "fi": 35
+    },
+    {
+      "k": 1565,
+      "c": 183,
+      "p": 102,
+      "f": 47,
+      "fi": 37
+    },
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    },
+    {
+      "k": 1543,
+      "c": 173,
+      "p": 119,
+      "f": 41,
+      "fi": 35
+    },
+    {
+      "k": 1565,
+      "c": 183,
+      "p": 102,
+      "f": 47,
+      "fi": 37
+    },
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    },
+    {
+      "k": 1543,
+      "c": 173,
+      "p": 119,
+      "f": 41,
+      "fi": 35
+    },
+    {
+      "k": 1565,
+      "c": 183,
+      "p": 102,
+      "f": 47,
+      "fi": 37
+    },
+    {
+      "k": 1451,
+      "c": 159,
+      "p": 96,
+      "f": 47,
+      "fi": 34
+    },
+    {
+      "k": 1508,
+      "c": 172,
+      "p": 117,
+      "f": 40,
+      "fi": 40
+    }
+  ],
+  "technical": [
+    {
+      "s": "warn",
+      "m": "Algún día se desvía 16% de la meta calórica (tolerancia 8%).",
+      "tec": 1
+    },
+    {
+      "s": "warn",
+      "m": "Carbohidratos se desvían 20% de la meta.",
+      "tec": 1
+    }
+  ]
+}

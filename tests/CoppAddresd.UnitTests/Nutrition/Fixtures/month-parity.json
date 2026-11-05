@@ -1,0 +1,155 @@
+{
+  "input": {
+    "edad": 38,
+    "sexo": "F",
+    "peso": 68.5,
+    "talla": 161,
+    "imc": 26.4,
+    "hba1c": 5.9,
+    "mov": "MARCHA",
+    "nutRiesgo": "moderado",
+    "sleepRF": 0,
+    "sleepNivel": "fragil",
+    "adh": "A3",
+    "riesgoNum": 2,
+    "estres": "moderado",
+    "objetivo": "perder"
+  },
+  "targets": {
+    "K": 1850,
+    "C": 217,
+    "P": 93,
+    "F": 68,
+    "fi": 26,
+    "vasos": 10,
+    "bmr": 1340,
+    "tdee": 2077,
+    "deficit": 0.1,
+    "floor": 1200,
+    "fase": "perder",
+    "metaKg": 62.2,
+    "kgLeft": 6.3,
+    "wkKg": 0.2,
+    "semanas": 32
+  },
+  "mealTargets": {
+    "des": {
+      "c": 60.760000000000005,
+      "p": 23.25,
+      "f": 18.36,
+      "fi": 6.5
+    },
+    "alm": {
+      "c": 82.46000000000001,
+      "p": 32.55,
+      "f": 22.44,
+      "fi": 9.1
+    },
+    "mer": {
+      "c": 26.04,
+      "p": 9.3,
+      "f": 8.84,
+      "fi": 3.9
+    },
+    "cen": {
+      "c": 47.74,
+      "p": 27.9,
+      "f": 18.36,
+      "fi": 6.5
+    }
+  },
+  "day1": {
+    "d": 1,
+    "tpl": {
+      "des": 0,
+      "alm": 2,
+      "mer": 1,
+      "cen": 3
+    },
+    "des": [
+      {
+        "id": "avena",
+        "g": 40
+      },
+      {
+        "id": "banano",
+        "g": 120
+      },
+      {
+        "id": "clara",
+        "g": 99
+      },
+      {
+        "id": "almendras",
+        "g": 30
+      },
+      {
+        "id": "te",
+        "g": 200
+      }
+    ],
+    "alm": [
+      {
+        "id": "tilapia",
+        "g": 110
+      },
+      {
+        "id": "camote",
+        "g": 175
+      },
+      {
+        "id": "platano",
+        "g": 115
+      },
+      {
+        "id": "ensalada",
+        "g": 150
+      },
+      {
+        "id": "aguacate",
+        "g": 80
+      }
+    ],
+    "mer": [
+      {
+        "id": "yogur",
+        "g": 100
+      },
+      {
+        "id": "frutos",
+        "g": 165
+      },
+      {
+        "id": "nueces",
+        "g": 10
+      }
+    ],
+    "cen": [
+      {
+        "id": "tofu",
+        "g": 100
+      },
+      {
+        "id": "vegcoc",
+        "g": 200
+      },
+      {
+        "id": "quinoa",
+        "g": 130
+      },
+      {
+        "id": "nueces",
+        "g": 10
+      }
+    ]
+  },
+  "totalsDay1": {
+    "k": 1800,
+    "c": 215,
+    "p": 103,
+    "f": 59,
+    "fi": 46
+  },
+  "technical": [],
+  "eligible": true
+}
