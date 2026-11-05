@@ -1,5 +1,17 @@
 # Módulo: Nutrición — generación, revisión clínica y lectura del paciente
 
+### Horario individual de comidas en la app
+
+La lectura `GET /api/v1/me/nutrition-plan` añade el campo opcional
+`days[].meals[].suggestedTime` (`HH:mm`) a partir del horario persistido en
+las prescripciones publicadas. Conserva `Snack` como tipo de merienda y
+`sortOrder` como orden del menú. En planes legacy, que solo conservan un
+horario general, el campo individual es `null`: la app no asigna la lista
+completa de horarios a cada comida ni infiere uno. Es un cambio aditivo de
+lectura; no requiere migración, no altera dietas aprobadas ni añade tiempos
+de comida al motor. Las meriendas ausentes se muestran como pendientes de
+indicación profesional, sin proponer alimentos automáticamente.
+
 ## Ola 2: motor y prescripciones profesionales
 
 Los catálogos de Auth y API conservan los permisos legacy y añaden

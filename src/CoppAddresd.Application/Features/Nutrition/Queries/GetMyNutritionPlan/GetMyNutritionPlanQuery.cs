@@ -166,7 +166,8 @@ public sealed class GetMyNutritionPlanQueryHandler(
                         return new MyNutritionPlanMealDto(type.ToString(), meal.MenuName,
                             string.Join("; ", items.Select(x => $"{foods[x.FoodItemId].Name}: {engine.QtyText(new(x.FoodItemId, x.Grams))}")),
                             (int)macros.K, (decimal)macros.P, (decimal)macros.C, (decimal)macros.F,
-                            (decimal)macros.Fi, meal.WaterMl, meal.Notes ?? plan.Instructions, order + 1);
+                            (decimal)macros.Fi, meal.WaterMl, meal.Notes ?? plan.Instructions, order + 1,
+                            meal.ScheduledTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture));
                     }).ToList())).ToList();
         return new(plan.Id, "Plan nutricional", null, 30, plan.CalorieTarget is { } k ? (int)NutritionEngine.R0(k) : null,
             (decimal?)plan.ProteinTarget, (decimal?)plan.CarbsTarget, (decimal?)plan.FatTarget, (decimal?)plan.FiberTarget,
