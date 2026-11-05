@@ -39,6 +39,7 @@ public static class DependencyInjection
             );
 
         services.AddScoped<IAppointmentReferenceSearchRepository, AppointmentReferenceSearchRepository>();
+        services.AddScoped<INutritionPrescriptionRepository, NutritionPrescriptionRepository>();
         services.AddScoped<AuditTriggerInterceptor>();
 
         services.AddDbContext<AppDbContext>(

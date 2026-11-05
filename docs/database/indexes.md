@@ -136,3 +136,24 @@ Se crean en tablas nuevas vacías. La cola usa los índices previos state/create
 y las claves de perfil/paciente; severidad JSON y días de espera son derivados
 al ordenar antes de paginar. No se añade GIN ni rollup de dashboard. Recoveries
 se busca por PK de batería; no se añade índice redundante de next_attempt_at.
+
+## Prescripción nutricional (grupos 1–2)
+
+| Índice | Tabla app | Columnas | Tipo | Motivo / consulta | Impacto esperado | Costo potencial |
+|---|---|---|---|---|---|---|
+| PK_nutrition_food_items | nutrition_food_items | id | PK B-tree | Código estable y FK de ítems; catálogo de 35 filas | Búsqueda por código | Una entrada por alimento |
+| PK_nutrition_prescriptions | nutrition_prescriptions | id | PK B-tree | Detalle por versión | Lookup puntual | Una entrada por versión |
+| ix_nutrition_prescriptions_patient_state_validity | nutrition_prescriptions | patient_id,state,start_date,end_date | B-tree | Versiones del paciente y futura lectura por estado/vigencia | Acota paciente; evita índice FK redundante | Una entrada por versión |
+| ix_nutrition_prescriptions_state_end | nutrition_prescriptions | state,end_date | B-tree | Futura bandeja de aprobados próximos a renovar | Acota estado y vencimiento | Actualiza al transicionar |
+| uq_nutrition_prescriptions_cycle_version | nutrition_prescriptions | cycle_id,version | UNIQUE B-tree | Versiones sin duplicados por ciclo | Evita revisiones duplicadas | Una entrada por versión |
+| uq_nutrition_prescriptions_published_cycle | nutrition_prescriptions | cycle_id WHERE is_published=TRUE | UNIQUE B-tree parcial | Una versión publicada por ciclo; conserva aprobaciones históricas | Integridad bajo concurrencia | Una entrada por ciclo publicado |
+| PK_nutrition_prescription_meals | nutrition_prescription_meals | id | PK B-tree | Detalle de comida | Lookup y FK de ítems | Una entrada por comida |
+| uq_nutrition_meals_prescription_day_type | nutrition_prescription_meals | prescription_id,day_number,meal_type | UNIQUE B-tree | Carga del agregado y cuatro comidas sin duplicados por día | Cubre FK de prescripción | Hasta 120 entradas por versión |
+| PK_nutrition_prescription_items | nutrition_prescription_items | id | PK B-tree | Identidad del ítem editable | Lookup puntual | Una entrada por ítem |
+| ix_nutrition_items_meal_order | nutrition_prescription_items | meal_id,sort_order | B-tree | Carga ordenada de ítems por comida | Cubre FK de comida | Una entrada por ítem |
+| ix_nutrition_items_food | nutrition_prescription_items | food_item_id | B-tree | FK del catálogo y control de referencias | Búsqueda de referencias | Una entrada por ítem |
+
+Son tablas nuevas vacías: los índices se crean transaccionalmente, sin requerir
+CONCURRENTLY sobre datos legacy. La integración valida unicidad, FKs y carga
+del agregado. No se atribuye una mejora de latencia medida ni un EXPLAIN de
+volumen productivo: los consumidores de bandeja y publicación son del grupo 4.

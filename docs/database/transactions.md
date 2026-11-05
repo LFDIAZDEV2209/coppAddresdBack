@@ -50,3 +50,22 @@ Recoveries usa INSERT ON CONFLICT condicional para claim/backoff durable. La
 entrega usa UPDATE condicional con lease y progreso sticky por canal; FCM/chat
 ocurren después del commit. Una caída entre envío y confirmación admite entrega
 externa repetida (al menos una vez); la decisión y el inbox sí son idempotentes.
+
+## Nutrición: fundamentos legacy y prescripciones (grupos 1–2)
+
+`UpdateNutritionPlanCommandHandler` recarga y valida el plan dentro de
+`ExecuteInTransactionAsync`; elimina días, añade reemplazos y actualiza
+plan/revisión/evento en una transacción Read Committed con estrategia Npgsql.
+Se propaga el token recibido por la operación a todas las llamadas. Un error
+limpia el tracking; `await using` revierte también si el token está cancelado.
+Un reintento recarga entidades y revisa la versión original. No hay llamadas
+externas dentro de la transacción. Objetivo: duración típica inferior a 100 ms.
+
+`NutritionPrescriptionRepository` persiste cada agregado nuevo o actualizado en
+un solo `SaveChangesAsync`, usando la transacción automática de EF: cabecera,
+comidas e ítems se confirman o revierten juntos. La revisión observada participa
+en el WHERE del UPDATE y una escritura concurrente produce
+`DbUpdateConcurrencyException`. El caso de uso futuro traducirá ese conflicto.
+El contexto de una escritura fallida se descarta al finalizar el alcance.
+La integración contra PostgreSQL verifica fallo de FK tras el borrado legacy,
+fallo de FK en un agregado nuevo y rollback de una revisión obsoleta.

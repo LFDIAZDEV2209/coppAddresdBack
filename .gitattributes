@@ -1,0 +1,2 @@
+# Conserva el SQL nutricional identico al generador, incluso con autocrlf en Windows.
+src/CoppAddresd.Infrastructure/Migrations/Seed/AddNutritionFoodCatalog.sql text eol=lf

@@ -1,5 +1,53 @@
 # Módulo: Nutrición — generación, revisión clínica y lectura del paciente
 
+## Fundamentos del nuevo modelo de prescripción (grupos 1–2)
+
+La migración `20261105145334_AddNutritionPrescriptions` añade únicamente cuatro
+tablas de `app`: `nutrition_food_items`, `nutrition_prescriptions`,
+`nutrition_prescription_meals` y `nutrition_prescription_items`. Conserva tablas,
+asignaciones y datos legacy. Esta etapa no activa motor, endpoints ni publicación
+del modelo nuevo; ese trabajo pertenece a los grupos 3–4 del change.
+
+Una fila de prescripción identifica paciente, ciclo y versión; guarda estado,
+provisionalidad, vigencia local (`date`), metas, indicaciones ES/EN y autoría.
+`por_renovar` será un estado derivado, no persistido. La revisión es un token de
+concurrencia. El índice parcial sobre `is_published` admite una sola versión
+publicada por ciclo; las versiones históricas conservan estado `aprobado`.
+Las comidas tienen día 1–30 y claves `des/alm/mer/cen` a las 07:00/12:00/15:30/19:00.
+Los ítems referencian el catálogo mediante sus códigos estables y gramos finitos
+positivos. Borrador sin fechas es válido; una aprobación exige fechas y autoría.
+
+El catálogo conserva los 35 alimentos y todos los valores por 100 g de
+`engine-rules-spec.md` §5, incluidas kcal declaradas y equivalencias ausentes.
+Los nutrientes usan `double precision` para la futura paridad del motor con JS;
+las kcal declaradas no sustituyen el cálculo Atwater de los siguientes grupos.
+Regenerar con `python scripts/generate_nutrition_seed.py`; verificar sin escribir
+con `python scripts/generate_nutrition_seed.py --check`. La migración ejecuta ese
+SQL como recurso embebido; sus `ON CONFLICT` permiten repetirlo sin duplicados.
+
+`INutritionPrescriptionRepository` vive en Application; EF y su implementación
+viven en Infrastructure. Lee sin tracking, lista por paciente con paginación y
+guarda el agregado completo en un solo `SaveChangesAsync`. Actualizar reconcilia
+altas, cambios y eliminaciones de comidas/ítems, con revisión optimista y token
+de cancelación en toda E/S. Las políticas de publicación y transiciones se
+implementarán en Application en el grupo 4.
+
+El legacy conserva macros, alérgenos, horarios y agua en crear/actualizar/clonar.
+Update recarga dentro de la transacción en cada reintento. Wellness valida
+alcance también para asignaciones de ejercicio, creación de rutina por paciente
+y filtro por plan nutricional; un recurso ajeno devuelve 404. Los listados
+generales filtran por asignación profesional activa. Las rutinas compartidas
+siguen siendo biblioteca. La lectura self-service desempata por inicio más
+reciente y luego ID mayor usando la fecha local existente.
+
+Pruebas: `NutritionLegacyPreservationTests`, `WellnessPatientScopeTests`,
+`GetMyNutritionPlanQueryHandlerTests` y las extensiones de
+`NutritionPlanWorkflowTests` (`NutritionBackendFoundationTests.cs` y
+`NutritionPrescriptionPersistenceTests.cs`). La integración crea bases aisladas
+con PostgreSQL real mediante `COP_TEST_DB_CONNECTION`: rollback intermedio,
+alcance SQL, agregado, concurrencia, cancelación, seed idempotente y Down/Up
+con datos legacy preservados. No se aplica esta migración a producción.
+
 ## Flujo desde las baterías
 
 El último envío de una evaluación solicita el trabajo después del commit. Todas
