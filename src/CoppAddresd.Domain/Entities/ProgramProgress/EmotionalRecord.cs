@@ -24,6 +24,18 @@ public sealed class EmotionalRecord
 
     public string? Notes { get; set; }
 
+    // Respuestas opcionales: null significa no contestado, nunca una puntuación inferida del ánimo.
+    public int? StressScore { get; set; }
+    public int? MotivationScore { get; set; }
+    public decimal? SleepMinutes { get; set; }
+    public string? SleepSource { get; set; }
+    public DateTime? SleepRecordedAt { get; set; }
+    public string? SleepDeviceId { get; set; }
+    /// <summary>Día local de despertar al que corresponde la noche.</summary>
+    public DateOnly? SleepNightDate { get; set; }
+    /// <summary>Percepción del paciente (poor/fair/restorative), independiente del wearable.</summary>
+    public string? SleepQuality { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public PatientProfile? Patient { get; set; }

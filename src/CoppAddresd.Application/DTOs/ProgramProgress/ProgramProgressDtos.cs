@@ -48,8 +48,13 @@ public sealed record EmotionalAssessmentPayload(
     decimal? SleepMinutes = null,
     string? SleepSource = null,
     DateTime? SleepRecordedAt = null,
-    string? Notes = null
+    string? Notes = null,
+    string? SleepDeviceId = null,
+    DateOnly? SleepNightDate = null,
+    string? SleepQuality = null
 );
+
+public sealed record SavedEmotionalAssessmentDto(short MoodScore, string? Barriers, EmotionalAssessmentPayload Answers);
 
 public sealed record CompleteTaskInput(
     Guid EnrollmentId,
@@ -163,7 +168,8 @@ public sealed record TodayTaskDto(
     string Status,
     DateTime? CompletedAt,
     TodayTaskContentDto? Content,
-    bool ContentUnavailable = false
+    bool ContentUnavailable = false,
+    SavedEmotionalAssessmentDto? EmotionalAssessment = null
 );
 
 public sealed record PodcastChapterDto(int AtSeconds, string Label);

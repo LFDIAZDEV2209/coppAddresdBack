@@ -827,6 +827,19 @@ public sealed partial class ProgramRepository(
                 }
             }
 
+            if (input.Emotional is { } answers)
+            {
+                emotional.StressScore = answers.StressScore;
+                emotional.MotivationScore = answers.MotivationScore;
+                emotional.SleepMinutes = answers.SleepMinutes;
+                emotional.SleepSource = answers.SleepSource;
+                emotional.SleepRecordedAt = answers.SleepSource == "wearable" && answers.SleepRecordedAt is { } captured
+                    ? captured.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(captured, DateTimeKind.Utc) : captured.ToUniversalTime()
+                    : null;
+                emotional.SleepDeviceId = answers.SleepSource == "wearable" ? answers.SleepDeviceId : null;
+                emotional.SleepNightDate = answers.SleepNightDate ?? (answers.SleepMinutes.HasValue ? input.LocalDate : null);
+                emotional.SleepQuality = answers.SleepQuality;
+            }
             // Save intermedio: la completación referencia el Id del registro.
             await dbContext.SaveChangesAsync(ct);
             emotionalRecordId = emotional.Id;
@@ -1919,6 +1932,12 @@ public sealed partial class ProgramRepository(
                 t.TaskCode,
                 t.CompletedAt,
                 t.MediaId,
+                EmotionalAssessment = t.EmotionalRecord == null ? null : new SavedEmotionalAssessmentDto(
+                    t.EmotionalRecord.MoodScore, t.EmotionalRecord.Barriers,
+                    new EmotionalAssessmentPayload(t.EmotionalRecord.StressScore, t.EmotionalRecord.MotivationScore,
+                        t.EmotionalRecord.SleepMinutes, t.EmotionalRecord.SleepSource, t.EmotionalRecord.SleepRecordedAt,
+                        t.EmotionalRecord.Notes, t.EmotionalRecord.SleepDeviceId, t.EmotionalRecord.SleepNightDate,
+                        t.EmotionalRecord.SleepQuality)),
             })
             .ToListAsync(ct);
 
@@ -2357,7 +2376,8 @@ public sealed partial class ProgramRepository(
                     done is null ? "Pending" : "Completed",
                     done?.CompletedAt,
                     content,
-                    contentUnavailable
+                    contentUnavailable,
+                    done?.EmotionalAssessment
                 );
             })
             .ToList();
@@ -5810,24 +5830,13 @@ public sealed partial class ProgramRepository(
             bodyFatMetricId = bodyFatBaseline.MetricId;
         }
 
-        // Motivación (SPEC §21, B.5): proxy del último registro emocional del
-        // período — el módulo solo persiste mood 1..5, se escala ×2 a la escala
-        // 1..10 del motor (documentado en SPEC §21, B.5).
-        decimal? motivationScore = null;
-        var latestMood = await dbContext
-            .EmotionalRecords.AsNoTracking()
-            .Where(r =>
-                r.PatientId == patientId
-                && r.RecordedLocalDate >= periodStart
-                && r.RecordedLocalDate <= periodEnd
-            )
-            .OrderByDescending(r => r.RecordedLocalDate)
-            .Select(r => (short?)r.MoodScore)
-            .FirstOrDefaultAsync(ct);
-        if (latestMood is { } mood)
-        {
-            motivationScore = mood * 2m;
-        }
+        // Motivación reportada: nunca se infiere multiplicando el ánimo.
+        // Consulta puntual por paciente/período, sin nueva agregación de dashboard.
+        decimal? motivationScore = await dbContext.EmotionalRecords.AsNoTracking()
+            .Where(r => r.PatientId == patientId && r.RecordedLocalDate >= periodStart
+                && r.RecordedLocalDate <= periodEnd && r.MotivationScore.HasValue)
+            .OrderByDescending(r => r.RecordedLocalDate).ThenByDescending(r => r.CreatedAt)
+            .Select(r => (decimal?)r.MotivationScore).FirstOrDefaultAsync(ct);
 
         // Estrés y sueño (SPEC §21, B.6/B.7): sin fuente física en el esquema
         // actual → null → reglas latentes (no disparan). Se dejan en el paquete

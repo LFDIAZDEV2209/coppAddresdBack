@@ -6915,6 +6915,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("smallint")
                         .HasColumnName("mood_score");
 
+                    b.Property<int?>("MotivationScore")
+                        .HasColumnType("integer")
+                        .HasColumnName("motivation_score");
+
                     b.Property<string>("Notes")
                         .HasColumnType("text")
                         .HasColumnName("notes");
@@ -6930,6 +6934,38 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Property<DateOnly>("RecordedLocalDate")
                         .HasColumnType("date")
                         .HasColumnName("recorded_local_date");
+
+                    b.Property<string>("SleepDeviceId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("sleep_device_id");
+
+                    b.Property<decimal?>("SleepMinutes")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("sleep_minutes");
+
+                    b.Property<DateOnly?>("SleepNightDate")
+                        .HasColumnType("date")
+                        .HasColumnName("sleep_night_date");
+
+                    b.Property<string>("SleepQuality")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("sleep_quality");
+
+                    b.Property<DateTime?>("SleepRecordedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("sleep_recorded_at");
+
+                    b.Property<string>("SleepSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("sleep_source");
+
+                    b.Property<int?>("StressScore")
+                        .HasColumnType("integer")
+                        .HasColumnName("stress_score");
 
                     b.HasKey("Id");
 

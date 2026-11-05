@@ -41,6 +41,15 @@ public sealed class EmotionalRecordConfiguration : IEntityTypeConfiguration<Emot
             .HasColumnName("notes")
             .HasColumnType("text");
 
+        builder.Property(x => x.StressScore).HasColumnName("stress_score");
+        builder.Property(x => x.MotivationScore).HasColumnName("motivation_score");
+        builder.Property(x => x.SleepMinutes).HasColumnName("sleep_minutes").HasPrecision(7, 2);
+        builder.Property(x => x.SleepSource).HasColumnName("sleep_source").HasMaxLength(16);
+        builder.Property(x => x.SleepRecordedAt).HasColumnName("sleep_recorded_at").HasColumnType("timestamptz");
+        builder.Property(x => x.SleepDeviceId).HasColumnName("sleep_device_id").HasMaxLength(128);
+        builder.Property(x => x.SleepNightDate).HasColumnName("sleep_night_date").HasColumnType("date");
+        builder.Property(x => x.SleepQuality).HasColumnName("sleep_quality").HasMaxLength(16);
+
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")
             .HasColumnType("timestamptz")
