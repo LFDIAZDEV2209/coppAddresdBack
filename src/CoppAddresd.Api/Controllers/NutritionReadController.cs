@@ -21,6 +21,12 @@ public sealed class NutritionReadController(IMediator mediator, ICurrentContext 
         [FromQuery] string? state = null, [FromQuery] string? search = null, CancellationToken ct = default)
         => Ok(await mediator.Send(new NutritionInboxQuery(await ActorAsync(ct), page, pageSize, state, search), ct));
 
+    /// <summary>Alimentos del catálogo nutricional común para el selector del editor.</summary>
+    [HttpGet("foods")]
+    [ProducesResponseType(typeof(IReadOnlyList<NutritionFoodDto>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<NutritionFoodDto>>> Foods(CancellationToken ct)
+        => Ok(await mediator.Send(new NutritionFoodCatalogQuery(await ActorAsync(ct)), ct));
+
     private async Task<NutritionActor> ActorAsync(CancellationToken ct) => new(
         context.UserId ?? throw new UnauthorizedAccessException(), await context.GetProfessionalIdAsync(ct),
         User.HasClaim(PermissionClaimTypes.Permission, PermissionCodes.PatientsView),

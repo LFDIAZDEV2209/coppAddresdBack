@@ -201,4 +201,30 @@ public sealed class NutritionAuthorizationTests
         using var h = await StartAsync(); h.Authenticate("own");
         Assert.Equal(HttpStatusCode.BadRequest,(await h.Client.GetAsync("/api/v1/nutrition/inbox?"+query)).StatusCode);
     }
+
+    [Theory]
+    [InlineData("absent",401)] [InlineData("none",403)] [InlineData("own",200)] [InlineData("reviewer",200)]
+    [InlineData("scoped",200)] [InlineData("global",200)] [InlineData("app",403)] [InlineData("invalid-id",403)]
+    public async Task HttpFoods_RequiresErpAndEitherPermission(string mode,int expected)
+    {
+        using var h = await StartAsync(); h.Authenticate(mode);
+        Assert.Equal(expected,(int)(await h.Client.GetAsync("/api/v1/nutrition/foods")).StatusCode);
+    }
+
+    [Fact]
+    public async Task HttpFoods_ReturnsSeededPickerFields_AndHouseholdUnits()
+    {
+        using var h = await StartAsync(); h.Authenticate("reviewer");
+        var response = await h.Client.GetAsync("/api/v1/nutrition/foods"); Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>(); Assert.Equal(35,json.GetArrayLength());
+        var oats = json.EnumerateArray().Single(x => x.GetProperty("code").GetString()=="avena");
+        Assert.Equal("code,name,group,role,kcal100,carbs100,protein100,fat100,fiber100,householdEquivalent",
+            string.Join(',',oats.EnumerateObject().Select(x => x.Name)));
+        Assert.Equal(379,oats.GetProperty("kcal100").GetDouble());
+        Assert.Equal(JsonValueKind.Null,oats.GetProperty("householdEquivalent").ValueKind);
+        var bread = json.EnumerateArray().Single(x => x.GetProperty("code").GetString()=="panint").GetProperty("householdEquivalent");
+        Assert.Equal("unitSingular,unitPlural,gramsPerUnit,unitStep",string.Join(',',bread.EnumerateObject().Select(x => x.Name)));
+        Assert.Equal("rebanada",bread.GetProperty("unitSingular").GetString());
+        Assert.Equal(30,bread.GetProperty("gramsPerUnit").GetDouble()); Assert.Equal(.5,bread.GetProperty("unitStep").GetDouble());
+    }
 }

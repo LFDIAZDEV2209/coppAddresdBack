@@ -440,3 +440,21 @@ Medición local EXPLAIN ANALYZE (2000 pacientes/4000 prescripciones): página de
 ix_nutrition_prescriptions_patient_state_validity en la búsqueda por paciente;
 sin bloques temporales. Prueba verifica dos consultas y cero tracking. No se
 añade índice/migración sin necesidad medida. No extrapola latencia productiva.
+
+`GET /api/v1/nutrition/foods` requiere los mismos permisos M o A y devuelve
+array común sin paginación, orden code ASC: code/name/group/role/kcal100/
+carbs100/protein100/fat100/fiber100/householdEquivalent. Equivalencia nullable
+con unitSingular, unitPlural, gramsPerUnit y unitStep. Reutiliza ListFoodsAsync
+y los 35 alimentos del seed, sin mezclar FoodAI. Code se usa como foodItemId
+al editar. Group es etiqueta de C/P/F/V, no taxonomía adicional. Conserva kcal
+declaradas por 100 g; el motor conserva su cálculo Atwater independiente.
+No inventa unidades si faltan; el catálogo no depende de tener pacientes asignados.
+
+Verificación final 4B: `dotnet build -c Release --nologo -v quiet`, 0 errores
+(11 avisos preexistentes en rebuild). Filtro FullyQualifiedName~Nutrition:
+unit **254/254**; integración PostgreSQL **38/38** (35 Workflow, incluidos 4
+inbox y 1 foods nuevos, más 3 FoodAiNutrition existentes), sin omisiones.
+El filtro amplio necesita COP_TEST_DB_CONNECTION a una base aislada con
+migraciones Auth/API para los tests antiguos de FoodAI; Workflow crea además
+una base propia por caso. No se usan BD de pacientes reales ni se cambian los
+14 fallos históricos ajenos. Las rutas anteriores y el DTO móvil no cambian.

@@ -13,6 +13,27 @@ namespace CoppAddresd.IntegrationTests;
 public sealed partial class NutritionPlanWorkflowTests
 {
     [NutritionPostgresFact]
+    public async Task Foods_SeededCatalog_MapsRealPostgresForBothPermissions_WithoutPatientScope()
+    {
+        await using var db = Context(); var repository = new NutritionPrescriptionRepository(db);
+        var handler = new CoppAddresd.Application.Features.Nutrition.Queries.NutritionFoodCatalogQueryHandler(repository);
+        var actor = new CoppAddresd.Application.Features.Nutrition.Cases.NutritionActor(Guid.NewGuid(),null,false,true,false);
+        var foods = await handler.Handle(new(actor),CancellationToken.None);
+        Assert.Equal(35,foods.Count); Assert.Equal(foods.Select(x => x.Code).Order(StringComparer.Ordinal),foods.Select(x => x.Code));
+        Assert.Equal(new[]{"C","F","P","V"},foods.Select(x => x.Role).Distinct().Order());
+        var oats = Assert.Single(foods,x => x.Code=="avena");
+        Assert.Equal("Avena en hojuelas (seca)",oats.Name); Assert.Equal("Carbohidratos",oats.Group);
+        Assert.Equal(379,oats.Kcal100); Assert.Equal(67.7,oats.Carbs100); Assert.Equal(13.2,oats.Protein100);
+        Assert.Equal(6.5,oats.Fat100); Assert.Equal(10.1,oats.Fiber100); Assert.Null(oats.HouseholdEquivalent);
+        var oil = Assert.Single(foods,x => x.Code=="aceite"); Assert.Equal(884,oil.Kcal100); Assert.Equal("Grasas",oil.Group);
+        Assert.Equal(new CoppAddresd.Application.Features.Nutrition.Queries.NutritionHouseholdEquivalent("cucharadita","cucharaditas",4.5,.5),oil.HouseholdEquivalent);
+        Assert.Equal(foods,await handler.Handle(new(actor with { CanManage=false,CanApprove=true }),CancellationToken.None));
+        Assert.Empty(db.ChangeTracker.Entries());
+        using var cancel = new CancellationTokenSource(); cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => repository.ListFoodsAsync(cancel.Token));
+    }
+
+    [NutritionPostgresFact]
     public async Task SelfService_PublishedSelection_LocalBoundaries_Ties_AndLegacyCoexistence()
     {
         await using var db = Context(); var patient = await PatientAsync(db); var other = await PatientAsync(db);
