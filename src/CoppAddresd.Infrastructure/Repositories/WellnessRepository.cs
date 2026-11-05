@@ -271,13 +271,17 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
 
     public async Task<(IReadOnlyList<RoutineAssignment> Items, int Total)> ListAssignmentsAsync(
         Guid? patientId, Guid? routineId, string? status,
-        int page, int pageSize, CancellationToken ct = default)
+        int page, int pageSize, Guid? professionalId = null, CancellationToken ct = default)
     {
         var query = dbContext.RoutineAssignments
             .AsNoTracking()
             .Include(x => x.Patient)
             .Include(x => x.Routine)
             .AsQueryable();
+
+        if (professionalId is { } professional)
+            query = query.Where(x => dbContext.PatientProfessionalAssignments.Any(a =>
+                a.PatientId == x.PatientId && a.ProfessionalId == professional && a.Status == "Active"));
 
         if (patientId.HasValue)
             query = query.Where(x => x.PatientId == patientId.Value);
@@ -412,7 +416,9 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
             }
             catch
             {
-                await transaction.RollbackAsync(ct);
+                // El dispose revierte incluso cuando el token ya está cancelado.
+                // El siguiente intento debe partir de entidades recargadas.
+                dbContext.ChangeTracker.Clear();
                 throw;
             }
         });

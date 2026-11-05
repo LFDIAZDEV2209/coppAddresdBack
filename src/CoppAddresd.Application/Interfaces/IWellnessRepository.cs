@@ -59,7 +59,7 @@ public interface IWellnessRepository
     Task<RoutineAssignment?> GetAssignmentByIdAsync(Guid id, CancellationToken ct = default);
     Task<(IReadOnlyList<RoutineAssignment> Items, int Total)> ListAssignmentsAsync(
         Guid? patientId, Guid? routineId, string? status,
-        int page, int pageSize, CancellationToken ct = default);
+        int page, int pageSize, Guid? professionalId = null, CancellationToken ct = default);
     Task<IReadOnlyList<RoutineAssignment>> ListAssignmentsByPatientAsync(Guid patientId, CancellationToken ct = default);
     Task<RoutineAssignment> AddAssignmentAsync(RoutineAssignment assignment, CancellationToken ct = default);
     Task UpdateAssignmentAsync(RoutineAssignment assignment, CancellationToken ct = default);

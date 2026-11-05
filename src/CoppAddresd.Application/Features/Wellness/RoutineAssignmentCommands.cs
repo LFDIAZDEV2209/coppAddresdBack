@@ -10,7 +10,7 @@ namespace CoppAddresd.Application.Features.Wellness;
 
 public record ListRoutineAssignmentsQuery(
     Guid? PatientId = null, Guid? RoutineId = null, string? Status = null,
-    int Page = 1, int PageSize = 20)
+    int Page = 1, int PageSize = 20, Guid? ProfessionalId = null)
     : IRequest<PaginatedRoutineAssignmentResult>;
 
 public sealed class ListRoutineAssignmentsQueryHandler(
@@ -20,7 +20,7 @@ public sealed class ListRoutineAssignmentsQueryHandler(
     {
         var (items, total) = await repository.ListAssignmentsAsync(
             request.PatientId, request.RoutineId, request.Status,
-            Math.Max(1, request.Page), Math.Clamp(request.PageSize, 1, 100), ct);
+            Math.Max(1, request.Page), Math.Clamp(request.PageSize, 1, 100), request.ProfessionalId, ct);
 
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)Math.Clamp(request.PageSize, 1, 100)));
 

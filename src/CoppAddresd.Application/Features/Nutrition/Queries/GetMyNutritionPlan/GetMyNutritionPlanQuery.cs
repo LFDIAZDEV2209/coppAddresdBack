@@ -41,8 +41,8 @@ public sealed class GetMyNutritionPlanQueryHandler(
         // 2) Asignación activa: la asignación es la fuente de verdad del plan
         // asignado desde el ERP (el comando de asignación no toca la fila del
         // plan). Misma regla que ProgramContentResolver: Status Active, ventana
-        // de fechas vigente (hoy UTC) y, en overlap, gana el StartDate más
-        // reciente.
+        // de fechas vigente (hoy local) y, en solapamiento, gana el inicio
+        // más reciente y luego el identificador mayor.
         var zone = await wellness.GetPatientTimezoneAsync(patient.Id, ct);
         var now = DateTime.UtcNow;
         if (!string.IsNullOrWhiteSpace(zone))
@@ -60,6 +60,7 @@ public sealed class GetMyNutritionPlanQueryHandler(
                 && (a.EndDate is null || DateOnly.FromDateTime(a.EndDate.Value) >= today)
             )
             .OrderByDescending(a => a.StartDate)
+            .ThenByDescending(a => a.Id)
             .FirstOrDefault();
 
         if (active is null)

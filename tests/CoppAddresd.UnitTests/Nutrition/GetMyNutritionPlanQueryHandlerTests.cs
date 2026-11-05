@@ -100,6 +100,29 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
         };
 
     [Fact]
+    public async Task Handle_SameLocalStartDate_GreatestAssignmentIdWinsRegardlessOfInputOrder()
+    {
+        var patient = BuildPatient();
+        var first = BuildPlan(patient.Id); var second = BuildPlan(patient.Id);
+        _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
+        _wellness.GetPatientTimezoneAsync(patient.Id, Arg.Any<CancellationToken>()).Returns("America/Bogota");
+        var start = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Bogota")).Date;
+        var low = BuildAssignment(patient.Id, first.Id, AssignmentStatus.Active, start);
+        low.Id = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var high = BuildAssignment(patient.Id, second.Id, AssignmentStatus.Active, start);
+        high.Id = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        _wellness.GetPlanByIdAsync(first.Id, Arg.Any<CancellationToken>()).Returns(first);
+        _wellness.GetPlanByIdAsync(second.Id, Arg.Any<CancellationToken>()).Returns(second);
+        foreach (var assignments in new[] { new[] { low, high }, new[] { high, low } })
+        {
+            _wellness.ListPlanAssignmentsByPatientAsync(patient.Id, Arg.Any<CancellationToken>()).Returns(assignments);
+            var result = await BuildHandler().Handle(new(Guid.NewGuid()), CancellationToken.None);
+            Assert.Equal(second.Id, result!.Id);
+        }
+    }
+
+    [Fact]
     public async Task Handle_PlanActivo_RetornaDtoConDiasYComidasOrdenados()
     {
         // Arrange: paciente con asignación activa vigente.

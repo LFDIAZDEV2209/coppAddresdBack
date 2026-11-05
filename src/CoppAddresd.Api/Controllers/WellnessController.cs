@@ -33,7 +33,7 @@ public class WellnessController(
         CancellationToken ct = default)
     {
         var actor = await NutritionActorAsync(ct);
-        if (!actor.ViewAll && actor.ProfessionalId is null) return Forbid();
+        if (!actor.ViewAll && actor.ProfessionalId is null) return NotFound();
         if (patientId is { } patient && !await nutritionWorkflow.CanAccessPatientAsync(patient, actor, ct)) return NotFound();
         return Ok(await mediator.Send(new ListNutritionPlansQuery(isTemplate, search, status, patientId, page, pageSize,
             actor.ViewAll ? null : actor.ProfessionalId), ct));
@@ -123,6 +123,7 @@ public class WellnessController(
     public async Task<ActionResult<ExerciseRoutineDto>> CreateExerciseRoutine(
         [FromBody] CreateExerciseRoutineRequest request, CancellationToken ct)
     {
+        if (request.PatientId is { } patient && !await nutritionWorkflow.CanAccessPatientAsync(patient, await NutritionActorAsync(ct), ct)) return NotFound();
         var result = await mediator.Send(new CreateExerciseRoutineCommand(request, context.UserId), ct);
         return CreatedAtAction(nameof(GetExerciseRoutine), new { id = result.Id }, result);
     }
@@ -155,13 +156,20 @@ public class WellnessController(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken ct = default)
-        => Ok(await mediator.Send(new ListRoutineAssignmentsQuery(patientId, routineId, status, page, pageSize), ct));
+    {
+        var actor = await NutritionActorAsync(ct);
+        if (!actor.ViewAll && actor.ProfessionalId is null) return NotFound();
+        if (patientId is { } patient && !await nutritionWorkflow.CanAccessPatientAsync(patient, actor, ct)) return NotFound();
+        return Ok(await mediator.Send(new ListRoutineAssignmentsQuery(patientId, routineId, status, page, pageSize,
+            actor.ViewAll ? null : actor.ProfessionalId), ct));
+    }
 
     [HttpGet("routine-assignments/{id:guid}")]
     [RequirePermission(PermissionCodes.WellnessView)]
     public async Task<ActionResult<RoutineAssignmentDto>> GetRoutineAssignment(Guid id, CancellationToken ct)
     {
         var result = await mediator.Send(new GetRoutineAssignmentQuery(id), ct);
+        if (result is not null && !await nutritionWorkflow.CanAccessPatientAsync(result.PatientId, await NutritionActorAsync(ct), ct)) return NotFound();
         return result is null ? NotFound(new { message = "Asignación no encontrada" }) : Ok(result);
     }
 
@@ -169,13 +177,17 @@ public class WellnessController(
     [RequirePermission(PermissionCodes.WellnessView)]
     public async Task<ActionResult<IReadOnlyList<RoutineAssignmentDto>>> ListAssignmentsByPatient(
         Guid patientId, CancellationToken ct)
-        => Ok(await mediator.Send(new ListAssignmentsByPatientQuery(patientId), ct));
+    {
+        if (!await nutritionWorkflow.CanAccessPatientAsync(patientId, await NutritionActorAsync(ct), ct)) return NotFound();
+        return Ok(await mediator.Send(new ListAssignmentsByPatientQuery(patientId), ct));
+    }
 
     [HttpPost("routine-assignments")]
     [RequirePermission(PermissionCodes.WellnessManage)]
     public async Task<ActionResult<RoutineAssignmentDto>> CreateRoutineAssignment(
         [FromBody] CreateRoutineAssignmentRequest request, CancellationToken ct)
     {
+        if (!await nutritionWorkflow.CanAccessPatientAsync(request.PatientId, await NutritionActorAsync(ct), ct)) return NotFound();
         var result = await mediator.Send(new CreateRoutineAssignmentCommand(request, context.UserId), ct);
         return CreatedAtAction(nameof(GetRoutineAssignment), new { id = result.Id }, result);
     }
@@ -185,6 +197,8 @@ public class WellnessController(
     public async Task<ActionResult<RoutineAssignmentDto>> UpdateRoutineAssignment(
         Guid id, [FromBody] UpdateRoutineAssignmentRequest request, CancellationToken ct)
     {
+        var assignment = await mediator.Send(new GetRoutineAssignmentQuery(id), ct);
+        if (assignment is null || !await nutritionWorkflow.CanAccessPatientAsync(assignment.PatientId, await NutritionActorAsync(ct), ct)) return NotFound();
         var result = await mediator.Send(new UpdateRoutineAssignmentCommand(id, request), ct);
         return result is null ? NotFound(new { message = "Asignación no encontrada" }) : Ok(result);
     }
@@ -193,6 +207,8 @@ public class WellnessController(
     [RequirePermission(PermissionCodes.WellnessManage)]
     public async Task<IActionResult> DeleteRoutineAssignment(Guid id, CancellationToken ct)
     {
+        var assignment = await mediator.Send(new GetRoutineAssignmentQuery(id), ct);
+        if (assignment is null || !await nutritionWorkflow.CanAccessPatientAsync(assignment.PatientId, await NutritionActorAsync(ct), ct)) return NotFound();
         var deleted = await mediator.Send(new DeleteRoutineAssignmentCommand(id), ct);
         return deleted ? NoContent() : NotFound(new { message = "Asignación no encontrada" });
     }
@@ -210,8 +226,14 @@ public class WellnessController(
         CancellationToken ct = default)
     {
         var actor = await NutritionActorAsync(ct);
-        if (!actor.ViewAll && actor.ProfessionalId is null) return Forbid();
+        if (!actor.ViewAll && actor.ProfessionalId is null) return NotFound();
         if (patientId is { } patient && !await nutritionWorkflow.CanAccessPatientAsync(patient, actor, ct)) return NotFound();
+        if (planId is { } plan)
+        {
+            var source = await mediator.Send(new GetNutritionPlanQuery(plan), ct);
+            if (source is null || source.PatientId is { } owner
+                && !await nutritionWorkflow.CanAccessPatientAsync(owner, actor, ct)) return NotFound();
+        }
         return Ok(await mediator.Send(new ListNutritionPlanAssignmentsQuery(patientId, planId, status, page, pageSize,
             actor.ViewAll ? null : actor.ProfessionalId), ct));
     }

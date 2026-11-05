@@ -118,66 +118,66 @@ public sealed class UpdateNutritionPlanCommandHandler(
 {
     public async Task<NutritionPlanDto?> Handle(UpdateNutritionPlanCommand request, CancellationToken ct)
     {
-        var plan = await repository.GetPlanByIdAsync(request.Id, ct);
-        if (plan is null) return null;
-
         var r = request.Request;
-        if (!plan.IsTemplate && (r.Revision is null || r.Revision != plan.Revision))
-            throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("El plan cambió. Actualiza y revisa su última versión.");
-        if (plan.GenerationStatus is "queued" or "generating")
-            throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("Espera a que termine la generación del borrador.");
-        return await repository.ExecuteInTransactionAsync(async transactionCt =>
+        return await repository.ExecuteInTransactionAsync<NutritionPlanDto?>(async transactionCt =>
         {
-        plan.UpdatedBy = request.UpdatedBy;
-        plan.Revision++;
-        plan.ReviewStatus = "pending_review";
-        plan.ApprovedAt = null;
-        plan.ApprovedBy = null;
-        if (plan.GenerationStatus == "failed") plan.GenerationStatus = null;
-        plan.Name = r.Name.Trim();
-        plan.Description = string.IsNullOrWhiteSpace(r.Description) ? null : r.Description.Trim();
-        plan.TargetCondition = string.IsNullOrWhiteSpace(r.TargetCondition) ? null : r.TargetCondition.Trim();
-        plan.DurationDays = plan.IsTemplate ? r.DurationDays : 30;
-        plan.DailyCalorieTarget = r.DailyCalorieTarget;
-        plan.DailyProteinTarget = r.DailyProteinTarget; plan.DailyCarbsTarget = r.DailyCarbsTarget;
-        plan.DailyFatTarget = r.DailyFatTarget; plan.DailyFiberTarget = r.DailyFiberTarget;
-        plan.Allergens = r.Allergens; plan.MealTiming = r.MealTiming;
-        plan.Status = plan.IsTemplate ? r.Status : NutritionPlanStatus.Draft;
-        plan.UpdatedAt = DateTime.UtcNow;
+            // Cada reintento recarga el plan; no reutiliza un grafo mutado por el intento anterior.
+            var plan = await repository.GetPlanByIdAsync(request.Id, transactionCt);
+            if (plan is null) return null;
+            if (!plan.IsTemplate && (r.Revision is null || r.Revision != plan.Revision))
+                throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("El plan cambió. Actualiza y revisa su última versión.");
+            if (plan.GenerationStatus is "queued" or "generating")
+                throw new CoppAddresd.Domain.Exceptions.BusinessRuleViolationException("Espera a que termine la generación del borrador.");
+            plan.UpdatedBy = request.UpdatedBy;
+            plan.Revision++;
+            plan.ReviewStatus = "pending_review";
+            plan.ApprovedAt = null;
+            plan.ApprovedBy = null;
+            if (plan.GenerationStatus == "failed") plan.GenerationStatus = null;
+            plan.Name = r.Name.Trim();
+            plan.Description = string.IsNullOrWhiteSpace(r.Description) ? null : r.Description.Trim();
+            plan.TargetCondition = string.IsNullOrWhiteSpace(r.TargetCondition) ? null : r.TargetCondition.Trim();
+            plan.DurationDays = plan.IsTemplate ? r.DurationDays : 30;
+            plan.DailyCalorieTarget = r.DailyCalorieTarget;
+            plan.DailyProteinTarget = r.DailyProteinTarget; plan.DailyCarbsTarget = r.DailyCarbsTarget;
+            plan.DailyFatTarget = r.DailyFatTarget; plan.DailyFiberTarget = r.DailyFiberTarget;
+            plan.Allergens = r.Allergens; plan.MealTiming = r.MealTiming;
+            plan.Status = plan.IsTemplate ? r.Status : NutritionPlanStatus.Draft;
+            plan.UpdatedAt = DateTime.UtcNow;
 
-        // Reemplazar días si se proporcionan
-        if (r.Days is not null)
-        {
-            await repository.DeletePlanDaysByPlanIdAsync(plan.Id, ct);
-
-            plan.Days = r.Days.Select(d => new NutritionPlanDay
+            // Reemplazar días si se proporcionan
+            if (r.Days is not null)
             {
-                Id = Guid.NewGuid(),
-                PlanId = plan.Id,
-                DayNumber = d.DayNumber,
-                DailyWaterMl = d.DailyWaterMl > 0 ? d.DailyWaterMl : 2000,
-                MealType = d.MealType,
-                Description = string.IsNullOrWhiteSpace(d.Description) ? null : d.Description.Trim(),
-                Foods = string.IsNullOrWhiteSpace(d.Foods) ? null : d.Foods.Trim(),
-                Calories = d.Calories, ProteinG = d.ProteinG, CarbsG = d.CarbsG,
-                FatG = d.FatG, FiberG = d.FiberG, WaterMl = d.WaterMl,
-                Notes = string.IsNullOrWhiteSpace(d.Notes) ? null : d.Notes.Trim(),
-                SortOrder = d.SortOrder,
-                MediaId = d.MediaId,
-                CreatedAt = DateTime.UtcNow,
-            }).ToList();
+                await repository.DeletePlanDaysByPlanIdAsync(plan.Id, transactionCt);
 
-            await repository.AddPlanDaysRangeAsync(plan.Days, ct);
-        }
+                plan.Days = r.Days.Select(d => new NutritionPlanDay
+                {
+                    Id = Guid.NewGuid(),
+                    PlanId = plan.Id,
+                    DayNumber = d.DayNumber,
+                    DailyWaterMl = d.DailyWaterMl > 0 ? d.DailyWaterMl : 2000,
+                    MealType = d.MealType,
+                    Description = string.IsNullOrWhiteSpace(d.Description) ? null : d.Description.Trim(),
+                    Foods = string.IsNullOrWhiteSpace(d.Foods) ? null : d.Foods.Trim(),
+                    Calories = d.Calories, ProteinG = d.ProteinG, CarbsG = d.CarbsG,
+                    FatG = d.FatG, FiberG = d.FiberG, WaterMl = d.WaterMl,
+                    Notes = string.IsNullOrWhiteSpace(d.Notes) ? null : d.Notes.Trim(),
+                    SortOrder = d.SortOrder,
+                    MediaId = d.MediaId,
+                    CreatedAt = DateTime.UtcNow,
+                }).ToList();
 
-        await repository.UpdatePlanAsync(plan, ct);
+                await repository.AddPlanDaysRangeAsync(plan.Days, transactionCt);
+            }
 
-        logger.LogInformation("NutritionPlan actualizado: {Id}", plan.Id);
+            await repository.UpdatePlanAsync(plan, transactionCt);
 
-        var updated = await repository.GetPlanByIdAsync(plan.Id, ct)
-            ?? throw new InvalidOperationException("No se pudo leer el plan actualizado.");
+            logger.LogInformation("NutritionPlan actualizado: {Id}", plan.Id);
 
-        return NutritionPlanDto.FromEntity(updated);
+            var updated = await repository.GetPlanByIdAsync(plan.Id, transactionCt)
+                ?? throw new InvalidOperationException("No se pudo leer el plan actualizado.");
+
+            return NutritionPlanDto.FromEntity(updated);
         }, ct);
     }
 }

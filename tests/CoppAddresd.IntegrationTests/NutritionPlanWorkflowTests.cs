@@ -28,7 +28,7 @@ public sealed class NutritionPostgresFactAttribute : FactAttribute
 }
 
 /// <summary>Flujo real contra PostgreSQL: ninguna llamada sale al proveedor de IA.</summary>
-public sealed class NutritionPlanWorkflowTests : IAsyncLifetime
+public sealed partial class NutritionPlanWorkflowTests : IAsyncLifetime
 {
     private string connection = "";
     private string database = "";
