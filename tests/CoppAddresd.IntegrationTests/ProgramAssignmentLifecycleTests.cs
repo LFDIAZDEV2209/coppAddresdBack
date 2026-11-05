@@ -1,10 +1,4 @@
-using System.Security.Claims;
-using System.Text.Json;
-using CoppAddresd.Api.Context;
-using CoppAddresd.Api.Controllers;
-using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.Assignment;
-using CoppAddresd.Application.Features.ProgramProgress.Commands.SetWeekContent;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.HealthTests;
@@ -14,19 +8,29 @@ using CoppAddresd.Domain.Enums.HealthTests;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using CoppAddresd.Infrastructure.Repositories;
 using MediatR;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 
 namespace CoppAddresd.IntegrationTests;
 
 public sealed partial class ProgramAssignmentIntegrationTests
 {
     private readonly LifecycleClock _lifecycleClock=new();
+    [AssignmentPostgresFact]
+    public async Task Inbox_ConservaAlcanceYCopy_YRedirigeAvisosHistoricosAlPerfil()
+    {
+        var data = await ScenarioAsync(2); await using var db = NewDb();
+        var notices = new ProgramAssignmentNoticeRepository(db);
+        var expected = $"/program/gestion?view=perfil-360&patient={data.PatientId}";
+        Assert.Equal(expected, (await db.ProgramAssignmentNotices.SingleAsync()).Link);
+        await db.ProgramAssignmentNotices.ExecuteUpdateAsync(s => s.SetProperty(n => n.Link, "/program/" + "asignacion/" + data.RecommendationId));
+        var inbox = await notices.ListInboxAsync(data.ProfessionalUser,1,20,CancellationToken.None);
+        var notice = Assert.Single(inbox.Items); Assert.Equal(expected,notice.Link);
+        Assert.Contains("completed the initial assessment",notice.MessageEn);
+        Assert.Empty((await notices.ListInboxAsync(data.OtherUser,1,20,CancellationToken.None)).Items);
+    }
+
     private sealed class LifecycleClock : TimeProvider
     {
         public DateTimeOffset Current=new(2026,11,4,15,0,0,TimeSpan.Zero);
@@ -83,16 +87,6 @@ public sealed partial class ProgramAssignmentIntegrationTests
         return new(patient.Id,enrollmentId,recId,actor,other);
     }
 
-    private ProgramController Controller(IServiceScope scope,Guid user)
-    {
-        var current=Substitute.For<ICurrentContext>();current.UserId.Returns(user);
-        var http=new HttpContextAccessor { HttpContext=new DefaultHttpContext() };
-        http.HttpContext.User=new ClaimsPrincipal(new ClaimsIdentity(new[]{new Claim(ClaimTypes.NameIdentifier,user.ToString()),new Claim(ClaimTypes.Role,"Professional")},"test"));
-        var actor=new ProgramActorContext(current,http,scope.ServiceProvider.GetRequiredService<CoppAddresd.Infrastructure.Persistence.AppDbContext>());
-        return new(scope.ServiceProvider.GetRequiredService<IMediator>(),NullLogger<ProgramController>.Instance,
-            new ConfigurationBuilder().Build(),actor,Substitute.For<IObjectStorageService>());
-    }
-
     [AssignmentPostgresFact]
     public async Task MigracionRecoveryAvisos_DownYReaplicacionEnBdAislada()
     {
@@ -105,107 +99,6 @@ public sealed partial class ProgramAssignmentIntegrationTests
     }
 
     [AssignmentPostgresFact]
-    public async Task Dismiss_DesdeControlador_AntiIdor_IdempotenteYSinActivacionNiFallback()
-    {
-        var data = await ScenarioAsync(8);
-        await using var db = NewDb();
-        var before = await db.ProgramEnrollments.AsNoTracking().SingleAsync(e => e.Id == data.EnrollmentId);
-        await db.ProgramAssignmentRecommendations.Where(r => r.Id == data.RecommendationId)
-            .ExecuteUpdateAsync(s => s.SetProperty(r => r.State, "pending-narrative"));
-        using (var scope = _services.CreateScope())
-            Assert.IsType<NotFoundResult>((await Controller(scope, data.OtherUser)
-                .DismissAssignment(data.RecommendationId, CancellationToken.None)).Result);
-        AssignmentDetailDto first;
-        using (var scope = _services.CreateScope())
-        {
-            var response = await Controller(scope, data.ProfessionalUser).DismissAssignment(data.RecommendationId, CancellationToken.None);
-            first = Assert.IsType<AssignmentDetailDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
-        }
-        Assert.Equal("dismissed", first.State);
-        Assert.Equal(data.ProfessionalUser, first.DismissedBy);
-        Assert.Equal(_lifecycleClock.Current.UtcDateTime, first.DismissedAt);
-        _lifecycleClock.Current = _lifecycleClock.Current.AddHours(1);
-        using (var scope = _services.CreateScope())
-        {
-            var response = await Controller(scope, data.ProfessionalUser).DismissAssignment(data.RecommendationId, CancellationToken.None);
-            var replay = Assert.IsType<AssignmentDetailDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
-            Assert.Equal(first.DismissedBy, replay.DismissedBy);
-            Assert.Equal(first.DismissedAt, replay.DismissedAt);
-            Assert.Equal(first.UpdatedAt, replay.UpdatedAt);
-            Assert.Equal(0, (await scope.ServiceProvider.GetRequiredService<ProgramAssignmentJob>().RunAsync(CancellationToken.None)).Fallbacks);
-        }
-        var after = await db.ProgramEnrollments.AsNoTracking().SingleAsync(e => e.Id == data.EnrollmentId);
-        Assert.Equal(ProgramEnrollmentStatus.PendingAssignment, after.Status);
-        Assert.Equal(0, after.CurrentWeekNumber);
-        Assert.Equal(before.StartedAt, after.StartedAt);
-        Assert.Equal(before.StartLocalDate, after.StartLocalDate);
-        Assert.Equal(before.UpdatedAt, after.UpdatedAt);
-        Assert.All(await db.ProgramWeeks.AsNoTracking().Where(w => w.EnrollmentId == data.EnrollmentId).ToListAsync(),
-            w => { Assert.Equal(ProgramWeekStatus.Locked, w.Status); Assert.Null(w.ActivatedAt); });
-        Assert.False(await db.ProgramAssignmentNotices.AnyAsync(n => n.RecommendationId == data.RecommendationId && n.Kind == "patient-ready"));
-        Assert.Equal(1, await db.Database.SqlQuery<int>($"""
-            SELECT count(*)::int AS "Value" FROM audit.activity_logs
-            WHERE record_id={data.RecommendationId.ToString()} AND action='ProgramAssignmentDismissed'
-            """).SingleAsync());
-        Assert.Equal(AuditAction.ProgramAssignmentDismissed, await db.ActivityLogs.AsNoTracking()
-            .Where(a => a.RecordId == data.RecommendationId.ToString()).Select(a => a.Action).SingleAsync());
-    }
-
-    [AssignmentPostgresFact]
-    public async Task ColaYFicha_AntiIdor_ProfesionalBSinAsignacionRecibe404()
-    {
-        var data=await ScenarioAsync(2);
-        using var scope=_services.CreateScope();
-        Assert.IsType<NotFoundResult>((await Controller(scope,data.OtherUser).GetAssignment(data.RecommendationId,CancellationToken.None)).Result);
-        var response=await Controller(scope,data.ProfessionalUser).GetAssignment(data.RecommendationId,CancellationToken.None);
-        var detail=Assert.IsType<AssignmentDetailDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
-        Assert.Equal(data.PatientId,detail.PatientId);Assert.True(detail.NarrativePending);
-        var queue=await scope.ServiceProvider.GetRequiredService<IProgramAssignmentOperationsRepository>()
-            .ListAsync(null,1,10,"Miércoles",new[]{data.PatientId},_lifecycleClock.Current.UtcDateTime,CancellationToken.None);
-        Assert.Equal(1,queue.Total);Assert.Equal(2,queue.Items[0].WaitingDays);Assert.Equal(3,queue.Items[0].MaxSeverity);
-        var inbox=await scope.ServiceProvider.GetRequiredService<IProgramAssignmentNoticeRepository>().ListInboxAsync(data.ProfessionalUser,1,20,CancellationToken.None);
-        Assert.Single(inbox.Items);Assert.Contains(data.RecommendationId.ToString(),inbox.Items[0].Link);
-        Assert.Contains("completed the initial assessment",inbox.Items[0].MessageEn);
-        Assert.Empty((await scope.ServiceProvider.GetRequiredService<IProgramAssignmentNoticeRepository>().ListInboxAsync(data.OtherUser,1,20,CancellationToken.None)).Items);
-    }
-
-    [AssignmentPostgresFact]
-    public async Task Apply_MiercolesConOverride_ActivaSemanaYPermiteCheckinYPutPosterior()
-    {
-        var data=await ScenarioAsync(1);
-        using (var scope=_services.CreateScope())
-        {
-            var response=await Controller(scope,data.ProfessionalUser).ApplyAssignment(data.RecommendationId,
-                new("Plan Alternativo","Full Body"),CancellationToken.None);
-            var result=Assert.IsType<AppliedAssignmentDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
-            Assert.Equal("edited",result.State);Assert.Equal(new DateOnly(2026,11,4),result.StartLocalDate);
-            Assert.Equal("Active",result.Enrollment!.Status);
-        }
-        await using var db=NewDb();
-        var enrollment=await db.ProgramEnrollments.AsNoTracking().SingleAsync(e=>e.Id==data.EnrollmentId);
-        Assert.Equal(1,enrollment.CurrentWeekNumber);Assert.Equal(ProgramEnrollmentStatus.Active,enrollment.Status);
-        var week=await db.ProgramWeeks.AsNoTracking().SingleAsync(w=>w.EnrollmentId==data.EnrollmentId && w.WeekNumber==1);
-        Assert.Equal(DayOfWeek.Wednesday,week.WeekStartDateLocal.DayOfWeek);Assert.Equal(week.WeekStartDateLocal.AddDays(6),week.WeekEndDateLocal);
-        var planId=await db.NutritionPlans.Where(p=>p.Name=="Plan Alternativo").Select(p=>p.Id).SingleAsync();
-        Assert.All(week.TasksSnapshot.EnumerateArray().Where(t=>t.GetProperty("task_code").GetString()=="nut"),
-            t=>Assert.Equal(planId,t.GetProperty("nutrition_plan_id").GetGuid()));
-        var programs=new ProgramRepository(db,new ConfigurationBuilder().Build());
-        var completion=await programs.CompleteTaskAsync(new(data.EnrollmentId,week.WeekStartDateLocal,TaskCode.emocional,"wednesday-checkin",null,3,null,null),CancellationToken.None);
-        Assert.NotEqual(Guid.Empty,completion.TaskCompletionId);
-        Assert.True(await db.DailyCheckIns.AnyAsync(d=>d.EnrollmentId==data.EnrollmentId && d.LocalDate==week.WeekStartDateLocal));
-        using (var scope=_services.CreateScope())
-        {
-            var sender=scope.ServiceProvider.GetRequiredService<IMediator>();
-            var replay=await sender.Send(new ApplyAssignmentCommand(data.RecommendationId,ActorId:data.ProfessionalUser,ScopedPatientIds:[data.PatientId]));
-            Assert.True(replay!.Replay);
-            // El PUT existente se mantiene: configuración de la semana siguiente sin reactivar la primera.
-            var content=await sender.Send(new SetWeekContentCommand(data.EnrollmentId,2,planId,null,data.ProfessionalUser));
-            Assert.Equal(new DateOnly(2026,11,11),content.WeekStartDateLocal);
-        }
-        Assert.Equal(1,await db.ProgramAssignmentNotices.CountAsync(n=>n.RecommendationId==data.RecommendationId && n.Kind=="patient-ready"));
-    }
-
-    [AssignmentPostgresFact]
     public async Task Job_Dia8_DefaultsDePlantilla_ActivaUnaVezYSinDuplicarAvisos()
     {
         var data=await ScenarioAsync(8);
@@ -213,6 +106,8 @@ public sealed partial class ProgramAssignmentIntegrationTests
         var job=scope.ServiceProvider.GetRequiredService<ProgramAssignmentJob>();
         Assert.Equal(1,(await job.RunAsync(CancellationToken.None)).Fallbacks);
         Assert.Equal(0,(await job.RunAsync(CancellationToken.None)).Fallbacks);
+        Assert.True((await scope.ServiceProvider.GetRequiredService<IMediator>()
+            .Send(new ApplyAssignmentFallbackCommand(data.RecommendationId), CancellationToken.None))!.Replay);
         await using var db=NewDb();
         var rec=await db.ProgramAssignmentRecommendations.AsNoTracking().SingleAsync(r=>r.Id==data.RecommendationId);
         Assert.Equal("fallback",rec.State);Assert.Null(rec.AppliedBy);

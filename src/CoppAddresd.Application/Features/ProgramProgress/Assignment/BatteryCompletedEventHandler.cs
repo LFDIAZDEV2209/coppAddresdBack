@@ -45,7 +45,6 @@ public sealed class BatteryCompletedEventHandler(IProgramAssignmentRepository as
             }, ct);
             if (recommendationId.HasValue)
             {
-                await cache.SetAsync("program-assignment-revision:v1", new AssignmentCacheRevision(Guid.NewGuid().ToString("N")), TimeSpan.FromDays(1), ct);
                 await cache.RemoveAsync(CacheKeys.ScoresHistory(notification.PatientId), ct);
                 if (!narratives.TryEnqueue(recommendationId.Value))
                     logger.LogWarning("Program.NarrativeQueueFull RecommendationId={RecommendationId}", recommendationId);

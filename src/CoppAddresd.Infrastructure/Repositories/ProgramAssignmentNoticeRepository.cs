@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Infrastructure.Repositories;
 
-/// <summary>Inbox por usuario y outbox de entrega; únicos y claims impiden duplicar avisos por apply/replay.</summary>
+/// <summary>Inbox por usuario y outbox de entrega; únicos y claims impiden duplicar avisos por fallback/replay.</summary>
 public sealed class ProgramAssignmentNoticeRepository(AppDbContext db) : IProgramAssignmentNoticeRepository
 {
     public async Task AddProfessionalNoticesAsync(Guid recommendationId, Guid patientId, DateTime utcNow, CancellationToken ct)
@@ -25,7 +25,7 @@ public sealed class ProgramAssignmentNoticeRepository(AppDbContext db) : IProgra
             TitleEs="Asignación de programa pendiente", TitleEn="Program assignment pending",
             MessageEs=$"El paciente {patientName} completó la evaluación inicial y espera asignación de programa",
             MessageEn=$"Patient {patientName} completed the initial assessment and is waiting for program assignment",
-            Link=$"/program/asignacion/{recommendationId}", CreatedAt=utcNow, NextAttemptAt=utcNow,
+            Link=$"/program/gestion?view=perfil-360&patient={patientId}", CreatedAt=utcNow, NextAttemptAt=utcNow,
             // El inbox es el canal del ERP: ya está entregado al persistirse, no se envía push extra.
             DeliveredAt=utcNow, PushCompleted=true, ChatCompleted=true,
         }));
@@ -81,7 +81,11 @@ public sealed class ProgramAssignmentNoticeRepository(AppDbContext db) : IProgra
                     && pp.Professional.Employee.DeletedAt==null && pp.Professional.Employee.Status=="Active")));
         var total=await query.CountAsync(ct);
         var rows=await query.OrderByDescending(n=>n.CreatedAt).ThenBy(n=>n.Id).Skip((page-1)*pageSize).Take(pageSize)
-            .Select(n=>new AssignmentInboxItem(n.Id,n.RecommendationId,n.Kind,n.TitleEs,n.TitleEn,n.MessageEs,n.MessageEn,n.Link,n.CreatedAt,n.ReadAt)).ToListAsync(ct);
-        return new(rows,total,page,pageSize);
+            .Join(db.ProgramAssignmentRecommendations, n=>n.RecommendationId, r=>r.Id,
+                (n,r)=>new { Notice=n, r.PatientId }).ToListAsync(ct);
+        // También corrige enlaces históricos al leer, sin reescribir avisos ni tocar su entrega.
+        return new(rows.Select(row=>new AssignmentInboxItem(row.Notice.Id,row.Notice.RecommendationId,
+            row.Notice.Kind,row.Notice.TitleEs,row.Notice.TitleEn,row.Notice.MessageEs,row.Notice.MessageEn,
+            $"/program/gestion?view=perfil-360&patient={row.PatientId}",row.Notice.CreatedAt,row.Notice.ReadAt)).ToList(),total,page,pageSize);
     }
 }

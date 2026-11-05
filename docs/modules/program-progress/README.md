@@ -706,20 +706,14 @@ WHERE ba.patient_id = @patientId AND ba.id = @batteryAssignmentId
               AND e.patient_id = ba.patient_id AND e.version_id = a.version_id))
 ```
 
-### Asignación post-tests: cola ERP, activación, fallback y avisos (paquete 3)
+### Asignación post-tests: insumos, fallback y avisos conservados
 
-Implementadas 2.6, 2.7, 2.8 y 2.10. Contratos REST, alcances, caché, transacciones,
-reintentos y evidencia: [Asignación post-tests — paquete 3](./assignments.md).
+La Ola 3 de Nutrición retira cola, ficha, aplicación y desestimación manuales,
+incluido el disparador HTTP de narrativa de esa ficha. Permanecen perfil
+medido, snapshot, registro, narrativa y jobs de recuperación/avisos:
+[Contrato de retirada y servicios conservados](./assignments.md).
 La migración aditiva `AddProgramAssignmentRecoveryAndNotices` persiste claims e
 inbox/outbox bilingüe. No modifica la UI del ERP ni los PUT semanales existentes.
-
-### Desestimar una recomendación desde la ficha ERP
-
-`POST /api/v1/program/assignments/{id}/dismiss` exige Program.Enroll y el mismo
-alcance anti-IDOR de ficha/apply. Cambia solo propuestas pendientes a dismissed,
-con autor y fecha, y devuelve la ficha actualizada. Replay 200 sin cambios;
-la inscripción queda PendingAssignment y el fallback sigue excluyendo dismissed.
-Contrato completo: [asignación post-tests](./assignments.md).
 
 ### Fixture local de asignación (solo Development)
 
@@ -741,10 +735,10 @@ IDs, timestamps, snapshot, propuesta y decisiones clínicas ya existentes.
 
 Este fixture permite explícitamente una inscripción pendiente adicional al
 programa activo preexistente del paciente, que conserva intacto. Es un escenario
-de QA de la cola/ficha: activar la pendiente mientras siga otro programa activo
-está sujeto a las restricciones normales del módulo. No modifica evaluaciones,
+de QA de los insumos y su recuperación; no habilita una cola/ficha manual.
+La activación sigue sujeta a las restricciones del módulo. No modifica evaluaciones,
 no envía avisos y no llama a IA. El SQL no puede encolar el Channel en memoria:
 el worker recupera ahora la deuda de narrativa desde PostgreSQL al arrancar y por
-lotes, sujeto al flag y al debounce. La ficha puede solicitar una regeneración
-explícita con `POST /api/v1/program/assignments/{id}/regenerate-narrative`.
-Contrato y filtros: [asignación post-tests](./assignments.md#recuperación-y-regeneración-de-narrativa-qa-2026-11-04).
+lotes, sujeto al flag y al debounce. La regeneración explícita permanece como
+operación interna; su endpoint de ficha fue retirado.
+Contrato y filtros: [asignación post-tests](./assignments.md#recuperación-y-regeneración-interna-de-narrativa).

@@ -38,7 +38,7 @@ public sealed class ProgramAssignmentJob(IProgramAssignmentOperationsRepository 
             if (candidate.CreatedAt>now.AddDays(-7)) continue;
             try
             {
-                var result = await sender.Send(new ApplyAssignmentCommand(candidate.RecommendationId, UseTemplateDefaults: true), ct);
+                var result = await sender.Send(new ApplyAssignmentFallbackCommand(candidate.RecommendationId), ct);
                 if (result is { Replay: false }) fallbacks++;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

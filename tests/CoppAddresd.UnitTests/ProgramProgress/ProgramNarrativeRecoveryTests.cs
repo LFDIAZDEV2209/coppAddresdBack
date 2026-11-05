@@ -1,6 +1,4 @@
 using System.Text.Json;
-using CoppAddresd.Api.Context;
-using CoppAddresd.Api.Controllers;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Features.ProgramProgress.Assignment;
 using CoppAddresd.Application.Interfaces;
@@ -8,8 +6,6 @@ using CoppAddresd.Domain.Entities.ProgramProgress;
 using CoppAddresd.Domain.Exceptions;
 using CoppAddresd.Infrastructure.Services;
 using MediatR;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -83,11 +79,6 @@ public sealed class ProgramNarrativeRecoveryTests
         queue.Complete(id);
     }
 
-    private static AssignmentDetailDto Detail(Guid id, string state) => new(id, Guid.NewGuid(), "Paciente", null,
-        new(Guid.NewGuid(), "Active", 1, DateOnly.FromDateTime(Now), Now, "America/Bogota"),
-        JsonSerializer.SerializeToElement(new { }), JsonSerializer.SerializeToElement(new { }),
-        "Anterior ES", "Anterior EN", false, state, "v1", null, null, null, Now, null, Now, null);
-
     [Theory]
     [InlineData("applied")]
     [InlineData("edited")]
@@ -98,14 +89,12 @@ public sealed class ProgramNarrativeRecoveryTests
         var id = Guid.NewGuid(); var patient = Guid.NewGuid();
         var repo = Substitute.For<IProgramAssignmentOperationsRepository>();
         var queue = Substitute.For<IProgramNarrativeQueue>();
-        var detail = Detail(id, state);
-        repo.GetDetailAsync(id, Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<CancellationToken>()).Returns(detail);
+        repo.GetNarrativeStateAsync(id, Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<CancellationToken>()).Returns(state);
         queue.TryEnqueue(id, true).Returns(true);
         var handler = new RegenerateNarrativeCommandHandler(repo, queue, NullLogger<RegenerateNarrativeCommandHandler>.Instance);
         Assert.True((await handler.Handle(new(id, [patient]), CancellationToken.None))!.Queued);
         Assert.True((await handler.Handle(new(id, [patient]), CancellationToken.None))!.Queued);
-        Assert.Equal("Anterior ES", detail.NarrativeEs);
-        await repo.Received(2).GetDetailAsync(id, Arg.Is<IReadOnlyList<Guid>?>(p => p!.SequenceEqual(new[] { patient })), Arg.Any<CancellationToken>());
+        await repo.Received(2).GetNarrativeStateAsync(id, Arg.Is<IReadOnlyList<Guid>?>(p => p!.SequenceEqual(new[] { patient })), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -114,30 +103,12 @@ public sealed class ProgramNarrativeRecoveryTests
         var id = Guid.NewGuid(); var repo = Substitute.For<IProgramAssignmentOperationsRepository>();
         var queue = Substitute.For<IProgramNarrativeQueue>();
         var handler = new RegenerateNarrativeCommandHandler(repo, queue, NullLogger<RegenerateNarrativeCommandHandler>.Instance);
+        repo.GetNarrativeStateAsync(id, Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<CancellationToken>()).Returns((string?)null);
         Assert.Null(await handler.Handle(new(id, []), CancellationToken.None));
-        repo.GetDetailAsync(id, Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<CancellationToken>()).Returns(Detail(id, "dismissed"));
+        repo.GetNarrativeStateAsync(id, Arg.Any<IReadOnlyList<Guid>?>(), Arg.Any<CancellationToken>()).Returns("dismissed");
         var error = await Assert.ThrowsAsync<BusinessRuleViolationException>(() => handler.Handle(new(id, null), CancellationToken.None));
         Assert.Contains("desestimada", error.Message);
         queue.DidNotReceive().TryEnqueue(Arg.Any<Guid>(), Arg.Any<bool>());
     }
 
-    [Fact]
-    public async Task Regenerar_Endpoint_202Y404_UsaScopeServidor()
-    {
-        var actor = Substitute.For<IProgramActorContext>(); actor.UserId.Returns(Guid.NewGuid());
-        var patient = Guid.NewGuid(); var id = Guid.NewGuid();
-        actor.ResolveScopedPatientIdsAsync(Arg.Any<CancellationToken>()).Returns(new[] { patient });
-        var mediator = Substitute.For<IMediator>();
-        mediator.Send(Arg.Any<RegenerateNarrativeCommand>(), Arg.Any<CancellationToken>()).Returns(new NarrativeQueuedDto(true));
-        var controller = new ProgramController(mediator, NullLogger<ProgramController>.Instance,
-            new ConfigurationBuilder().Build(), actor, Substitute.For<IObjectStorageService>());
-        var accepted = Assert.IsType<AcceptedResult>((await controller.RegenerateNarrative(id, CancellationToken.None)).Result);
-        Assert.True(Assert.IsType<NarrativeQueuedDto>(accepted.Value).Queued);
-        await mediator.Received(1).Send(Arg.Is<RegenerateNarrativeCommand>(c => c.RecommendationId == id
-            && c.ScopedPatientIds!.SequenceEqual(new[] { patient })), Arg.Any<CancellationToken>());
-        mediator.Send(Arg.Any<RegenerateNarrativeCommand>(), Arg.Any<CancellationToken>()).Returns((NarrativeQueuedDto?)null);
-        Assert.IsType<NotFoundResult>((await controller.RegenerateNarrative(id, CancellationToken.None)).Result);
-        actor.UserId.Returns((Guid?)null);
-        Assert.IsType<UnauthorizedResult>((await controller.RegenerateNarrative(id, CancellationToken.None)).Result);
-    }
 }

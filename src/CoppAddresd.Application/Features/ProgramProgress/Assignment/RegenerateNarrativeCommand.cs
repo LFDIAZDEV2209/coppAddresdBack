@@ -17,9 +17,9 @@ public sealed class RegenerateNarrativeCommandHandler(IProgramAssignmentOperatio
 {
     public async Task<NarrativeQueuedDto?> Handle(RegenerateNarrativeCommand request, CancellationToken ct)
     {
-        var detail = await repository.GetDetailAsync(request.RecommendationId, request.ScopedPatientIds, ct);
-        if (detail is null) return null;
-        if (detail.State == "dismissed")
+        var state = await repository.GetNarrativeStateAsync(request.RecommendationId, request.ScopedPatientIds, ct);
+        if (state is null) return null;
+        if (state == "dismissed")
             throw new BusinessRuleViolationException("ASSIGNMENT_DISMISSED: no se puede regenerar la narrativa de una recomendación desestimada.");
         ct.ThrowIfCancellationRequested();
         var queued = queue.TryEnqueue(request.RecommendationId, regenerate: true);

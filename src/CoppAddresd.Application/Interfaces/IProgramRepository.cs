@@ -52,9 +52,9 @@ public interface IProgramRepository
     Task<ProgramEnrollment> CreatePendingAssignmentAsync(Guid patientId, string templateCode, CancellationToken ct)
         => throw new NotSupportedException("Inscripción pendiente no implementada.");
 
-    /// <summary>Activa semana 1 y su contenido en una transacción idempotente compartida con fallback.</summary>
-    Task<CoppAddresd.Application.Features.ProgramProgress.Assignment.AppliedAssignmentDto?> ActivateAssignmentAsync(
-        CoppAddresd.Application.Features.ProgramProgress.Assignment.AssignmentActivationInput input, CancellationToken ct)
+    /// <summary>Activa semana 1 con defaults de plantilla tras siete días, en una transacción idempotente interna.</summary>
+    Task<CoppAddresd.Application.Features.ProgramProgress.Assignment.AppliedAssignmentDto?> ActivateAssignmentFallbackAsync(
+        CoppAddresd.Application.Features.ProgramProgress.Assignment.AssignmentFallbackInput input, CancellationToken ct)
         => throw new NotSupportedException("Activación de asignación no implementada.");
 
     /// <summary>Pausa la inscripción (Active → Paused). Requiere estado Active.</summary>

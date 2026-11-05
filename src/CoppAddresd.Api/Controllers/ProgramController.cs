@@ -1,4 +1,3 @@
-using CoppAddresd.Application.Features.ProgramProgress.Assignment;
 using System.Globalization;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
@@ -111,72 +110,6 @@ public sealed class ProgramController(
 
     // Programa inicial y principal de todos los pacientes: 83 días (12 semanas).
     private const string DefaultTemplateCodeFallback = "program-coppaddresd-83-days";
-
-    /// <summary>Cola de asignación paginada, acotada a pacientes visibles por el actor.</summary>
-    [HttpGet("assignments")]
-    [RequirePermission("Program.Enroll")]
-    public async Task<ActionResult<AssignmentQueuePage>> ListAssignments([FromQuery] string? status = null,
-        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? search = null, CancellationToken ct = default)
-    {
-        if (actorContext.UserId is null) return Unauthorized();
-        if (status is not null && status is not ("proposed" or "pending-narrative" or "applied" or "edited" or "dismissed" or "fallback" or "all"))
-            return BadRequest(new { message="Estado de asignación inválido." });
-        if (search?.Length>200) return BadRequest(new { message="search admite hasta 200 caracteres." });
-        var scope=await actorContext.ResolveScopedPatientIdsAsync(ct);
-        if (scope is { Count:0 }) return Forbid();
-        return Ok(await mediator.Send(new ListProgramAssignmentsQuery(status,page,pageSize,search,
-            actorContext.UserId?.ToString() ?? "unknown",scope),ct));
-    }
-
-    /// <summary>Ficha clínica completa; un identificador fuera del alcance se comporta como inexistente.</summary>
-    [HttpGet("assignments/{id:guid}")]
-    [RequirePermission("Program.Enroll")]
-    public async Task<ActionResult<AssignmentDetailDto>> GetAssignment(Guid id,CancellationToken ct)
-    {
-        if (actorContext.UserId is null) return Unauthorized();
-        var scope=await actorContext.ResolveScopedPatientIdsAsync(ct);
-        var result=await mediator.Send(new GetProgramAssignmentQuery(id,scope),ct);
-        return result is null ? NotFound() : Ok(result);
-    }
-
-    [HttpPost("assignments/{id:guid}/apply")]
-    [RequirePermission("Program.Enroll")]
-    public async Task<ActionResult<AppliedAssignmentDto>> ApplyAssignment(Guid id,[FromBody] ApplyProgramAssignmentRequest request,CancellationToken ct)
-    {
-        var scope=await actorContext.ResolveScopedPatientIdsAsync(ct);
-        if (actorContext.UserId is null) return Unauthorized();
-        var result=await mediator.Send(new ApplyAssignmentCommand(id,request.OverrideNutritionPlanName,
-            request.OverrideRoutineName,request.Apply,actorContext.UserId,scope),ct);
-        return result is null ? NotFound() : Ok(result);
-    }
-
-    /// <summary>Desestima una propuesta pendiente. Repetir dismissed conserva la autoría y los timestamps originales.</summary>
-    [HttpPost("assignments/{id:guid}/dismiss")]
-    [RequirePermission("Program.Enroll")]
-    public async Task<ActionResult<AssignmentDetailDto>> DismissAssignment(Guid id, CancellationToken ct)
-    {
-        if (actorContext.UserId is not Guid actorId) return Unauthorized();
-        var scope = await actorContext.ResolveScopedPatientIdsAsync(ct);
-        var result = await mediator.Send(new DismissAssignmentCommand(id, actorId, scope), ct);
-        return result is null ? NotFound() : Ok(result);
-    }
-
-    /// <summary>Encola la regeneración bilingüe. Una solicitud ya en cola también devuelve 202.</summary>
-    [HttpPost("assignments/{id:guid}/regenerate-narrative")]
-    [RequirePermission("Program.Enroll")]
-    [ProducesResponseType(typeof(NarrativeQueuedDto), StatusCodes.Status202Accepted)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<NarrativeQueuedDto>> RegenerateNarrative(Guid id, CancellationToken ct)
-    {
-        if (actorContext.UserId is null) return Unauthorized();
-        var scope = await actorContext.ResolveScopedPatientIdsAsync(ct);
-        var result = await mediator.Send(new RegenerateNarrativeCommand(id, scope), ct);
-        return result is null ? NotFound() : Accepted(result);
-    }
-
-    public sealed record ApplyProgramAssignmentRequest(string? OverrideNutritionPlanName = null,
-        string? OverrideRoutineName = null,bool Apply = true);
 
     // ===================== PACIENTE: snapshot =====================
 

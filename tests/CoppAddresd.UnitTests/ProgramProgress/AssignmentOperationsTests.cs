@@ -1,13 +1,10 @@
 using System.Text.Json;
 using CoppAddresd.Api.Controllers;
-using CoppAddresd.Api.Context;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Features.Notifications;
 using CoppAddresd.Application.Features.ProgramProgress.Assignment;
 using CoppAddresd.Application.Interfaces;
 using MediatR;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -16,6 +13,37 @@ namespace CoppAddresd.UnitTests.ProgramProgress;
 
 public sealed class AssignmentOperationsTests
 {
+    [Fact]
+    public void RutasErpDeAsignacion_Retiradas_InsumosConservados()
+    {
+        var routes = typeof(ProgramController).GetMethods()
+            .SelectMany(m => m.GetCustomAttributes(typeof(Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute), true)
+                .Cast<Microsoft.AspNetCore.Mvc.Routing.HttpMethodAttribute>()).Select(a => a.Template ?? "").ToArray();
+        Assert.DoesNotContain(routes, route => route.StartsWith("assignments", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("me/snapshot", routes);
+        Assert.Contains("enrollments/{id:guid}/snapshot", routes);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FallbackInterno_UsaReloj_InvalidaHistorial_YNoDuplicaAvisos(bool replay)
+    {
+        var programs = Substitute.For<IProgramRepository>(); var cache = Substitute.For<ICacheService>();
+        var notifier = Substitute.For<IProgramAssignmentNotifier>(); var id = Guid.NewGuid(); var patient = Guid.NewGuid();
+        var now = new DateTimeOffset(2026,11,4,15,0,0,TimeSpan.Zero);
+        var result = new AppliedAssignmentDto(id,Guid.NewGuid(),patient,"fallback",new(2026,11,4),1,
+            JsonSerializer.SerializeToElement(new {}),replay);
+        programs.ActivateAssignmentFallbackAsync(new(id,now.UtcDateTime),Arg.Any<CancellationToken>()).Returns(result);
+        using var source = new CancellationTokenSource();
+        var handler = new ApplyAssignmentFallbackCommandHandler(programs,cache,notifier,new Clock(now),
+            NullLogger<ApplyAssignmentFallbackCommandHandler>.Instance);
+        Assert.Equal(result,await handler.Handle(new(id),source.Token));
+        await programs.Received(1).ActivateAssignmentFallbackAsync(new(id,now.UtcDateTime),source.Token);
+        await cache.Received(replay ? 0 : 1).RemoveAsync(CacheKeys.ScoresHistory(patient),source.Token);
+        await notifier.Received(replay ? 0 : 1).DispatchAsync(id,now.UtcDateTime,source.Token);
+    }
+
     private sealed class Clock(DateTimeOffset value) : TimeProvider
     {
         public DateTimeOffset Value=value;
@@ -26,43 +54,6 @@ public sealed class AssignmentOperationsTests
         var settings=Substitute.For<IOptionsMonitor<ProgramAssignmentSettings>>();
         settings.CurrentValue.Returns(new ProgramAssignmentSettings { Enabled=true });
         return settings;
-    }
-
-    [Theory]
-    [InlineData(nameof(ProgramController.ListAssignments))]
-    [InlineData(nameof(ProgramController.GetAssignment))]
-    [InlineData(nameof(ProgramController.ApplyAssignment))]
-    [InlineData(nameof(ProgramController.DismissAssignment))]
-    [InlineData(nameof(ProgramController.RegenerateNarrative))]
-    public void Endpoints_ExigenProgramEnroll(string method)
-    {
-        var permissions=typeof(ProgramController).GetMethod(method)!.GetCustomAttributes(typeof(CoppAddresd.Api.Authorization.RequirePermissionAttribute),true)
-            .Cast<CoppAddresd.Api.Authorization.RequirePermissionAttribute>();
-        Assert.Contains(permissions,p=>p.PermissionCode=="Program.Enroll");
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Dismiss_DevuelveFicha_InvalidaCacheSoloSiCambio(bool changed)
-    {
-        var repository = Substitute.For<IProgramAssignmentOperationsRepository>();
-        var cache = Substitute.For<ICacheService>();
-        var id = Guid.NewGuid(); var actor = Guid.NewGuid(); var patient = Guid.NewGuid();
-        var now = new DateTimeOffset(2026, 11, 4, 15, 0, 0, TimeSpan.Zero);
-        var detail = new AssignmentDetailDto(id, patient, "Paciente", null,
-            new(Guid.NewGuid(), "PendingAssignment", 0, new DateOnly(2026,11,4), now.UtcDateTime, "America/Bogota"),
-            JsonSerializer.SerializeToElement(new{}), JsonSerializer.SerializeToElement(new{}),
-            null, null, true, "dismissed", "test-v1", null, null, actor, now.UtcDateTime,
-            now.UtcDateTime, null, now.UtcDateTime);
-        repository.DismissAsync(id, actor, Arg.Any<IReadOnlyList<Guid>?>(), now.UtcDateTime, Arg.Any<CancellationToken>())
-            .Returns((detail, changed));
-        var handler = new DismissAssignmentCommandHandler(repository, cache, new Clock(now));
-        Assert.Equal(detail, await handler.Handle(new(id, actor, [patient]), CancellationToken.None));
-        await repository.Received(1).DismissAsync(id, actor,
-            Arg.Is<IReadOnlyList<Guid>?>(ids => ids!.SequenceEqual(new[]{patient})), now.UtcDateTime, Arg.Any<CancellationToken>());
-        await cache.Received(changed ? 1 : 0).SetAsync("program-assignment-revision:v1",
-            Arg.Any<AssignmentCacheRevision>(), TimeSpan.FromDays(1), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -76,68 +67,6 @@ public sealed class AssignmentOperationsTests
     }
 
     [Fact]
-    public async Task Cola_EndpointConFakes_PropagaSoloScopeServidorYDeniegaScopeVacio()
-    {
-        var actor=Substitute.For<IProgramActorContext>();
-        var patient=Guid.NewGuid();
-        actor.UserId.Returns(Guid.NewGuid());
-        actor.ResolveScopedPatientIdsAsync(Arg.Any<CancellationToken>()).Returns(new Guid[]{patient});
-        var mediator=Substitute.For<IMediator>();
-        mediator.Send(Arg.Any<ListProgramAssignmentsQuery>(),Arg.Any<CancellationToken>()).Returns(new AssignmentQueuePage([],0,2,10,1));
-        var controller=new ProgramController(mediator,NullLogger<ProgramController>.Instance,new ConfigurationBuilder().Build(),
-            actor,Substitute.For<IObjectStorageService>());
-        var response=await controller.ListAssignments("proposed",2,10,"Ana",CancellationToken.None);
-        Assert.IsType<OkObjectResult>(response.Result);
-        await mediator.Received(1).Send(Arg.Is<ListProgramAssignmentsQuery>(q=>q.Page==2 && q.Search=="Ana"
-            && q.ScopedPatientIds!.SequenceEqual(new[]{patient})),Arg.Any<CancellationToken>());
-        actor.ResolveScopedPatientIdsAsync(Arg.Any<CancellationToken>()).Returns(Array.Empty<Guid>());
-        Assert.IsType<ForbidResult>((await controller.ListAssignments()).Result);
-        Assert.IsType<BadRequestObjectResult>((await controller.ListAssignments("invalid")).Result);
-    }
-
-    [Fact]
-    public async Task Cola_Cache30Segundos_SeparaProfesionalesYFiltroAntesDePaginacion()
-    {
-        var repository=Substitute.For<IProgramAssignmentOperationsRepository>();
-        var cache=Substitute.For<ICacheService>();
-        var keys=new List<string>();
-        cache.GetOrCreateAsync(Arg.Any<string>(),Arg.Any<TimeSpan>(),Arg.Any<Func<CancellationToken,Task<AssignmentQueuePage>>>(),Arg.Any<CancellationToken>())
-            .Returns(async call=>
-            {
-                keys.Add(call.ArgAt<string>(0));
-                Assert.Equal(TimeSpan.FromSeconds(30),call.ArgAt<TimeSpan>(1));
-                return await call.ArgAt<Func<CancellationToken,Task<AssignmentQueuePage>>>(2)(call.ArgAt<CancellationToken>(3));
-            });
-        repository.ListAsync(Arg.Any<string?>(),Arg.Any<int>(),Arg.Any<int>(),Arg.Any<string?>(),Arg.Any<IReadOnlyList<Guid>?>(),Arg.Any<DateTime>(),Arg.Any<CancellationToken>())
-            .Returns(new AssignmentQueuePage([],0,1,100,1));
-        var handler=new ListProgramAssignmentsQueryHandler(repository,cache,new Clock(DateTimeOffset.UtcNow));
-        var a=new[]{Guid.NewGuid()};var b=new[]{Guid.NewGuid()};
-        await handler.Handle(new(null,-1,1000,null,"professional-a",a),CancellationToken.None);
-        await handler.Handle(new(null,-1,1000,null,"professional-b",b),CancellationToken.None);
-        Assert.NotEqual(keys[0],keys[1]);
-        await repository.Received(1).ListAsync(null,1,100,null,a,Arg.Any<DateTime>(),Arg.Any<CancellationToken>());
-        var empty=await handler.Handle(new(null,1,20,null,"no-scope",[]),CancellationToken.None);
-        Assert.Empty(empty.Items);
-    }
-
-    [Fact]
-    public async Task Apply_OverrideYActorDelJwt_UsaElRelojEInvalidaCache()
-    {
-        var programs=Substitute.For<IProgramRepository>();var cache=Substitute.For<ICacheService>();
-        var notifier=Substitute.For<IProgramAssignmentNotifier>();
-        var now=new DateTimeOffset(2026,11,4,15,0,0,TimeSpan.Zero);
-        var id=Guid.NewGuid();var actor=Guid.NewGuid();var patient=Guid.NewGuid();
-        var expected=new AppliedAssignmentDto(id,Guid.NewGuid(),patient,"edited",new DateOnly(2026,11,4),1,JsonSerializer.SerializeToElement(new{routine="Full Body"}),false);
-        programs.ActivateAssignmentAsync(Arg.Any<AssignmentActivationInput>(),Arg.Any<CancellationToken>()).Returns(expected);
-        var handler=new ApplyAssignmentCommandHandler(programs,cache,notifier,new Clock(now),NullLogger<ApplyAssignmentCommandHandler>.Instance);
-        Assert.Equal(expected,await handler.Handle(new(id,OverrideRoutineName:"Full Body",ActorId:actor,ScopedPatientIds:[patient]),CancellationToken.None));
-        await programs.Received(1).ActivateAssignmentAsync(Arg.Is<AssignmentActivationInput>(x=>x.ActorId==actor
-            && x.OverrideRoutineName=="Full Body" && x.UtcNow==now.UtcDateTime && !x.UseTemplateDefaults),Arg.Any<CancellationToken>());
-        await notifier.Received(1).DispatchAsync(id,now.UtcDateTime,Arg.Any<CancellationToken>());
-        await cache.Received(1).RemoveAsync(CacheKeys.ScoresHistory(patient),Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
     public async Task Job_RelojFake_Dia6NoActiva_Dia7UnaSolaVez()
     {
         var repo=Substitute.For<IProgramAssignmentOperationsRepository>();var publisher=Substitute.For<IPublisher>();
@@ -147,20 +76,19 @@ public sealed class AssignmentOperationsTests
         repo.ListRecoveryAsync(Arg.Any<DateTime>(),Arg.Any<int>(),Arg.Any<int>(),Arg.Any<CancellationToken>()).Returns(Array.Empty<AssignmentRecoveryCandidate>());
         repo.ListFallbacksAsync(Arg.Any<DateTime>(),Arg.Any<int>(),Arg.Any<CancellationToken>())
             .Returns(_=>activated ? Array.Empty<AssignmentFallbackCandidate>() : new[]{new AssignmentFallbackCandidate(id,created)});
-        sender.Send(Arg.Any<ApplyAssignmentCommand>(),Arg.Any<CancellationToken>()).Returns(call=>
+        sender.Send(Arg.Any<ApplyAssignmentFallbackCommand>(),Arg.Any<CancellationToken>()).Returns(call=>
         {
-            Assert.True(call.Arg<ApplyAssignmentCommand>().UseTemplateDefaults);
             activated=true;
             return new AppliedAssignmentDto(id,Guid.NewGuid(),Guid.NewGuid(),"fallback",new DateOnly(2026,10,8),1,JsonSerializer.SerializeToElement(new{}),false);
         });
         var clock=new Clock(new DateTimeOffset(created.AddDays(6)));
         var job=new ProgramAssignmentJob(repo,publisher,sender,notifier,Settings(),clock,NullLogger<ProgramAssignmentJob>.Instance);
         Assert.Equal(0,(await job.RunAsync(CancellationToken.None)).Fallbacks);
-        await sender.DidNotReceive().Send(Arg.Any<ApplyAssignmentCommand>(),Arg.Any<CancellationToken>());
+        await sender.DidNotReceive().Send(Arg.Any<ApplyAssignmentFallbackCommand>(),Arg.Any<CancellationToken>());
         clock.Value=new DateTimeOffset(created.AddDays(7));
         Assert.Equal(1,(await job.RunAsync(CancellationToken.None)).Fallbacks);
         Assert.Equal(0,(await job.RunAsync(CancellationToken.None)).Fallbacks);
-        await sender.Received(1).Send(Arg.Any<ApplyAssignmentCommand>(),Arg.Any<CancellationToken>());
+        await sender.Received(1).Send(Arg.Any<ApplyAssignmentFallbackCommand>(),Arg.Any<CancellationToken>());
     }
 
     [Fact]
