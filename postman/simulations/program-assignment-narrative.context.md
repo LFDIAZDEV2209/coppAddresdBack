@@ -46,3 +46,14 @@ apertura del circuito. ModelName null, ambos idiomas leídos desde narratives.
 Unit: 1329 aprobados, 103 omitidos, 0 fallos; build Release verde. Las pruebas
 unitarias cubren extracción/dedupe/límites de fuentes y rechazo del formato
 plano antiguo o de una traducción ausente/vacía. No se llama al servicio real.
+
+## Revalidación de cierre backend — 2026-11-05
+
+Ola 3 conserva cliente, schema y procesamiento de narrativa; retira el
+disparador HTTP de la ficha ERP. Se reutilizó esta simulación sin modificar
+mock ni YAML: `--port 4047 --output ndjson --no-history`, en background y
+solo loopback. El test `ProgramNarrativeHttpIntegrationTests` pasó 1/1 en
+Debug/net10.0 con `COP_PROGRAM_NARRATIVE_SIM_URL=http://127.0.0.1:4047`.
+El log confirma dos 200 y cinco 503. Se conserva extracción bilingüe,
+fuentes vacías válidas, reintentos y apertura de circuito. No se verifica el
+proveedor ni su despliegue real. La simulación se detuvo al terminar.

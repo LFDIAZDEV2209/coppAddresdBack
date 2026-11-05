@@ -34,7 +34,7 @@ de metas, menús, búsqueda por roles, redondeos JS, topes y alertas de la fuent
 validada. El mes base satisface las bandas; Sofía 1350 reproduce el original,
 incluida desviación máxima 15,93% y dos avisos técnicos. No se ocultan esos
 avisos alterando las reglas. Una versión aprobada conserva metas/comidas;
-editar requiere crear una versión nueva. El adaptador móvil se deja para 4.3.
+editar requiere crear una versión nueva. La Ola 3 incorpora el adaptador móvil.
 
 Contratos ERP de esta ola, bajo JWT y alcance profesional:
 
@@ -76,8 +76,8 @@ La migración `20261105145334_AddNutritionPrescriptions` añade únicamente cuat
 tablas de `app`: `nutrition_food_items`, `nutrition_prescriptions`,
 `nutrition_prescription_meals` y `nutrition_prescription_items`. Conserva tablas,
 asignaciones y datos legacy. Los grupos 1–2 dejaron el modelo sin motor ni
-endpoints; la Ola 2 incorpora motor y CQRS ERP. El adaptador móvil y el cutover
-siguen pendientes en las tareas 4.3 y 4.5 de la Ola 3.
+endpoints; la Ola 2 incorpora motor y CQRS ERP. La Ola 3 incorpora el adaptador
+móvil y retira el flujo ERP de asignación. El cutover ECS sigue a cargo del owner.
 
 Una fila de prescripción identifica paciente, ciclo y versión; guarda estado,
 provisionalidad, vigencia local (`date`), metas, indicaciones ES/EN y autoría.
@@ -370,3 +370,44 @@ No se inventan alérgenos ni condición clínica. El nombre estable es
 «Plan nutricional». La consulta EF carga el grafo completo sin consultas por
 comida. Contrato, coexistencia, cancelación, fechas locales y desempates
 están cubiertos en las suites de lectura y PostgreSQL de Nutrition.
+
+## Cierre backend de Ola 3 — verificación local 2026-11-05
+
+Tareas 4.3, 4.5 y 4.6 completas en `feature/nutrition-backend`. El contrato
+móvil se conserva; toda la API ERP `/api/v1/program/assignments*` queda
+retirada. Perfil medido, snapshot, registro, narrativa y recuperación/avisos
+permanecen; el fallback usa únicamente defaults de plantilla mediante un
+comando interno. El flag ECS continúa gestionado por el owner.
+
+`dotnet build --nologo -v quiet`: 0 errores, 11 advertencias preexistentes en
+rebuild. Ejecución completa `dotnet test --no-build --nologo -v quiet --logger trx`
+con PostgreSQL aislado migrado mediante Auth y API:
+
+| Proyecto | Aprobados | Fallos preexistentes en 56ccacb | Omitidos |
+|---|---:|---:|---:|
+| UnitTests | 1702 | 9 Programa/Scores | 0 |
+| IntegrationTests | 88 | 2 KPIs | 1 |
+| Telemedicine.UnitTests | 413 | 0 | 0 |
+| Telemedicine.IntegrationTests | 44 | 0 | 0 |
+| Community.IntegrationTests | 66 | 3 Comunidad | 0 |
+| Total global | 2313 | 14 | 1 |
+
+Los 14 fallos coinciden por nombre con los reproducidos previamente sobre
+`56ccacb`; no se modifican ni se atribuyen a Nutrition. Cero fallos nuevos.
+El test omitido de narrativa HTTP se ejecutó después, con la simulación
+Postman existente en loopback: **1/1 aprobado**, dos HTTP 200 y cinco 503,
+incluida apertura de circuito. Acumulado de tests distintos: 2314 aprobados,
+14 fallos preexistentes, ninguno pendiente de ejecutar.
+
+En el global pasa el filtro Nutrition unit 217: 203 en sus clases principales
+(lectura 9, alertas 21, autorización 12,
+calculadora 11, cliente 4, paridad 13, preservación legacy 3, solver 14,
+revisión 18, estados 35, scope 63) y 14 regresiones transversales de permisos,
+validadores, score y análisis de alimentos. Pasan Nutrition PostgreSQL 30 y Assignment
+PostgreSQL 7. El filtro combinado unit Nutrition/Assignment/Narrative pasó
+292/292. Los tests de jobs, perfil, narrativa y notices se conservaron.
+
+Listado nominal de fallos heredados, comandos e inventario de cada referencia
+retirada en `openspec/changes/plan-nutricional-erp/NOTES-backend.md` del
+workspace compartido. Esta evidencia es local y simulada; no certifica
+frontend conectado ni despliegue. Sin push, deploy ni cambios de app móvil.

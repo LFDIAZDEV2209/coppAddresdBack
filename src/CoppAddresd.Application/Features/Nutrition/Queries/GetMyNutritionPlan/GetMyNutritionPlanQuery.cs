@@ -43,11 +43,9 @@ public sealed class GetMyNutritionPlanQueryHandler(
             );
         }
 
-        // 2) Asignación activa: la asignación es la fuente de verdad del plan
-        // asignado desde el ERP (el comando de asignación no toca la fila del
-        // plan). Misma regla que ProgramContentResolver: Status Active, ventana
-        // de fechas vigente (hoy local) y, en solapamiento, gana el inicio
-        // más reciente y luego el identificador mayor.
+        // 2) Día del paciente: primero publicación nueva; si no hay vigente,
+        // se conserva el plan legacy aprobado con asignación Active y ventana
+        // vigente. En cada modelo gana el inicio más reciente y luego el ID.
         var zone = patient.Timezone;
         var now = clock.GetUtcNow().UtcDateTime;
         if (!string.IsNullOrWhiteSpace(zone))
