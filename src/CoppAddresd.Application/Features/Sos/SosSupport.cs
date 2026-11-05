@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using CoppAddresd.Domain.Entities;
 
 namespace CoppAddresd.Application.Features.Sos;
 
@@ -13,6 +14,29 @@ namespace CoppAddresd.Application.Features.Sos;
 /// </summary>
 public static class SosSupport
 {
+    /// <summary>El destino del respaldo también se congela; editar el perfil no redirige una alerta existente.</summary>
+    public static List<SosAlertRecipient> SnapshotRecipients(string? json)
+    {
+        var result = new List<SosAlertRecipient>();
+        if (string.IsNullOrWhiteSpace(json)) return result;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return result;
+            Add(doc.RootElement, 0);
+            if (doc.RootElement.TryGetProperty("secondary", out var backup) && backup.ValueKind == JsonValueKind.Object
+                && backup.EnumerateObject().Any(p => p.Value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(p.Value.GetString())))
+                Add(backup, 1);
+            void Add(JsonElement contact, int order)
+            {
+                string? Value(string key) => contact.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() : null;
+                result.Add(new SosAlertRecipient { ContactOrder = order, PhoneE164 = NormalizePhoneE164(Value("phone")), Email = Value("email") });
+            }
+        }
+        catch (JsonException) { /* Perfil legado: la validación principal decide si permite activar. */ }
+        return result;
+    }
+
     /// <summary>
     /// Código de país por defecto para números sin prefijo internacional
     /// (Colombia +57, convención del workspace: Auth OtpService normaliza

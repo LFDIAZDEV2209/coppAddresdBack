@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CoppAddresd.Application.DTOs;
 using CoppAddresd.Domain.Enums;
 
 namespace CoppAddresd.Application.Features.Wellness;
@@ -15,7 +16,9 @@ public record NutritionPlanDto(
     Guid? SourcePlanId, NutritionPlanStatus Status,
     Guid? CreatedBy, DateTime CreatedAt, DateTime? UpdatedAt,
     IReadOnlyList<NutritionPlanDayDto> Days,
-    Guid? AssignmentId = null)
+    Guid? AssignmentId = null,
+    int Revision = 1, string ReviewStatus = "pending_review",
+    Guid? ApprovedBy = null, DateTime? ApprovedAt = null, string? GenerationStatus = null)
 {
     public static NutritionPlanDto FromEntity(Domain.Entities.NutritionPlan p, Guid? assignmentId = null) => new(
         p.Id, p.Name, p.Description, p.TargetCondition,
@@ -30,7 +33,7 @@ public record NutritionPlanDto(
         p.SourcePlanId, p.Status,
         p.CreatedBy, p.CreatedAt, p.UpdatedAt,
         p.Days.Select(NutritionPlanDayDto.FromEntity).ToList(),
-        assignmentId);
+        assignmentId, p.Revision, p.ReviewStatus, p.ApprovedBy, p.ApprovedAt, p.GenerationStatus);
 }
 
 public record NutritionPlanListItemDto(
@@ -40,7 +43,9 @@ public record NutritionPlanListItemDto(
     decimal? DailyFatTarget, decimal? DailyFiberTarget,
     string? Allergens, string? MealTiming,
     bool IsTemplate, Guid? PatientId, string? PatientName,
-    NutritionPlanStatus Status, DateTime CreatedAt)
+    NutritionPlanStatus Status, DateTime CreatedAt,
+    int Revision = 1, string ReviewStatus = "pending_review",
+    Guid? ApprovedBy = null, DateTime? ApprovedAt = null, string? GenerationStatus = null)
 {
     public static NutritionPlanListItemDto FromEntity(Domain.Entities.NutritionPlan p) => new(
         p.Id, p.Name, p.Description, p.TargetCondition,
@@ -52,7 +57,7 @@ public record NutritionPlanListItemDto(
         p.Patient is null
             ? null
             : $"{p.Patient.FirstName} {p.Patient.LastName}".Trim(),
-        p.Status, p.CreatedAt);
+        p.Status, p.CreatedAt, p.Revision, p.ReviewStatus, p.ApprovedBy, p.ApprovedAt, p.GenerationStatus);
 }
 
 public record NutritionPlanDayDto(
@@ -95,7 +100,8 @@ public record UpdateNutritionPlanRequest(
     decimal? DailyFatTarget, decimal? DailyFiberTarget,
     string? Allergens, string? MealTiming,
     NutritionPlanStatus Status,
-    IReadOnlyList<CreateNutritionPlanDayRequest>? Days);
+    IReadOnlyList<CreateNutritionPlanDayRequest>? Days,
+    int? Revision = null);
 
 public record PaginatedNutritionPlanResult(
     IReadOnlyList<NutritionPlanListItemDto> Data, int Total, int Page, int PageSize, int TotalPages);
@@ -146,7 +152,7 @@ public record RoutineExerciseDto(
     int? DurationSecs, decimal? WeightKg,
     string? TargetMuscle, string? Equipment,
     string? Tempo, int? Rpe, string? Tips,
-    Guid? MediaId, int SortOrder)
+    Guid? MediaId, int SortOrder, ExerciseReferenceVideo? ReferenceVideo = null)
 {
     public static RoutineExerciseDto FromEntity(Domain.Entities.RoutineExercise e) => new(
         e.Id, e.Name, e.Description,
@@ -154,7 +160,7 @@ public record RoutineExerciseDto(
         e.DurationSecs, e.WeightKg,
         e.TargetMuscle, e.Equipment,
         e.Tempo, e.Rpe, e.Tips,
-        e.MediaId, e.SortOrder);
+        e.MediaId, e.SortOrder, e.MediaId is null ? ExerciseReferenceVideo.ForExercise(e.Name) : null);
 }
 
 public record CreateExerciseRoutineRequest(

@@ -105,6 +105,41 @@ public sealed class MediaIntegrationTests : IAsyncLifetime
         return media;
     }
 
+    [Theory]
+    [InlineData(MediaType.Video)]
+    [InlineData(MediaType.Image)]
+    public async Task Delete_DemostracionReferenciadaPorEjercicio_ProtegeLaRutinaYCuentaUso(MediaType mediaType)
+    {
+        if (_skipped) return;
+        var medium = await SeedMediaAsync($"media/videos/exercise-{Guid.NewGuid():N}.mp4");
+        medium.MediaType = mediaType;
+        medium.ContentType = "video/mp4";
+        if (mediaType == MediaType.Image)
+        {
+            medium.MediaType = MediaType.Image;
+            medium.StorageKey = $"media/images/exercise-{Guid.NewGuid():N}.png";
+            medium.ContentType = "image/png";
+        }
+        var routine = new ExerciseRoutine
+        {
+            Id = Guid.NewGuid(), Name = "Rutina con demostración", Status = NutritionPlanStatus.Active,
+            Exercises = [new RoutineExercise { Id = Guid.NewGuid(), Name = "Movimiento prescrito", MediaId = medium.Id, SortOrder = 0 }],
+        };
+        _db.ExerciseRoutines.Add(routine);
+        await _db.SaveChangesAsync();
+        var references = await _repository.GetReferencesAsync(medium.Id);
+        Assert.NotNull(references);
+        Assert.Equal(1, references.TotalReferences);
+        Assert.Equal(routine.Id, Assert.Single(references.RoutineReferences!).RoutineId);
+        var usage = await _repository.GetUsageSnapshotAsync();
+        Assert.Contains(medium.Id, usage.ReferencedMediaIds);
+        var handler = new DeleteMediaItemCommandHandler(_repository, _storage,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<DeleteMediaItemCommandHandler>.Instance);
+        var result = await handler.Handle(new DeleteMediaItemCommand(medium.Id), default);
+        Assert.True(result.Blocked);
+        Assert.True(await _db.MediaItems.AnyAsync(item => item.Id == medium.Id));
+    }
+
     private async Task<ProgramTemplate> SeedTemplateWithMediaReferenceAsync(Guid mediaId)
     {
         var template = new ProgramTemplate

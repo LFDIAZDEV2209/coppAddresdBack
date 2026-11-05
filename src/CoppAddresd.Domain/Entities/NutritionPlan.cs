@@ -60,6 +60,21 @@ public sealed class NutritionPlan
 
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>La aprobación clínica siempre corresponde a esta revisión exacta.</summary>
+    public int Revision { get; set; } = 1;
+    public Guid? UpdatedBy { get; set; }
+    public Guid? ApprovedBy { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string ReviewStatus { get; set; } = "pending_review";
+
+    /// <summary>Outbox durable de generación; la IA nunca publica directamente al paciente.</summary>
+    public string? GenerationKey { get; set; }
+    public string? GenerationStatus { get; set; }
+    public int GenerationAttempts { get; set; }
+    public DateTime? GenerationLeaseUntil { get; set; }
+    public DateTime? GenerationNextAttemptAt { get; set; }
+    public string? AssessmentSnapshot { get; set; }
+
     // Navigation
     public PatientProfile? Patient { get; set; }
 

@@ -20,7 +20,8 @@ public sealed record CompleteTaskCommand(
     string? Barriers,
     string? ContentFingerprint,
     Guid? ActorId = null,
-    VitalsPayload? Vitals = null) : IRequest<CompleteTaskResponseDto>;
+    VitalsPayload? Vitals = null,
+    EmotionalAssessmentPayload? Emotional = null) : IRequest<CompleteTaskResponseDto>;
 
 /// <summary>
 /// Validación de input de <see cref="CompleteTaskCommand"/> (T-11). Reglas de
@@ -63,6 +64,26 @@ public sealed class CompleteTaskCommandValidator : AbstractValidator<CompleteTas
         RuleFor(x => x.ContentFingerprint)
             .MaximumLength(64)
             .WithMessage("contentFingerprint no puede superar 64 caracteres.");
+
+        RuleFor(x => x.Emotional)
+            .Null().When(x => x.TaskCode != TaskCode.emocional)
+            .WithMessage("emotional solo corresponde a la evaluación emocional.");
+        When(x => x.Emotional is not null, () =>
+        {
+            RuleFor(x => x.Emotional!.StressScore).InclusiveBetween(1, 10)
+                .When(x => x.Emotional!.StressScore.HasValue);
+            RuleFor(x => x.Emotional!.MotivationScore).InclusiveBetween(1, 10)
+                .When(x => x.Emotional!.MotivationScore.HasValue);
+            RuleFor(x => x.Emotional!.SleepMinutes).InclusiveBetween(0m, 1440m)
+                .When(x => x.Emotional!.SleepMinutes.HasValue);
+            RuleFor(x => x.Emotional!.SleepSource)
+                .Must(source => source is null or "manual" or "wearable");
+            RuleFor(x => x.Emotional!.SleepSource).NotEmpty()
+                .When(x => x.Emotional!.SleepMinutes.HasValue);
+            RuleFor(x => x.Emotional!.SleepRecordedAt).NotNull()
+                .When(x => x.Emotional!.SleepSource == "wearable");
+            RuleFor(x => x.Emotional!.Notes).MaximumLength(2000);
+        });
 
         // La tarea emocional exige un moodScore real (1..5): el cliente debe
         // enviarlo y el handler lo rechaza si falta (SPEC §3.10, §6.2).

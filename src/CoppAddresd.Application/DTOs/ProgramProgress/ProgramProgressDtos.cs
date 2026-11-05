@@ -42,6 +42,15 @@ public sealed record VitalsPayload(
 /// resueltos en runtime los calcula el handler (B4) y se persisten tal cual:
 /// una por código de tarea, solo la que corresponde (SPEC §3.6, decisión 15).
 /// </summary>
+public sealed record EmotionalAssessmentPayload(
+    int? StressScore = null,
+    int? MotivationScore = null,
+    decimal? SleepMinutes = null,
+    string? SleepSource = null,
+    DateTime? SleepRecordedAt = null,
+    string? Notes = null
+);
+
 public sealed record CompleteTaskInput(
     Guid EnrollmentId,
     DateOnly LocalDate,
@@ -61,7 +70,8 @@ public sealed record CompleteTaskInput(
     Guid? EmotionalRecordId = null,
     // vital-signs-tracking: payload opcional y actor que registra las mediciones.
     VitalsPayload? Vitals = null,
-    Guid? ActorId = null
+    Guid? ActorId = null,
+    EmotionalAssessmentPayload? Emotional = null
 );
 
 /// <summary>
@@ -193,7 +203,15 @@ public sealed record ExerciseItemDto(
     string? TargetMuscle,
     string? Equipment,
     string? Tips,
-    int SortOrder
+    int SortOrder,
+    Guid? MediaId = null,
+    string? MediaUrl = null,
+    string? ThumbnailUrl = null,
+    string? MediaType = null,
+    decimal? WeightKg = null,
+    string? Tempo = null,
+    int? Rpe = null,
+    ExerciseReferenceVideo? ReferenceVideo = null
 );
 
 /// <summary>

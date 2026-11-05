@@ -802,6 +802,7 @@ public sealed partial class ProgramRepository(
                     RecordedLocalDate = input.LocalDate,
                     MoodScore = input.MoodScore.Value,
                     Barriers = input.Barriers,
+                    Notes = CoppAddresd.Application.Services.ProgramProgress.EmotionalAssessmentNotes.Format(input.Emotional),
                 };
                 dbContext.EmotionalRecords.Add(emotional);
             }
@@ -815,6 +816,14 @@ public sealed partial class ProgramRepository(
                 if (input.Barriers is not null)
                 {
                     emotional.Barriers = input.Barriers;
+                }
+                if (input.Emotional is not null)
+                {
+                    var assessmentNote = CoppAddresd.Application.Services.ProgramProgress.EmotionalAssessmentNotes.Format(input.Emotional);
+                    if (!string.IsNullOrWhiteSpace(assessmentNote))
+                        emotional.Notes = string.IsNullOrWhiteSpace(emotional.Notes)
+                            ? assessmentNote
+                            : $"{emotional.Notes}{Environment.NewLine}{assessmentNote}";
                 }
             }
 
@@ -2028,7 +2037,9 @@ public sealed partial class ProgramRepository(
 
                 var planData = await dbContext
                     .NutritionPlans.AsNoTracking()
-                    .Where(p => p.Id == planId)
+                    .Where(p => p.Id == planId && p.PatientId == row.PatientId
+                        && p.ApprovedAt != null && p.ApprovedBy != null
+                        && p.ReviewStatus == "approved" && p.Status == NutritionPlanStatus.Active)
                     .Select(p => new
                     {
                         p.Name,
@@ -2058,6 +2069,8 @@ public sealed partial class ProgramRepository(
                     })
                     .FirstOrDefaultAsync(ct);
 
+                if (planData is null)
+                    contentResolution = contentResolution with { NutritionPlanId = null, NutritionPlanDayNumber = null };
                 resolvedPlanName = planData?.Name;
                 resolvedCalorieTarget = planData?.DailyCalorieTarget;
                 resolvedProteinTarget = planData?.DailyProteinTarget;
@@ -2076,24 +2089,42 @@ public sealed partial class ProgramRepository(
                         r.Name,
                         Exercises = r
                             .Exercises.OrderBy(e => e.SortOrder)
-                            .Select(e => new ExerciseItemDto(
-                                e.Name,
-                                e.Description,
-                                e.Sets,
-                                e.Repetitions,
-                                e.DurationSecs,
-                                e.RestSeconds,
-                                e.TargetMuscle,
-                                e.Equipment,
-                                e.Tips,
-                                e.SortOrder
-                            ))
+                            .Select(e => new
+                            {
+                                HasConfiguredMedia = e.MediaId != null,
+                                Content = new ExerciseItemDto(
+                                    e.Name,
+                                    e.Description,
+                                    e.Sets,
+                                    e.Repetitions,
+                                    e.DurationSecs,
+                                    e.RestSeconds,
+                                    e.TargetMuscle,
+                                    e.Equipment,
+                                    e.Tips,
+                                    e.SortOrder,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.MediaId : null,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.StorageKey : null,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.ThumbnailKey : null,
+                                    e.Media != null && e.Media.Status == MediaStatus.Published
+                                        && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.MediaType.ToString() : null,
+                                    e.WeightKg,
+                                    e.Tempo,
+                                    e.Rpe
+                                )
+                            })
                             .ToList(),
                     })
                     .FirstOrDefaultAsync(ct);
 
                 resolvedRoutineName = routineData?.Name;
-                resolvedExercises = routineData?.Exercises;
+                resolvedExercises = routineData?.Exercises.Select(e => e.Content with
+                {
+                    ReferenceVideo = !e.HasConfiguredMedia ? CoppAddresd.Application.DTOs.ExerciseReferenceVideo.ForExercise(e.Content.Name) : null,
+                }).ToList();
             }
         }
 

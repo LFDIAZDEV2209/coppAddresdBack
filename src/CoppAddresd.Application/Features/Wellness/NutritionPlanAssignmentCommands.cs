@@ -10,7 +10,7 @@ namespace CoppAddresd.Application.Features.Wellness;
 
 public record ListNutritionPlanAssignmentsQuery(
     Guid? PatientId = null, Guid? PlanId = null, string? Status = null,
-    int Page = 1, int PageSize = 20)
+    int Page = 1, int PageSize = 20, Guid? ProfessionalId = null)
     : IRequest<PaginatedNutritionPlanAssignmentResult>;
 
 public sealed class ListNutritionPlanAssignmentsQueryHandler(
@@ -20,7 +20,7 @@ public sealed class ListNutritionPlanAssignmentsQueryHandler(
     {
         var (items, total) = await repository.ListPlanAssignmentsAsync(
             request.PatientId, request.PlanId, request.Status,
-            Math.Max(1, request.Page), Math.Clamp(request.PageSize, 1, 100), ct);
+            Math.Max(1, request.Page), Math.Clamp(request.PageSize, 1, 100), request.ProfessionalId, ct);
 
         var totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)Math.Clamp(request.PageSize, 1, 100)));
 
@@ -63,38 +63,14 @@ public sealed class ListPlanAssignmentsByPatientQueryHandler(
 public record CreateNutritionPlanAssignmentCommand(CreateNutritionPlanAssignmentRequest Request, Guid? CreatedBy = null)
     : IRequest<NutritionPlanAssignmentDto>;
 
-public sealed class CreateNutritionPlanAssignmentCommandHandler(
-    IWellnessRepository repository,
-    ILogger<CreateNutritionPlanAssignmentCommandHandler> logger) : IRequestHandler<CreateNutritionPlanAssignmentCommand, NutritionPlanAssignmentDto>
+public sealed class CreateNutritionPlanAssignmentCommandHandler
+    : IRequestHandler<CreateNutritionPlanAssignmentCommand, NutritionPlanAssignmentDto>
 {
-    public async Task<NutritionPlanAssignmentDto> Handle(CreateNutritionPlanAssignmentCommand request, CancellationToken ct)
+    public Task<NutritionPlanAssignmentDto> Handle(CreateNutritionPlanAssignmentCommand request, CancellationToken ct)
     {
-        var r = request.Request;
-
-        var assignment = new NutritionPlanAssignment
-        {
-            Id = Guid.NewGuid(),
-            PatientId = r.PatientId,
-            PlanId = r.PlanId,
-            StartDate = DateTime.SpecifyKind(r.StartDate, DateTimeKind.Utc),
-            EndDate = r.EndDate.HasValue
-                ? DateTime.SpecifyKind(r.EndDate.Value, DateTimeKind.Utc)
-                : null,
-            Status = r.Status,
-            Notes = string.IsNullOrWhiteSpace(r.Notes) ? null : r.Notes.Trim(),
-            CreatedBy = request.CreatedBy,
-            CreatedAt = DateTime.UtcNow,
-        };
-
-        await repository.AddPlanAssignmentAsync(assignment, ct);
-
-        logger.LogInformation("NutritionPlanAssignment creado: {Id} (Paciente: {PatientId}, Plan: {PlanId})",
-            assignment.Id, assignment.PatientId, assignment.PlanId);
-
-        var created = await repository.GetPlanAssignmentByIdAsync(assignment.Id, ct)
-            ?? throw new InvalidOperationException("No se pudo leer la asignación creada.");
-
-        return NutritionPlanAssignmentDto.FromEntity(created);
+        ct.ThrowIfCancellationRequested();
+        throw new CoppAddresd.Domain.Exceptions.UnprocessableEntityException(
+            "Los ciclos nutricionales se asignan únicamente mediante la aprobación clínica del plan.");
     }
 }
 
@@ -113,10 +89,11 @@ public sealed class UpdateNutritionPlanAssignmentCommandHandler(
         if (assignment is null) return null;
 
         var r = request.Request;
-        assignment.StartDate = DateTime.SpecifyKind(r.StartDate, DateTimeKind.Utc);
-        assignment.EndDate = r.EndDate.HasValue
-            ? DateTime.SpecifyKind(r.EndDate.Value, DateTimeKind.Utc)
-            : null;
+        if (r.StartDate.Date != assignment.StartDate.Date
+            || r.EndDate.HasValue && r.EndDate.Value.Date != assignment.EndDate?.Date
+            || r.Status == AssignmentStatus.Active && assignment.Status != AssignmentStatus.Active)
+            throw new CoppAddresd.Domain.Exceptions.UnprocessableEntityException(
+                "La fecha y la activación del ciclo solo pueden establecerse mediante una nueva aprobación nutricional.");
         assignment.Status = r.Status;
         assignment.Notes = string.IsNullOrWhiteSpace(r.Notes) ? null : r.Notes.Trim();
         assignment.UpdatedAt = DateTime.UtcNow;

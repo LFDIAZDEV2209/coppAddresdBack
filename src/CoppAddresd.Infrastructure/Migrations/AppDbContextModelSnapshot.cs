@@ -393,6 +393,51 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("allergens", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.AssessmentProfileInsight", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("content_json");
+
+                    b.Property<DateTime>("GeneratedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("generated_at");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("language");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("RequestedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by");
+
+                    b.Property<string>("SourceRevision")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source_revision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId", "SourceRevision", "Language")
+                        .IsUnique()
+                        .HasDatabaseName("uq_assessment_insight_source_language");
+
+                    b.ToTable("assessment_profile_insights", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.BiometriaDailyMetric", b =>
                 {
                     b.Property<DateOnly>("MetricDate")
@@ -4379,6 +4424,18 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("allergens");
 
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("AssessmentSnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("assessment_snapshot");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamptz")
@@ -4421,6 +4478,28 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("duration_days");
 
+                    b.Property<int>("GenerationAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("generation_attempts");
+
+                    b.Property<string>("GenerationKey")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("generation_key");
+
+                    b.Property<DateTime?>("GenerationLeaseUntil")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("generation_lease_until");
+
+                    b.Property<DateTime?>("GenerationNextAttemptAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("generation_next_attempt_at");
+
+                    b.Property<string>("GenerationStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("generation_status");
+
                     b.Property<bool>("IsTemplate")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -4440,6 +4519,21 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Property<Guid?>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
+
+                    b.Property<string>("ReviewStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("pending_review")
+                        .HasColumnName("review_status");
+
+                    b.Property<int>("Revision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("revision");
 
                     b.Property<Guid?>("SourcePlanId")
                         .HasColumnType("uuid")
@@ -4461,7 +4555,15 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("timestamptz")
                         .HasColumnName("updated_at");
 
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("GenerationKey")
+                        .IsUnique()
+                        .HasDatabaseName("uq_nutrition_plans_generation_key");
 
                     b.HasIndex("IsTemplate")
                         .HasDatabaseName("ix_nutrition_plans_is_template");
@@ -4474,6 +4576,9 @@ namespace CoppAddresd.Infrastructure.Migrations
 
                     b.HasIndex("Status")
                         .HasDatabaseName("ix_nutrition_plans_status");
+
+                    b.HasIndex("GenerationStatus", "GenerationNextAttemptAt")
+                        .HasDatabaseName("ix_nutrition_plans_generation_queue");
 
                     b.ToTable("nutrition_plans", "app");
                 });
@@ -4637,6 +4742,53 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasDatabaseName("ix_nutrition_plan_days_plan_day_meal");
 
                     b.ToTable("nutrition_plan_days", "app");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlanReviewEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("action");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("notes");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("plan_id");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<string>("Snapshot")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("snapshot");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlanId", "OccurredAt")
+                        .HasDatabaseName("ix_nutrition_plan_review_events_plan_time");
+
+                    b.ToTable("nutrition_plan_review_events", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Organization", b =>
@@ -4956,8 +5108,7 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("email");
 
                     b.Property<string>("EmergencyContact")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
+                        .HasColumnType("text")
                         .HasColumnName("emergency_contact");
 
                     b.Property<Guid?>("EthnicityId")
@@ -8676,6 +8827,108 @@ namespace CoppAddresd.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosAlertRecipient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AlertId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("alert_id");
+
+                    b.Property<int>("ContactOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("contact_order");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("EmailChannelStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("email_channel_status");
+
+                    b.Property<DateTime?>("EmailUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("email_updated_at");
+
+                    b.Property<string>("PhoneE164")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone_e164");
+
+                    b.Property<string>("SmsChannelStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("sms_channel_status");
+
+                    b.Property<string>("SmsDeliveryStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("sms_delivery_status");
+
+                    b.Property<string>("SmsDetail")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("sms_detail");
+
+                    b.Property<string>("SmsProviderMessageId")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("sms_provider_message_id");
+
+                    b.Property<DateTime?>("SmsUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sms_updated_at");
+
+                    b.Property<string>("VoiceAnsweredBy")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("voice_answered_by");
+
+                    b.Property<string>("VoiceCallStatus")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("voice_call_status");
+
+                    b.Property<string>("VoiceChannelStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("voice_channel_status");
+
+                    b.Property<string>("VoiceDetail")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("voice_detail");
+
+                    b.Property<int?>("VoiceDurationSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("voice_duration_seconds");
+
+                    b.Property<string>("VoiceProviderCallId")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("voice_provider_call_id");
+
+                    b.Property<DateTime?>("VoiceUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("voice_updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AlertId", "ContactOrder")
+                        .IsUnique()
+                        .HasDatabaseName("uq_sos_recipient_contact");
+
+                    b.ToTable("sos_alert_recipients", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Specialty", b =>
                 {
                     b.Property<Guid>("Id")
@@ -9032,6 +9285,15 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("AgentType");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.AssessmentProfileInsight", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.City", b =>
@@ -10435,6 +10697,17 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Patient");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosAlertRecipient", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.SosAlert", "Alert")
+                        .WithMany("Recipients")
+                        .HasForeignKey("AlertId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Alert");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.State", b =>
                 {
                     b.HasOne("CoppAddresd.Domain.Entities.Country", "Country")
@@ -10726,6 +10999,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("DailyCheckIns");
 
                     b.Navigation("TaskCompletions");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosAlert", b =>
+                {
+                    b.Navigation("Recipients");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Specialty", b =>

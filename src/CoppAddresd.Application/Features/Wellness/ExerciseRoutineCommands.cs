@@ -67,6 +67,10 @@ public sealed class CreateExerciseRoutineCommandHandler(
             Category = r.Category,
             Status = r.Status,
             MediaId = r.MediaId,
+            TargetMuscles = r.TargetMuscles?.Trim(),
+            Equipment = r.Equipment?.Trim(),
+            WarmupNotes = r.WarmupNotes?.Trim(),
+            CooldownNotes = r.CooldownNotes?.Trim(),
             CreatedBy = request.CreatedBy,
             CreatedAt = DateTime.UtcNow,
         };
@@ -84,6 +88,11 @@ public sealed class CreateExerciseRoutineCommandHandler(
                 DurationSecs = e.DurationSecs,
                 WeightKg = e.WeightKg,
                 MediaId = e.MediaId,
+                TargetMuscle = e.TargetMuscle?.Trim(),
+                Equipment = e.Equipment?.Trim(),
+                Tempo = e.Tempo?.Trim(),
+                Rpe = e.Rpe,
+                Tips = e.Tips?.Trim(),
                 SortOrder = e.SortOrder,
                 CreatedAt = DateTime.UtcNow,
             }).ToList();
@@ -150,6 +159,10 @@ public sealed class UpdateExerciseRoutineCommandHandler(
         routine.Category = r.Category;
         routine.Status = r.Status;
         routine.MediaId = r.MediaId;
+        routine.TargetMuscles = r.TargetMuscles?.Trim();
+        routine.Equipment = r.Equipment?.Trim();
+        routine.WarmupNotes = r.WarmupNotes?.Trim();
+        routine.CooldownNotes = r.CooldownNotes?.Trim();
         routine.UpdatedAt = DateTime.UtcNow;
 
         // Reemplazar ejercicios si se proporcionan
@@ -169,6 +182,11 @@ public sealed class UpdateExerciseRoutineCommandHandler(
                 DurationSecs = e.DurationSecs,
                 WeightKg = e.WeightKg,
                 MediaId = e.MediaId,
+                TargetMuscle = e.TargetMuscle?.Trim(),
+                Equipment = e.Equipment?.Trim(),
+                Tempo = e.Tempo?.Trim(),
+                Rpe = e.Rpe,
+                Tips = e.Tips?.Trim(),
                 SortOrder = e.SortOrder,
                 CreatedAt = DateTime.UtcNow,
             }).ToList();

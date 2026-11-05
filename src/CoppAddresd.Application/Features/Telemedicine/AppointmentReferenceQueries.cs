@@ -10,6 +10,17 @@ namespace CoppAddresd.Application.Features.Telemedicine;
 // débiles) en cada operación de agendamiento. Se devuelve solo lo necesario
 // para validar existencia y poblar la UI; sin PHI innecesaria.
 
+public static class AppointmentReferenceFormatting
+{
+    public static string FullName(params string?[] parts) =>
+        string.Join(
+            " ",
+            parts
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .Select(part => part!.Trim())
+        );
+}
+
 /// <summary>Profesional (extensión clínica del empleado). Id = id de <c>erp.professionals</c>.</summary>
 public sealed record AppointmentProfessionalRefDto(
     Guid Id,
@@ -159,7 +170,11 @@ public sealed class GetAppointmentCandidatesBySpecialtyQueryHandler(
                 e.Professional!.Id,
                 e.Id,
                 e.UserId,
-                $"{e.FirstName} {e.MiddleName} {e.LastName}".Trim(),
+                AppointmentReferenceFormatting.FullName(
+                    e.FirstName,
+                    e.MiddleName,
+                    e.LastName
+                ),
                 e.ClinicAssignments.Select(a => a.ClinicId).Distinct().ToList(),
                 e.ClinicAssignments.SelectMany(a => a.Clinic.Locations)
                     .Select(l => l.Id)
@@ -189,7 +204,11 @@ public sealed class GetAppointmentProfessionalRefQueryHandler(IEmployeeRepositor
             employee.Professional.Id,
             employee.Id,
             employee.UserId,
-            $"{employee.FirstName} {employee.MiddleName} {employee.LastName}".Trim(),
+            AppointmentReferenceFormatting.FullName(
+                employee.FirstName,
+                employee.MiddleName,
+                employee.LastName
+            ),
             employee.Professional.ProfessionalType?.Name,
             employee
                 .Professional.Specialties.Select(s => s.SpecialtyId)
@@ -222,7 +241,11 @@ public sealed class GetAppointmentPatientRefQueryHandler(IPatientRepository pati
 
         return new AppointmentPatientRefDto(
             patient.Id,
-            $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Trim(),
+            AppointmentReferenceFormatting.FullName(
+                patient.FirstName,
+                patient.MiddleName,
+                patient.LastName
+            ),
             patient.Email,
             patient.ClinicId,
             patient.LocationId,
@@ -299,7 +322,11 @@ public sealed class GetAppointmentProfessionalByUserIdQueryHandler(IEmployeeRepo
             employee.Professional.Id,
             employee.Id,
             employee.UserId,
-            $"{employee.FirstName} {employee.MiddleName} {employee.LastName}".Trim(),
+            AppointmentReferenceFormatting.FullName(
+                employee.FirstName,
+                employee.MiddleName,
+                employee.LastName
+            ),
             employee.Professional.ProfessionalType?.Name,
             employee
                 .Professional.Specialties.Select(s => s.SpecialtyId)
@@ -332,7 +359,11 @@ public sealed class GetAppointmentPatientByUserIdQueryHandler(IPatientRepository
 
         return new AppointmentPatientRefDto(
             patient.Id,
-            $"{patient.FirstName} {patient.MiddleName} {patient.LastName}".Trim(),
+            AppointmentReferenceFormatting.FullName(
+                patient.FirstName,
+                patient.MiddleName,
+                patient.LastName
+            ),
             patient.Email,
             patient.ClinicId,
             patient.LocationId,

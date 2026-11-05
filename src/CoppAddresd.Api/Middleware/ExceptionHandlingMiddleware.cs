@@ -1,3 +1,4 @@
+using CoppAddresd.Api.Security;
 using System.Text.Json;
 using CoppAddresd.Domain.Exceptions;
 using FluentValidation;
@@ -33,19 +34,19 @@ public sealed class ExceptionHandlingMiddleware(
         {
             // El cliente canceló la petición: no es un error del servidor.
             logger.LogDebug("Petición cancelada por el cliente: {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             context.Response.StatusCode = 499;
         }
         catch (OperationCanceledException)
         {
             logger.LogDebug("Operación cancelada: {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             context.Response.StatusCode = 499;
         }
         catch (ValidationException ex)
         {
             logger.LogWarning(ex, "Validación fallida en {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             await WriteProblemAsync(
                 context,
                 StatusCodes.Status400BadRequest,
@@ -60,7 +61,7 @@ public sealed class ExceptionHandlingMiddleware(
         catch (NotFoundException ex)
         {
             logger.LogWarning(ex, "Recurso no encontrado en {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             await WriteProblemAsync(
                 context,
                 StatusCodes.Status404NotFound,
@@ -70,7 +71,7 @@ public sealed class ExceptionHandlingMiddleware(
         catch (ForbiddenException ex)
         {
             logger.LogWarning(ex, "Acceso prohibido en {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             await WriteProblemAsync(
                 context,
                 StatusCodes.Status403Forbidden,
@@ -80,7 +81,7 @@ public sealed class ExceptionHandlingMiddleware(
         catch (BusinessRuleViolationException ex)
         {
             logger.LogWarning(ex, "Regla de negocio violada en {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             await WriteProblemAsync(
                 context,
                 StatusCodes.Status409Conflict,
@@ -94,7 +95,7 @@ public sealed class ExceptionHandlingMiddleware(
             // Catch ANTES del base UnprocessableEntityException (:90) para
             // escribir los códigos faltantes en errors.missingMealCodes.
             logger.LogWarning(ex, "Evidencia nutricional faltante en {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             await WriteProblemAsync(
                 context,
                 StatusCodes.Status422UnprocessableEntity,
@@ -108,7 +109,7 @@ public sealed class ExceptionHandlingMiddleware(
         catch (UnprocessableEntityException ex)
         {
             logger.LogWarning(ex, "Payload semánticamente inválido en {Method} {Path}",
-                context.Request.Method, context.Request.Path);
+                context.Request.Method, RequestLogPath.Redact(context.Request.Path));
             await WriteProblemAsync(
                 context,
                 StatusCodes.Status422UnprocessableEntity,
@@ -121,7 +122,7 @@ public sealed class ExceptionHandlingMiddleware(
             if (pg.SqlState == PostgresErrorCodes.UniqueViolation)
             {
                 logger.LogWarning(ex, "Violación de unicidad en {Method} {Path}",
-                    context.Request.Method, context.Request.Path);
+                    context.Request.Method, RequestLogPath.Redact(context.Request.Path));
                 await WriteProblemAsync(
                     context,
                     StatusCodes.Status409Conflict,
@@ -131,7 +132,7 @@ public sealed class ExceptionHandlingMiddleware(
             else if (pg.SqlState == PostgresErrorCodes.ForeignKeyViolation)
             {
                 logger.LogWarning(ex, "Violación de llave foránea en {Method} {Path}",
-                    context.Request.Method, context.Request.Path);
+                    context.Request.Method, RequestLogPath.Redact(context.Request.Path));
                 await WriteProblemAsync(
                     context,
                     StatusCodes.Status422UnprocessableEntity,
@@ -156,7 +157,7 @@ public sealed class ExceptionHandlingMiddleware(
     private async Task WriteUnexpectedAsync(HttpContext context, Exception ex)
     {
         logger.LogError(ex, "Excepción no controlada en {Method} {Path}",
-            context.Request.Method, context.Request.Path);
+            context.Request.Method, RequestLogPath.Redact(context.Request.Path));
         await WriteProblemAsync(
             context,
             StatusCodes.Status500InternalServerError,
@@ -181,7 +182,7 @@ public sealed class ExceptionHandlingMiddleware(
             ["title"] = title,
             ["status"] = status,
             ["detail"] = detail,
-            ["instance"] = context.Request.Path.ToString(),
+            ["instance"] = RequestLogPath.Redact(context.Request.Path).ToString(),
             ["correlationId"] = correlationId,
         };
         if (errors is not null)

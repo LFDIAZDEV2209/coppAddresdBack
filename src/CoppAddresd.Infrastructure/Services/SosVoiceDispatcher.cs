@@ -37,12 +37,16 @@ public sealed class SosVoiceDispatcher(
     /// <summary>Un único reintento tras el primer intento (2 intentos totales).</summary>
     private const int MaxRetries = 1;
 
-    public async Task<SosChannelStatus> DispatchAsync(
+    public Task<SosChannelStatus> DispatchAsync(SosAlert alert, CancellationToken ct = default)
+        => SosRecipientDispatch.RunAsync(alert, "voice", dedupe, dbContext, DispatchOneAsync, logger, ct);
+
+    private async Task<SosChannelStatus> DispatchOneAsync(
         SosAlert alert,
+        SosAlertRecipient? recipient,
         CancellationToken ct = default
     )
     {
-        var dedupeKey = $"sos:voice:{alert.Id}";
+        var dedupeKey = SosRecipientDispatch.Key("voice", alert.Id, recipient);
         var existing = await dedupe.GetByKeyAsync(dedupeKey, ct);
         if (
             existing?.VoiceStatus is not null
@@ -56,11 +60,12 @@ public sealed class SosVoiceDispatcher(
                 existing.VoiceStatus,
                 alert.Id
             );
-            return alert.VoiceChannelStatus;
+            return Enum.TryParse<SosChannelStatus>(existing.VoiceStatus, true, out var previous) ? previous : alert.VoiceChannelStatus;
         }
 
         var sayText = SosVoiceTemplate.Build(alert);
         var callbackUrl = BuildStatusCallbackUrl(alert.Id);
+        if (callbackUrl is not null && recipient is not null) callbackUrl += $"&recipientId={recipient.Id}";
 
         var finalStatus = SosChannelStatus.Fallido;
         string? detail = null;
@@ -161,6 +166,7 @@ public sealed class SosVoiceDispatcher(
             a => a.VoiceUpdatedAt = DateTime.UtcNow,
             a => a.VoiceDetail = detail,
             a => a.VoiceProviderCallId = providerCallId,
+            recipient,
             ct
         );
 
@@ -186,11 +192,13 @@ public sealed class SosVoiceDispatcher(
         Action<SosAlert> setTimestamp,
         Action<SosAlert> setDetail,
         Action<SosAlert> setProviderCallId,
+        SosAlertRecipient? recipient,
         CancellationToken ct
     )
     {
         try
         {
+            if (recipient is not null) { setStatus(alert); setTimestamp(alert); setDetail(alert); setProviderCallId(alert); return; }
             var tracked = await dbContext.SosAlerts.FirstOrDefaultAsync(x => x.Id == alert.Id, ct);
             if (tracked is null)
             {

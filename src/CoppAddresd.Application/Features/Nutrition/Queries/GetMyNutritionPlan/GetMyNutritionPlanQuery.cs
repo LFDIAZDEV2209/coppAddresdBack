@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Features.Wellness;
 using CoppAddresd.Domain.Enums;
 using CoppAddresd.Domain.Exceptions;
 using MediatR;
@@ -42,7 +43,15 @@ public sealed class GetMyNutritionPlanQueryHandler(
         // plan). Misma regla que ProgramContentResolver: Status Active, ventana
         // de fechas vigente (hoy UTC) y, en overlap, gana el StartDate más
         // reciente.
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var zone = await wellness.GetPatientTimezoneAsync(patient.Id, ct);
+        var now = DateTime.UtcNow;
+        if (!string.IsNullOrWhiteSpace(zone))
+        {
+            try { now = TimeZoneInfo.ConvertTimeFromUtc(now, TimeZoneInfo.FindSystemTimeZoneById(zone)); }
+            catch (TimeZoneNotFoundException) { }
+            catch (InvalidTimeZoneException) { }
+        }
+        var today = DateOnly.FromDateTime(now);
         var assignments = await wellness.ListPlanAssignmentsByPatientAsync(patient.Id, ct);
         var active = assignments
             .Where(a =>
@@ -65,7 +74,8 @@ public sealed class GetMyNutritionPlanQueryHandler(
         // 3) Plan con días ordenados (el repositorio ya ordena por DayNumber y
         // SortOrder; aquí solo se agrupa por día). Plan huérfano → null.
         var plan = await wellness.GetPlanByIdAsync(active.PlanId, ct);
-        if (plan is null)
+        if (plan is null || !NutritionPlanReviewRules.IsPublished(plan)
+            || plan.PatientId != patient.Id || today.DayNumber - DateOnly.FromDateTime(active.StartDate).DayNumber >= 30)
         {
             logger.LogWarning(
                 "Me.NutritionPlan: asignación {AssignmentId} apunta a un plan inexistente {PlanId}",
@@ -120,7 +130,11 @@ public sealed class GetMyNutritionPlanQueryHandler(
             plan.Allergens,
             plan.MealTiming,
             plan.Status.ToString(),
-            days
+            days,
+            DateOnly.FromDateTime(active.StartDate),
+            DateOnly.FromDateTime(active.StartDate).AddDays(29),
+            today.DayNumber - DateOnly.FromDateTime(active.StartDate).DayNumber + 1,
+            plan.Revision
         );
     }
 }

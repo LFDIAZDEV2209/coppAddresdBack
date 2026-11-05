@@ -81,9 +81,13 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
                     VoiceStatus = dedupeKey.StartsWith("sos:voice:", StringComparison.Ordinal)
                         ? SosChannelStatus.Pendiente.ToString().ToLowerInvariant()
                         : null,
+                    EmailStatus = dedupeKey.StartsWith("sos:email:", StringComparison.Ordinal)
+                        ? SosChannelStatus.Pendiente.ToString().ToLowerInvariant()
+                        : null,
                     PushStatus =
                         dedupeKey.StartsWith("sos:sms:", StringComparison.Ordinal)
                         || dedupeKey.StartsWith("sos:voice:", StringComparison.Ordinal)
+                        || dedupeKey.StartsWith("sos:email:", StringComparison.Ordinal)
                             ? null
                             : SosChannelStatus.Pendiente.ToString().ToLowerInvariant(),
                 }

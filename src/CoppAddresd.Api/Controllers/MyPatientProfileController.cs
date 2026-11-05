@@ -172,7 +172,9 @@ public class MyPatientProfileController(IMediator mediator, ICurrentContext curr
                 request.EmergencyPhone,
                 request.EmergencyEmail,
                 request.InsurerId,
-                request.MemberId
+                request.MemberId,
+                request.SecondaryEmergencyContact,
+                request.ClearInsurer
             ),
             ct
         );
@@ -196,5 +198,7 @@ public sealed record UpdateMyPatientProfileRequest(
     string? EmergencyPhone,
     string? EmergencyEmail,
     Guid? InsurerId,
-    string? MemberId
+    string? MemberId,
+    SecondaryEmergencyContactDto? SecondaryEmergencyContact = null,
+    bool ClearInsurer = false
 );

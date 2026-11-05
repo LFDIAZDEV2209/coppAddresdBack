@@ -20,6 +20,8 @@ public sealed record MediaEnrollmentReferenceDto(
     bool IsFrozen
 );
 
+public sealed record MediaRoutineReferenceDto(Guid RoutineId, string RoutineName, Guid? ExerciseId, string? ExerciseName);
+
 /// <summary>
 /// "Dónde se usa" un medio (REQ-PCA-07): plantillas y semanas de pacientes
 /// que lo referencian. <see cref="TotalReferences"/> es el total consolidado
@@ -30,7 +32,8 @@ public sealed record MediaReferencesDto(
     Guid MediaId,
     int TotalReferences,
     IReadOnlyList<MediaTemplateReferenceDto> TemplateReferences,
-    IReadOnlyList<MediaEnrollmentReferenceDto> EnrollmentReferences
+    IReadOnlyList<MediaEnrollmentReferenceDto> EnrollmentReferences,
+    IReadOnlyList<MediaRoutineReferenceDto>? RoutineReferences = null
 )
 {
     public bool HasReferences => TotalReferences > 0;

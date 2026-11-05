@@ -6,13 +6,15 @@ using Microsoft.Extensions.Options;
 namespace CoppAddresd.Infrastructure.Services.Email;
 
 /// <summary>
-/// Development / fallback implementation of <see cref="IEmailService"/> that logs
-/// email details to <see cref="ILogger"/> without attempting actual SMTP network delivery.
+/// Implementación de desarrollo: registra solo metadatos no personales y no
+/// realiza entrega SMTP. Nunca debe representar un canal SOS configurado.
 /// </summary>
 public sealed class LogEmailService : IEmailService
 {
     private readonly ILogger<LogEmailService> _logger;
     private readonly EmailOptions _options;
+
+    public bool IsConfigured => false;
 
     public LogEmailService(
         ILogger<LogEmailService> logger,
@@ -25,11 +27,11 @@ public sealed class LogEmailService : IEmailService
     public Task SendEmailAsync(EmailMessageDto message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_options.Enabled)
         {
-            _logger.LogInformation("Email sending is disabled by configuration (Email:Enabled = false). Email to {Recipients} skipped.",
-                string.Join(", ", message.To));
+            _logger.LogInformation("Envío de correo deshabilitado por configuración.");
             return Task.CompletedTask;
         }
 
@@ -43,28 +45,11 @@ public sealed class LogEmailService : IEmailService
             throw new ArgumentException("Email subject cannot be empty.", nameof(message));
         }
 
-        var senderAddress = string.IsNullOrWhiteSpace(message.FromAddress) ? _options.FromAddress : message.FromAddress;
-        var senderName = string.IsNullOrWhiteSpace(message.FromName) ? _options.FromName : message.FromName;
-
         _logger.LogInformation(
-            "[LOG-EMAIL-SERVICE] SIMULATED EMAIL SENT\n" +
-            "  From: \"{SenderName}\" <{SenderAddress}>\n" +
-            "  To: {To}\n" +
-            "  Cc: {Cc}\n" +
-            "  Bcc: {Bcc}\n" +
-            "  Subject: {Subject}\n" +
-            "  IsHtml: {IsHtml}\n" +
-            "  Attachments: {AttachmentCount}\n" +
-            "  Body Snippet: {BodySnippet}",
-            senderName,
-            senderAddress,
-            string.Join(", ", message.To),
-            message.Cc.Count > 0 ? string.Join(", ", message.Cc) : "(none)",
-            message.Bcc.Count > 0 ? string.Join(", ", message.Bcc) : "(none)",
-            message.Subject,
+            "Correo de desarrollo registrado sin entrega real: recipients={RecipientCount}, html={IsHtml}, attachments={AttachmentCount}.",
+            message.To.Count,
             message.IsHtml,
-            message.Attachments.Count,
-            message.Body.Length > 200 ? string.Concat(message.Body.AsSpan(0, 200), "...") : message.Body);
+            message.Attachments.Count);
 
         return Task.CompletedTask;
     }

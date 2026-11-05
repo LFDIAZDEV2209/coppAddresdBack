@@ -87,6 +87,7 @@ public sealed class SubmitEvaluationCommandHandler(
     IndicatorEngine indicatorEngine,
     AlertEngine alertEngine,
     IHealthTestMetricsQueue? metricsQueue = null,
+    INutritionPlanWorkflow? nutritionWorkflow = null,
     IPublisher? publisher = null,
     IProgramAssignmentRepository? assignmentRepository = null,
     IOptionsMonitor<ProgramAssignmentSettings>? assignmentSettings = null,
@@ -340,6 +341,18 @@ public sealed class SubmitEvaluationCommandHandler(
             },
             ct
         );
+
+        if (nutritionWorkflow is not null)
+        {
+            // Solo reserva trabajo durable después del commit; la IA corre en el worker.
+            try { await nutritionWorkflow.QueueIfReadyAsync(result.PatientId, ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                if (logger is not null) Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(logger,
+                    "El reconciliador retomará nutrición tras la batería: tipo={ExceptionType}", ex.GetType().Name);
+            }
+        }
 
         // D-01: la transacción clínica ya hizo COMMIT y fue liberada por el repositorio.
         // Cualquier fallo del hook (incluida la cancelación posterior al commit) se registra

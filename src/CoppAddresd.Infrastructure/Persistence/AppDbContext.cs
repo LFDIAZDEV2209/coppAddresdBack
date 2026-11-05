@@ -75,6 +75,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     // Wellness — Centro de Bienestar
     public DbSet<NutritionPlan> NutritionPlans => Set<NutritionPlan>();
+    public DbSet<NutritionPlanReviewEvent> NutritionPlanReviewEvents => Set<NutritionPlanReviewEvent>();
     public DbSet<NutritionPlanDay> NutritionPlanDays => Set<NutritionPlanDay>();
     public DbSet<ExerciseRoutine> ExerciseRoutines => Set<ExerciseRoutine>();
     public DbSet<RoutineExercise> RoutineExercises => Set<RoutineExercise>();
@@ -183,6 +184,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     // SOS real — alertas del botón de pánico (change sos-panic-real)
     public DbSet<SosAlert> SosAlerts => Set<SosAlert>();
+    public DbSet<SosAlertRecipient> SosAlertRecipients => Set<SosAlertRecipient>();
+    public DbSet<AssessmentProfileInsight> AssessmentProfileInsights => Set<AssessmentProfileInsight>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

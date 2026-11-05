@@ -71,6 +71,7 @@ public static class PermissionCodes
     // Wellness
     public const string WellnessView = "Wellness.View";
     public const string WellnessManage = "Wellness.Manage";
+    public const string NutritionPlansApprove = "NutritionPlans.Approve";
 
     // Mantenimiento y administración del sistema.
     public const string SystemAdminSettings = "System.AdminSettings";
@@ -128,6 +129,7 @@ public static class PermissionCodes
         MediaDelete,
         WellnessView,
         WellnessManage,
+        NutritionPlansApprove,
         SystemAdminSettings,
         SosAlertsManage,
     ];

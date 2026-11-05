@@ -129,6 +129,7 @@ public static class PermissionCodes
     // Wellness
     public const string WellnessView = "Wellness.View";
     public const string WellnessManage = "Wellness.Manage";
+    public const string NutritionPlansApprove = "NutritionPlans.Approve";
 
     // Store
     public const string StoreManage = "Store.Manage";
@@ -252,6 +253,7 @@ public static class PermissionCodes
         yield return CommunityManage;
         yield return WellnessView;
         yield return WellnessManage;
+        yield return NutritionPlansApprove;
         yield return LegalDocumentsView;
         yield return LegalDocumentsManage;
         yield return FinanceView;
