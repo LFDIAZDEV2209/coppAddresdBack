@@ -15,6 +15,7 @@ namespace CoppAddresd.Infrastructure.Persistence;
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<NutritionFoodItem> NutritionFoodItems => Set<NutritionFoodItem>();
+    public DbSet<NutritionPrescriptionEvent> NutritionPrescriptionEvents => Set<NutritionPrescriptionEvent>();
     public DbSet<NutritionPrescription> NutritionPrescriptions => Set<NutritionPrescription>();
     public DbSet<NutritionPrescriptionMeal> NutritionPrescriptionMeals => Set<NutritionPrescriptionMeal>();
     public DbSet<NutritionPrescriptionItem> NutritionPrescriptionItems => Set<NutritionPrescriptionItem>();

@@ -1,5 +1,48 @@
 # Módulo: Nutrición — generación, revisión clínica y lectura del paciente
 
+## Ola 2: motor y prescripciones profesionales
+
+El motor puro `Application/Features/Nutrition/Engine` reproduce siete vectores
+de metas, menús, búsqueda por roles, redondeos JS, topes y alertas de la fuente
+validada. El mes base satisface las bandas; Sofía 1350 reproduce el original,
+incluida desviación máxima 15,93% y dos avisos técnicos. No se ocultan esos
+avisos alterando las reglas. Una versión aprobada conserva metas/comidas;
+editar requiere crear una versión nueva. El adaptador móvil se deja para 4.3.
+
+Contratos ERP de esta ola, bajo JWT y alcance profesional:
+
+- `GET /api/v1/nutrition/patients/{patientId}/prescriptions?page=1&pageSize=20`.
+- `POST` en esa ruta: `NutritionGenerateInput` (`manual`, `birthDate` opcionales
+  si están medidos; peso/talla/nacimiento/sexo son obligatorios para calcular).
+- `GET /{id}` y `GET /{id}/history` para detalle/bitácora.
+- `POST /{id}/{action}` con `revision` observada y campos de la acción:
+  `save`, `apply-day`, `create-version`, `submit`, `approve`, `return`, `regenerate`.
+  `edit` admite metas, comidas parciales, indicaciones ES/EN y confirmación de
+  ajustes manuales; `sourceDay` aplica ese día a los 30. Aprobación recibe
+  `criticalConfirmed` y fecha local opcional; devolución exige `comment`.
+
+El actor nunca procede del cuerpo: API lo deriva de JWT y permisos efectivos.
+La capa Application verifica permiso, alcance, revisión, forma de comidas y
+catálogo. Infrastructure bloquea el paciente en Read Committed dentro de la
+estrategia retriable; escrituras de versión, hijos, publicación y evento se
+confirman juntas. La IA ocurre antes del lock y se vuelve a comprobar alcance
+y revisión al entrar. La migración `AddNutritionCaseAudit` solo añade columnas
+JSON con defaults válidos y la tabla `app.nutrition_prescription_events`.
+Su índice de historia se describe en `docs/database/indexes.md`.
+
+La lectura clínica reutiliza mediciones consolidadas y biométricos válidos de
+la batería. No convierte scores a categorías clínicas sin un mapeo publicado:
+lo no disponible debe completarlo el profesional y queda en `missingData`.
+Se marca provisional hasta completar los 9 instrumentos y las entradas.
+Al llegar 9/9 se ofrece regeneración, nunca se sustituye el trabajo en silencio.
+
+`POST /internal/nutrition/plan-draft` del AI Service recibe solo metas, catálogo
+y hasta 16 menús, sin identidad. Redacta ES/EN y devuelve JSON estructurado.
+Timeout, fallo o formato inválido usan fallback determinista explícito. El
+backend vuelve a comprobar catálogo, claves, topes y bandas; una propuesta
+inválida conserva el menú determinista y sus alertas. `NarrativeSource` informa
+del origen. La cancelación del cliente no se convierte en fallback.
+
 ## Fundamentos del nuevo modelo de prescripción (grupos 1–2)
 
 La migración `20261105145334_AddNutritionPrescriptions` añade únicamente cuatro

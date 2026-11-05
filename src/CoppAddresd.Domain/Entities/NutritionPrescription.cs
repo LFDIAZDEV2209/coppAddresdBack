@@ -12,6 +12,11 @@ public sealed class NutritionPrescription
     public bool Provisional { get; set; }
     public bool IsPublished { get; set; }
     public bool MenusOutdated { get; set; }
+    public bool ManualEditsConfirmed { get; set; }
+    public string ClinicalProfileJson { get; set; } = "{}";
+    public string TargetsJson { get; set; } = "{}";
+    public string MissingDataJson { get; set; } = "[]";
+    public string NarrativeSource { get; set; } = "deterministic_fallback";
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
     public double? CalorieTarget { get; set; }

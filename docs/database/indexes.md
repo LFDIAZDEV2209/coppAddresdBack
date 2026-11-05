@@ -157,3 +157,11 @@ Son tablas nuevas vacías: los índices se crean transaccionalmente, sin requeri
 CONCURRENTLY sobre datos legacy. La integración valida unicidad, FKs y carga
 del agregado. No se atribuye una mejora de latencia medida ni un EXPLAIN de
 volumen productivo: los consumidores de bandeja y publicación son del grupo 4.
+
+| Índice Ola 2 | Tabla app | Columnas | Tipo | Motivo | Impacto esperado | Costo |
+|---|---|---|---|---|---|---|
+| PK_nutrition_prescription_events | nutrition_prescription_events | id | PK B-tree | Identidad de evento | Lookup puntual | Una entrada por acción |
+| ix_nutrition_prescription_events_history | nutrition_prescription_events | prescription_id,occurred_at | B-tree | FK y bitácora ordenada de una versión | Acota la historia por versión | Una entrada por acción |
+
+Se crea en tabla nueva vacía; sin cambios a índices legacy ni bloqueo de tablas
+clínicas grandes. La prueba de rollback valida la persistencia atómica del evento.

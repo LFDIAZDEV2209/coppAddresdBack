@@ -53,6 +53,11 @@ public sealed class NutritionPrescriptionConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.Provisional).HasColumnName("provisional");
         b.Property(x => x.IsPublished).HasColumnName("is_published");
         b.Property(x => x.MenusOutdated).HasColumnName("menus_outdated");
+        b.Property(x => x.ManualEditsConfirmed).HasColumnName("manual_edits_confirmed");
+        b.Property(x => x.ClinicalProfileJson).HasColumnName("clinical_profile_json").HasColumnType("jsonb").HasDefaultValue("{}");
+        b.Property(x => x.TargetsJson).HasColumnName("targets_json").HasColumnType("jsonb").HasDefaultValue("{}");
+        b.Property(x => x.MissingDataJson).HasColumnName("missing_data_json").HasColumnType("jsonb").HasDefaultValue("[]");
+        b.Property(x => x.NarrativeSource).HasColumnName("narrative_source").HasMaxLength(40).HasDefaultValue("deterministic_fallback");
         b.Property(x => x.StartDate).HasColumnName("start_date").HasColumnType("date");
         b.Property(x => x.EndDate).HasColumnName("end_date").HasColumnType("date");
         b.Property(x => x.CalorieTarget).HasColumnName("calorie_target");

@@ -4889,6 +4889,13 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("carbs_target");
 
+                    b.Property<string>("ClinicalProfileJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("clinical_profile_json")
+                        .HasDefaultValue("{}");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("created_at");
@@ -4925,9 +4932,28 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_published");
 
+                    b.Property<bool>("ManualEditsConfirmed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("manual_edits_confirmed");
+
                     b.Property<bool>("MenusOutdated")
                         .HasColumnType("boolean")
                         .HasColumnName("menus_outdated");
+
+                    b.Property<string>("MissingDataJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("missing_data_json")
+                        .HasDefaultValue("[]");
+
+                    b.Property<string>("NarrativeSource")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("narrative_source")
+                        .HasDefaultValue("deterministic_fallback");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
@@ -4959,6 +4985,13 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("state");
+
+                    b.Property<string>("TargetsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("targets_json")
+                        .HasDefaultValue("{}");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamptz")
@@ -4995,16 +5028,74 @@ namespace CoppAddresd.Infrastructure.Migrations
 
                     b.ToTable("nutrition_prescriptions", "app", t =>
                         {
-                            t.HasCheckConstraint("ck_nutrition_prescription_publication", "NOT is_published OR state = 'aprobado'");
-
                             t.HasCheckConstraint("ck_nutrition_prescription_approval", "state <> 'aprobado' OR (start_date IS NOT NULL AND end_date IS NOT NULL AND approved_by IS NOT NULL AND approved_at IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_nutrition_prescription_dates", "(start_date IS NULL AND end_date IS NULL) OR (start_date IS NOT NULL AND end_date IS NOT NULL AND end_date >= start_date AND end_date - start_date < 30)");
+
+                            t.HasCheckConstraint("ck_nutrition_prescription_publication", "NOT is_published OR state = 'aprobado'");
 
                             t.HasCheckConstraint("ck_nutrition_prescription_state", "state IN ('borrador_ia','en_aprobacion','aprobado','devuelto')");
 
                             t.HasCheckConstraint("ck_nutrition_prescription_version", "version > 0 AND revision > 0");
                         });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPrescriptionEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("action");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<bool>("AutoApproved")
+                        .HasColumnType("boolean")
+                        .HasColumnName("auto_approved");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text")
+                        .HasColumnName("comment");
+
+                    b.Property<bool>("CriticalConfirmed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("critical_confirmed");
+
+                    b.Property<int>("CriticalCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("critical_count");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<Guid>("PrescriptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("prescription_id");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("snapshot_json");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PrescriptionId", "OccurredAt")
+                        .HasDatabaseName("ix_nutrition_prescription_events_history");
+
+                    b.ToTable("nutrition_prescription_events", "app");
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPrescriptionItem", b =>
@@ -10269,6 +10360,15 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Patient");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPrescriptionEvent", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.NutritionPrescription", null)
+                        .WithMany()
+                        .HasForeignKey("PrescriptionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPrescriptionItem", b =>

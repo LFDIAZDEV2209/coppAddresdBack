@@ -69,3 +69,14 @@ en el WHERE del UPDATE y una escritura concurrente produce
 El contexto de una escritura fallida se descarta al finalizar el alcance.
 La integración contra PostgreSQL verifica fallo de FK tras el borrado legacy,
 fallo de FK en un agregado nuevo y rollback de una revisión obsoleta.
+
+### Ola 2: decisiones profesionales y bitácora
+
+`NutritionCaseStore.ExecuteAsync` ejecuta en Read Committed con estrategia Npgsql
+y lock de `app.patient_profiles` por paciente. Cada reintento limpia tracking,
+recarga alcance/revisión y confirma versión, comidas, ítems, reemplazo de la
+publicación y evento con snapshot juntos. Objetivo: transacción corta, sin IO
+externo; el cálculo y la llamada a IA terminan antes de abrirla. Fallo/cancelación
+revierte por dispose. Los fallos de revisión se traducen a conflicto de negocio.
+La integración inyecta fallo en bitácora tras el guardado del agregado y verifica
+que no persisten cabecera, hijos ni eventos.

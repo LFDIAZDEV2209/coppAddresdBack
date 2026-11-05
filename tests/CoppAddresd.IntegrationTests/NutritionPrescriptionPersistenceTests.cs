@@ -117,8 +117,9 @@ public sealed partial class NutritionPlanWorkflowTests
         Assert.Equal(35, await db.NutritionFoodItems.CountAsync());
         var patient = await PatientAsync(db); var legacy = await DraftAsync(db, patient.Id);
         var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToList();
-        Assert.EndsWith("_AddNutritionPrescriptions", migrations[^1]);
-        await db.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+        var catalogMigration = migrations.FindIndex(x => x.EndsWith("_AddNutritionPrescriptions"));
+        Assert.True(catalogMigration > 0);
+        await db.GetService<IMigrator>().MigrateAsync(migrations[catalogMigration - 1]);
         Assert.True(await db.NutritionPlans.AnyAsync(x => x.Id == legacy.Id));
         await db.Database.MigrateAsync(); Assert.Equal(35, await db.NutritionFoodItems.CountAsync());
     }
