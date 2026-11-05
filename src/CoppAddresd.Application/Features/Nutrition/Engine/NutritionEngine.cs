@@ -6,7 +6,7 @@ public sealed record NutritionPatient(double Peso, double Talla, double Edad, st
     string? NutRiesgo = null, double? SleepRF = null, string? SleepNivel = null,
     string? Adh = null, double? RiesgoNum = null, string? Estres = null,
     double? Deficit = null, double? Kcal = null, double? CarbPct = null,
-    double? ProtG = null, double? Fiber = null, double? Vasos = null);
+    double? ProtG = null, double? Fiber = null, double? Vasos = null, DateOnly? BirthDate = null);
 
 public sealed record NutritionWeight(string Fase, double MetaKg, double MetaImc, double Thr,
     double Low, double LowKg, double KgLeft, bool Old, bool Auto);

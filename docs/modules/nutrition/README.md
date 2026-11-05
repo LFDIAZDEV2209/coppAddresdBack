@@ -2,6 +2,17 @@
 
 ## Ola 2: motor y prescripciones profesionales
 
+`NutritionStateMachine` declara las transiciones de borrador/devuelto a revisión
+y de revisión a aprobación/devolución; cualquier escritura de una versión
+aprobada requiere versionado. La vigencia se calcula con la zona IANA del
+paciente: inicio local y fin 29 días después, ambos incluidos. Una nueva versión
+del mismo ciclo conserva fechas; un ciclo terminado requiere uno nuevo. No se
+admite publicación retroactiva ni ciclos publicados solapados. `por_renovar`
+es virtual desde cinco días antes del final, también tras vencer; no altera el
+estado histórico. La regeneración recupera nacimiento y datos explícitos previos
+como respaldo de los medidos actuales y conserva metas/menús/indicaciones
+confirmadas salvo reemplazo solicitado expresamente por el profesional.
+
 El motor puro `Application/Features/Nutrition/Engine` reproduce siete vectores
 de metas, menús, búsqueda por roles, redondeos JS, topes y alertas de la fuente
 validada. El mes base satisface las bandas; Sofía 1350 reproduce el original,

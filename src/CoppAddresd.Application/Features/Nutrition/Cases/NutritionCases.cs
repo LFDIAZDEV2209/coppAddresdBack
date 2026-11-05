@@ -15,8 +15,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
     private static string Write<T>(T value) => JsonSerializer.Serialize(value, Json);
     private static void Invalid(string message) => throw new UnprocessableEntityException(message);
     private static void Conflict(string message) => throw new BusinessRuleViolationException(message);
-    private DateOnly Today(NutritionCaseContext context) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(clock.GetUtcNow(),
-        TimeZoneInfo.FindSystemTimeZoneById(context.Timezone)).DateTime);
+    private DateOnly Today(NutritionCaseContext context) => NutritionStateMachine.Today(clock.GetUtcNow(), context.Timezone);
 
     private async Task<NutritionCaseContext> AccessAsync(Guid patientId, NutritionActor actor, CancellationToken ct)
     {
@@ -57,7 +56,17 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
         var engine = await FoodsAsync(ct);
         NutritionPrescription? generated = null;
         if (command.Operation is NutritionOperation.Generate or NutritionOperation.Regenerate)
-            generated = await GenerateAsync(command.PatientId, command.Generate ?? new(), context, engine, ct);
+        {
+            NutritionPatient? fallback = null;
+            if (command.Operation == NutritionOperation.Regenerate)
+            {
+                var prior = await PlanAsync(command.PatientId, command.Id, ct);
+                if (command.Revision != prior.Revision) Conflict("La prescripción cambió; recarga la revisión.");
+                NutritionStateMachine.Ensure(command.Operation, prior.State);
+                fallback = Read<NutritionPatient>(prior.ClinicalProfileJson);
+            }
+            generated = await GenerateAsync(command.PatientId, command.Generate ?? new(), context, engine, ct, fallback);
+        }
         return await store.ExecuteAsync(command.PatientId, async txCt =>
         {
             var currentContext = await AccessAsync(command.PatientId, command.Actor, txCt);
@@ -73,24 +82,21 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
                 plan = await PlanAsync(command.PatientId, command.Id, txCt);
                 if (!currentContext.TestsComplete) plan.Provisional = true;
                 if (command.Revision != plan.Revision) Conflict("La prescripción cambió; recarga la revisión.");
+                NutritionStateMachine.Ensure(command.Operation, plan.State);
                 if (command.Operation == NutritionOperation.CreateVersion)
                 {
-                    if (plan.State != "aprobado") Conflict("Solo una versión aprobada puede versionarse.");
                     plan = CopyVersion(plan, command.Actor.UserId, await store.NextVersionAsync(plan.CycleId, txCt));
                     await repository.AddAsync(plan, txCt);
                 }
                 else
                 {
-                    if (plan.State == "aprobado") Conflict("La versión aprobada es inmutable; crea otra versión.");
                     switch (command.Operation)
                     {
                         case NutritionOperation.Save:
                         case NutritionOperation.ApplyDay:
-                            if (plan.State is not ("borrador_ia" or "devuelto")) Conflict("Devuelve el plan antes de editarlo.");
                             ApplyEdits(plan, command.Edit ?? new(), engine, command.Operation == NutritionOperation.ApplyDay);
                             break;
                         case NutritionOperation.Regenerate:
-                            if (plan.State is not ("borrador_ia" or "devuelto")) Conflict("Solo se regenera un borrador o una devolución.");
                             var keep = plan.ManualEditsConfirmed && (command.Generate?.PreserveConfirmedEdits ?? true);
                             plan.ClinicalProfileJson = generated!.ClinicalProfileJson; plan.MissingDataJson = generated.MissingDataJson;
                             plan.Provisional = generated.Provisional;
@@ -103,24 +109,21 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
                             plan.State = "borrador_ia";
                             break;
                         case NutritionOperation.Submit:
-                            if (plan.State is not ("borrador_ia" or "devuelto")) Conflict("Transición a aprobación inválida.");
                             ValidateMeals(plan, engine); plan.State = "en_aprobacion";
                             break;
                         case NutritionOperation.Return:
-                            if (plan.State != "en_aprobacion") Conflict("Solo se devuelve un plan en aprobación.");
                             if (string.IsNullOrWhiteSpace(command.Comment)) Invalid("La devolución exige comentario.");
                             plan.ReturnComment = command.Comment!.Trim(); plan.State = "devuelto";
                             break;
                         case NutritionOperation.Approve:
-                            if (plan.State != "en_aprobacion") Conflict("El plan debe estar en aprobación.");
                             if (plan.MenusOutdated) Conflict("Regenera o confirma los menús ajustados a las metas.");
                             ValidateMeals(plan, engine);
                             var alerts = Flags(plan, engine);
                             if (!NutritionEngine.CanApprove(alerts, command.CriticalConfirmed)) Invalid("Confirma que revisaste personalmente las alertas críticas.");
                             var published = await store.PublishedAsync(plan.PatientId, txCt);
                             var previous = published.SingleOrDefault(x => x.CycleId == plan.CycleId);
-                            plan.StartDate = previous?.StartDate ?? command.StartDate ?? Today(currentContext);
-                            plan.EndDate = previous?.EndDate ?? plan.StartDate.Value.AddDays(29);
+                            var dates = NutritionStateMachine.Dates(Today(currentContext), command.StartDate, previous);
+                            plan.StartDate = dates.Start; plan.EndDate = dates.End;
                             if (published.Any(x => x.CycleId != plan.CycleId && x.StartDate <= plan.EndDate && x.EndDate >= plan.StartDate))
                                 Conflict("Existe otro ciclo publicado con vigencia solapada.");
                             foreach (var row in published.Where(x => x.CycleId == plan.CycleId))
@@ -144,27 +147,27 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
     }
 
     private async Task<NutritionPrescription> GenerateAsync(Guid patientId, NutritionGenerateInput input,
-        NutritionCaseContext context, NutritionEngine engine, CancellationToken ct)
+        NutritionCaseContext context, NutritionEngine engine, CancellationToken ct, NutritionPatient? fallback = null)
     {
         var data = await clinical.ConsolidateAsync(patientId, ct);
         var measured = context.BatteryId is { } battery ? await assessments.ReadProfileAsync(patientId, battery, ct) : null;
         double? Biometric(string[] codes, string unit) => measured?.Biometrics.FirstOrDefault(x => codes.Contains(x.QuestionCode.ToLowerInvariant())
             && x.Unit == unit && (x.Minimum == null || x.Value >= x.Minimum) && (x.Maximum == null || x.Value <= x.Maximum)) is { } value ? (double)value.Value : null;
         double? Measurement(string[] codes, string unit) => data.Measurements.FirstOrDefault(x => codes.Contains(x.Metric.ToLowerInvariant()) && x.Unit == unit) is { } m ? (double)m.Value : null;
-        var birth = input.BirthDate ?? context.BirthDate; var today = Today(context);
+        var birth = input.BirthDate ?? context.BirthDate ?? fallback?.BirthDate; var today = Today(context);
         var manual = input.Manual;
-        var weight = manual is { Peso: > 0 } ? manual.Peso : Biometric(["peso", "weight", "weight_kg"], "kg") ?? Measurement(["weight", "weight_kg"], "kg");
-        var height = manual is { Talla: > 0 } ? manual.Talla : Biometric(["talla", "height", "height_cm"], "cm") ?? Measurement(["height", "height_cm"], "cm");
-        var sex = (manual?.Sexo ?? context.Sex)?.ToLowerInvariant() switch { "f" or "female" or "femenino" => "F", "m" or "male" or "masculino" => "M", _ => null };
+        var weight = manual is { Peso: > 0 } ? manual.Peso : Biometric(["peso", "weight", "weight_kg"], "kg") ?? Measurement(["weight", "weight_kg"], "kg") ?? fallback?.Peso;
+        var height = manual is { Talla: > 0 } ? manual.Talla : Biometric(["talla", "height", "height_cm"], "cm") ?? Measurement(["height", "height_cm"], "cm") ?? fallback?.Talla;
+        var sex = (manual?.Sexo ?? context.Sex ?? fallback?.Sexo)?.ToLowerInvariant() switch { "f" or "female" or "femenino" => "F", "m" or "male" or "masculino" => "M", _ => null };
         if (birth is null || birth >= today || weight is null || height is null || sex is null) Invalid("Completa peso, talla, nacimiento y sexo; no se inventan datos clínicos.");
         var age = today.Year - birth!.Value.Year; if (birth > today.AddYears(-age)) age--;
         if (age < 18 || age > 120 || !double.IsFinite(weight!.Value) || !double.IsFinite(height!.Value)
             || weight <= 0 || height <= 0) Invalid("Datos mínimos fuera de rango.");
-        var p = (manual ?? new NutritionPatient(weight!.Value, height!.Value, age, sex!, 0)) with
+        var p = (manual ?? fallback ?? new NutritionPatient(weight!.Value, height!.Value, age, sex!, 0)) with
         {
-            Peso = weight!.Value, Talla = height!.Value, Edad = age, Sexo = sex!,
+            Peso = weight!.Value, Talla = height!.Value, Edad = age, Sexo = sex!, BirthDate = birth,
             Imc = NutritionEngine.R1(weight.Value / Math.Pow(height.Value / 100, 2)),
-            Hba1c = manual?.Hba1c ?? Biometric(["a1c", "hba1c"], "%") ?? Measurement(["a1c", "hba1c"], "%")
+            Hba1c = manual?.Hba1c ?? Biometric(["a1c", "hba1c"], "%") ?? Measurement(["a1c", "hba1c"], "%") ?? fallback?.Hba1c
         };
         ValidatePatient(p);
         var missing = new List<string>();
@@ -298,13 +301,13 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
         await store.AddEventAsync(new() { PrescriptionId = plan.Id, ActorUserId = command.Actor.UserId,
             OccurredAt = clock.GetUtcNow().UtcDateTime, Action = action ?? command.Operation.ToString().ToLowerInvariant(), Revision = plan.Revision,
             Comment = command.Comment, CriticalCount = flags.Count(f => f.S == "crit"), CriticalConfirmed = command.CriticalConfirmed,
-            AutoApproved = command.Operation == NutritionOperation.Approve && plan.CreatedBy == command.Actor.UserId,
+            AutoApproved = action is null && command.Operation == NutritionOperation.Approve && plan.CreatedBy == command.Actor.UserId,
             SnapshotJson = Write(new { plan.Id, plan.PatientId, plan.CycleId, plan.Version, plan.Revision, plan.State, plan.Provisional,
                 plan.IsPublished, plan.StartDate, plan.EndDate, plan.ManualEditsConfirmed, plan.ClinicalProfileJson, plan.TargetsJson,
                 plan.MissingDataJson, plan.Instructions, plan.InstructionsEn, meals = plan.Meals.Select(EditOf).ToArray(), flags }) }, ct);
     }
     private NutritionView View(NutritionPrescription p, NutritionCaseContext context, NutritionEngine engine, bool includeMeals = true)
-        => new(p.Id, p.PatientId, p.CycleId, p.Version, p.Revision, p.State, p.Provisional, p.IsPublished, p.MenusOutdated,
+        => new(p.Id, p.PatientId, p.CycleId, p.Version, p.Revision, NutritionStateMachine.DisplayState(p, Today(context)), p.Provisional, p.IsPublished, p.MenusOutdated,
             p.ManualEditsConfirmed, p.StartDate, p.EndDate, Read<NutritionTargets>(p.TargetsJson), p.Instructions, p.InstructionsEn,
             p.NarrativeSource, Read<string[]>(p.MissingDataJson), includeMeals ? Flags(p, engine) : [],
             includeMeals ? p.Meals.OrderBy(m => m.DayNumber).ThenBy(m => m.ScheduledTime).Select(EditOf).ToArray() : [],
