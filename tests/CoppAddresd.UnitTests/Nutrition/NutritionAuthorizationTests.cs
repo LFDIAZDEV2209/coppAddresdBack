@@ -14,6 +14,7 @@ using CoppAddresd.Api.Security;
 using CoppAddresd.Application.DTOs.Ai;
 using CoppAddresd.Application.Features.Nutrition.Cases;
 using CoppAddresd.Application.Features.Nutrition.Engine;
+using CoppAddresd.Application.Features.Nutrition.Queries;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -75,6 +76,18 @@ public sealed class NutritionAuthorizationTests
         var key = new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(32));
         var saved = new List<NutritionPrescription>(); var events = new List<NutritionPrescriptionEvent>();
         var repository = Substitute.For<INutritionPrescriptionRepository>(); var store = Substitute.For<INutritionCaseStore>();
+        var inbox = Substitute.For<INutritionInboxRepository>();
+        inbox.ListAsync(Arg.Any<NutritionActor>(),Arg.Any<int>(),Arg.Any<int>(),Arg.Any<string?>(),Arg.Any<string?>(),Arg.Any<DateTime>(),Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var actor = call.Arg<NutritionActor>();
+                var rows = new List<NutritionInboxRow>();
+                if (actor.ViewAll || actor.ProfessionalId == Professional)
+                    rows.Add(new(OwnPatient,"Ana Ruiz","sin_plan",null,null,null,false,null,null,null,false,null,null));
+                if (actor.ViewAll)
+                    rows.Add(new(ForeignPatient,"Luis Prueba","sin_plan",null,null,null,false,null,null,null,false,null,null));
+                return new NutritionInboxData(rows,rows.Count);
+            });
         repository.ListFoodsAsync(Arg.Any<CancellationToken>()).Returns(NutritionMealSolverTests.Foods().Values.ToArray());
         var plan = new NutritionPrescription { Id = PlanId, PatientId = OwnPatient, CreatedBy = Owner,
             ClinicalProfileJson = JsonSerializer.Serialize(Patient, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
@@ -105,6 +118,7 @@ public sealed class NutritionAuthorizationTests
             s.AddMediatR(c => c.RegisterServicesFromAssemblyContaining<NutritionCaseCommand>());
             s.AddScoped<NutritionCases>(); s.AddSingleton(repository); s.AddSingleton(store); s.AddSingleton(clinical);
             s.AddSingleton(drafts); s.AddSingleton(Substitute.For<IProgramAssignmentRepository>()); s.AddSingleton(TimeProvider.System);
+            s.AddSingleton(inbox);
         }).Configure(app =>
         {
             app.UseMiddleware<ExceptionHandlingMiddleware>(); app.UseRouting(); app.UseAuthentication(); app.UseAuthorization();
@@ -152,5 +166,39 @@ public sealed class NutritionAuthorizationTests
             Assert.Contains(code, CoppAddresd.Auth.Constants.PermissionCodes.GetAll());
         }
         Assert.Equal(PermissionCodes.All.Count, PermissionCodes.All.Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData("absent",401)] [InlineData("none",403)] [InlineData("own",200)] [InlineData("reviewer",200)]
+    [InlineData("scoped",200)] [InlineData("global",200)] [InlineData("app",403)] [InlineData("invalid-id",403)]
+    public async Task HttpInbox_RequiresErpAndEitherPermission(string mode,int expected)
+    {
+        using var h = await StartAsync(); h.Authenticate(mode);
+        var response = await h.Client.GetAsync("/api/v1/nutrition/inbox");
+        Assert.Equal(expected,(int)response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("own",1)] [InlineData("global",2)]
+    public async Task HttpInbox_UsesJwtScope_IgnoresClientActor_AndKeepsEnvelope(string mode,int total)
+    {
+        using var h = await StartAsync(); h.Authenticate(mode);
+        var response = await h.Client.GetAsync($"/api/v1/nutrition/inbox?page=1&pageSize=20&viewAll=true&professionalId={Guid.NewGuid()}");
+        Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("items,total,page,pageSize",string.Join(',',json.EnumerateObject().Select(x => x.Name)));
+        Assert.Equal(total,json.GetProperty("total").GetInt32());
+        var item = json.GetProperty("items")[0];
+        Assert.Equal("patientId,patientName,state,prescription",string.Join(',',item.EnumerateObject().Select(x => x.Name)));
+        Assert.Equal(OwnPatient,item.GetProperty("patientId").GetGuid()); Assert.Equal("sin_plan",item.GetProperty("state").GetString());
+        Assert.Equal(JsonValueKind.Null,item.GetProperty("prescription").ValueKind);
+    }
+
+    [Theory]
+    [InlineData("page=0")] [InlineData("pageSize=101")] [InlineData("state=invalid")]
+    public async Task HttpInbox_InvalidFilters_Return400(string query)
+    {
+        using var h = await StartAsync(); h.Authenticate("own");
+        Assert.Equal(HttpStatusCode.BadRequest,(await h.Client.GetAsync("/api/v1/nutrition/inbox?"+query)).StatusCode);
     }
 }

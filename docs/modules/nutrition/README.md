@@ -411,3 +411,32 @@ Listado nominal de fallos heredados, comandos e inventario de cada referencia
 retirada en `openspec/changes/plan-nutricional-erp/NOTES-backend.md` del
 workspace compartido. Esta evidencia es local y simulada; no certifica
 frontend conectado ni despliegue. Sin push, deploy ni cambios de app móvil.
+
+## Ola 4B: bandeja de integración
+
+`GET /api/v1/nutrition/inbox?page=1&pageSize=20&state=sin_plan&search=Ana`
+requiere JWT ERP y Nutrition.Manage o Nutrition.Approve. Devuelve
+`{items:[{patientId,patientName,state,prescription}],total,page,pageSize}`;
+prescription es null para sin_plan o un resumen con id, version, revision,
+state, provisional, k, startDate, endDate, isPublished y criticalAlertCount.
+Incluye todos los pacientes no borrados del alcance del actor. Relación
+patient_professionals Active para propios; Patients.View habilita alcance
+global. No acepta alcance ni identidad desde query/body.
+
+Última prescripción por createdAt DESC/id DESC, incluidos borradores. Sin
+plan primero por nombre/patientId; resto por fecha descendente/patientId.
+State y búsqueda por nombre se filtran en PostgreSQL antes de contar/paginar;
+por_renovar se calcula con la fecha local de cada paciente, igual que el módulo.
+Críticas se cuentan con ClinicalFlags sin cargar comidas; dos consultas por
+página, sin N+1. Search es parcial/case-insensitive y trata comodines como
+texto; vacío no filtra. Page mínimo 1, pageSize 1–100, search máximo 200 y
+state reconocido; límites inválidos devuelven 400. Un actor con permiso pero
+sin pacientes ve página vacía. Se conserva el listado por paciente anterior.
+
+Contrato completo y ejemplos literales en el `CONTRACT.md` de OpenSpec.
+
+Medición local EXPLAIN ANALYZE (2000 pacientes/4000 prescripciones): página de
+20 filas en 14,704 ms, planning 0,305 ms. Usa el índice existente
+ix_nutrition_prescriptions_patient_state_validity en la búsqueda por paciente;
+sin bloques temporales. Prueba verifica dos consultas y cero tracking. No se
+añade índice/migración sin necesidad medida. No extrapola latencia productiva.

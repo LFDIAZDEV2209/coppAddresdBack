@@ -40,6 +40,7 @@ public static class DependencyInjection
 
         services.AddScoped<IAppointmentReferenceSearchRepository, AppointmentReferenceSearchRepository>();
         services.AddScoped<INutritionPrescriptionRepository, NutritionPrescriptionRepository>();
+        services.AddScoped<INutritionInboxRepository, NutritionInboxRepository>();
         services.AddScoped<INutritionCaseStore, NutritionCaseStore>();
         services.AddScoped<CoppAddresd.Application.Features.Nutrition.Cases.NutritionCases>();
         services.AddSingleton(TimeProvider.System);
