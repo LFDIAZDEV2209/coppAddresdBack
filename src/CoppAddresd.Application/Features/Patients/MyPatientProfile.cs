@@ -1,3 +1,4 @@
+using CoppAddresd.Domain.ValueObjects;
 using CoppAddresd.Application.Features.Patients.Events;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
@@ -97,6 +98,8 @@ public sealed class UpdateMyPatientProfileCommandHandler(
             || !ValidContact(secondary.Name, secondary.Relationship, secondary.Phone, secondary.Email)))
             return new(false, "El segundo contacto requiere nombre y teléfono válidos.", null);
 
+        if (hasSecondary) secondary = secondary! with { Phone = EmergencyContactPhone.Normalize(secondary.Phone) };
+
         var patient = await patients.GetByUserIdAsync(request.UserId, ct);
         if (patient is null)
             return new(false, "No hay un perfil de paciente vinculado a tu cuenta.", null);
@@ -123,7 +126,7 @@ public sealed class UpdateMyPatientProfileCommandHandler(
         {
             var previous = EmergencyContactCodec.Deserialize(patient.EmergencyContact);
             var primary = editsPrimary
-                ? new EmergencyContactDto(request.EmergencyName, request.EmergencyRelationship, request.EmergencyPhone, request.EmergencyEmail)
+                ? new EmergencyContactDto(request.EmergencyName, request.EmergencyRelationship, EmergencyContactPhone.Normalize(request.EmergencyPhone), request.EmergencyEmail)
                 : previous;
             if (primary is null || string.IsNullOrWhiteSpace(primary.Name) || string.IsNullOrWhiteSpace(primary.Phone)) return new(false, "El contacto principal requiere nombre y teléfono.", null);
             patient.EmergencyContact = EmergencyContactCodec.Serialize(primary with {
@@ -181,8 +184,7 @@ public sealed class UpdateMyPatientProfileCommandHandler(
     private static bool ValidContact(string? name, string? relationship, string? phone, string? email)
     {
         if (name?.Length > 200 || relationship?.Length > 100 || phone?.Length > 20 || email?.Length > 320) return false;
-        var digits = phone?.Count(char.IsAsciiDigit) ?? 0;
-        if (digits is < 7 or > 15 || !System.Text.RegularExpressions.Regex.IsMatch(phone ?? "", @"^\+?[0-9().\s-]+$")) return false;
+        if (EmergencyContactPhone.Normalize(phone) is null) return false;
         return string.IsNullOrWhiteSpace(email) || System.Net.Mail.MailAddress.TryCreate(email.Trim(), out _);
     }
 }

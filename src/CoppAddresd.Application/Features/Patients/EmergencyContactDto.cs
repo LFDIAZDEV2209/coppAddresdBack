@@ -1,3 +1,4 @@
+using CoppAddresd.Domain.ValueObjects;
 using System.Text.Json;
 using FluentValidation;
 
@@ -28,6 +29,7 @@ public sealed class EmergencyContactValidator : AbstractValidator<EmergencyConta
             if (secondary is null || new[] { secondary.Name, secondary.Relationship, secondary.Phone, secondary.Email }.All(string.IsNullOrWhiteSpace)) return;
             if (string.IsNullOrWhiteSpace(secondary.Name) || string.IsNullOrWhiteSpace(secondary.Phone)) context.AddFailure("El segundo contacto requiere nombre y teléfono.");
             if (secondary.Name?.Length > 200 || secondary.Relationship?.Length > 100 || secondary.Phone?.Length > 20 || secondary.Email?.Length > 320) context.AddFailure("Revisa los datos del segundo contacto.");
+            if (!string.IsNullOrWhiteSpace(secondary.Phone) && EmergencyContactPhone.Normalize(secondary.Phone) is null) context.AddFailure("El teléfono del segundo contacto no es válido.");
             if (!string.IsNullOrWhiteSpace(secondary.Email) && !System.Net.Mail.MailAddress.TryCreate(secondary.Email.Trim(), out _)) context.AddFailure("El correo del segundo contacto no tiene un formato válido.");
         });
 
@@ -42,6 +44,9 @@ public sealed class EmergencyContactValidator : AbstractValidator<EmergencyConta
             .NotEmpty()
             .When(x => !string.IsNullOrWhiteSpace(x.Name))
             .WithMessage("El contacto de emergencia requiere teléfono.");
+
+        RuleFor(x => x.Phone).Must(phone => string.IsNullOrWhiteSpace(phone) || EmergencyContactPhone.Normalize(phone) is not null)
+            .WithMessage("Ingresa un teléfono válido con código de país.");
 
         RuleFor(x => x.Email)
             .MaximumLength(320)

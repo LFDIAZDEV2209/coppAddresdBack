@@ -1,3 +1,4 @@
+using CoppAddresd.Domain.ValueObjects;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -42,10 +43,10 @@ public static class SosSupport
     /// (Colombia +57, convención del workspace: Auth OtpService normaliza
     /// igual). El contacto de emergencia es un campo libre del perfil.
     /// </summary>
-    public const string DefaultCountryCode = "57";
+    public const string DefaultCountryCode = EmergencyContactPhone.DefaultCountryCode;
 
     /// <summary>Longitud máxima del teléfono crudo almacenado en el JSON del contacto (schema: emergency_contact max 500).</summary>
-    public const int MaxPhoneRawLength = 30;
+    public const int MaxPhoneRawLength = EmergencyContactPhone.MaxRawLength;
 
     /// <summary>
     /// ¿El valor es estrictamente un UUIDv4 canónico (formato "D", versión 4,
@@ -76,39 +77,7 @@ public static class SosSupport
     /// el país por defecto). Devuelve null si el valor es inválido o no
     /// normalizable (→ 422 en la activación, REQ-SOS-03).
     /// </summary>
-    public static string? NormalizePhoneE164(string? rawPhone)
-    {
-        if (string.IsNullOrWhiteSpace(rawPhone))
-        {
-            return null;
-        }
-
-        var trimmed = rawPhone.Trim();
-        if (trimmed.Length > MaxPhoneRawLength)
-        {
-            return null;
-        }
-
-        // El contacto es free-form: acepta espacios, guiones y paréntesis.
-        var digits = new string(trimmed.Where(char.IsDigit).ToArray());
-        if (digits.Length is < 8 or > 15)
-        {
-            // E.164: máx 15 dígitos (E.164 recomendación ITU-T) y un número
-            // realista nunca tiene menos de 8.
-            return null;
-        }
-
-        if (
-            trimmed.TrimStart().StartsWith('+')
-            || digits.StartsWith(DefaultCountryCode, StringComparison.Ordinal)
-        )
-        {
-            // Con '+' o ya con el código de país por defecto: respeta el prefijo.
-            return "+" + digits;
-        }
-
-        return "+" + DefaultCountryCode + digits;
-    }
+    public static string? NormalizePhoneE164(string? rawPhone) => EmergencyContactPhone.Normalize(rawPhone);
 
     /// <summary>
     /// Extrae el teléfono crudo del JSON del contacto de emergencia
