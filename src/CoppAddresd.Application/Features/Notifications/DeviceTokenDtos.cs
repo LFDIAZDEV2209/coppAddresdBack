@@ -9,7 +9,8 @@ public record DeviceTokenDto(
     string Token,
     string Platform,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt)
+    DateTimeOffset? UpdatedAt,
+    string Language = "es")
 {
     public static DeviceTokenDto FromEntity(DeviceToken entity) => new(
         entity.Id,
@@ -17,8 +18,9 @@ public record DeviceTokenDto(
         entity.Token,
         entity.Platform,
         entity.CreatedAt,
-        entity.UpdatedAt);
+        entity.UpdatedAt,
+        entity.Language);
 }
 
 /// <summary>Payload de registro de un dispositivo (POST /api/v1/notifications/devices).</summary>
-public record RegisterDeviceTokenRequest(string Token, string Platform);
+public record RegisterDeviceTokenRequest(string Token, string Platform, string? Language = null);

@@ -36,7 +36,7 @@ public class NotificationsController(IMediator mediator) : ControllerBase
         }
 
         var deviceToken = await mediator.Send(
-            new RegisterDeviceTokenCommand(userId, request.Token, request.Platform ?? string.Empty),
+            new RegisterDeviceTokenCommand(userId, request.Token, request.Platform ?? string.Empty, request.Language),
             ct);
 
         return Ok(deviceToken);
@@ -96,7 +96,8 @@ public class NotificationsController(IMediator mediator) : ControllerBase
         }
 
         var result = await mediator.Send(
-            new SendPushNotificationCommand(request.UserId, request.Title, request.Body, request.AgentTypeId),
+            new SendPushNotificationCommand(request.UserId, request.Title, request.Body, request.AgentTypeId,
+                EnglishTitle: request.EnglishTitle, EnglishBody: request.EnglishBody),
             ct);
 
         return Ok(result);

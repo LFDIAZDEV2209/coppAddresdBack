@@ -1,5 +1,5 @@
 using CoppAddresd.Application.Interfaces;
-using CoppAddresd.Domain.Entities;
+using CoppAddresd.Domain.Exceptions;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -7,10 +7,10 @@ namespace CoppAddresd.Application.Features.Notifications;
 
 /// <summary>
 /// Registra (upsert) el token de un dispositivo para el usuario autenticado.
-/// Si el par (UserId, Token) ya existe, actualiza plataforma y UpdatedAt;
-/// si no, inserta una fila nueva.
+/// El token queda asociado solo a esta cuenta; actualiza plataforma/idioma
+/// y conserva el idioma de la misma cuenta cuando no se envía.
 /// </summary>
-public record RegisterDeviceTokenCommand(Guid UserId, string Token, string Platform)
+public record RegisterDeviceTokenCommand(Guid UserId, string Token, string Platform, string? Language = null)
     : IRequest<DeviceTokenDto>;
 
 public sealed class RegisterDeviceTokenCommandHandler(
@@ -21,32 +21,13 @@ public sealed class RegisterDeviceTokenCommandHandler(
     {
         var token = request.Token.Trim();
         var platform = NormalizePlatform(request.Platform);
+        var language = request.Language?.Trim().ToLowerInvariant();
+        if (language is not null and not "es" and not "en")
+            throw new UnprocessableEntityException("El idioma debe ser es o en.");
 
-        var existing = await repository.GetByUserAndTokenAsync(request.UserId, token, ct);
-
-        if (existing is not null)
-        {
-            existing.Platform = platform;
-            existing.UpdatedAt = DateTimeOffset.UtcNow;
-            await repository.UpdateAsync(existing, ct);
-
-            logger.LogInformation("DeviceToken actualizado: userId={UserId}, tokenId={Id}", request.UserId, existing.Id);
-            return DeviceTokenDto.FromEntity(existing);
-        }
-
-        var deviceToken = new DeviceToken
-        {
-            Id = Guid.NewGuid(),
-            UserId = request.UserId,
-            Token = token,
-            Platform = platform,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
-
-        await repository.AddAsync(deviceToken, ct);
-
-        logger.LogInformation("DeviceToken registrado: userId={UserId}, tokenId={Id}", request.UserId, deviceToken.Id);
-        return DeviceTokenDto.FromEntity(deviceToken);
+        var device = await repository.RegisterForUserAsync(request.UserId, token, platform, language, ct);
+        logger.LogInformation("DeviceToken registrado: userId={UserId}, tokenId={Id}", request.UserId, device.Id);
+        return DeviceTokenDto.FromEntity(device);
     }
 
     /// <summary>
@@ -64,7 +45,7 @@ public sealed class RegisterDeviceTokenCommandHandler(
 
 /// <summary>
 /// Desregistra el token de un dispositivo: elimina la fila del usuario
-/// autenticado (o por token, si el userId no matchea). Devuelve false si no
+/// autenticado; nunca elimina el registro de otra cuenta. Devuelve false si no
 /// existía.
 /// </summary>
 public record UnregisterDeviceTokenCommand(Guid UserId, string Token) : IRequest<bool>;
@@ -77,19 +58,10 @@ public sealed class UnregisterDeviceTokenCommandHandler(
     {
         var token = request.Token.Trim();
 
-        // Primero intenta el par exacto (userId, token); si no, intenta por
-        // token a secas (el token FCM es único por dispositivo).
-        var existing = await repository.GetByUserAndTokenAsync(request.UserId, token, ct)
-            ?? await repository.GetByTokenAsync(token, ct);
+        var removed = await repository.UnregisterForUserAsync(request.UserId, token, ct);
+        if (!removed) return false;
 
-        if (existing is null)
-        {
-            return false;
-        }
-
-        await repository.DeleteAsync(existing, ct);
-
-        logger.LogInformation("DeviceToken desregistrado: userId={UserId}, tokenId={Id}", request.UserId, existing.Id);
+        logger.LogInformation("DeviceToken desregistrado: userId={UserId}", request.UserId);
         return true;
     }
 }

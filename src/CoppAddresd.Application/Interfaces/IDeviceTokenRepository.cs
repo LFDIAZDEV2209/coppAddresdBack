@@ -8,6 +8,13 @@ namespace CoppAddresd.Application.Interfaces;
 /// </summary>
 public interface IDeviceTokenRepository
 {
+    /// <summary>Asocia atómicamente un token opaco al usuario autenticado y actualiza o inserta su preferencia.
+    /// Si se omite el idioma, conserva únicamente la preferencia existente de ese mismo usuario.</summary>
+    Task<DeviceToken> RegisterForUserAsync(Guid userId, string token, string platform, string? language, CancellationToken ct = default);
+
+    /// <summary>Elimina solo el token de este usuario, de forma serializada respecto de la reasignación de cuenta.</summary>
+    Task<bool> UnregisterForUserAsync(Guid userId, string token, CancellationToken ct = default);
+
     /// <summary>Devuelve el token registrado para el par (userId, token), o null.</summary>
     Task<DeviceToken?> GetByUserAndTokenAsync(Guid userId, string token, CancellationToken ct = default);
 
@@ -22,7 +29,7 @@ public interface IDeviceTokenRepository
     /// <summary>Inserta un nuevo token.</summary>
     Task AddAsync(DeviceToken deviceToken, CancellationToken ct = default);
 
-    /// <summary>Actualiza un token existente (platform/updatedAt).</summary>
+    /// <summary>Actualiza un token existente (platform/language/updatedAt).</summary>
     Task UpdateAsync(DeviceToken deviceToken, CancellationToken ct = default);
 
     /// <summary>Elimina un token existente.</summary>

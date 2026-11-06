@@ -531,6 +531,95 @@ public sealed class OtpServiceTests
         Assert.Equal(0, harness.Twilio.CheckCount);
     }
 
+    [Theory]
+    [InlineData(null, "Tu código de verificación de CoppAddresd", "Vence en 5 minutos.", "es")]
+    [InlineData("es", "Tu código de verificación de CoppAddresd", "Vence en 5 minutos.", "es")]
+    [InlineData("en", "Your CoppAddresd verification code", "It expires in 5 minutes.", "en")]
+    [InlineData("en-US", "Your CoppAddresd verification code", "It expires in 5 minutes.", "en")]
+    public async Task SendOtp_Email_UsesRequestedLanguageInSubjectHtmlAndPlainText(
+        string? language, string subject, string expiry, string locale)
+    {
+        using var harness = new OtpTestHarness(Patient(email: "qa@example.invalid"));
+        var (success, _, response) = await harness.Otp.SendOtpAsync(new SendOtpRequest
+        {
+            DocumentNumber = Document, ContactId = "email", Language = language,
+        });
+        Assert.True(success);
+        var message = Assert.Single(harness.Email.Messages);
+        Assert.Equal(subject, message.Subject);
+        Assert.Contains(expiry, message.HtmlBody);
+        Assert.Contains(expiry, message.PlainTextBody);
+        Assert.Contains($"lang=\"{locale}\"", message.HtmlBody);
+        Assert.Contains(response!.DevCode!, message.HtmlBody);
+        Assert.Contains(response.DevCode!, message.PlainTextBody);
+        Assert.Equal("qa@example.invalid", message.To);
+        Assert.NotEqual(response.DevCode, Assert.Single(harness.Db.OtpCodes).CodeHash);
+        Assert.Equal(0, harness.Twilio.SendCount);
+    }
+
+    [Theory]
+    [InlineData("en")]
+    [InlineData("es")]
+    public async Task SendOtp_Phone_ForwardsMessageLanguageWithoutChangingDestination(string language)
+    {
+        using var harness = new OtpTestHarness(Patient(phoneCountryCode: "57", phoneNumber: "3001234567"));
+        var (success, _, response) = await harness.Otp.SendOtpAsync(new SendOtpRequest
+        {
+            DocumentNumber = Document, ContactId = "phone", Language = language,
+        });
+        Assert.True(success);
+        Assert.Equal(language, harness.Twilio.LastSendLanguage);
+        Assert.Equal("+573001234567", harness.Twilio.LastSendPhone);
+        Assert.Null(response!.DevCode);
+        Assert.Empty(harness.Db.OtpCodes);
+    }
+
+    [Theory]
+    [InlineData(null, "Recupera tu contraseña de CoppAddresd", "Vence en 5 minutos.", "es")]
+    [InlineData("es", "Recupera tu contraseña de CoppAddresd", "Vence en 5 minutos.", "es")]
+    [InlineData("en", "Reset your CoppAddresd password", "It expires in 5 minutes.", "en")]
+    public async Task Recovery_Email_UsesRequestedLanguageAndKeepsCodeOutOfResponse(
+        string? language, string subject, string expiry, string locale)
+    {
+        using var harness = new OtpTestHarness(Patient(email: "qa@example.invalid"));
+        await harness.EnableRecoveryAsync();
+        var response = await harness.Recovery.SendAsync(new PasswordRecoveryCodeRequest
+        {
+            DocumentNumber = Document, ContactId = "email", Language = language,
+        }, CancellationToken.None);
+        var message = Assert.Single(harness.Email.Messages);
+        Assert.Equal(subject, message.Subject);
+        Assert.Contains(expiry, message.HtmlBody);
+        Assert.Contains(expiry, message.PlainTextBody);
+        Assert.Contains($"lang=\"{locale}\"", message.HtmlBody);
+        Assert.Null(response.DevCode);
+        var code = System.Text.RegularExpressions.Regex.Match(message.HtmlBody, @"<strong>(\d{6})</strong>").Groups[1].Value;
+        Assert.Equal(6, code.Length);
+        var stored = Assert.Single(harness.Db.OtpCodes);
+        Assert.Equal("RecoveryEmail", stored.Channel);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(stored.Salt + code))), stored.CodeHash);
+        Assert.Equal(0, harness.Twilio.SendCount);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("es")]
+    [InlineData("en")]
+    public async Task Recovery_Phone_ForwardsLanguageAndNeverEmailsOrExposesCode(string? language)
+    {
+        using var harness = new OtpTestHarness(Patient(phoneCountryCode: "57", phoneNumber: "3001234567"));
+        await harness.EnableRecoveryAsync();
+        var response = await harness.Recovery.SendAsync(new PasswordRecoveryCodeRequest
+        {
+            DocumentNumber = Document, ContactId = "phone", Language = language,
+        }, CancellationToken.None);
+        Assert.Equal(language, harness.Twilio.LastSendLanguage);
+        Assert.Equal("+573001234567", harness.Twilio.LastSendPhone);
+        Assert.Empty(harness.Email.Messages);
+        Assert.Null(response.DevCode);
+        Assert.Equal("RecoveryPhone", Assert.Single(harness.Db.OtpCodes).Channel);
+    }
+
     // =====================================================================
     // Helpers
     // =====================================================================
@@ -575,6 +664,7 @@ public sealed class OtpServiceTests
         public int SendCount { get; private set; }
         public int CheckCount { get; private set; }
         public string? LastSendPhone { get; private set; }
+        public string? LastSendLanguage { get; private set; }
         public string? LastCheckPhone { get; private set; }
         public string? LastCheckCode { get; private set; }
 
@@ -584,10 +674,11 @@ public sealed class OtpServiceTests
         public Func<string, string, CancellationToken, Task<TwilioCheckOtpResult>> OnCheck { get; set; } =
             (phone, code, ct) => Task.FromResult(new TwilioCheckOtpResult(true, "approved"));
 
-        public Task<TwilioSendOtpResult> SendAsync(string phoneNumber, CancellationToken ct = default)
+        public Task<TwilioSendOtpResult> SendAsync(string phoneNumber, CancellationToken ct = default, string? language = null)
         {
             SendCount++;
             LastSendPhone = phoneNumber;
+            LastSendLanguage = language;
             return OnSend(phoneNumber, ct);
         }
 
@@ -806,6 +897,7 @@ public sealed class OtpServiceTests
             }));
 
             services.AddScoped<OtpService>();
+            services.AddScoped<PasswordRecoveryService>();
 
             _provider = services.BuildServiceProvider();
             _scope = _provider.CreateScope();
@@ -821,6 +913,16 @@ public sealed class OtpServiceTests
 
         public AuthDbContext Db => _scope.ServiceProvider.GetRequiredService<AuthDbContext>();
         public OtpService Otp => _scope.ServiceProvider.GetRequiredService<OtpService>();
+        public PasswordRecoveryService Recovery => _scope.ServiceProvider.GetRequiredService<PasswordRecoveryService>();
+
+        public async Task EnableRecoveryAsync()
+        {
+            var userId = await SeedUserAsync();
+            await SeedApplicationAsync();
+            Db.UserApplications.Add(new UserApplication { UserId = userId, ApplicationId = Db.Applications.Single().Id });
+            await Db.SaveChangesAsync();
+            PatientLookup.Result = PatientLookup.Result! with { UserId = userId };
+        }
 
         public async Task<Guid> SeedUserAsync()
         {

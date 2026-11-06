@@ -49,6 +49,9 @@ public static class DependencyInjection
         services.AddScoped<CoppAddresd.Application.Features.Nutrition.Cases.NutritionCases>();
         services.AddSingleton(TimeProvider.System);
         services.AddHttpClient<INutritionDraftClient, NutritionDraftClient>();
+        services.AddHttpClient<IContentTranslationService, ContentTranslationService>();
+        services.AddSingleton<IFoodNameCatalog, CuratedFoodNameCatalog>();
+        services.AddScoped<CoppAddresd.Application.Services.Localization.PatientContentLocalization>();
         services.AddScoped<AuditTriggerInterceptor>();
 
         services.AddDbContext<AppDbContext>(

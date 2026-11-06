@@ -117,7 +117,7 @@ El flujo verifica la propiedad de la identidad vía OTP y aprovisiona la cuenta:
    → Busca el paciente en app.patient_profiles por document_number (LOWER).
    → Devuelve datos básicos + los correos/teléfonos asociados ENMASCARADOS
      (label) para que el usuario elija el canal. 404 si no existe.
-2. POST /api/auth/send-otp    { documentNumber, contactId }
+2. POST /api/auth/send-otp    { documentNumber, contactId, language? }
    → Resuelve el destino REAL en el servidor (el cliente nunca lo envía).
    → Canal PHONE (SMS):
        ResolveContact → formato E.164 → OtpProtectionService.CheckCanSend
@@ -148,6 +148,32 @@ El flujo verifica la propiedad de la identidad vía OTP y aprovisiona la cuenta:
    → 401 si el código es inválido/expirado/sin intentos; 429 si el intento fue
      bloqueado por el motor de protección (límite o lockout).
 ```
+
+### Idioma de los mensajes OTP y recuperación
+
+`POST /api/auth/send-otp` y `POST /api/auth/recovery-code` aceptan `language`
+opcional. La app envía el idioma elegido en cada envío y reenvío. `en` y sus
+variantes regionales se normalizan a inglés; `es`, un valor desconocido o la
+omisión de clientes anteriores usan español. No se persiste ni se infiere el
+idioma del nombre, correo, teléfono o país del paciente.
+
+- Activación y recuperación por correo: `AuthOtpMessages` genera asunto,
+  HTML y alternativa de texto en el idioma solicitado. Mantiene código,
+  expiración y nombre; el nombre se escapa al interpolarlo en HTML.
+- SMS de ambos flujos: `TwilioOtpService` envía `Locale=en|es` explícito a
+  Verify V2. El proveedor conserva la generación y validación del código;
+  no se introduce un SMS artesanal ni se devuelve el código al cliente.
+- Verificar OTP, restablecer contraseña y definir la primera contraseña no
+  envían otro correo/SMS. El idioma no altera tokens, permisos, contactos,
+  límites, expiración ni las reglas de un solo uso.
+
+La [API oficial de Verify](https://www.twilio.com/docs/verify/api/verification)
+documenta que `Locale` sustituye la selección por país; si una plantilla
+configurada no tiene esa traducción, el proveedor puede usar su idioma de
+respaldo. Los tests comprueban el payload real del SDK con cliente falso y
+los correos completos con sumidero falso. Confirmar la plantilla del Verify
+Service desplegado y la entrega en un teléfono/correo sigue siendo una
+verificación operativa; estos tests nunca envían mensajes reales.
 
 El discriminador de canal en `verify-otp` es la presencia de un código EMAIL
 pendiente en `auth.otp_codes` (el canal PHONE nunca persiste filas): con fila

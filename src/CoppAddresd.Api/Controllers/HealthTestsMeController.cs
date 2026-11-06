@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Localization;
+using CoppAddresd.Application.Services.Localization;
 using CoppAddresd.Api.Context;
 using CoppAddresd.Application.Features.HealthTests;
 using CoppAddresd.Application.Features.HealthTests.Assignments;
@@ -63,6 +65,7 @@ public class HealthTestsMeController(
     /// de la app móvil). Los completados se conservan para marcarlos como
     /// realizados; no se incluyen cancelled/expired.
     /// </summary>
+    [LocalizePatientContent(PatientContentProfile.AssessmentAssignments)]
     [HttpGet("assignments")]
     public async Task<ActionResult<IReadOnlyList<HealthTestAssignmentDto>>> GetMyAssignments(
         CancellationToken ct
@@ -105,6 +108,7 @@ public class HealthTestsMeController(
     }
 
     /// <summary>Baterías asignadas al paciente (con progreso por test).</summary>
+    [LocalizePatientContent(PatientContentProfile.AssessmentBatteries)]
     [HttpGet("batteries")]
     public async Task<ActionResult<IReadOnlyList<HealthTestBatteryAssignmentDto>>> GetMyBatteries(
         CancellationToken ct
@@ -121,6 +125,7 @@ public class HealthTestsMeController(
     }
 
     /// <summary>Preguntas de la versión de una asignación (shape ScaleQ de la app móvil).</summary>
+    [LocalizePatientContent(PatientContentProfile.AssessmentDetail)]
     [HttpGet("tests/{assignmentId:guid}")]
     public async Task<ActionResult<HealthTestVersionDetailDto>> GetMyTest(
         Guid assignmentId,
@@ -192,6 +197,7 @@ public class HealthTestsMeController(
     // ===================== RESULTADOS / HISTORIAL =====================
 
     /// <summary>Resumen de scores por dimensión + tipificación (derivación determinista).</summary>
+    [LocalizePatientContent(PatientContentProfile.AssessmentResults)]
     [HttpGet("results")]
     public async Task<ActionResult<IReadOnlyList<HealthTestResultDto>>> GetMyResults(
         CancellationToken ct
@@ -208,6 +214,7 @@ public class HealthTestsMeController(
     }
 
     /// <summary>Historial de evaluaciones del paciente (para evolución).</summary>
+    [LocalizePatientContent(PatientContentProfile.AssessmentHistory)]
     [HttpGet("history")]
     public async Task<ActionResult<IReadOnlyList<HealthTestEvaluationDto>>> GetMyHistory(
         CancellationToken ct

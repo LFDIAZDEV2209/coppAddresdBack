@@ -103,7 +103,7 @@ public sealed class AssignmentOperationsTests
         var settings=Settings();settings.CurrentValue.NotificationLanguage="en";
         var notifier=new ProgramAssignmentNotifier(repo,sender,settings,NullLogger<ProgramAssignmentNotifier>.Instance);
         Assert.Equal(1,await notifier.DispatchAsync(null,now,CancellationToken.None));
-        await sender.Received(1).Send(Arg.Is<SendPushNotificationCommand>(c=>c.SkipPush && !c.SkipChat && c.Body=="EN"
+        await sender.Received(1).Send(Arg.Is<SendPushNotificationCommand>(c=>c.SkipPush && !c.SkipChat && c.Body=="ES" && c.EnglishBody=="EN" && c.EnglishTitle=="Title" && c.ChatBody=="EN"
             && c.Data!["body_es"]=="ES" && c.Data["event_type"]=="program-ready"),Arg.Any<CancellationToken>());
     }
 }

@@ -23,10 +23,12 @@ public sealed class ProgramAssignmentNotifier(IProgramAssignmentNoticeRepository
             {
                 var english=string.Equals(settings.CurrentValue.NotificationLanguage,"en",StringComparison.OrdinalIgnoreCase);
                 var result=await sender.Send(new SendPushNotificationCommand(notice.UserId,
-                    english ? notice.TitleEn : notice.TitleEs, english ? notice.MessageEn : notice.MessageEs,
+                    notice.TitleEs, notice.MessageEs,
                     settings.CurrentValue.NotificationAgentTypeId, SkipPush:push, SkipChat:chat,
                     Data:new Dictionary<string,string> { ["event_type"]="program-ready",["route"]=notice.Link,
-                        ["recommendation_id"]=notice.RecommendationId.ToString(),["body_es"]=notice.MessageEs,["body_en"]=notice.MessageEn }),ct);
+                        ["recommendation_id"]=notice.RecommendationId.ToString(),["body_es"]=notice.MessageEs,["body_en"]=notice.MessageEn },
+                    EnglishTitle:notice.TitleEn, EnglishBody:notice.MessageEn,
+                    ChatBody:english ? notice.MessageEn : notice.MessageEs),ct);
                 push=push || (result.FailedCount==0 && result.DisabledCount==0);
                 chat=chat || !string.IsNullOrWhiteSpace(result.ThreadId);
             }

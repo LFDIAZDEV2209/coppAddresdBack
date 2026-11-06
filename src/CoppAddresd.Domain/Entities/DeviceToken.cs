@@ -23,6 +23,9 @@ public sealed class DeviceToken
     /// </summary>
     public string Platform { get; set; } = default!;
 
+    /// <summary>Idioma revisado de las notificaciones push de este dispositivo; los dispositivos anteriores usan español por defecto.</summary>
+    public string Language { get; set; } = "es";
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset? UpdatedAt { get; set; }

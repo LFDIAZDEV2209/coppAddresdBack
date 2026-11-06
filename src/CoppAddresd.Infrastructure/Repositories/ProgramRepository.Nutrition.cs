@@ -1,5 +1,6 @@
 using System.Globalization;
 using CoppAddresd.Application.DTOs.ProgramProgress;
+using CoppAddresd.Application.Features.Nutrition;
 using CoppAddresd.Application.Features.Nutrition.Engine;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
@@ -42,7 +43,7 @@ public sealed partial class ProgramRepository
                     $"{i.FoodItem!.Name} x {i.Grams.ToString("0.##", CultureInfo.InvariantCulture)} g"));
                 return new NutritionMealDto(PrescriptionMealType(m.MealType).ToString(), m.MenuName, text,
                     (int)macros.K, (decimal)macros.P, (decimal)macros.C, (decimal)macros.F, (decimal)macros.Fi,
-                    m.WaterMl, m.Notes ?? plan.Instructions, Array.IndexOf(NutritionEngine.MealOrder, m.MealType));
+                    m.WaterMl, PatientNutritionInstructions.ForPatient(m.Notes ?? plan.Instructions), Array.IndexOf(NutritionEngine.MealOrder, m.MealType));
             }).ToArray();
     }
 }

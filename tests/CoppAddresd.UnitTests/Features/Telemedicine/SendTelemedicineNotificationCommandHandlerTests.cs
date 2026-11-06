@@ -25,7 +25,7 @@ public sealed class SendTelemedicineNotificationCommandHandlerTests
         IEmployeeRepository Employees,
         INotificationDedupeRepository Dedupe);
 
-    private static Fixture Build()
+    private static Fixture Build(IContentTranslationService? translations = null)
     {
         var tokens = Substitute.For<IDeviceTokenRepository>();
         var fcm = Substitute.For<IFcmClient>();
@@ -53,7 +53,7 @@ public sealed class SendTelemedicineNotificationCommandHandlerTests
 
         var handler = new SendTelemedicineNotificationCommandHandler(
             tokens, fcm, sms, patients, employees, dedupe,
-            NullLogger<SendTelemedicineNotificationCommandHandler>.Instance);
+            NullLogger<SendTelemedicineNotificationCommandHandler>.Instance, translations);
 
         return new Fixture(handler, tokens, fcm, sms, patients, employees, dedupe);
     }
@@ -99,6 +99,24 @@ public sealed class SendTelemedicineNotificationCommandHandlerTests
             channels ?? ["Push"],
             data,
             dedupeKey);
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task English_tokens_receive_translated_copy_or_no_partial_fanout_when_translation_fails(bool valid)
+    {
+        var translations = Substitute.For<IContentTranslationService>(); var f = Build(translations);
+        var english = Token("english-token"); english.Language = "en";
+        f.Tokens.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new[] { Token("spanish-token"), english });
+        translations.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(
+            valid ? new Dictionary<string,string> { ["Recordatorio de tu cita"] = "Appointment reminder", ["Tu consulta es mañana a las 10:00."] = "Your consultation is tomorrow at 10:00." } : new Dictionary<string,string>());
+        var result = await f.Handler.Handle(Command(dedupeKey: "test-language"), CancellationToken.None);
+        Assert.Equal(valid ? "sent" : "failed", result.Push);
+        if (valid)
+            await f.Fcm.Received(1).SendAsync("english-token", "Appointment reminder", "Your consultation is tomorrow at 10:00.", Arg.Any<Dictionary<string,string>?>(), Arg.Any<CancellationToken>());
+        else Assert.Empty(f.Fcm.ReceivedCalls());
+        await f.Dedupe.Received(1).UpsertAsync("test-language", Arg.Any<Guid>(), valid ? "sent" : "failed", "skipped", voiceStatus: null, ct: Arg.Any<CancellationToken>());
+    }
 
     // =====================================================================
     // Push

@@ -32,8 +32,10 @@ public interface ITwilioOtpService
     /// <paramref name="phoneNumber"/> debe estar en formato E.164
     /// (ej. <c>+15765550100</c>); la conversión desde el formato interno de
     /// CoppAddresd es responsabilidad del llamador (OtpService).
+    /// <paramref name="language"/> selecciona es/en; si se omite se usa español,
+    /// sin inferir el idioma del prefijo telefónico.
     /// </summary>
-    Task<TwilioSendOtpResult> SendAsync(string phoneNumber, CancellationToken ct = default);
+    Task<TwilioSendOtpResult> SendAsync(string phoneNumber, CancellationToken ct = default, string? language = null);
 
     /// <summary>
     /// Verifica un código OTP contra Twilio Verify.

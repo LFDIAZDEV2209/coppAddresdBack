@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Localization;
+using CoppAddresd.Application.Services.Localization;
 using CoppAddresd.Api.Context;
 using CoppAddresd.Application.Features.Measurements.Queries.GetMyMeasurements;
 using CoppAddresd.Application.Features.Measurements.Queries.GetMyMetricsHistory;
@@ -48,6 +50,7 @@ public class MyPatientProfileController(IMediator mediator, ICurrentContext curr
     /// case-insensitive) y paginación por cursor opaco (<c>pageSize</c> 1-100,
     /// <c>cursor</c> de la página anterior).
     /// </summary>
+    [LocalizePatientContent(PatientContentProfile.Measurements)]
     [HttpGet("measurements")]
     [ProducesResponseType(typeof(CursorPagedResult<MeasurementItemDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -130,6 +133,7 @@ public class MyPatientProfileController(IMediator mediator, ICurrentContext curr
     /// Sin perfil vinculado → 404; sin plan activo asignado → 404 con mensaje
     /// propio (no es un error: el paciente aún no tiene plan).
     /// </summary>
+    [LocalizePatientContent(PatientContentProfile.NutritionPlan)]
     [HttpGet("nutrition-plan")]
     [ProducesResponseType(typeof(MyNutritionPlanDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

@@ -68,6 +68,7 @@ public sealed class NutritionPrescriptionConfiguration : IEntityTypeConfiguratio
         b.Property(x => x.WaterMl).HasColumnName("water_ml");
         b.Property(x => x.Instructions).HasColumnName("instructions");
         b.Property(x => x.InstructionsEn).HasColumnName("instructions_en");
+        b.Property(x => x.InstructionsEnSourceHash).HasColumnName("instructions_en_source_hash").HasMaxLength(64);
         b.Property(x => x.ReturnComment).HasColumnName("return_comment");
         b.Property(x => x.CreatedBy).HasColumnName("created_by");
         b.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("timestamptz");

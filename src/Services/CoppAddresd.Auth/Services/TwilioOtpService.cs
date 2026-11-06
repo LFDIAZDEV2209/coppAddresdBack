@@ -45,7 +45,7 @@ public class TwilioOtpService : ITwilioOtpService
     }
 
     /// <inheritdoc />
-    public async Task<TwilioSendOtpResult> SendAsync(string phoneNumber, CancellationToken ct = default)
+    public async Task<TwilioSendOtpResult> SendAsync(string phoneNumber, CancellationToken ct = default, string? language = null)
     {
         EnsureEnabled();
         EnsureValidPhone(phoneNumber);
@@ -58,7 +58,11 @@ public class TwilioOtpService : ITwilioOtpService
         var options = new CreateVerificationOptions(
             pathServiceSid: _settings.VerifyServiceSid,
             to: phoneNumber,
-            channel: ChannelSms);
+            channel: ChannelSms)
+        {
+            // No inferir el idioma por el país del teléfono: la app lo indica explícitamente.
+            Locale = AuthMessageLanguage.Normalize(language),
+        };
 
         try
         {

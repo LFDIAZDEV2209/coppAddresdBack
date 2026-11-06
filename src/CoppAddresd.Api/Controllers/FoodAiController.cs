@@ -1,9 +1,11 @@
 using System.Security.Claims;
+using CoppAddresd.Api.Localization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.FoodAi;
 using CoppAddresd.Application.Features.FoodAi;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities.FoodAi;
+using CoppAddresd.Domain.Exceptions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,18 +29,24 @@ public class FoodAiController : ControllerBase
     private readonly IFoodAnalysisRepository _analysisRepository;
     private readonly IMediator _mediator;
     private readonly ILogger<FoodAiController> _logger;
+    private readonly IContentTranslationService? _translations;
+    private readonly IFoodNameCatalog? _foodNames;
 
     public FoodAiController(
         IFoodAiClient foodAiClient,
         IFoodAnalysisRepository analysisRepository,
         IMediator mediator,
-        ILogger<FoodAiController> logger
+        ILogger<FoodAiController> logger,
+        IContentTranslationService? translations = null,
+        IFoodNameCatalog? foodNames = null
     )
     {
         _foodAiClient = foodAiClient;
         _analysisRepository = analysisRepository;
         _mediator = mediator;
         _logger = logger;
+        _translations = translations;
+        _foodNames = foodNames;
     }
 
     /// <summary>
@@ -68,7 +76,8 @@ public class FoodAiController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<AnalyzeFoodImageResult>> Analyze(
         [FromForm] IFormFile image,
-        CancellationToken ct
+        CancellationToken ct,
+        [FromQuery] string? language = null
     )
     {
         if (image is null || image.Length == 0)
@@ -96,6 +105,10 @@ public class FoodAiController : ControllerBase
                 userId
             );
             var result = await _mediator.Send(command, ct);
+            PatientContentLocalizationFilter.AddVaryHeaders(Response);
+            var englishNames = PatientContentLocalizationFilter.ResolvePatientLanguage(HttpContext, language) == "en"
+                ? await ResolveEnglishNamesAsync(result.Foods.Select(food => (food.Name, food.NameEn)), ct)
+                : new Dictionary<string, string>();
             return Ok(
                 new
                 {
@@ -110,7 +123,7 @@ public class FoodAiController : ControllerBase
                     {
                         name = f.Name,
                         nutritionQuery = f.NutritionQuery,
-                        nameEn = f.NameEn,
+                        nameEn = !string.IsNullOrWhiteSpace(f.NameEn) ? f.NameEn : englishNames.GetValueOrDefault(f.Name),
                         confidence = f.Confidence,
                         boundingBox = f.BoundingBox,
                         segmentation = f.Segmentation,
@@ -137,6 +150,8 @@ public class FoodAiController : ControllerBase
             );
             return BadRequest(ErrorResponse(ex.Code, ex.Message));
         }
+        catch (ContentTranslationUnavailableException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (FoodAiException ex)
         {
             _logger.LogError(
@@ -193,7 +208,7 @@ public class FoodAiController : ControllerBase
     /// </summary>
     [HttpGet("analyses/{analysisId:guid}")]
     [Authorize]
-    public async Task<ActionResult> GetAnalysis(Guid analysisId, CancellationToken ct)
+    public async Task<ActionResult> GetAnalysis(Guid analysisId, CancellationToken ct, [FromQuery] string? language = null)
     {
         var userId = TryGetUserId();
         if (userId is null)
@@ -208,7 +223,11 @@ public class FoodAiController : ControllerBase
             return NotFound(ErrorResponse("ANALYSIS_NOT_FOUND", "Análisis no encontrado."));
         }
 
-        return Ok(MapAnalysis(analysis));
+        PatientContentLocalizationFilter.AddVaryHeaders(Response);
+        var englishNames = PatientContentLocalizationFilter.ResolvePatientLanguage(HttpContext, language) == "en"
+            ? await ResolveEnglishNamesAsync(analysis.Items.Select(item => (item.Name, item.NameEn)), ct)
+            : new Dictionary<string, string>();
+        return Ok(MapAnalysis(analysis, englishNames));
     }
 
     /// <summary>
@@ -306,7 +325,27 @@ public class FoodAiController : ControllerBase
         return Guid.TryParse(value, out var id) ? id : null;
     }
 
-    private static object MapAnalysis(FoodAnalysis analysis) =>
+    private async Task<IReadOnlyDictionary<string, string>> ResolveEnglishNamesAsync(
+        IEnumerable<(string Name, string? NameEn)> items, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        var missing = items.Where(item => string.IsNullOrWhiteSpace(item.NameEn)).Select(item => item.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name)).Distinct(StringComparer.Ordinal).ToArray();
+        if (_foodNames is not null)
+            foreach (var pair in await _foodNames.GetEnglishNamesAsync(missing, ct)) names[pair.Key] = pair.Value;
+        var pending = missing.Where(name => !names.ContainsKey(name)).ToArray();
+        if (pending.Length > 0)
+        {
+            if (_translations is null) throw new ContentTranslationUnavailableException();
+            foreach (var pair in await _translations.TranslateAsync(pending, "en", ct)) names[pair.Key] = pair.Value;
+            if (pending.Any(name => !names.TryGetValue(name, out var text) || string.IsNullOrWhiteSpace(text)))
+                throw new ContentTranslationUnavailableException();
+        }
+        return names;
+    }
+
+    private static object MapAnalysis(FoodAnalysis analysis, IReadOnlyDictionary<string, string> englishNames) =>
         new
         {
             analysisId = analysis.AnalysisId,
@@ -326,6 +365,7 @@ public class FoodAiController : ControllerBase
                 .Select(i => new
                 {
                     name = i.Name,
+                    nameEn = !string.IsNullOrWhiteSpace(i.NameEn) ? i.NameEn : englishNames.GetValueOrDefault(i.Name),
                     nutritionSource = i.NutritionStatus == "available"
                         ? (i.Source == "llm_estimate" ? "llm_estimate" : "usda") : null,
                     confidence = i.DetectionConfidence,

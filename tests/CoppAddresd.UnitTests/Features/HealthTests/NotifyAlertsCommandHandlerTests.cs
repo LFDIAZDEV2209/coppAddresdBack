@@ -3,6 +3,7 @@ using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
+using CoppAddresd.Domain.Exceptions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
@@ -198,26 +199,40 @@ public sealed class NotifyAlertsCommandHandlerTests
     }
 
     [Fact]
-    public async Task Envio_en_ingles_cae_al_espanol_si_falta_traduccion()
+    public async Task Missing_English_template_is_translated_before_patient_interpolation()
     {
-        var patient = BuildPatient();
-        var alert = BuildAlert(patient.Id);
+        var patient = BuildPatient(); var alert = BuildAlert(patient.Id);
+        var template = BuildTemplate(NotificationChannel.sms, "Hola [paciente], no cambies [valor] mg");
+        var translations = Substitute.For<IContentTranslationService>();
+        translations.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            Assert.Equal(new[] { "Hola [paciente], no cambies [valor] mg" }, call.Arg<IReadOnlyCollection<string>>());
+            return new Dictionary<string, string> { [template.BodyTemplateEs] = "Hello [paciente], do not change [valor] mg" };
+        });
+        var (handler, repo, sms, _) = BuildHandler([alert], patient, [template], translations);
+        sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new SmsSendResult(true, "fake", null));
+        var result = await handler.Handle(new(new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], Language: NotificationLanguage.en)), CancellationToken.None);
+        Assert.Equal("Hello Ana Pérez, do not change 4.2 mg", Assert.Single(result.Items).RenderedBody);
+        await sms.Received(1).SendAsync(Arg.Any<string>(), "Hello Ana Pérez, do not change 4.2 mg", Arg.Any<CancellationToken>());
+        await repo.Received(1).AddNotificationsAsync(Arg.Is<IReadOnlyList<HealthTestNotification>>(n => n[0].Language == NotificationLanguage.en && n[0].RenderedBody == "Hello Ana Pérez, do not change 4.2 mg"), Arg.Any<CancellationToken>());
+        Assert.Null(template.BodyTemplateEn); // delivery projection leaves the canonical authored template unchanged
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Missing_or_corrupted_English_template_aborts_before_any_send(bool corruptPlaceholders)
+    {
+        var patient = BuildPatient(); var alert = BuildAlert(patient.Id);
         var template = BuildTemplate(NotificationChannel.sms, "Hola [paciente]");
-        var (handler, _, _, _) = BuildHandler([alert], patient, [template]);
-
-        var result = await handler.Handle(
-            new NotifyAlertsCommand(
-                new NotifyAlertsRequest(
-                    [alert.Id],
-                    [NotificationChannel.sms],
-                    Language: NotificationLanguage.en,
-                    Preview: true
-                )
-            ),
-            CancellationToken.None
-        );
-
-        Assert.Equal("Hola Ana Pérez", Assert.Single(result.Items).RenderedBody);
+        var translations = Substitute.For<IContentTranslationService>();
+        translations.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(
+            corruptPlaceholders ? new Dictionary<string,string> { [template.BodyTemplateEs] = "Hello [patient]" } : new Dictionary<string,string>());
+        var (handler, repo, sms, community) = BuildHandler([alert], patient, [template], translations);
+        await Assert.ThrowsAsync<ContentTranslationUnavailableException>(() => handler.Handle(new(new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], Language: NotificationLanguage.en)), CancellationToken.None));
+        Assert.DoesNotContain(sms.ReceivedCalls(), c => c.GetMethodInfo().Name == "SendAsync");
+        Assert.DoesNotContain(community.ReceivedCalls(), c => c.GetMethodInfo().Name == "SendDirectMessageAsync");
+        await repo.DidNotReceiveWithAnyArgs().AddNotificationsAsync(default!, default);
     }
 
     [Fact]
@@ -254,6 +269,62 @@ public sealed class NotifyAlertsCommandHandlerTests
             );
     }
 
+    [Fact]
+    public async Task Authored_test_and_indicator_labels_are_English_while_identifiers_and_values_stay_local()
+    {
+        var patient = BuildPatient(); var alert = BuildAlert(patient.Id);
+        alert.Rule = new HealthTestAlertRule { Name = "Control metabólico" };
+        alert.Result!.Code = "glucose"; alert.Result.Label = "Glucosa";
+        var template = BuildTemplate(NotificationChannel.sms, "[test]: [indicador] [valor] para [paciente]", bodyEn: "[test]: [indicador] [valor] for [paciente]");
+        var translator = Substitute.For<IContentTranslationService>();
+        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            Assert.Equal(new[] { "Control metabólico", "Glucosa" }, call.Arg<IReadOnlyCollection<string>>());
+            return new Dictionary<string,string> { ["Control metabólico"] = "Metabolic check-in", ["Glucosa"] = "Glucose" };
+        });
+        var (handler, _, _, _) = BuildHandler([alert], patient, [template], translator);
+        var result = await handler.Handle(new(new NotifyAlertsRequest([alert.Id], [NotificationChannel.sms], Language: NotificationLanguage.en, Preview: true)), CancellationToken.None);
+        Assert.Equal("Metabolic check-in: Glucose 4.2 for Ana Pérez", Assert.Single(result.Items).RenderedBody);
+        Assert.Equal("Glucosa", alert.Result.Label); Assert.Equal(4.2m, alert.Result.Value);
+    }
+
+    [Fact]
+    public async Task English_preview_translates_authored_name_and_template_without_identifiers()
+    {
+        var patient = BuildPatient(); var alert = BuildAlert(patient.Id);
+        var template = BuildTemplate(NotificationChannel.sms, "Hola [paciente]");
+        template.NameEn = null;
+        var (_, repo, _, _) = BuildHandler([alert], patient);
+        repo.GetTemplateByIdAsync(template.Id, false, Arg.Any<CancellationToken>()).Returns(template);
+        var translator = Substitute.For<IContentTranslationService>();
+        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(call =>
+        {
+            Assert.Equal(new[] { template.NameEs, "Hola [paciente]" }, call.Arg<IReadOnlyCollection<string>>());
+            return new Dictionary<string,string> { [template.NameEs] = "Test template", [template.BodyTemplateEs] = "Hello [paciente]" };
+        });
+        var handler = new PreviewNotificationTemplateQueryHandler(repo, Substitute.For<IHealthTestRepository>(), new HealthTestTemplateRenderer(), translator);
+        var result = await handler.Handle(new(template.Id, AlertId: alert.Id, Language: NotificationLanguage.en), CancellationToken.None);
+        Assert.NotNull(result); Assert.Equal("Test template", result.TemplateName);
+        Assert.Equal("Hello Ana Pérez", result.RenderedBody); Assert.False(result.UsedFallbackLanguage);
+        await repo.DidNotReceiveWithAnyArgs().AddNotificationsAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task English_test_send_resolves_template_before_interpolating_patient()
+    {
+        var patient = BuildPatient(); var template = BuildTemplate(NotificationChannel.sms, "Hola [paciente]");
+        var (_, repo, sms, community) = BuildHandler([], patient);
+        repo.GetTemplateByIdAsync(template.Id, false, Arg.Any<CancellationToken>()).Returns(template);
+        var translator = Substitute.For<IContentTranslationService>();
+        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(
+            new Dictionary<string,string> { [template.BodyTemplateEs] = "Hello [paciente]" });
+        sms.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(new SmsSendResult(true, "fake", null));
+        var handler = new SendTestNotificationCommandHandler(repo, new HealthTestTemplateRenderer(), sms, community, translator);
+        var result = await handler.Handle(new(template.Id, new(NotificationChannel.sms, Language: NotificationLanguage.en, PatientId: patient.Id, PhoneNumber: "+10000000000")), CancellationToken.None);
+        Assert.NotNull(result); Assert.Equal("Hello Ana Pérez", result.RenderedBody);
+        await sms.Received(1).SendAsync("+10000000000", "Hello Ana Pérez", Arg.Any<CancellationToken>());
+    }
+
     private static (
         NotifyAlertsCommandHandler Handler,
         IHealthTestNotificationRepository NotificationRepository,
@@ -262,7 +333,8 @@ public sealed class NotifyAlertsCommandHandlerTests
     ) BuildHandler(
         IReadOnlyList<HealthTestAlert> alerts,
         PatientProfile patient,
-        IReadOnlyList<HealthTestNotificationTemplate>? templates = null
+        IReadOnlyList<HealthTestNotificationTemplate>? templates = null,
+        IContentTranslationService? translations = null
     )
     {
         var notificationRepository = Substitute.For<IHealthTestNotificationRepository>();
@@ -294,7 +366,8 @@ public sealed class NotifyAlertsCommandHandlerTests
             new HealthTestTemplateRenderer(),
             smsSender,
             communitySender,
-            NullLogger<NotifyAlertsCommandHandler>.Instance
+            NullLogger<NotifyAlertsCommandHandler>.Instance,
+            translations
         );
 
         return (handler, notificationRepository, smsSender, communitySender);

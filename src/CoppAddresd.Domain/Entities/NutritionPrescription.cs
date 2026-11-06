@@ -27,6 +27,7 @@ public sealed class NutritionPrescription
     public int? WaterMl { get; set; }
     public string? Instructions { get; set; }
     public string? InstructionsEn { get; set; }
+    public string? InstructionsEnSourceHash { get; set; }
     public string? ReturnComment { get; set; }
     public Guid CreatedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
