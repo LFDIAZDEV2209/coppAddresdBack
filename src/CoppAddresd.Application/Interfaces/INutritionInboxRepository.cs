@@ -12,4 +12,5 @@ public interface INutritionInboxRepository
 public sealed record NutritionInboxData(IReadOnlyList<NutritionInboxRow> Items, int Total);
 public sealed record NutritionInboxRow(Guid PatientId, string PatientName, string State, Guid? PrescriptionId,
     int? Version, int? Revision, bool Provisional, double? K, DateOnly? StartDate, DateOnly? EndDate,
-    bool IsPublished, string? ClinicalProfileJson, string? TargetsJson);
+    bool IsPublished, string? ClinicalProfileJson, string? TargetsJson, string? GenerationState = null,
+    bool GenerationFallback = false, string? GenerationReason = null, DateTime? GenerationUpdatedAt = null);

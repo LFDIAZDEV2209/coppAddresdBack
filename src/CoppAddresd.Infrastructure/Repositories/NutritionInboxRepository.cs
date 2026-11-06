@@ -20,6 +20,8 @@ public sealed class NutritionInboxRepository(AppDbContext db) : INutritionInboxR
                 COALESCE(n.is_published, false) AS "IsPublished",
                 n.clinical_profile_json::text AS "ClinicalProfileJson", n.targets_json::text AS "TargetsJson",
                 n.created_at AS "CreatedAt",
+                g.state AS "GenerationState", COALESCE(g.fallback, false) AS "GenerationFallback",
+                g.reason AS "GenerationReason", g.updated_at AS "GenerationUpdatedAt",
                 CASE WHEN n.id IS NULL THEN 'sin_plan'
                      WHEN n.state = 'aprobado' AND n.is_published
                         AND n.end_date <= (@now AT TIME ZONE p.timezone)::date + 5 THEN 'por_renovar'
@@ -31,6 +33,11 @@ public sealed class NutritionInboxRepository(AppDbContext db) : INutritionInboxR
                 FROM app.nutrition_prescriptions r WHERE r.patient_id = p.id
                 ORDER BY r.created_at DESC, r.id DESC LIMIT 1
             ) n ON true
+            LEFT JOIN LATERAL (
+                SELECT r.state, r.fallback, r.reason, r.updated_at
+                FROM app.nutrition_draft_reservations r WHERE r.patient_id = p.id
+                ORDER BY r.created_at DESC, r.id DESC LIMIT 1
+            ) g ON true
             WHERE p.deleted_at IS NULL
                 AND (@global OR EXISTS (SELECT 1 FROM app.patient_professionals pp
                     WHERE pp.patient_id = p.id AND pp.professional_id = @professional AND pp.status = 'Active'))
@@ -59,7 +66,8 @@ public sealed class NutritionInboxRepository(AppDbContext db) : INutritionInboxR
                 new("limit", pageSize), new("offset", ((long)page - 1) * pageSize) }).ToArray();
             var items = await db.Database.SqlQueryRaw<NutritionInboxRow>(Source + """
                 SELECT "PatientId", "PatientName", "State", "PrescriptionId", "Version", "Revision", "Provisional",
-                    "K", "StartDate", "EndDate", "IsPublished", "ClinicalProfileJson", "TargetsJson"
+                    "K", "StartDate", "EndDate", "IsPublished", "ClinicalProfileJson", "TargetsJson",
+                    "GenerationState", "GenerationFallback", "GenerationReason", "GenerationUpdatedAt"
                 FROM filtered
                 ORDER BY ("PrescriptionId" IS NULL) DESC,
                     CASE WHEN "PrescriptionId" IS NULL THEN "PatientName" END ASC,

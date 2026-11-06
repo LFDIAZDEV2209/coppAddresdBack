@@ -40,6 +40,31 @@ public sealed partial class NutritionPlanWorkflowTests
     }
 
     [NutritionPostgresFact]
+    public async Task DraftGeneration_ReplayRetryReadyAndInbox_AreDurable()
+    {
+        await using var db=Context(); var ids=await ReadyDraftPatientAsync(db);
+        var access=new NutritionCaseStore(db); var reservations=new NutritionDraftReservationStore(db);
+        var handler=new NutritionDraftGenerationCommandHandler(access,new ProgramAssignmentRepository(db),reservations,TimeProvider.System);
+        var request=new NutritionDraftGenerationCommand(ids.PatientId,InboxGlobal);
+        var first=await handler.Handle(request,CancellationToken.None);
+        Assert.Equal("pending",first.State); Assert.Null(first.PrescriptionId);
+        Assert.Equal(first,await handler.Handle(request,CancellationToken.None));
+        Assert.Equal(1,await db.NutritionDraftReservations.CountAsync()); Assert.False(await db.NutritionPrescriptions.AnyAsync());
+        var row=Assert.Single((await Inbox(db).Handle(new(InboxGlobal),CancellationToken.None)).Items);
+        Assert.Equal("pending",row.GenerationState); Assert.False(row.GenerationFallback); Assert.NotNull(row.GenerationUpdatedAt);
+        await Assert.ThrowsAsync<CoppAddresd.Domain.Exceptions.NotFoundException>(()=>handler.Handle(request with { Actor=InboxGlobal with { ViewAll=false } },CancellationToken.None));
+        await db.NutritionDraftReservations.ExecuteUpdateAsync(s=>s.SetProperty(x=>x.State,"failed").SetProperty(x=>x.Attempts,5));
+        Assert.Equal("pending",(await handler.Handle(request,CancellationToken.None)).State);
+        Assert.Equal(5,(await db.NutritionDraftReservations.AsNoTracking().SingleAsync()).Attempts);
+        Assert.True(await DraftPipeline(db).ProcessNextAsync(CancellationToken.None));
+        var ready=await handler.Handle(request,CancellationToken.None);
+        Assert.Equal("ready",ready.State); Assert.Equal(first.ReservationId,ready.PrescriptionId);
+        Assert.Equal(1,await db.NutritionPrescriptions.CountAsync());
+        row=Assert.Single((await Inbox(db).Handle(new(InboxGlobal),CancellationToken.None)).Items);
+        Assert.Equal("ready",row.GenerationState); Assert.True(row.GenerationFallback);
+    }
+
+    [NutritionPostgresFact]
     public async Task DraftPipeline_ReplayAndRestart_ProduceExactlyOneSystemDraftWithFallback()
     {
         await using var db = Context(); var ids = await ReadyDraftPatientAsync(db); var pipeline = DraftPipeline(db);

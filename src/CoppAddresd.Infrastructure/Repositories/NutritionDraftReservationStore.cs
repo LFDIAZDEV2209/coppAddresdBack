@@ -9,7 +9,20 @@ namespace CoppAddresd.Infrastructure.Repositories;
 public sealed class NutritionDraftReservationStore(AppDbContext db) : INutritionDraftReservationStore
 {
     public Task<NutritionDraftReservation> ReserveAsync(Guid patientId, Guid batteryAssignmentId, CancellationToken ct)
+        => WriteAsync(() => ReserveCoreAsync(patientId, batteryAssignmentId, ct), ct);
+
+    public Task<NutritionDraftReservation> RequestAsync(Guid patientId, Guid batteryAssignmentId, DateTime now, CancellationToken ct)
         => WriteAsync(async () =>
+        {
+            var reservation = await ReserveCoreAsync(patientId, batteryAssignmentId, ct);
+            if (reservation.State != "failed") return reservation;
+            await db.NutritionDraftReservations.Where(x => x.Id == reservation.Id && x.State == "failed")
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.State, "pending").SetProperty(x => x.NextAttemptAt, now)
+                    .SetProperty(x => x.Reason, (string?)null).SetProperty(x => x.UpdatedAt, now), ct);
+            return await db.NutritionDraftReservations.AsNoTracking().SingleAsync(x => x.Id == reservation.Id, ct);
+        }, ct);
+
+    private async Task<NutritionDraftReservation> ReserveCoreAsync(Guid patientId, Guid batteryAssignmentId, CancellationToken ct)
     {
         var id = Guid.NewGuid(); var now = DateTime.UtcNow;
         await db.Database.ExecuteSqlInterpolatedAsync($"""
@@ -19,7 +32,7 @@ public sealed class NutritionDraftReservationStore(AppDbContext db) : INutrition
             ON CONFLICT (patient_id, battery_assignment_id) DO NOTHING
             """, ct);
         return await db.NutritionDraftReservations.AsNoTracking().SingleAsync(x => x.PatientId == patientId && x.BatteryAssignmentId == batteryAssignmentId, ct);
-    }, ct);
+    }
 
     public Task<NutritionDraftReservation?> ClaimAsync(DateTime now, CancellationToken ct)
         => WriteAsync(async () =>
@@ -33,8 +46,9 @@ public sealed class NutritionDraftReservationStore(AppDbContext db) : INutrition
             UPDATE app.nutrition_draft_reservations SET state='generating', claim_token={token}, lease_until={lease},
                 attempts=attempts+1, updated_at={now}
             WHERE id = (SELECT id FROM app.nutrition_draft_reservations
-                WHERE attempts < 5 AND ((state IN ('pending','failed') AND next_attempt_at <= {now})
-                    OR (state='generating' AND lease_until <= {now}))
+                WHERE (state='pending' AND next_attempt_at <= {now})
+                    OR (attempts < 5 AND ((state='failed' AND next_attempt_at <= {now})
+                    OR (state='generating' AND lease_until <= {now})))
                 ORDER BY next_attempt_at, id FOR UPDATE SKIP LOCKED LIMIT 1)
             RETURNING *
             """).AsNoTracking().ToListAsync(ct);

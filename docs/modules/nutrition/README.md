@@ -501,3 +501,13 @@ claim_token. No se alteran el handler legacy, ECS, la app ni su DTO.
 La migración agrega únicamente `app.nutrition_draft_reservations`; Down conserva
 la tabla por diseño y documenta retirada manual. Up idempotente permite reaplicar
 tras rollback del binario sin perder reservas ni tocar datos legacy.
+
+### Recuperación de generación (Ola 8, 8.3)
+
+`POST /api/v1/nutrition/patients/{patientId}/draft-generation`: Nutrition.Manage,
+actor JWT y 404 fuera de alcance. Devuelve 202 con reserva sin contenido parcial,
+o 200 con prescriptionId si ya está lista. La reserva paciente+batería reutiliza
+ON CONFLICT dentro de una transacción corta; reprogramar failed conserva attempts.
+Pending permite un intento manual adicional tras agotar los cinco automáticos.
+La bandeja expone estado/fallback/motivo técnico/fecha de la última reserva usando
+los mismos dos SQL por página, sin cargar comidas ni añadir consultas por fila.

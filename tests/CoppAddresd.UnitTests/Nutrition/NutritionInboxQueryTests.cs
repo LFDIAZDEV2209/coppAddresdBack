@@ -47,13 +47,16 @@ public sealed class NutritionInboxQueryTests
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var row = new NutritionInboxRow(Guid.Parse("22222222-2222-2222-2222-222222222222"),"Ana Ruiz","por_renovar",
             Guid.Parse("55555555-5555-5555-5555-555555555555"),2,7,true,1850,
-            new(2026,10,12),new(2026,11,10),true,JsonSerializer.Serialize(p,json),JsonSerializer.Serialize(NutritionEngine.ComputeTargets(p),json));
+            new(2026,10,12),new(2026,11,10),true,JsonSerializer.Serialize(p,json),JsonSerializer.Serialize(NutritionEngine.ComputeTargets(p),json), "failed", true, "attempts_exhausted", new DateTime(2026,11,6,2,0,0,DateTimeKind.Utc));
         repository.ListAsync(actor,2,10,"por_renovar","Ana",new DateTime(2026,11,6,2,0,0,DateTimeKind.Utc),Arg.Any<CancellationToken>())
             .Returns(new NutritionInboxData([row],11));
         using var cancel = new CancellationTokenSource();
         var result = await new NutritionInboxQueryHandler(repository,new Clock()).Handle(new(actor,2,10,"por_renovar"," Ana "),cancel.Token);
         Assert.Equal(11,result.Total); Assert.Equal(2,result.Page); Assert.Equal(10,result.PageSize);
-        var prescription = Assert.Single(result.Items).Prescription!;
+        var item = Assert.Single(result.Items);
+        Assert.Equal("failed",item.GenerationState); Assert.True(item.GenerationFallback);
+        Assert.Equal("attempts_exhausted",item.GenerationReason); Assert.Equal(row.GenerationUpdatedAt,item.GenerationUpdatedAt);
+        var prescription = item.Prescription!;
         Assert.Equal(row.PrescriptionId,prescription.Id); Assert.Equal(4,prescription.CriticalAlertCount);
         Assert.Equal("por_renovar",prescription.State); Assert.Equal(1850,prescription.K);
         await repository.Received(1).ListAsync(actor,2,10,"por_renovar","Ana",new DateTime(2026,11,6,2,0,0,DateTimeKind.Utc),cancel.Token);
@@ -73,6 +76,6 @@ public sealed class NutritionInboxQueryTests
         var page = await new NutritionInboxQueryHandler(repository,new Clock()).Handle(new(actor,Search:"  "),CancellationToken.None);
         Assert.Null(Assert.Single(page.Items).Prescription);
         var actual = JsonSerializer.Serialize(page,new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        Assert.Equal("{\"items\":[{\"patientId\":\"11111111-1111-1111-1111-111111111111\",\"patientName\":\"Ana Ruiz\",\"state\":\"sin_plan\",\"prescription\":null}],\"total\":1,\"page\":1,\"pageSize\":20}",actual);
+        Assert.Equal("{\"items\":[{\"patientId\":\"11111111-1111-1111-1111-111111111111\",\"patientName\":\"Ana Ruiz\",\"state\":\"sin_plan\",\"prescription\":null,\"generationState\":null,\"generationFallback\":false,\"generationReason\":null,\"generationUpdatedAt\":null}],\"total\":1,\"page\":1,\"pageSize\":20}",actual);
     }
 }
