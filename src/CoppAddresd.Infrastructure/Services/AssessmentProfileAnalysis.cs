@@ -21,14 +21,36 @@ public sealed class AssessmentProfileAnalysis(HttpClient http, AppDbContext db,
 
     public async Task<AssessmentProfileGuidance?> GetAsync(Guid patientId, Guid userId, string language, bool generate, CancellationToken ct)
     {
+        // Una ejecución completa por instrumento: no mezclar dimensiones de un
+        // intento anterior ni colapsar los códigos «total» de tests diferentes.
+        var evaluationIds = await db.HealthTestEvaluations.AsNoTracking()
+            .Where(e => e.PatientId == patientId && e.Status == HealthTestEvaluationStatus.completed)
+            .GroupBy(e => e.Version!.InstrumentId)
+            .Select(g => g.OrderByDescending(e => e.CompletedAt ?? e.StartedAt).ThenByDescending(e => e.StartedAt)
+                .ThenByDescending(e => e.Id).Select(e => e.Id).First())
+            .ToListAsync(ct);
         var results = await db.HealthTestResults.AsNoTracking()
-            .Where(r => r.Evaluation!.PatientId == patientId && r.Evaluation.Status == HealthTestEvaluationStatus.completed)
-            .OrderByDescending(r => r.CreatedAt).ThenByDescending(r => r.Id).Take(250)
-            .Select(r => new { r.Id, r.EvaluationId, r.Code, r.Label, r.Value, r.Qualifier, r.Severity, r.ResultType })
+            .Where(r => evaluationIds.Contains(r.EvaluationId))
+            .OrderBy(r => r.Evaluation!.Version!.Instrument!.Code).ThenBy(r => r.Code)
+            .ThenBy(r => r.ResultType).ThenBy(r => r.Id).Take(251)
+            .Select(r => new { r.Id, r.EvaluationId, r.Code, r.Label, r.Value, r.Qualifier, r.Severity, r.ResultType,
+                TestCode = r.Evaluation!.Version!.Instrument!.Code,
+                TestName = r.Evaluation.Version.Instrument.Name, r.Evaluation.CompletedAt })
             .ToListAsync(ct);
         if (results.Count == 0) return null;
-        var latest = results.GroupBy(r => r.Code).Select(g => g.First()).ToArray();
-        var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("guidance-v1:" + JsonSerializer.Serialize(latest, Json)))).ToLowerInvariant();
+        // El límite protege al proveedor sin truncar silenciosamente un perfil.
+        if (results.Count > 250) throw new AssessmentAnalysisUnavailableException();
+        var pending = await db.HealthTestAssignments.AsNoTracking().CountAsync(a => a.PatientId == patientId &&
+            (a.Status == HealthTestAssignmentStatus.pending || a.Status == HealthTestAssignmentStatus.in_progress), ct);
+        var sources = results.Select(r => new AssessmentGuidanceSource(
+            $"{r.TestCode}:{r.Code}:{r.ResultType}", r.TestCode, r.TestName, r.Code, r.Label,
+            r.ResultType.ToString(), r.Value,
+            r.ResultType == HealthTestResultType.subscale ? null : r.Qualifier,
+            r.ResultType == HealthTestResultType.subscale ? null : r.Severity?.ToString(), r.CompletedAt)).ToArray();
+        if (sources.Select(s => s.EvidenceCode).Distinct(StringComparer.Ordinal).Count() != sources.Length)
+            throw new AssessmentAnalysisUnavailableException();
+        var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            "guidance-v2:" + JsonSerializer.Serialize(new { results, pending }, Json)))).ToLowerInvariant();
         var saved = await db.AssessmentProfileInsights.AsNoTracking()
             .SingleOrDefaultAsync(x => x.PatientId == patientId && x.SourceRevision == revision && x.Language == language, ct);
         if (saved is not null) return Read(saved);
@@ -38,10 +60,10 @@ public sealed class AssessmentProfileAnalysis(HttpClient http, AppDbContext db,
         {
             var request = new HttpRequestMessage(HttpMethod.Post, settings.Value.BaseUrl.TrimEnd('/') + "/internal/assessments/analyze");
             request.Headers.Add("X-Internal-Key", settings.Value.InternalApiKey);
-            request.Content = JsonContent.Create(new { language, results = latest.Select(r => new {
-                code = r.Code, label = r.Label, value = r.Value,
-                qualifier = r.ResultType == HealthTestResultType.subscale ? null : r.Qualifier,
-                severity = r.ResultType == HealthTestResultType.subscale ? null : r.Severity?.ToString(),
+            request.Content = JsonContent.Create(new { language, pending_assessments = pending, results = sources.Select(r => new {
+                code = r.EvidenceCode, label = r.Label, value = r.Value, instrument = r.TestName,
+                result_type = r.ResultType, completed_at = r.CompletedAt,
+                qualifier = r.Qualifier, severity = r.Severity,
             }) });
             using (request)
             using (var response = await http.SendAsync(request, ct))
@@ -50,13 +72,15 @@ public sealed class AssessmentProfileAnalysis(HttpClient http, AppDbContext db,
                 using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
                 var root = doc.RootElement;
                 var priorities = root.GetProperty("priorities").EnumerateArray().Select(item => new AssessmentGuidancePriority(
-                    item.GetProperty("title").GetString()!, item.GetProperty("explanation").GetString()!,
-                    item.GetProperty("action").GetString()!, item.GetProperty("evidence_codes").EnumerateArray().Select(v => v.GetString()!).ToArray())).ToArray();
-                var codes = latest.Select(r => r.Code).ToHashSet(StringComparer.Ordinal);
-                if (priorities.Length is < 1 or > 3 || priorities.Any(p => p.EvidenceCodes.Count == 0 || p.EvidenceCodes.Any(c => !codes.Contains(c))))
+                    ReadText(item.GetProperty("title"), 5, 120), ReadText(item.GetProperty("explanation"), 20, 1000),
+                    ReadText(item.GetProperty("action"), 10, 500), item.GetProperty("evidence_codes").EnumerateArray().Select(v => v.GetString()!).ToArray())).ToArray();
+                var codes = sources.Select(r => r.EvidenceCode).ToHashSet(StringComparer.Ordinal);
+                if (priorities.Length is < 1 or > 3 || priorities.Any(p => p.EvidenceCodes.Count is < 1 or > 10 || p.EvidenceCodes.Any(c => !codes.Contains(c))))
                     throw new JsonException("Referencias del análisis inválidas.");
-                guidance = new(root.GetProperty("summary").GetString()!, priorities,
-                    root.GetProperty("encouragement").GetString()!, root.GetProperty("questions").EnumerateArray().Select(v => v.GetString()!).ToArray(), DateTime.UtcNow, revision);
+                var questions = root.GetProperty("questions").EnumerateArray().Select(v => ReadText(v, 1, 400)).ToArray();
+                if (questions.Length > 3) throw new JsonException("Demasiadas preguntas en el análisis.");
+                guidance = new(ReadText(root.GetProperty("summary"), 40, 1600), priorities,
+                    ReadText(root.GetProperty("encouragement"), 10, 400), questions, DateTime.UtcNow, revision, sources, pending > 0);
             }
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -79,4 +103,11 @@ public sealed class AssessmentProfileAnalysis(HttpClient http, AppDbContext db,
 
     private static AssessmentProfileGuidance Read(AssessmentProfileInsight saved)
         => JsonSerializer.Deserialize<AssessmentProfileGuidance>(saved.ContentJson, Json)!;
+
+    private static string ReadText(JsonElement element, int min, int max)
+    {
+        var value = element.GetString()?.Trim();
+        return value is not null && value.Length >= min && value.Length <= max
+            ? value : throw new JsonException("Texto del análisis fuera de los límites.");
+    }
 }

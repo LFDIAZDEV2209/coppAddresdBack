@@ -4,7 +4,7 @@ using CoppAddresd.Domain.Exceptions;
 
 namespace CoppAddresd.Application.Services.Localization;
 
-public enum PatientContentProfile { NutritionPlan, ProgramSnapshot, Notifications, AssessmentAssignments, AssessmentBatteries, AssessmentDetail, AssessmentResults, AssessmentHistory, Measurements, Specialties, ProfessionalsCatalog }
+public enum PatientContentProfile { NutritionPlan, ProgramSnapshot, Notifications, AssessmentAssignments, AssessmentBatteries, AssessmentDetail, AssessmentResults, AssessmentHistory, Measurements, Specialties, ProfessionalsCatalog, AssessmentProfileAnalysis }
 
 /// <summary>Lista explícita de campos de presentación. Nunca recorre respuestas libres, códigos o identidades.</summary>
 public sealed class PatientContentLocalization(IContentTranslationService translations)
@@ -64,6 +64,7 @@ public sealed class PatientContentLocalization(IContentTranslationService transl
         PatientContentProfile.AssessmentDetail => ["name", "questions.*.section", "questions.*.text", "questions.*.minLabel", "questions.*.maxLabel", "questions.*.hint", "questions.*.options.*.text", "ranges.*.label"],
         PatientContentProfile.AssessmentResults => ["*.label", "*.qualifier"],
         PatientContentProfile.AssessmentHistory => ["*.testName", "*.results.*.label", "*.results.*.qualifier"],
+        PatientContentProfile.AssessmentProfileAnalysis => ["sources.*.testName", "sources.*.label", "sources.*.qualifier"],
         PatientContentProfile.Measurements => ["items.*.metricName"],
         PatientContentProfile.Specialties => ["*.name", "*.category", "*.description"],
         PatientContentProfile.ProfessionalsCatalog => ["data.*.professionalTypeDisplayName", "data.*.specialties.*.name"],

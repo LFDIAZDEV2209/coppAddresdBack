@@ -34,11 +34,13 @@ public class HealthTestsMeController(
     // ===================== MIS ASIGNACIONES =====================
 
     [HttpGet("profile-analysis")]
+    [LocalizePatientContent(PatientContentProfile.AssessmentProfileAnalysis)]
     public Task<ActionResult<AssessmentProfileGuidance>> GetProfileAnalysis(
         [FromServices] IAssessmentProfileAnalysis analysis, CancellationToken ct, [FromQuery] string language = "es")
         => ProfileAnalysisAsync(analysis, language, false, ct);
 
     [HttpPost("profile-analysis")]
+    [LocalizePatientContent(PatientContentProfile.AssessmentProfileAnalysis)]
     [EnableRateLimiting("assessment-analysis")]
     public Task<ActionResult<AssessmentProfileGuidance>> GenerateProfileAnalysis(
         [FromServices] IAssessmentProfileAnalysis analysis, CancellationToken ct, [FromQuery] string language = "es")

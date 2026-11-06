@@ -399,8 +399,8 @@ rendimiento con volumen sintético, concurrencia y extensibilidad) está documen
 
 - NO hay volcado de resultados a `app.clinical_measurements` todavía (la categoría `test_score` está
   reservada; decisión diferida y documentada en el spec).
-- NO hay narrativa IA del resultado (el `/me/results` es derivación determinista; la narrativa con AI
-  Service es iteración futura sin cambio de contrato).
+- `/me/results` conserva su derivación determinista. La explicación con IA se consulta y genera
+  por separado en `/me/profile-analysis` (ver abajo), sin recalcular ni sustituir puntuaciones.
 - Los índices están documentados en `docs/database/indexes.md` (migración `AddHealthTestsModule`).
 
 ## Alcance de rangos y subescalas (2026-10-08)
@@ -408,6 +408,52 @@ rendimiento con volumen sintético, concurrencia y extensibilidad) está documen
 `health_test_score_ranges` define rangos por versión, sin código de subescala. Por eso se aplica al score total y no a las dimensiones individuales. Al enviar una evaluación, sus resultados `subscale` guardan `qualifier` y `severity` nulos: un 4/4 no debe clasificarse con los umbrales de un total de 22 puntos. La ausencia de clasificación también evita alertas por una severidad de subescala inventada.
 
 El DTO compartido de resultados omite ambos campos para subescalas históricas en las consultas de ERP y app; mantiene IDs, valores y snapshots persistidos. No se recalculan evaluaciones ni se requiere migración de datos. El total y los indicadores conservan su comportamiento actual. Incorporar interpretaciones por dimensión requerirá rangos propios aprobados, no reutilizar los del total.
+
+## Análisis del perfil con Vita (2026-11-06)
+
+La app conserva la pantalla **Perfil → Batería de evaluación → Resultados de tus evaluaciones**.
+«Analizar mis resultados con Vita» llama a `POST /api/v1/health-tests/me/profile-analysis?language=es|en`.
+`GET` en la misma ruta lee exclusivamente un análisis guardado para la revisión actual; devuelve
+404 si aún no existe. El paciente y el usuario se resuelven desde la sesión, nunca del body.
+No se agrega un permiso ERP: el paciente consulta/genera únicamente su propio análisis.
+
+El backend selecciona la última **evaluación completada completa por instrumento**, ordenada por
+`completed_at` (fallback `started_at`) y desempate estable. No agrupa globalmente por código de
+resultado: dos tests pueden usar «total». Una subescala ausente en un intento nuevo no se hereda
+del anterior. Las fuentes se proyectan con nombre del instrumento, tipo de resultado, valor,
+clasificación persistida y fecha; las clasificaciones históricas de subescala se omiten.
+
+Se envían al AI Service referencias `instrumento:código:tipo` únicas, etiquetas, valores, tipos,
+fechas y cantidad de asignaciones pendientes. No se envían identidad, teléfono, documento ni
+respuestas abiertas. El modelo configurado genera una explicación breve, de una a tres
+prioridades con un paso práctico y preguntas útiles. No diagnostica ni inventa umbrales,
+medicamentos, dietas o puntuaciones globales. Cada prioridad debe citar fuentes recibidas.
+
+`sources` permite revisar los resultados usados y `isPartial` indica asignaciones pendientes.
+La proyección de idioma traduce solo `sources.*.testName/label/qualifier` a inglés; no modifica
+valores, códigos, fechas, referencias ni snapshots clínicos. El texto narrativo se genera ya
+en el idioma solicitado. Las fechas visibles usan el día local del dispositivo.
+
+El insight se guarda en la tabla existente `app.assessment_profile_insights`, por paciente,
+revisión de fuentes y lengua. La revisión `guidance-v2` incluye los resultados seleccionados
+y pendientes: nuevas evaluaciones/cambios invalidan el análisis anterior sin borrarlo.
+Reabrir lee el guardado; generar la misma revisión lo reutiliza. No hay migraciones nuevas.
+Se rechazan perfiles de más de 250 señales en lugar de truncarlos. La cuota existente es
+3 solicitudes de generación por minuto y usuario. Errores del proveedor/formato/referencias
+no se guardan ni se reemplazan por narrativa simulada; responden 503 y la app ofrece reintento.
+El AI Service permite un solo reintento de formato/referencias dentro de un plazo total de 70 s.
+
+Despliegue coordinado: AI Service (contrato ampliado) → API → app. Reutiliza `AiService:BaseUrl`,
+`AiService:InternalApiKey` y la configuración del proveedor/modelo existente. No hay claves
+del proveedor en la app. El motor nutricional y la aprobación clínica son flujos separados.
+
+Verificación: `antares-paciente/e2e/assessment-profile-ai.mjs` prueba UI → API real → PostgreSQL
+aislado → modelo real; `assessment-profile-retake.mjs` verifica invalidación por retoma, inglés
+y guardias de identidad/idioma con una mutación QA explícita. `assessment-profile-provider.mjs`
+usa la ruta real de IA con un modelo controlado para rechazar fuentes ajenas/formato inválido y
+comprobar un solo reintento sin guardar fallos. `assessment-profile-states.mjs` cubre estados de
+UI con APIs sintéticas (503/reintento, 429, lectura fallida/lenta, vacío e inglés). Todos requieren
+evidencia en `COP_E2E_OUTPUT=/tmp/...`; no se escribe en pacientes ni servicios desplegados.
 
 ## Correcciones QA 2026-10-08
 
@@ -444,3 +490,11 @@ alteran la respuesta del submit. `clientRequestId` opcional permite replay de la
 evaluación completada, sin recalcular ni duplicar resultados. Los resultados de
 las evaluaciones existentes conservan su versión y su alcance. Detalles y SQL:
 [Asignación post-tests](../program-progress/README.md).
+
+Lecturas de análisis: cuatro consultas SQL acotadas por paciente (IDs de últimas evaluaciones,
+señales proyectadas, pendientes e insight), sin consultas en bucles por resultado. Reutilizan los
+índices existentes de evaluaciones por paciente/estado, resultados por evaluación, asignaciones
+por paciente/estado e insight único por paciente/revisión/idioma. Se inspeccionó el SQL emitido
+por EF y `EXPLAIN (ANALYZE, BUFFERS)` en PostgreSQL aislado: la selección de dos instrumentos
+con historial sintético tardó 0,258 ms. Esta evidencia pequeña no es una prueba de carga;
+las pruebas de carga quedan para la tarea final de Diomedes.
