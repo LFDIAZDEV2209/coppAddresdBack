@@ -151,7 +151,9 @@ conservan también precisión, captura y snapshot: el principal y el opcional ve
 
 ### Activación en AWS
 
-La opción está **deshabilitada por defecto**. Aplicar la migración antes del backend
+La opción está **deshabilitada por defecto en código**. El pipeline de la API la
+activa explícitamente en Ohio, una vez añadido el permiso al task role.
+Aplicar la migración antes del backend
 nuevo y configurar en el task de la API:
 
 ```text
@@ -195,8 +197,8 @@ Fuentes: [API ReverseGeocode](https://docs.aws.amazon.com/location/latest/APIRef
 [precios](https://aws.amazon.com/location/pricing/),
 [atribución](https://docs.aws.amazon.com/location/latest/developerguide/data-attribution.html).
 El SMS identifica Amazon Location como fuente y el correo enlaza su atribución
-cuando muestra una dirección. Incluir también el enlace de atribución en los términos
-para los usuarios de la aplicación antes de habilitarlo en producción. Por la restricción
+cuando muestra una dirección. La confirmación de SOS en la app informa del envío del punto GPS a Amazon
+Location y permite abrir sus fuentes antes de activar la alerta. Por la restricción
 de almacenamiento de AWS/HERE en Japón, una ventana conservadora (latitud 20–47,
 longitud 122–155) omite el lookup Storage; en esa región se conserva el mapa original.
 Ver [términos del servicio, sección 82](https://aws.amazon.com/service-terms/#82._Amazon_Location_Service).
