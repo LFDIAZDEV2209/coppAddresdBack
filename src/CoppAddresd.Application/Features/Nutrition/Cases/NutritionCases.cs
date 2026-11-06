@@ -134,6 +134,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
                             {
                                 SetTargets(plan, Read<NutritionTargets>(generated.TargetsJson)); plan.Meals = generated.Meals;
                                 plan.Instructions = generated.Instructions; plan.InstructionsEn = generated.InstructionsEn;
+                                plan.InstructionsEnSourceHash = generated.InstructionsEnSourceHash;
                                 plan.ManualEditsConfirmed = false; plan.MenusOutdated = false; plan.NarrativeSource = generated.NarrativeSource;
                             }
                             plan.State = "borrador_ia";
@@ -205,6 +206,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             ClinicalProfileJson = snapshot.ToJsonString(Json), MissingDataJson = Write(missing), NarrativeSource = accepted ? draft.Source : "deterministic_fallback",
             Instructions = accepted ? draft.Narratives.Es + "\n" + draft.Instructions.Es : "Propuesta determinista: revisa porciones y alertas antes de aprobar.",
             InstructionsEn = accepted ? draft.Narratives.En + "\n" + draft.Instructions.En : "Deterministic proposal: review portions and alerts before approval." };
+        plan.InstructionsEnSourceHash = NutritionInstructionTranslation.PairedSourceHash(plan.Instructions, plan.InstructionsEn);
         SetTargets(plan, targets);
         plan.Meals = days.SelectMany(d => NutritionEngine.MealOrder.Select(m => ToMeal(new(d.D, m,
             accepted ? draft.Menus.Single(x => x.Key == $"{m}:{d.Tpl[m]}").Name : NutritionMenus.Templates[m][d.Tpl[m]].Name,
@@ -298,8 +300,25 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             if (source.Length != 4) Invalid("El día origen debe tener cuatro comidas.");
             plan.Meals = Enumerable.Range(1, 30).SelectMany(d => source.Select(m => ToMeal(m with { DayNumber = d }))).ToList();
         }
-        if (edit.Instructions is not null) plan.Instructions = edit.Instructions;
-        if (edit.InstructionsEn is not null) plan.InstructionsEn = edit.InstructionsEn;
+        if (edit.Instructions is not null)
+        {
+            // La traducción solo es válida para su fuente exacta. Una edición
+            // española sin reemplazo inglés no puede conservar texto clínico obsoleto.
+            if (!string.Equals(plan.Instructions, edit.Instructions, StringComparison.Ordinal)
+                && edit.InstructionsEn is null)
+            {
+                plan.InstructionsEn = null;
+                plan.InstructionsEnSourceHash = null;
+            }
+            plan.Instructions = edit.Instructions;
+        }
+        if (edit.InstructionsEn is not null)
+        {
+            plan.InstructionsEn = edit.InstructionsEn;
+            // Una edición solo EN no demuestra qué fuente revisó el profesional.
+            // La fuente debe llegar explícitamente con la pareja del mismo guardado.
+            plan.InstructionsEnSourceHash = NutritionInstructionTranslation.PairedSourceHash(edit.Instructions, edit.InstructionsEn);
+        }
         if (edit.ConfirmManualEdits) { plan.ManualEditsConfirmed = true; if (edit.Meals is not null || applyDay) plan.MenusOutdated = false; }
         ValidateMeals(plan, engine);
     }
@@ -309,6 +328,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             CreatedBy = actor, CreatedAt = clock.GetUtcNow().UtcDateTime, ClinicalProfileJson = p.ClinicalProfileJson,
             TargetsJson = p.TargetsJson, MissingDataJson = p.MissingDataJson, Provisional = p.Provisional,
             ManualEditsConfirmed = p.ManualEditsConfirmed, Instructions = p.Instructions, InstructionsEn = p.InstructionsEn,
+            InstructionsEnSourceHash = p.InstructionsEnSourceHash,
             NarrativeSource = p.NarrativeSource, StartDate = p.StartDate, EndDate = p.EndDate,
             Meals = p.Meals.Select(m => ToMeal(EditOf(m))).ToList() };
         SetTargets(copy, Read<NutritionTargets>(p.TargetsJson)); return copy;
@@ -323,7 +343,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             AutoApproved = action is null && command.Operation == NutritionOperation.Approve && plan.CreatedBy == command.Actor.UserId,
             SnapshotJson = Write(new { plan.Id, plan.PatientId, plan.CycleId, plan.Version, plan.Revision, plan.State, plan.Provisional,
                 plan.IsPublished, plan.StartDate, plan.EndDate, plan.ManualEditsConfirmed, plan.ClinicalProfileJson, plan.TargetsJson,
-                plan.MissingDataJson, plan.Instructions, plan.InstructionsEn, meals = plan.Meals.Select(EditOf).ToArray(), flags }) }, ct);
+                plan.MissingDataJson, plan.Instructions, plan.InstructionsEn, plan.InstructionsEnSourceHash, meals = plan.Meals.Select(EditOf).ToArray(), flags }) }, ct);
     }
     private NutritionView View(NutritionPrescription p, NutritionCaseContext context, NutritionEngine engine, bool includeMeals = true)
         => new(p.Id, p.PatientId, p.CycleId, p.Version, p.Revision, NutritionStateMachine.DisplayState(p, Today(context)), p.Provisional, p.IsPublished, p.MenusOutdated,

@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Services.Localization;
 using CoppAddresd.Domain.Entities.ProgramProgress;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -175,12 +176,16 @@ public sealed class GamifiedNotificationService(
             ["patient_id"] = notification.PatientId.ToString(),
         };
 
+        // La gamificación se ejecuta en transacciones de XP: solo usa texto revisado y nunca espera un LLM.
+        var copy = await PushContentLocalization.PrepareAsync(tokens, notification.Title, notification.Message, null, ct);
+
         foreach (var token in tokens)
         {
             try
             {
                 var result = await fcmClient.SendAsync(
-                    token.Token, notification.Title, notification.Message, data, ct);
+                    token.Token, copy[PushContentLocalization.Language(token)].Title,
+                    copy[PushContentLocalization.Language(token)].Body, data, ct);
 
                 switch (result.Status)
                 {

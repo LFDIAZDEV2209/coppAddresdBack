@@ -146,7 +146,9 @@ public class AnalyzeFoodImageCommandHandlerTests
         Assert.Equal("pizza", food.Name);
         Assert.Equal("unavailable", food.NutritionResult!.NutritionStatus);
         Assert.Null(result.Summary);
-        Assert.Equal("pizza", Assert.Single(Assert.Single(repository.Saved).Items).Name);
+        var savedFood = Assert.Single(Assert.Single(repository.Saved).Items);
+        Assert.Equal("pizza", savedFood.Name);
+        Assert.Equal(nameEn, savedFood.NameEn);
     }
 
     [Fact]

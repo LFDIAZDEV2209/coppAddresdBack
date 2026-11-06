@@ -158,7 +158,7 @@ public class OtpService : IOtpService
                 );
             }
 
-            await _twilioOtpService.SendAsync(target, ct);
+            await _twilioOtpService.SendAsync(target, ct, request.Language);
 
             // Solo si Twilio aceptó la verificación se registra el envío (la
             // cuota local no se consume cuando el proveedor falla).
@@ -214,22 +214,8 @@ public class OtpService : IOtpService
         // proveedor configurado (Log o SMTP). Nunca se loguea el código.
         try
         {
-            var htmlBody =
-                $"""
-                <p>Hola {patient.FirstName},</p>
-                <p>Tu código de verificación es <strong>{code}</strong>.</p>
-                <p>Vence en {OtpLifetimeSeconds / 60} minutos. Si no solicitaste este código, ignora este correo.</p>
-                """;
-            var textBody =
-                $"Hola {patient.FirstName},\n\nTu código de verificación es {code}.\n\nVence en {OtpLifetimeSeconds / 60} minutos. Si no solicitaste este código, ignora este correo.";
-
             await _emailSender.SendAsync(
-                new EmailMessage(
-                    target,
-                    "Tu código de verificación de CoppAddresd",
-                    htmlBody,
-                    textBody
-                ),
+                AuthOtpMessages.Activation(target, patient.FirstName, code, OtpLifetimeSeconds, request.Language),
                 ct
             );
         }

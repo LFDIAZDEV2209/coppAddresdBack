@@ -1,3 +1,5 @@
+using CoppAddresd.Api.Localization;
+using CoppAddresd.Application.Services.Localization;
 using System.Globalization;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
@@ -119,6 +121,7 @@ public sealed class ProgramController(
     /// El <c>thumbnailUrl</c> y <c>mediaUrl</c> de cada tarea podcast se resuelven a la forma final
     /// de URL (proxy firmado local o presign S3) en la capa API (B5).
     /// </summary>
+    [LocalizePatientContent(PatientContentProfile.ProgramSnapshot)]
     [HttpGet("me/snapshot")]
     public async Task<ActionResult<ProgramSnapshotDto>> GetMySnapshot(CancellationToken ct)
     {
@@ -1450,6 +1453,7 @@ public sealed class ProgramController(
     /// móvil. El <c>patientId</c> se resuelve del JWT (nunca del body): sin
     /// perfil de paciente → 404 (anti-IDOR AC-11).
     /// </summary>
+    [LocalizePatientContent(PatientContentProfile.Notifications)]
     [HttpGet("notifications")]
     [HttpGet("me/notifications")]
     public async Task<ActionResult<PaginatedNotificationsResult>> ListNotifications(

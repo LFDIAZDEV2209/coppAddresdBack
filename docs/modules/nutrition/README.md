@@ -12,6 +12,20 @@ lectura; no requiere migración, no altera dietas aprobadas ni añade tiempos
 de comida al motor. Las meriendas ausentes se muestran como pendientes de
 indicación profesional, sin proponer alimentos automáticamente.
 
+### Indicaciones bilingües en la lectura móvil
+
+La consulta de `GET /api/v1/me/nutrition-plan` conserva la fuente de
+`days[].meals[].notes` y expone `notesEn` desde `NutritionPrescription.InstructionsEn`
+solo cuando la comida usa la indicación general (`meal.Notes == null`) y
+`InstructionsEnSourceHash` coincide con el SHA-256 UTF-8 de la fuente exacta.
+Una nota específica, incluso vacía, nunca recibe la traducción general.
+Las parejas históricas sin hash o con hash distinto devuelven `notesEn: null`;
+en una lectura inglesa el filtro traduce una copia de la fuente vigente.
+La app prefiere la variante inglesa verificada disponible. La migración
+`AddNutritionInstructionTranslationProvenance` añade únicamente una columna
+nullable de 64 caracteres, sin backfill ni cambios a las indicaciones existentes.
+Véase [procedencia y ediciones](instructions-localization.md).
+
 ## Ola 2: motor y prescripciones profesionales
 
 Los catálogos de Auth y API conservan los permisos legacy y añaden

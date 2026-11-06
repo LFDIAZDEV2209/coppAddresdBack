@@ -15,6 +15,8 @@ public sealed class FoodAnalysisItem
     public int ItemIndex { get; set; }
 
     public string Name { get; set; } = default!;
+    /// <summary>Nombre inglés original del análisis; no sustituye el nombre ni la nutrición.</summary>
+    public string? NameEn { get; set; }
     public double DetectionConfidence { get; set; }
 
     // === Bounding box (píxeles) ===

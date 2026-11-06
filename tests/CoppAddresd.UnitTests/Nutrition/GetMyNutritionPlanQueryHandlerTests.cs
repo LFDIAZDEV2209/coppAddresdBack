@@ -1,4 +1,5 @@
 using CoppAddresd.Application.Features.Nutrition.Queries.GetMyNutritionPlan;
+using CoppAddresd.Application.Features.Nutrition;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
@@ -63,12 +64,100 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
         Assert.Equal("id,name,targetCondition,durationDays,dailyCalorieTarget,dailyProteinTarget,dailyCarbsTarget,dailyFatTarget,dailyFiberTarget,dailyWaterMl,allergens,mealTiming,status,days,startDate,endDate,currentDay,revision",
             string.Join(',', json.EnumerateObject().Select(x => x.Name)));
         Assert.Equal("dayNumber,dailyWaterMl,meals", string.Join(',', json.GetProperty("days")[0].EnumerateObject().Select(x => x.Name)));
-        Assert.Equal("mealType,description,foods,calories,proteinG,carbsG,fatG,fiberG,waterMl,notes,sortOrder,suggestedTime",
+        Assert.Equal("mealType,description,foods,calories,proteinG,carbsG,fatG,fiberG,waterMl,notes,sortOrder,suggestedTime,notesEn",
             string.Join(',', json.GetProperty("days")[0].GetProperty("meals")[0].EnumerateObject().Select(x => x.Name)));
         Assert.Equal(published ? "16:00" : null,
             json.GetProperty("days")[0].GetProperty("meals")[0].GetProperty("suggestedTime").GetString());
         source.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query.Handle(new(Guid.NewGuid()), source.Token));
+    }
+
+    [Theory]
+    [InlineData(null, "Review portions", "Revisar porciones", "Review portions")]
+    [InlineData("Indicación específica del almuerzo", "Review portions", "Revisar porciones", null)]
+    [InlineData("", "Review portions", "Revisar porciones", null)]
+    [InlineData(null, null, "Revisar porciones", null)]
+    [InlineData(null, "Review older portions", null, null)]
+    [InlineData(null, "Review older portions", "Indicaciones anteriores", null)]
+    public async Task PublishedMenu_ProjectsMatchingBilingualInstructions_WithoutOverridingMealNotes(
+        string? mealNote, string? instructionsEn, string? verifiedSource, string? expectedNotesEn)
+    {
+        var patient = BuildPatient(); patient.Timezone = "America/Bogota";
+        _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
+        var repository = Substitute.For<INutritionPrescriptionRepository>();
+        var today = new DateOnly(2026, 11, 5);
+        var prescription = new NutritionPrescription
+        {
+            PatientId = patient.Id, StartDate = today, EndDate = today.AddDays(29), IsPublished = true,
+            Instructions = "Revisar porciones", InstructionsEn = instructionsEn,
+            InstructionsEnSourceHash = NutritionInstructionTranslation.SourceHash(verifiedSource),
+            Meals = [new() { DayNumber = 1, MealType = "alm", ScheduledTime = new(12, 0), Notes = mealNote }],
+        };
+        repository.GetCurrentPublishedAsync(patient.Id, today, Arg.Any<CancellationToken>()).Returns(prescription);
+        var handler = new GetMyNutritionPlanQueryHandler(_patients, _wellness,
+            Substitute.For<ILogger<GetMyNutritionPlanQueryHandler>>(), repository, new FixedClock());
+
+        var result = (await handler.Handle(new(Guid.NewGuid()), CancellationToken.None))!;
+        var meal = Assert.Single(Assert.Single(result.Days).Meals);
+        Assert.Equal(mealNote ?? "Revisar porciones", meal.Notes);
+        Assert.Equal(expectedNotesEn, meal.NotesEn);
+        Assert.Equal(mealNote, Assert.Single(prescription.Meals).Notes);
+        Assert.Equal("Revisar porciones", prescription.Instructions);
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(result,
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        Assert.Equal(expectedNotesEn, json.GetProperty("days")[0].GetProperty("meals")[0].GetProperty("notesEn").GetString());
+    }
+
+    [Theory]
+    [InlineData(false, "Tomar 250 ml de agua.", "Drink 250 ml of water.")]
+    [InlineData(true, "Tomar 250 ml de agua.", "Drink 250 ml of water.")]
+    [InlineData(false, null, null)]
+    public async Task PublishedMenu_DoesNotPresentInternalPendingReviewCopy_AsPatientInstructions(
+        bool specificNote, string? clinicalEs, string? clinicalEn)
+    {
+        var patient = BuildPatient(); patient.Timezone = "America/Bogota";
+        _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
+        var repository = Substitute.For<INutritionPrescriptionRepository>();
+        const string internalEs = "Propuesta determinista pendiente de revisión.\nRevisar porciones y alertas antes de aprobar.";
+        const string internalEn = "Deterministic proposal pending review.\nReview portions and alerts before approval.";
+        var sourceEs = internalEs + (clinicalEs is null ? "" : "\n" + clinicalEs);
+        var sourceEn = internalEn + (clinicalEn is null ? "" : "\n" + clinicalEn);
+        var plan = new NutritionPrescription { PatientId = patient.Id, IsPublished = true, State = "aprobado",
+            StartDate = new(2026, 11, 5), EndDate = new(2026, 12, 4),
+            Instructions = sourceEs, InstructionsEn = sourceEn,
+            InstructionsEnSourceHash = NutritionInstructionTranslation.SourceHash(sourceEs),
+            Meals = [new() { DayNumber = 1, MealType = "alm", ScheduledTime = new(12, 0),
+                MenuName = "Pollo con ensalada", WaterMl = 250, Notes = specificNote ? "Paciente comenta: Propuesta determinista pendiente de revisión. Tomar 1 taza." : null }] };
+        repository.GetCurrentPublishedAsync(patient.Id, new DateOnly(2026, 11, 5), Arg.Any<CancellationToken>()).Returns(plan);
+        var handler = new GetMyNutritionPlanQueryHandler(_patients, _wellness,
+            Substitute.For<ILogger<GetMyNutritionPlanQueryHandler>>(), repository, new FixedClock());
+        var result = (await handler.Handle(new(Guid.NewGuid()), CancellationToken.None))!;
+        var meal = Assert.Single(Assert.Single(result.Days).Meals);
+        Assert.Equal(specificNote ? plan.Meals.Single().Notes : clinicalEs, meal.Notes);
+        Assert.Equal(specificNote ? null : clinicalEn, meal.NotesEn);
+        Assert.Equal("Pollo con ensalada", meal.Description);
+        Assert.Equal(250, meal.WaterMl);
+        Assert.Equal(sourceEs, plan.Instructions); Assert.Equal(sourceEn, plan.InstructionsEn);
+        Assert.Equal(NutritionInstructionTranslation.SourceHash(sourceEs), plan.InstructionsEnSourceHash);
+        Assert.True(plan.IsPublished); Assert.Equal("aprobado", plan.State);
+    }
+
+    [Fact]
+    public async Task LegacyPublishedMenu_RemovesOnlyInternalReviewLines_AndPreservesClinicalTextAndSource()
+    {
+        var patient = BuildPatient();
+        var plan = BuildPlan(patient.Id);
+        const string source = "Propuesta determinista: revisa porciones y alertas antes de aprobar.\nMantener 50 g de arroz; no añadir azúcar.";
+        plan.Days.First().Notes = source;
+        _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
+        _wellness.ListPlanAssignmentsByPatientAsync(patient.Id, Arg.Any<CancellationToken>())
+            .Returns([BuildAssignment(patient.Id, plan.Id, AssignmentStatus.Active)]);
+        _wellness.GetPlanByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
+        var result = (await BuildHandler().Handle(new(Guid.NewGuid()), CancellationToken.None))!;
+        var dinner = result.Days.Single(day => day.DayNumber == 2).Meals.Single();
+        Assert.Equal("Mantener 50 g de arroz; no añadir azúcar.", dinner.Notes);
+        Assert.Equal(400, dinner.Calories); Assert.Equal("Cena ligera", dinner.Description);
+        Assert.Equal(source, plan.Days.First().Notes);
     }
 
     [Fact]

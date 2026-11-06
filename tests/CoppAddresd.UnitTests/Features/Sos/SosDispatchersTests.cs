@@ -41,6 +41,28 @@ public sealed class SosDispatchersTests
             Patient = new PatientProfile { FirstName = "Sofía", LastName = "Vega" },
         };
 
+    [Fact]
+    public async Task Sos_push_uses_reviewed_English_per_device_and_keeps_dedupe()
+    {
+        var fcm = Substitute.For<IFcmClient>(); var tokens = Substitute.For<IDeviceTokenRepository>(); var user = Guid.NewGuid();
+        _alerts.GetAssignedStaffUserIdsAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new[] { user });
+        tokens.GetByUserIdAsync(user, Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new DeviceToken { Id=Guid.NewGuid(), UserId=user, Token="en-device", Platform="ios", Language="en" },
+            new DeviceToken { Id=Guid.NewGuid(), UserId=user, Token="es-device", Platform="android", Language="es" }
+        });
+        fcm.SendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Dictionary<string,string>?>(), Arg.Any<CancellationToken>()).Returns(new FcmSendResult(FcmSendStatus.Sent));
+        var dispatcher = new SosPushDispatcher(_alerts, tokens, fcm, _dedupe, CreateDbContext(), NullLogger<SosPushDispatcher>.Instance);
+        var alert = NewAlert();
+        var result = await dispatcher.DispatchAsync(alert);
+        Assert.Equal(SosChannelStatus.Enviado, result.Status); Assert.Equal(2, result.Recipients);
+        await fcm.Received(1).SendAsync("en-device", "🚨 Active SOS alert", "A patient activated an emergency SOS alert. Review it immediately in the platform.", null, Arg.Any<CancellationToken>());
+        await fcm.Received(1).SendAsync("es-device", "🚨 Alerta SOS activa", "Un paciente activó su alerta SOS de emergencia. Revísala de inmediato en la plataforma.", null, Arg.Any<CancellationToken>());
+        _dedupe.GetByKeyAsync($"sos:push:{alert.Id}:{user}", Arg.Any<CancellationToken>()).Returns(new NotificationDedupeKey { PushStatus="enviado" });
+        await dispatcher.DispatchAsync(alert);
+        Assert.Equal(2, fcm.ReceivedCalls().Count());
+    }
+
     // ===================== SMS =====================
 
     [Fact]

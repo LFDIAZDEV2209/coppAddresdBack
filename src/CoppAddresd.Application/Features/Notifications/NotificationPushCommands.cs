@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Services.Localization;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -17,7 +18,10 @@ public record SendPushNotificationCommand(
     string? AgentTypeId = null,
     bool SkipPush = false,
     bool SkipChat = false,
-    IReadOnlyDictionary<string,string>? Data = null
+    IReadOnlyDictionary<string,string>? Data = null,
+    string? EnglishTitle = null,
+    string? EnglishBody = null,
+    string? ChatBody = null
 ) : IRequest<SendPushNotificationResult>;
 
 /// <summary>Resumen del envío de la notificación push.</summary>
@@ -34,14 +38,17 @@ public record SendPushNotificationRequest(
     Guid UserId,
     string Title,
     string Body,
-    string? AgentTypeId = null
+    string? AgentTypeId = null,
+    string? EnglishTitle = null,
+    string? EnglishBody = null
 );
 
 public sealed class SendPushNotificationCommandHandler(
     IDeviceTokenRepository repository,
     IFcmClient fcmClient,
     IAiServiceClient aiService,
-    ILogger<SendPushNotificationCommandHandler> logger
+    ILogger<SendPushNotificationCommandHandler> logger,
+    IContentTranslationService? translations = null
 ) : IRequestHandler<SendPushNotificationCommand, SendPushNotificationResult>
 {
     public async Task<SendPushNotificationResult> Handle(
@@ -76,12 +83,16 @@ public sealed class SendPushNotificationCommandHandler(
         var failed = 0;
         var disabled = 0;
 
+        // Resuelve todos los idiomas necesarios antes del primer envío para evitar entregas parciales si falla la traducción.
+        var copy = await PushContentLocalization.PrepareAsync(tokens, request.Title, request.Body, translations, ct,
+            request.EnglishTitle, request.EnglishBody);
+
         foreach (var token in tokens)
         {
             var result = await fcmClient.SendAsync(
                 token.Token,
-                request.Title,
-                request.Body,
+                copy[PushContentLocalization.Language(token)].Title,
+                copy[PushContentLocalization.Language(token)].Body,
                 data,
                 ct
             );
@@ -133,7 +144,7 @@ public sealed class SendPushNotificationCommandHandler(
             {
             var proactive = await aiService.ProactiveMessageAsync(
                 request.UserId,
-                request.Body,
+                request.ChatBody ?? request.Body,
                 agentTypeId,
                 "bot",
                 ct

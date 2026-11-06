@@ -110,7 +110,7 @@ public sealed class GetMyNutritionPlanQueryHandler(
                         m.FatG,
                         m.FiberG,
                         m.WaterMl,
-                        m.Notes,
+                        PatientNutritionInstructions.ForPatient(m.Notes),
                         m.SortOrder
                     ))
                     .ToList()
@@ -151,6 +151,7 @@ public sealed class GetMyNutritionPlanQueryHandler(
         var foods = plan.Meals.SelectMany(x => x.Items).Select(x => x.FoodItem!)
             .DistinctBy(x => x.Id).ToDictionary(x => x.Id);
         var engine = new NutritionEngine(foods);
+        var verifiedEnglish = PatientNutritionInstructions.ForPatient(NutritionInstructionTranslation.VerifiedEnglish(plan));
         var days = plan.Meals.GroupBy(x => x.DayNumber).OrderBy(x => x.Key).Select(day =>
             new MyNutritionPlanDayDto(day.Key, plan.WaterMl ?? 2000,
                 day.OrderBy(x => x.ScheduledTime).ThenBy(x => x.MealType, StringComparer.Ordinal).ThenBy(x => x.Id)
@@ -166,8 +167,10 @@ public sealed class GetMyNutritionPlanQueryHandler(
                         return new MyNutritionPlanMealDto(type.ToString(), meal.MenuName,
                             string.Join("; ", items.Select(x => $"{foods[x.FoodItemId].Name}: {engine.QtyText(new(x.FoodItemId, x.Grams))}")),
                             (int)macros.K, (decimal)macros.P, (decimal)macros.C, (decimal)macros.F,
-                            (decimal)macros.Fi, meal.WaterMl, meal.Notes ?? plan.Instructions, order + 1,
-                            meal.ScheduledTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture));
+                            (decimal)macros.Fi, meal.WaterMl, PatientNutritionInstructions.ForPatient(meal.Notes ?? plan.Instructions), order + 1,
+                            meal.ScheduledTime.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                            // La traducción pertenece a la indicación general, nunca a una nota específica.
+                            meal.Notes is null ? verifiedEnglish : null);
                     }).ToList())).ToList();
         return new(plan.Id, "Plan nutricional", null, 30, plan.CalorieTarget is { } k ? (int)NutritionEngine.R0(k) : null,
             (decimal?)plan.ProteinTarget, (decimal?)plan.CarbsTarget, (decimal?)plan.FatTarget, (decimal?)plan.FiberTarget,

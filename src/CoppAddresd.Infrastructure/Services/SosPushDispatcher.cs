@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Services.Localization;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
 using CoppAddresd.Infrastructure.Persistence;
@@ -82,9 +83,12 @@ public sealed class SosPushDispatcher(
                 userDetail = "push:no_tokens";
             }
 
+            // El texto de emergencia está revisado y disponible localmente; este flujo nunca llama a un LLM.
+            var copy = await PushContentLocalization.PrepareAsync(tokens, title, bodyText, null, ct);
             foreach (var token in tokens)
             {
-                var push = await fcmClient.SendAsync(token.Token, title, bodyText, null, ct);
+                var push = await fcmClient.SendAsync(token.Token, copy[PushContentLocalization.Language(token)].Title,
+                    copy[PushContentLocalization.Language(token)].Body, null, ct);
                 switch (push.Status)
                 {
                     case FcmSendStatus.Sent:

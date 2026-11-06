@@ -809,6 +809,14 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasDefaultValue("es")
+                        .HasColumnName("language");
+
                     b.Property<string>("Platform")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -835,7 +843,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_device_tokens_user_id_token");
 
-                    b.ToTable("device_tokens", "app");
+                    b.ToTable("device_tokens", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_device_tokens_language", "language IN ('es', 'en')");
+                        });
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Document", b =>
@@ -1766,6 +1777,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("name");
+
+                    b.Property<string>("NameEn")
+                        .HasColumnType("text")
+                        .HasColumnName("name_en");
 
                     b.Property<string>("NutritionStatus")
                         .HasMaxLength(30)
@@ -5000,6 +5015,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Property<string>("InstructionsEn")
                         .HasColumnType("text")
                         .HasColumnName("instructions_en");
+
+                    b.Property<string>("InstructionsEnSourceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("instructions_en_source_hash");
 
                     b.Property<bool>("IsPublished")
                         .HasColumnType("boolean")

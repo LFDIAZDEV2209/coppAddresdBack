@@ -14,7 +14,8 @@ public sealed class DeviceTokenConfiguration : IEntityTypeConfiguration<DeviceTo
 {
     public void Configure(EntityTypeBuilder<DeviceToken> builder)
     {
-        builder.ToTable("device_tokens", "app");
+        builder.ToTable("device_tokens", "app", table =>
+            table.HasCheckConstraint("ck_device_tokens_language", "language IN ('es', 'en')"));
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
@@ -31,6 +32,12 @@ public sealed class DeviceTokenConfiguration : IEntityTypeConfiguration<DeviceTo
         builder.Property(x => x.Platform)
             .HasColumnName("platform")
             .HasMaxLength(10);
+
+        builder.Property(x => x.Language)
+            .HasColumnName("language")
+            .HasMaxLength(2)
+            .HasDefaultValue("es")
+            .IsRequired();
 
         builder.Property(x => x.CreatedAt)
             .HasColumnName("created_at")

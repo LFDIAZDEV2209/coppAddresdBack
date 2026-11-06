@@ -244,6 +244,7 @@ public class AnalyzeFoodImageCommandHandler
                     {
                         ItemIndex = index,
                         Name = food.Name,
+                        NameEn = food.NameEn,
                         DetectionConfidence = food.Confidence,
                         BboxX = food.BoundingBox.X,
                         BboxY = food.BoundingBox.Y,

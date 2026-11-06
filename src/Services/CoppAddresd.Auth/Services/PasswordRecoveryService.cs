@@ -45,10 +45,8 @@ public sealed class PasswordRecoveryService(IPatientLookupService patients, User
         if (!guard.Allowed) throw new CoppAddresd.Auth.Exceptions.OtpProtectionException(guard.Reason!.Value, "Intenta más tarde.", guard.RetryAfterSeconds);
         var code = RandomNumberGenerator.GetInt32(0, 1000000).ToString("D6");
         var salt = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
-        if (request.ContactId == "phone") await sms.SendAsync(target, ct);
-        else await email.SendAsync(new EmailMessage(target, "Recupera tu contraseña de CoppAddresd",
-            $"<p>Tu código para cambiar tu contraseña es <strong>{code}</strong>. Vence en 5 minutos.</p><p>Si no lo solicitaste, ignora este correo.</p>",
-            $"Código para cambiar tu contraseña: {code}. Vence en 5 minutos. Si no lo solicitaste, ignora este correo."), ct);
+        if (request.ContactId == "phone") await sms.SendAsync(target, ct, request.Language);
+        else await email.SendAsync(AuthOtpMessages.Recovery(target, code, 300, request.Language), ct);
         protection.RegisterSend(Ip, patient.DocumentNumber, target);
         var now = DateTime.UtcNow;
         await db.OtpCodes.Where(o => o.DocumentNumber == patient.DocumentNumber && o.Channel.StartsWith("Recovery") && o.UsedAt == null)

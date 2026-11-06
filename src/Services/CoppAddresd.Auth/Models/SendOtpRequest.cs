@@ -9,6 +9,10 @@ namespace CoppAddresd.Auth.Models;
 /// </summary>
 public record SendOtpRequest
 {
+    /// <summary>Idioma del mensaje (es/en o variante regional); omitido/desconocido usa español.</summary>
+    [StringLength(35)]
+    public string? Language { get; init; }
+
     [Required(ErrorMessage = "El número de identificación es requerido")]
     [StringLength(50, ErrorMessage = "Número de identificación inválido")]
     public string DocumentNumber { get; init; } = string.Empty;

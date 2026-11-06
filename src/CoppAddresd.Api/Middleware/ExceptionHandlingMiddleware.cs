@@ -58,6 +58,12 @@ public sealed class ExceptionHandlingMiddleware(
                         group => group.Key,
                         group => group.Select(e => e.ErrorMessage).ToArray()));
         }
+        catch (ContentTranslationUnavailableException)
+        {
+            context.Response.Headers["Retry-After"] = "5";
+            await WriteProblemAsync(context, StatusCodes.Status503ServiceUnavailable,
+                "CONTENT_TRANSLATION_UNAVAILABLE", "English content could not be prepared. Please try again.");
+        }
         catch (NotFoundException ex)
         {
             logger.LogWarning(ex, "Recurso no encontrado en {Method} {Path}",

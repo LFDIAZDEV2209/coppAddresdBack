@@ -2107,7 +2107,7 @@ public sealed partial class ProgramRepository(
                                 d.FatG,
                                 d.FiberG,
                                 d.WaterMl,
-                                d.Notes,
+                                CoppAddresd.Application.Features.Nutrition.PatientNutritionInstructions.ForPatient(d.Notes),
                                 d.SortOrder
                             ))
                             .ToList(),

@@ -16,6 +16,7 @@ public sealed class FoodAnalysisItemConfiguration : IEntityTypeConfiguration<Foo
         builder.Property(x => x.AnalysisId).HasColumnName("analysis_id").IsRequired();
         builder.Property(x => x.ItemIndex).HasColumnName("item_index").IsRequired();
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
+        builder.Property(x => x.NameEn).HasColumnName("name_en");
         builder.Property(x => x.DetectionConfidence).HasColumnName("detection_confidence").HasPrecision(6, 4).IsRequired();
 
         builder.Property(x => x.BboxX).HasColumnName("bbox_x").IsRequired();

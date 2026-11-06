@@ -1,6 +1,8 @@
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
+using CoppAddresd.Api.Localization;
+using CoppAddresd.Application.Services.Localization;
 using CoppAddresd.Application.Features.Professionals;
 using CoppAddresd.Application.Interfaces;
 using MediatR;
@@ -31,6 +33,7 @@ public class ProfessionalCatalogsController(IMediator mediator, ICurrentContext 
     }
 
     /// <summary>Catálogo de especialidades agrupado por categoría.</summary>
+    [LocalizePatientContent(PatientContentProfile.Specialties)]
     [HttpGet("specialties")]
     public async Task<ActionResult<IReadOnlyList<SpecialtyDto>>> Specialties(CancellationToken ct)
     {
@@ -142,6 +145,7 @@ public class ProfessionalCatalogsController(IMediator mediator, ICurrentContext 
     /// lo consume la UI de Telemedicina para elegir profesional y el directorio
     /// admin. Solo datos de identidad/contexto, sin PHI.
     /// </summary>
+    [LocalizePatientContent(PatientContentProfile.ProfessionalsCatalog)]
     [HttpGet("professionals-catalog")]
     public async Task<ActionResult<PaginatedProfessionalsCatalogResult>> ProfessionalsCatalog(
         [FromQuery] int page = 1,

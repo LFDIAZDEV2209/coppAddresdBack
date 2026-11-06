@@ -1,5 +1,6 @@
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Services.Localization;
 using CoppAddresd.Domain.Entities;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -74,7 +75,8 @@ public sealed class SendTelemedicineNotificationCommandHandler(
     IPatientRepository patientRepository,
     IEmployeeRepository employeeRepository,
     INotificationDedupeRepository dedupeRepository,
-    ILogger<SendTelemedicineNotificationCommandHandler> logger)
+    ILogger<SendTelemedicineNotificationCommandHandler> logger,
+    IContentTranslationService? translations = null)
     : IRequestHandler<SendTelemedicineNotificationCommand, SendTelemedicineNotificationResult>
 {
     public async Task<SendTelemedicineNotificationResult> Handle(
@@ -183,10 +185,13 @@ public sealed class SendTelemedicineNotificationCommandHandler(
             var failed = 0;
             var disabled = 0;
 
+            var copy = await PushContentLocalization.PrepareAsync(tokens, request.Title, request.Body, translations, ct);
+
             foreach (var token in tokens)
             {
                 var result = await fcmClient.SendAsync(
-                    token.Token, request.Title, request.Body, data, ct);
+                    token.Token, copy[PushContentLocalization.Language(token)].Title,
+                    copy[PushContentLocalization.Language(token)].Body, data, ct);
 
                 switch (result.Status)
                 {

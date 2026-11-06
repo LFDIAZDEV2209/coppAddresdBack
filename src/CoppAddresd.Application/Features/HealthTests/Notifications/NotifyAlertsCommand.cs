@@ -1,7 +1,9 @@
+using System.Globalization;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Entities.HealthTests;
 using CoppAddresd.Domain.Enums.HealthTests;
+using CoppAddresd.Domain.Exceptions;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -22,7 +24,8 @@ public sealed class NotifyAlertsCommandHandler(
     IHealthTestTemplateRenderer renderer,
     ISmsSender smsSender,
     ICommunityMessageSender communitySender,
-    ILogger<NotifyAlertsCommandHandler> logger
+    ILogger<NotifyAlertsCommandHandler> logger,
+    IContentTranslationService? translations = null
 ) : IRequestHandler<NotifyAlertsCommand, NotifyAlertsResultDto>
 {
     public async Task<NotifyAlertsResultDto> Handle(
@@ -57,6 +60,32 @@ public sealed class NotifyAlertsCommandHandler(
             : null;
 
         var candidates = await LoadCandidateTemplatesAsync(channels, ct);
+        var needed = new List<string>();
+        if (request.Language == NotificationLanguage.en)
+        {
+            foreach (var alert in alerts)
+            foreach (var channel in channels)
+            {
+                var chosen = explicitTemplate ?? PickTemplate(candidates, channel, alert, null);
+                string source;
+                if (!string.IsNullOrWhiteSpace(request.BodyOverride)) source = request.BodyOverride;
+                else if (chosen is not null)
+                {
+                    source = !string.IsNullOrWhiteSpace(chosen.BodyTemplateEn) ? chosen.BodyTemplateEn : chosen.BodyTemplateEs;
+                    if (string.IsNullOrWhiteSpace(chosen.BodyTemplateEn)) needed.Add(chosen.BodyTemplateEs);
+                }
+                else if (!string.IsNullOrWhiteSpace(alert.Rule?.MessageTemplate))
+                {
+                    source = alert.Rule.MessageTemplate;
+                    needed.Add(source);
+                }
+                // Una alerta ya renderizada puede contener identificadores. Se exige una plantilla redactada antes de recurrir a la IA.
+                else throw new ContentTranslationUnavailableException();
+                needed.AddRange(HealthTestTemplateLocalization.AuthoredLabels(alert, source));
+            }
+        }
+        // Resuelve el texto redactado sin renderizar en un lote; el traductor no recibe nombres, documentos ni destinatarios.
+        var english = await HealthTestTemplateLocalization.PrepareAsync(needed, request.Language, translations, ct);
 
         var items = new List<NotifyAlertItemResultDto>();
         var pending = new List<HealthTestNotification>();
@@ -69,13 +98,14 @@ public sealed class NotifyAlertsCommandHandler(
             foreach (var channel in channels)
             {
                 var template = explicitTemplate ?? PickTemplate(candidates, channel, alert, patient);
-                var context = BuildContext(alert, patient, request.Language);
+                var context = BuildContext(alert, patient, request.Language, english);
                 var body = ResolveBody(
                     request.BodyOverride,
                     template,
                     alert,
                     context,
-                    request.Language
+                    request.Language,
+                    english
                 );
                 var recipient = ResolveRecipient(channel, patient);
 
@@ -310,7 +340,8 @@ public sealed class NotifyAlertsCommandHandler(
         HealthTestNotificationTemplate? template,
         HealthTestAlert alert,
         HealthTestNotificationRenderContext context,
-        NotificationLanguage language
+        NotificationLanguage language,
+        IReadOnlyDictionary<string, string> english
     )
     {
         if (!string.IsNullOrWhiteSpace(bodyOverride))
@@ -320,44 +351,33 @@ public sealed class NotifyAlertsCommandHandler(
 
         if (template is not null)
         {
-            return renderer.Render(TemplateBody(template, language), context);
+            var copy = language == NotificationLanguage.en
+                ? (!string.IsNullOrWhiteSpace(template.BodyTemplateEn) ? template.BodyTemplateEn! : english[template.BodyTemplateEs])
+                : template.BodyTemplateEs;
+            return renderer.Render(copy, context);
         }
 
         if (!string.IsNullOrWhiteSpace(alert.Rule?.MessageTemplate))
         {
-            return renderer.Render(alert.Rule!.MessageTemplate, context);
+            return renderer.Render(language == NotificationLanguage.en
+                ? english[alert.Rule!.MessageTemplate!] : alert.Rule!.MessageTemplate, context);
         }
 
         return !string.IsNullOrWhiteSpace(alert.Body) ? alert.Body! : alert.Title;
     }
 
-    /// <summary>
-    /// Cuerpo de la plantilla para el idioma pedido. Si falta la traducción al
-    /// inglés se usa el español (la UI avisa de la traducción pendiente).
-    /// </summary>
-    internal static string TemplateBody(
-        HealthTestNotificationTemplate template,
-        NotificationLanguage language
-    ) =>
-        language == NotificationLanguage.en
-            ? (
-                string.IsNullOrWhiteSpace(template.BodyTemplateEn)
-                    ? template.BodyTemplateEs
-                    : template.BodyTemplateEn!
-            )
-            : template.BodyTemplateEs;
-
     private static HealthTestNotificationRenderContext BuildContext(
         HealthTestAlert alert,
         PatientProfile? patient,
-        NotificationLanguage language = NotificationLanguage.es
+        NotificationLanguage language = NotificationLanguage.es,
+        IReadOnlyDictionary<string, string>? localized = null
     ) =>
         new(
-            PatientName(patient) ?? "Paciente",
+            PatientName(patient) ?? (language == NotificationLanguage.en ? "Patient" : "Paciente"),
             patient?.DocumentNumber,
-            alert.Rule?.Name,
-            alert.Result?.Label ?? alert.Rule?.Name,
-            alert.Result is null ? null : alert.Result.Value.ToString("0.##"),
+            HealthTestTemplateLocalization.DisplayLabel(alert.Rule?.Name, language, localized),
+            HealthTestTemplateLocalization.DisplayLabel(alert.Result?.Label ?? alert.Rule?.Name, language, localized),
+            alert.Result is null ? null : alert.Result.Value.ToString("0.##", CultureInfo.InvariantCulture),
             null,
             alert.Severity,
             null,
@@ -390,7 +410,8 @@ public sealed class SendTestNotificationCommandHandler(
     IHealthTestNotificationRepository notificationRepository,
     IHealthTestTemplateRenderer renderer,
     ISmsSender smsSender,
-    ICommunityMessageSender communitySender
+    ICommunityMessageSender communitySender,
+    IContentTranslationService? translations = null
 ) : IRequestHandler<SendTestNotificationCommand, NotifyAlertItemResultDto?>
 {
     public async Task<NotifyAlertItemResultDto?> Handle(
@@ -417,10 +438,10 @@ public sealed class SendTestNotificationCommandHandler(
         }
 
         var context = new HealthTestNotificationRenderContext(
-            patient is null ? "Paciente de prueba" : $"{patient.FirstName} {patient.LastName}".Trim(),
+            patient is null ? (request.Language == NotificationLanguage.en ? "Test patient" : "Paciente de prueba") : $"{patient.FirstName} {patient.LastName}".Trim(),
             patient?.DocumentNumber,
-            "Test de ejemplo",
-            template.IndicatorCode ?? "Indicador de ejemplo",
+            request.Language == NotificationLanguage.en ? "Example test" : "Test de ejemplo",
+            template.IndicatorCode ?? (request.Language == NotificationLanguage.en ? "Example indicator" : "Indicador de ejemplo"),
             "3.5",
             null,
             template.Severity,
@@ -429,10 +450,14 @@ public sealed class SendTestNotificationCommandHandler(
             DateTime.UtcNow,
             request.Language
         );
-        var body = renderer.Render(
-            request.BodyOverride ?? NotifyAlertsCommandHandler.TemplateBody(template, request.Language),
-            context
-        );
+        var source = request.BodyOverride ?? (request.Language == NotificationLanguage.en
+            ? template.BodyTemplateEn : template.BodyTemplateEs);
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            var localized = await HealthTestTemplateLocalization.PrepareAsync([template.BodyTemplateEs], request.Language, translations, ct);
+            source = localized[template.BodyTemplateEs];
+        }
+        var body = renderer.Render(source, context);
 
         string recipient;
         if (request.Channel == NotificationChannel.sms)

@@ -36,7 +36,8 @@ public sealed record ProfessionalCatalogItemDto(
     IReadOnlyList<ProfessionalCatalogSpecialtyDto> Specialties,
     IReadOnlyList<ProfessionalCatalogLocationDto> Locations,
     IReadOnlyList<Guid> ClinicIds,
-    string Status);
+    string Status,
+    string? ProfessionalTypeDisplayName = null);
 
 public sealed record ProfessionalCatalogSpecialtyDto(Guid Id, string Name);
 
@@ -66,7 +67,8 @@ public static class ProfessionalCatalogItemFactory
             .Select(a => a.ClinicId)
             .Distinct()
             .ToList(),
-        employee.Status);
+        employee.Status,
+        employee.Professional.ProfessionalType?.Name);
 }
 
 public sealed class ListProfessionalsCatalogQueryHandler(

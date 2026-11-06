@@ -2,6 +2,9 @@ using System.ComponentModel.DataAnnotations;
 namespace CoppAddresd.Auth.Models;
 public record PasswordRecoveryCodeRequest
 {
+    /// <summary>Idioma del correo o SMS de recuperación; clientes anteriores usan español.</summary>
+    [StringLength(35)] public string? Language { get; init; }
+
     [Required, StringLength(50)] public string DocumentNumber { get; init; } = "";
     [Required, RegularExpression("^(email|phone)$")] public string ContactId { get; init; } = "";
     [Required, RegularExpression("^app$")] public string Application { get; init; } = "app";

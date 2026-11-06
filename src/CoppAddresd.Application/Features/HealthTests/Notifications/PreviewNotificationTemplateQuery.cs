@@ -1,3 +1,4 @@
+using System.Globalization;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums.HealthTests;
@@ -25,7 +26,8 @@ public record PreviewNotificationTemplateQuery(
 public sealed class PreviewNotificationTemplateQueryHandler(
     IHealthTestNotificationRepository notificationRepository,
     IHealthTestRepository healthTestRepository,
-    IHealthTestTemplateRenderer renderer
+    IHealthTestTemplateRenderer renderer,
+    IContentTranslationService? translations = null
 ) : IRequestHandler<PreviewNotificationTemplateQuery, NotificationTemplatePreviewDto?>
 {
     public async Task<NotificationTemplatePreviewDto?> Handle(
@@ -42,17 +44,18 @@ public sealed class PreviewNotificationTemplateQueryHandler(
         var channel = request.Channel ?? template.Channel;
         var alert = await ResolveAlertAsync(request, ct);
 
-        // Si falta la traducción al inglés se usa el español y se avisa a la UI.
-        var usedFallbackLanguage =
-            request.Language == NotificationLanguage.en
-            && string.IsNullOrWhiteSpace(template.BodyTemplateEn);
-        var templateName =
-            request.Language == NotificationLanguage.en
-                ? (template.NameEn ?? template.NameEs)
-                : template.NameEs;
-        var templateBody = NotifyAlertsCommandHandler.TemplateBody(template, request.Language);
-
-        var body = request.BodyOverride is { Length: > 0 } ? request.BodyOverride : templateBody;
+        var english = request.Language == NotificationLanguage.en;
+        var missing = new List<string>();
+        if (english && string.IsNullOrWhiteSpace(template.NameEn)) missing.Add(template.NameEs);
+        if (english && string.IsNullOrWhiteSpace(template.BodyTemplateEn) && string.IsNullOrWhiteSpace(request.BodyOverride)) missing.Add(template.BodyTemplateEs);
+        var source = !string.IsNullOrWhiteSpace(request.BodyOverride) ? request.BodyOverride
+            : english && !string.IsNullOrWhiteSpace(template.BodyTemplateEn) ? template.BodyTemplateEn : template.BodyTemplateEs;
+        if (english && alert is not null) missing.AddRange(HealthTestTemplateLocalization.AuthoredLabels(alert, source));
+        var localized = await HealthTestTemplateLocalization.PrepareAsync(missing, request.Language, translations, ct);
+        var templateName = english ? (!string.IsNullOrWhiteSpace(template.NameEn) ? template.NameEn! : localized[template.NameEs]) : template.NameEs;
+        var body = !string.IsNullOrWhiteSpace(request.BodyOverride) ? request.BodyOverride
+            : english ? (!string.IsNullOrWhiteSpace(template.BodyTemplateEn) ? template.BodyTemplateEn! : localized[template.BodyTemplateEs]) : template.BodyTemplateEs;
+        const bool usedFallbackLanguage = false;
 
         if (alert is null)
         {
@@ -65,7 +68,7 @@ public sealed class PreviewNotificationTemplateQueryHandler(
                 null,
                 null,
                 body,
-                renderer.Render(body, new HealthTestNotificationRenderContext()),
+                renderer.Render(body, new HealthTestNotificationRenderContext(Language: request.Language)),
                 null,
                 false,
                 "No hay alertas disponibles para generar la vista previa.",
@@ -77,10 +80,10 @@ public sealed class PreviewNotificationTemplateQueryHandler(
         var patient = (await notificationRepository.GetPatientsByIdsAsync([alert.PatientId], ct))
             .GetValueOrDefault(alert.PatientId);
 
-        var context = BuildContext(alert, patient, request.Language);
+        var context = BuildContext(alert, patient, request.Language, localized);
         var recipient = NotificationPreviewSupport.ResolveRecipient(channel, patient);
         var placeholders = renderer.ExtractPlaceholders(body);
-        var missing = placeholders
+        var missingPlaceholders = placeholders
             .Where(p => !ContextHasValue(p, context))
             .ToList();
 
@@ -97,7 +100,7 @@ public sealed class PreviewNotificationTemplateQueryHandler(
             recipient.IsReachable,
             recipient.SkipReason,
             usedFallbackLanguage,
-            missing
+            missingPlaceholders
         );
     }
 
@@ -128,14 +131,15 @@ public sealed class PreviewNotificationTemplateQueryHandler(
     internal static HealthTestNotificationRenderContext BuildContext(
         Domain.Entities.HealthTests.HealthTestAlert alert,
         PatientProfile? patient,
-        NotificationLanguage language = NotificationLanguage.es
+        NotificationLanguage language = NotificationLanguage.es,
+        IReadOnlyDictionary<string, string>? localized = null
     ) =>
         new(
-            patient is null ? "Paciente" : $"{patient.FirstName} {patient.LastName}".Trim(),
+            patient is null ? (language == NotificationLanguage.en ? "Patient" : "Paciente") : $"{patient.FirstName} {patient.LastName}".Trim(),
             patient?.DocumentNumber,
-            alert.Rule?.Name,
-            alert.Result?.Label ?? alert.Rule?.Name,
-            alert.Result is null ? null : alert.Result.Value.ToString("0.##"),
+            HealthTestTemplateLocalization.DisplayLabel(alert.Rule?.Name, language, localized),
+            HealthTestTemplateLocalization.DisplayLabel(alert.Result?.Label ?? alert.Rule?.Name, language, localized),
+            alert.Result is null ? null : alert.Result.Value.ToString("0.##", CultureInfo.InvariantCulture),
             null,
             alert.Severity,
             null,

@@ -114,6 +114,31 @@ public sealed class TwilioOtpServiceTests
         Assert.Equal(ValidPhone, PostParam(captured, "To"));
     }
 
+    [Theory]
+    [InlineData(null, "es")]
+    [InlineData("es", "es")]
+    [InlineData("en", "en")]
+    [InlineData("en-US", "en")]
+    [InlineData("fr", "es")]
+    public async Task SendAsync_OverridesPhoneCountryWithRequestedLocale(string? language, string expected)
+    {
+        Twilio.Http.Request? captured = null;
+        var client = new FakeTwilioRestClient(request =>
+        {
+            captured = request;
+            return Task.FromResult(JsonResponse(System.Net.HttpStatusCode.Created,
+                """{"sid":"VE123","status":"pending","valid":false}"""));
+        });
+        var service = CreateService(client);
+
+        await service.SendAsync("+573001234567", language: language);
+
+        Assert.Equal(expected, PostParam(captured, "Locale"));
+        Assert.Equal("sms", PostParam(captured, "Channel"));
+        Assert.Equal("+573001234567", PostParam(captured, "To"));
+        Assert.Null(PostParam(captured, "CustomCode")); // Twilio sigue generando el código.
+    }
+
     [Fact]
     public async Task SendAsync_WhenProviderReturnsApiError_MapsToTypedException()
     {

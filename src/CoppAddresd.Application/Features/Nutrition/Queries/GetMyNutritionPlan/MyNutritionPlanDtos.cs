@@ -55,5 +55,6 @@ public sealed record MyNutritionPlanMealDto(
     int? WaterMl,
     string? Notes,
     int SortOrder,
-    string? SuggestedTime = null
+    string? SuggestedTime = null,
+    string? NotesEn = null
 );

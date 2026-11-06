@@ -48,7 +48,7 @@ builder.Host.UseSerilog(
 );
 
 builder
-    .Services.AddControllers()
+    .Services.AddControllers(options => options.Filters.Add<CoppAddresd.Api.Localization.PatientContentLocalizationFilter>())
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter())
     );
