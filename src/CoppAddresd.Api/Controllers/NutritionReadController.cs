@@ -31,4 +31,10 @@ public sealed class NutritionReadController(IMediator mediator, ICurrentContext 
         context.UserId ?? throw new UnauthorizedAccessException(), await context.GetProfessionalIdAsync(ct),
         User.HasClaim(PermissionClaimTypes.Permission, PermissionCodes.PatientsView),
         await context.HasPermissionAsync(PermissionCodes.NutritionManage, ct), await context.HasPermissionAsync(PermissionCodes.NutritionApprove, ct));
+
+    /// <summary>Ficha completa bajo alcance Nutrition; no exige permisos ajenos para identidad o perfil.</summary>
+    [HttpGet("patients/{patientId:guid}/workspace")]
+    public async Task<ActionResult<NutritionWorkspaceView>> Workspace(Guid patientId, [FromQuery] int historyPage = 1,
+        [FromQuery] int historyPageSize = 20, [FromQuery] Guid? prescriptionId = null, CancellationToken ct = default)
+        => Ok(await mediator.Send(new NutritionWorkspaceQuery(patientId, await ActorAsync(ct), historyPage, historyPageSize, prescriptionId), ct));
 }

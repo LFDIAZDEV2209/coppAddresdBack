@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddScoped<INutritionPrescriptionRepository, NutritionPrescriptionRepository>();
         services.AddScoped<INutritionInboxRepository, NutritionInboxRepository>();
         services.AddScoped<INutritionCaseStore, NutritionCaseStore>();
+        services.AddScoped<INutritionWorkspaceRepository, NutritionWorkspaceRepository>();
         services.AddScoped<INutritionDraftReservationStore, NutritionDraftReservationStore>();
         services.AddScoped<INutritionDraftWorkflow, CoppAddresd.Application.Features.Nutrition.Cases.NutritionDraftWorkflow>();
         services.AddHostedService<NutritionDraftGenerationWorker>();
