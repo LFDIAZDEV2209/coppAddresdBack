@@ -81,8 +81,9 @@ public sealed class PushLanguageTests
     [Fact]
     public async Task Every_shipped_control_template_and_followup_has_reviewed_English_without_provider()
     {
-        var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/CoppAddresd.Api/appsettings.Development.json"));
-        using var config = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+        var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/CoppAddresd.Api/appsettings.Example.json"));
+        using var config = JsonDocument.Parse(await File.ReadAllTextAsync(path), new JsonDocumentOptions
+        { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
         foreach (var template in config.RootElement.GetProperty("Program").GetProperty("Controls").GetProperty("Templates").EnumerateArray())
         {
             var title = template.GetProperty("Title").GetString()!; var body = template.GetProperty("Message").GetString()!;
