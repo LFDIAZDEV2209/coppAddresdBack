@@ -61,6 +61,16 @@ public static class DependencyInjection
         services.AddScoped<IAuditActorContext, HttpAuditActorContext>();
 
         services.AddScoped<IMediaItemRepository, MediaItemRepository>();
+        services.AddScoped<ExerciseMediaPreparation>();
+        services.AddScoped<IExerciseMediaImportQueue, ExerciseMediaImportQueue>();
+        services.AddHostedService<ExerciseMediaImportWorker>();
+        services.AddScoped<IExerciseMediaUpload>(sp => sp.GetRequiredService<ExerciseMediaPreparation>());
+        services.AddHttpClient<IExerciseMediaSource, WgerExerciseMediaSource>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(35);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("CoppAdresd/1.0");
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IPatientRepository, PatientRepository>();
         services.AddScoped<IPatientDashboardRepository, PatientDashboardRepository>();

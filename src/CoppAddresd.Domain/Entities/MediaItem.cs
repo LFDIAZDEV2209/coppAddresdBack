@@ -10,6 +10,7 @@ namespace CoppAddresd.Domain.Entities;
 /// </summary>
 public sealed class MediaItem
 {
+    public MediaProvenance? Provenance { get; set; }
     public Guid Id { get; set; }
 
     public string Title { get; set; } = default!;

@@ -6,6 +6,8 @@ namespace CoppAddresd.Domain.Entities;
 /// </summary>
 public sealed class RoutineExercise
 {
+    /// <summary>Enlace canónico de YouTube; nunca se descarga ni se realoja.</summary>
+    public string? YouTubeUrl { get; set; }
     public Guid Id { get; set; }
 
     public Guid RoutineId { get; set; }

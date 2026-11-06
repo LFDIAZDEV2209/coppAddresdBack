@@ -69,7 +69,8 @@ public record MediaItemDto(
     DateTimeOffset? UpdatedAt,
     Guid? CreatedBy,
     IReadOnlyList<CoppAddresd.Domain.Entities.MediaChapterDto> Chapters,
-    IReadOnlyList<string> Takeaways)
+    IReadOnlyList<string> Takeaways,
+    CoppAddresd.Domain.Entities.MediaProvenance? Provenance = null)
 {
     public static MediaItemDto FromEntity(CoppAddresd.Domain.Entities.MediaItem entity) => new(
         entity.Id,
@@ -92,5 +93,6 @@ public record MediaItemDto(
         entity.UpdatedAt,
         entity.CreatedBy,
         entity.Chapters ?? [],
-        entity.Takeaways ?? []);
+        entity.Takeaways ?? [],
+        entity.Provenance);
 }

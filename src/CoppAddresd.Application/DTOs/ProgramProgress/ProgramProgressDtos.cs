@@ -211,7 +211,8 @@ public sealed record ExerciseItemDto(
     decimal? WeightKg = null,
     string? Tempo = null,
     int? Rpe = null,
-    ExerciseReferenceVideo? ReferenceVideo = null
+    ExerciseReferenceVideo? ReferenceVideo = null,
+    CoppAddresd.Domain.Entities.MediaProvenance? Provenance = null
 );
 
 /// <summary>

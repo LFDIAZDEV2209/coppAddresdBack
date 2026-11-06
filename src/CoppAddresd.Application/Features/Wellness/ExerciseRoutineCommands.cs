@@ -1,4 +1,6 @@
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.DTOs;
+using CoppAddresd.Domain.Exceptions;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
 using MediatR;
@@ -56,6 +58,7 @@ public sealed class CreateExerciseRoutineCommandHandler(
     public async Task<ExerciseRoutineDto> Handle(CreateExerciseRoutineCommand request, CancellationToken ct)
     {
         var r = request.Request;
+        ExerciseMediaValidation.Validate(r.Exercises);
 
         var routine = new ExerciseRoutine
         {
@@ -88,6 +91,7 @@ public sealed class CreateExerciseRoutineCommandHandler(
                 DurationSecs = e.DurationSecs,
                 WeightKg = e.WeightKg,
                 MediaId = e.MediaId,
+                YouTubeUrl = YouTubeLink.Canonical(e.YouTubeUrl),
                 TargetMuscle = e.TargetMuscle?.Trim(),
                 Equipment = e.Equipment?.Trim(),
                 Tempo = e.Tempo?.Trim(),
@@ -152,6 +156,7 @@ public sealed class UpdateExerciseRoutineCommandHandler(
         if (routine is null) return null;
 
         var r = request.Request;
+        ExerciseMediaValidation.Validate(r.Exercises);
         routine.Name = r.Name.Trim();
         routine.Description = string.IsNullOrWhiteSpace(r.Description) ? null : r.Description.Trim();
         routine.Difficulty = r.Difficulty;
@@ -182,6 +187,7 @@ public sealed class UpdateExerciseRoutineCommandHandler(
                 DurationSecs = e.DurationSecs,
                 WeightKg = e.WeightKg,
                 MediaId = e.MediaId,
+                YouTubeUrl = YouTubeLink.Canonical(e.YouTubeUrl),
                 TargetMuscle = e.TargetMuscle?.Trim(),
                 Equipment = e.Equipment?.Trim(),
                 Tempo = e.Tempo?.Trim(),
@@ -222,5 +228,18 @@ public sealed class DeleteExerciseRoutineCommandHandler(
 
         logger.LogInformation("ExerciseRoutine eliminado: {Id}", request.Id);
         return true;
+    }
+}
+
+internal static class ExerciseMediaValidation
+{
+    public static void Validate(IReadOnlyList<CreateRoutineExerciseRequest>? exercises)
+    {
+        foreach (var exercise in exercises ?? [])
+        {
+            if (exercise.MediaId is not null && !string.IsNullOrWhiteSpace(exercise.YouTubeUrl))
+                throw new UnprocessableEntityException("Elige un archivo o YouTube por ejercicio, no ambos.");
+            _ = YouTubeLink.Canonical(exercise.YouTubeUrl);
+        }
     }
 }

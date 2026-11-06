@@ -10,6 +10,7 @@ public sealed class RoutineExerciseConfiguration : IEntityTypeConfiguration<Rout
     public void Configure(EntityTypeBuilder<RoutineExercise> builder)
     {
         builder.ToTable("routine_exercises", "app");
+        builder.Property(x => x.YouTubeUrl).HasColumnName("youtube_url").HasMaxLength(200);
 
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)

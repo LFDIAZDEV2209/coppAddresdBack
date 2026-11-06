@@ -80,3 +80,17 @@ externo; el cálculo y la llamada a IA terminan antes de abrirla. Fallo/cancelac
 revierte por dispose. Los fallos de revisión se traducen a conflicto de negocio.
 La integración inyecta fallo en bitácora tras el guardado del agregado y verifica
 que no persisten cabecera, hijos ni eventos.
+
+### Cuotas de demostraciones e importaciones
+
+`ExerciseMediaPreparation.ReserveAsync`: Read Committed + advisory xact lock por
+usuario, lectura del consumo UTC e INSERT append-only. Retry mediante execution
+strategy; ID de reserva estable evita duplicar una confirmación incierta. La
+transacción termina antes del primer PUT S3. El fallo de S3/registro posterior
+conserva la reserva y limpia objetos parciales con un token independiente acotado.
+
+`ExerciseMediaImportQueue.EnqueueAsync`: advisory xact lock por usuario para
+reutilizar pendientes/completados y respetar dos pendientes/diez solicitudes UTC.
+No descarga ni convierte dentro de la transacción. El worker reclama con un UPDATE
+atómico + CTE `FOR UPDATE SKIP LOCKED`; el lease queda confirmado antes de cualquier
+E/S externa. La recuperación reutiliza la identidad del medio/trabajo.

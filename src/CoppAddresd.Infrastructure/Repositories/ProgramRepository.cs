@@ -2092,6 +2092,7 @@ public sealed partial class ProgramRepository(
                             .Select(e => new
                             {
                                 HasConfiguredMedia = e.MediaId != null,
+                                e.YouTubeUrl,
                                 Content = new ExerciseItemDto(
                                     e.Name,
                                     e.Description,
@@ -2113,7 +2114,9 @@ public sealed partial class ProgramRepository(
                                         && (e.Media.MediaType == MediaType.Video || e.Media.MediaType == MediaType.Image) ? e.Media.MediaType.ToString() : null,
                                     e.WeightKg,
                                     e.Tempo,
-                                    e.Rpe
+                                    e.Rpe,
+                                    null,
+                                    e.Media != null ? e.Media.Provenance : null
                                 )
                             })
                             .ToList(),
@@ -2123,7 +2126,7 @@ public sealed partial class ProgramRepository(
                 resolvedRoutineName = routineData?.Name;
                 resolvedExercises = routineData?.Exercises.Select(e => e.Content with
                 {
-                    ReferenceVideo = !e.HasConfiguredMedia ? CoppAddresd.Application.DTOs.ExerciseReferenceVideo.ForExercise(e.Content.Name) : null,
+                    ReferenceVideo = !e.HasConfiguredMedia ? CoppAddresd.Application.DTOs.ExerciseReferenceVideo.Resolve(e.YouTubeUrl, e.Content.Name) : null,
                 }).ToList();
             }
         }

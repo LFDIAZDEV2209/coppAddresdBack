@@ -165,3 +165,15 @@ volumen productivo: los consumidores de bandeja y publicación son del grupo 4.
 
 Se crea en tabla nueva vacía; sin cambios a índices legacy ni bloqueo de tablas
 clínicas grandes. La prueba de rollback valida la persistencia atómica del evento.
+
+### Demostraciones de ejercicios (2026-11-05)
+
+| Índice | Tabla | Columnas | Tipo | Consulta / motivo | Costo |
+| --- | --- | --- | --- | --- | --- |
+| ix_exercise_media_usage_user_created | app.exercise_media_usage | user_id, created_at | B-tree | Cuota por usuario + rango del día UTC, sin recorrer todo el ledger | Una entrada por reserva |
+| ix_exercise_media_jobs_user_created | app.exercise_media_import_jobs | user_id, created_at | B-tree | Trabajos propios, límite diario y reutilización | Una entrada por solicitud nueva |
+| ix_exercise_media_jobs_pending | app.exercise_media_import_jobs | status, created_at; filtro queued/processing | B-tree parcial | Claim por orden de creación y recuperación de leases | Actualización al entrar/salir de procesamiento |
+
+Tablas nuevas vacías: la creación inicial de índices no bloquea tablas existentes.
+No hay FK a auth.users: el actor es la identidad JWT de un servicio independiente.
+No se elimina el ledger al eliminar el medio.

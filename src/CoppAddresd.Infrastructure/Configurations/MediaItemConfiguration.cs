@@ -114,6 +114,12 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
                 v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
             .HasDefaultValueSql("'[]'::jsonb");
 
+        builder.Property(x => x.Provenance)
+            .HasColumnName("provenance").HasColumnType("jsonb")
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<MediaProvenance>(v, (JsonSerializerOptions?)null));
+
         builder.HasIndex(x => x.Status)
             .HasDatabaseName("ix_media_items_status");
 

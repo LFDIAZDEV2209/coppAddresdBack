@@ -154,7 +154,7 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
     public async Task<ExerciseRoutine?> GetRoutineByIdAsync(Guid id, CancellationToken ct = default)
         => await dbContext.ExerciseRoutines
             .AsNoTracking()
-            .Include(x => x.Exercises.OrderBy(e => e.SortOrder))
+            .Include(x => x.Exercises.OrderBy(e => e.SortOrder)).ThenInclude(e => e.Media)
             .FirstOrDefaultAsync(x => x.Id == id, ct);
 
     public async Task<(IReadOnlyList<ExerciseRoutine> Items, int Total)> ListRoutinesAsync(

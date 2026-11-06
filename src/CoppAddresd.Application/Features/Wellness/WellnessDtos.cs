@@ -152,7 +152,7 @@ public record RoutineExerciseDto(
     int? DurationSecs, decimal? WeightKg,
     string? TargetMuscle, string? Equipment,
     string? Tempo, int? Rpe, string? Tips,
-    Guid? MediaId, int SortOrder, ExerciseReferenceVideo? ReferenceVideo = null)
+    Guid? MediaId, int SortOrder, ExerciseReferenceVideo? ReferenceVideo = null, string? YouTubeUrl = null, Domain.Entities.MediaProvenance? Provenance = null)
 {
     public static RoutineExerciseDto FromEntity(Domain.Entities.RoutineExercise e) => new(
         e.Id, e.Name, e.Description,
@@ -160,7 +160,7 @@ public record RoutineExerciseDto(
         e.DurationSecs, e.WeightKg,
         e.TargetMuscle, e.Equipment,
         e.Tempo, e.Rpe, e.Tips,
-        e.MediaId, e.SortOrder, e.MediaId is null ? ExerciseReferenceVideo.ForExercise(e.Name) : null);
+        e.MediaId, e.SortOrder, e.MediaId is null ? ExerciseReferenceVideo.Resolve(e.YouTubeUrl, e.Name) : null, e.YouTubeUrl, e.Media?.Provenance);
 }
 
 public record CreateExerciseRoutineRequest(
@@ -179,7 +179,7 @@ public record CreateRoutineExerciseRequest(
     int? DurationSecs, decimal? WeightKg,
     string? TargetMuscle, string? Equipment,
     string? Tempo, int? Rpe, string? Tips,
-    Guid? MediaId, int SortOrder);
+    Guid? MediaId, int SortOrder, string? YouTubeUrl = null);
 
 public record UpdateExerciseRoutineRequest(
     string Name, string? Description,

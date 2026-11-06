@@ -39,6 +39,10 @@ public sealed class UpdateMediaItemCommandHandler(
         if (entity is null)
             return null;
 
+        if (entity.Provenance is not null && (request.StorageKey != entity.StorageKey || request.ThumbnailKey != entity.ThumbnailKey))
+            throw new CoppAddresd.Domain.Exceptions.UnprocessableEntityException(
+                "Los archivos importados conservan sus créditos. Crea otro medio para reemplazar el archivo.");
+
         var oldStorageKey = entity.StorageKey;
         var oldThumbnailKey = entity.ThumbnailKey;
 

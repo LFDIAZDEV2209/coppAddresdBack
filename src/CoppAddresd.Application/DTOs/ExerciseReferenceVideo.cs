@@ -7,6 +7,11 @@ namespace CoppAddresd.Application.DTOs;
 /// An uploaded exercise medium takes precedence. Unknown names have no automatic match.</summary>
 public sealed record ExerciseReferenceVideo(string EmbedUrl, string SourceUrl, string Author)
 {
+    public static ExerciseReferenceVideo? Resolve(string? youTubeUrl, string name)
+        => string.IsNullOrWhiteSpace(youTubeUrl) ? ForExercise(name) : new(
+            "https://www.youtube-nocookie.com/embed/" + YouTubeLink.Id(youTubeUrl),
+            YouTubeLink.Canonical(youTubeUrl)!, "YouTube");
+
     public static ExerciseReferenceVideo? ForExercise(string name)
     {
         var normalized = new string(name.Normalize(NormalizationForm.FormD)
@@ -29,5 +34,36 @@ public sealed record ExerciseReferenceVideo(string EmbedUrl, string SourceUrl, s
                 "https://www.youtube.com/watch?v=3U9IbwjkOfk", "Smart Fit Chile"),
             _ => null,
         };
+    }
+}
+
+/// <summary>Solo hosts y rutas oficiales; no acepta iframes arbitrarios.</summary>
+public static class YouTubeLink
+{
+    public static string? Canonical(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        return "https://www.youtube.com/watch?v=" + Id(value);
+    }
+
+    public static string Id(string value)
+    {
+        if (value.Length > 2048 || !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
+            || uri.Scheme != "https" || !string.IsNullOrEmpty(uri.UserInfo) || !uri.IsDefaultPort)
+            throw new CoppAddresd.Domain.Exceptions.UnprocessableEntityException("Usa un enlace válido de YouTube con HTTPS.");
+        string? id = null;
+        var host = uri.Host.ToLowerInvariant();
+        var path = uri.AbsolutePath.Trim('/').Split('/');
+        if (host == "youtu.be" && path.Length == 1) id = path[0];
+        else if (host is "youtube.com" or "www.youtube.com" or "m.youtube.com" or "www.youtube-nocookie.com")
+        {
+            if (uri.AbsolutePath == "/watch")
+                id = uri.Query.TrimStart('?').Split('&').Select(p => p.Split('=', 2))
+                    .FirstOrDefault(p => p.Length == 2 && p[0] == "v")?.ElementAtOrDefault(1);
+            else if (path.Length == 2 && path[0] is "embed" or "shorts" or "live") id = path[1];
+        }
+        if (id is null || !System.Text.RegularExpressions.Regex.IsMatch(id, "^[a-zA-Z0-9_-]{11}$"))
+            throw new CoppAddresd.Domain.Exceptions.UnprocessableEntityException("Usa un enlace válido de YouTube.");
+        return id;
     }
 }
