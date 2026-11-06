@@ -225,7 +225,7 @@ public sealed class NutritionAuthorizationTests
         Assert.Equal("items,total,page,pageSize",string.Join(',',json.EnumerateObject().Select(x => x.Name)));
         Assert.Equal(total,json.GetProperty("total").GetInt32());
         var item = json.GetProperty("items")[0];
-        Assert.Equal("patientId,patientName,state,prescription,generationState,generationFallback,generationReason,generationUpdatedAt",string.Join(',',item.EnumerateObject().Select(x => x.Name)));
+        Assert.Equal("patientId,patientName,state,prescription,generationState,generationFallback,generationReason,generationUpdatedAt,hasPublishedToday,publishedCycleStart,publishedCycleEnd,latestDraftState,hasFutureDraft",string.Join(',',item.EnumerateObject().Select(x => x.Name)));
         Assert.Equal(OwnPatient,item.GetProperty("patientId").GetGuid()); Assert.Equal("sin_plan",item.GetProperty("state").GetString());
         Assert.Equal(JsonValueKind.Null,item.GetProperty("prescription").ValueKind);
     }

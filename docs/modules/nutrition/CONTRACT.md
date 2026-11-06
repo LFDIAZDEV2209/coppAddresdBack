@@ -321,7 +321,12 @@ y del fixture HTTP `NutritionAuthorizationTests.HttpInbox_UsesJwtScope_IgnoresCl
       "generationState": null,
       "generationFallback": false,
       "generationReason": null,
-      "generationUpdatedAt": null
+      "generationUpdatedAt": null,
+      "hasPublishedToday": false,
+      "publishedCycleStart": null,
+      "publishedCycleEnd": null,
+      "latestDraftState": null,
+      "hasFutureDraft": false
     }
   ],
   "total": 1,
@@ -355,7 +360,12 @@ Ejemplo de la página con prescripción de
       "generationState": "ready",
       "generationFallback": false,
       "generationReason": null,
-      "generationUpdatedAt": "2026-11-06T02:00:00Z"
+      "generationUpdatedAt": "2026-11-06T02:00:00Z",
+      "hasPublishedToday": true,
+      "publishedCycleStart": "2026-10-12",
+      "publishedCycleEnd": "2026-11-10",
+      "latestDraftState": null,
+      "hasFutureDraft": false
     }
   ],
   "total": 11,
@@ -1037,3 +1047,23 @@ inicial completa correlacionable. Ejemplos del sobre (correlationId y ruta de la
 ```json
 {"type":"https://httpstatuses.io/422","title":"Unprocessable Entity","status":422,"detail":"El paciente no tiene una batería inicial completa y correlacionable para generar el borrador.","instance":"/api/v1/nutrition/patients/11111111-1111-1111-1111-111111111111/draft-generation","correlationId":null}
 ```
+
+### 20.2 Tarea 8.4 — vigente local independiente del borrador
+
+Cada fila de §4 incorpora `hasPublishedToday`, `publishedCycleStart`,
+`publishedCycleEnd`, `latestDraftState` y `hasFutureDraft`.
+Vigente = aprobado publicado con inicio <= hoy <= fin e inicio > hoy -30;
+hoy usa el reloj TimeProvider de la consulta y la timezone del paciente
+(misma fecha local que NutritionStateMachine.Today), nunca CycleId del borrador.
+Desempate de publicaciones: start_date DESC, id DESC. Fechas null sin vigente.
+LatestDraftState = último no publicado por created_at DESC, id DESC, entre
+borrador_ia/en_aprobacion/devuelto. HasFutureDraft considera CUALQUIER borrador
+de esos estados con inicio > hoy, aunque el último tenga fecha null.
+Se conservan las dos consultas SQL, orden y filtros anteriores; no hay menús.
+
+Ejemplo de campos adicionales cuando C2 no oculta C1 vigente:
+```json
+{"hasPublishedToday":true,"publishedCycleStart":"2026-10-07","publishedCycleEnd":"2026-11-05","latestDraftState":"en_aprobacion","hasFutureDraft":true}
+```
+A las 05:00 UTC del 6/11 en America/Bogota, C1 terminado deja de ser vigente
+y C2 que inicia ese día deja de ser futuro; su estado de revisión se conserva.

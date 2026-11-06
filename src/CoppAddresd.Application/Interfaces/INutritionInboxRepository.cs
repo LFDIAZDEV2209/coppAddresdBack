@@ -13,4 +13,6 @@ public sealed record NutritionInboxData(IReadOnlyList<NutritionInboxRow> Items, 
 public sealed record NutritionInboxRow(Guid PatientId, string PatientName, string State, Guid? PrescriptionId,
     int? Version, int? Revision, bool Provisional, double? K, DateOnly? StartDate, DateOnly? EndDate,
     bool IsPublished, string? ClinicalProfileJson, string? TargetsJson, string? GenerationState = null,
-    bool GenerationFallback = false, string? GenerationReason = null, DateTime? GenerationUpdatedAt = null);
+    bool GenerationFallback = false, string? GenerationReason = null, DateTime? GenerationUpdatedAt = null,
+    bool HasPublishedToday = false, DateOnly? PublishedCycleStart = null, DateOnly? PublishedCycleEnd = null,
+    string? LatestDraftState = null, bool HasFutureDraft = false);

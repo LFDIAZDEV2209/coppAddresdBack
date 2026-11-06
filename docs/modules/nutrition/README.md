@@ -511,3 +511,13 @@ ON CONFLICT dentro de una transacción corta; reprogramar failed conserva attemp
 Pending permite un intento manual adicional tras agotar los cinco automáticos.
 La bandeja expone estado/fallback/motivo técnico/fecha de la última reserva usando
 los mismos dos SQL por página, sin cargar comidas ni añadir consultas por fila.
+
+### Vigencia en bandeja (Ola 8, 8.4)
+
+La cabecera del último plan y la publicación vigente se resuelven por separado.
+La fila añade hasPublishedToday/publishedCycleStart/publishedCycleEnd,
+latestDraftState y hasFutureDraft por fecha local del paciente, sin depender de
+CycleId. C2 en revisión nunca oculta C1 vigente. Se mantienen dos SQL por página
+con joins laterales sobre cabeceras, sin comidas. Tests con reloj fijo cubren
+el cambio a medianoche en Bogotá, solo borrador futuro y paginación estable;
+el test de 2.000 pacientes valida presupuesto de consultas y EXPLAIN real.
