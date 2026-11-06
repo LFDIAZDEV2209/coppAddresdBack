@@ -32,6 +32,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
     private const int BatchDeleteMax = 1000;
 
     private readonly IAmazonS3 _client;
+    private readonly Protocol _presignProtocol = Protocol.HTTPS;
     private readonly string _bucket;
 
     public S3ObjectStorageService(IOptions<S3StorageOptions> options)
@@ -56,6 +57,10 @@ public sealed class S3ObjectStorageService : IObjectStorageService
             // Compatibilidad con LocalStack/MinIO en desarrollo.
             config.ServiceURL = settings.ServiceUrl;
             config.ForcePathStyle = true;
+            // El endpoint compatible local puede usar HTTP; AWS conserva HTTPS.
+            if (Uri.TryCreate(settings.ServiceUrl, UriKind.Absolute, out var endpoint)
+                && endpoint.Scheme == Uri.UriSchemeHttp)
+                _presignProtocol = Protocol.HTTP;
         }
 
         _client = new AmazonS3Client(config);
@@ -248,6 +253,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
             BucketName = _bucket,
             Key = key,
             Verb = HttpVerb.GET,
+            Protocol = _presignProtocol,
             Expires = DateTime.UtcNow.Add(expiry),
         });
 
@@ -269,6 +275,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
             BucketName = _bucket,
             Key = key,
             Verb = HttpVerb.PUT,
+            Protocol = _presignProtocol,
             Expires = DateTime.UtcNow.Add(expiry),
         };
 

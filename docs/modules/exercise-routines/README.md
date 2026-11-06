@@ -145,7 +145,8 @@ anuncios intactos, referrer policy `strict-origin-when-cross-origin`, tamaño m�
 privados, eliminados o con inserción bloqueada.
 
 En Capacitor se muestra el poster y se abre el reproductor en navegador nativo.
-iOS SFSafariViewController usa `origin=https://com.coppadresd.app`, conforme al
+iOS SFSafariViewController usa `origin=https://<bundle-id>` obtenido en runtime
+con `App.getInfo()` (Xcode: `com.coppadresd.mobile`), conforme al
 mecanismo de identificación documentado por YouTube. Android abre la página completa
 de YouTube para evitar un iframe local sin Referer. No se envían datos clínicos al
 proveedor. La app muestra enlaces a condiciones de YouTube y privacidad de Google.
