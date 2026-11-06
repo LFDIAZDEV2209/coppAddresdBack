@@ -131,7 +131,7 @@ public sealed class NutritionPlanReviewRulesTests
         ]);
         repository.ListAssignmentsByPatientAsync(plan.PatientId.Value, Arg.Any<CancellationToken>()).Returns(Array.Empty<RoutineAssignment>());
         repository.GetPlanByIdAsync(plan.Id, Arg.Any<CancellationToken>()).Returns(plan);
-        var resolver = new ProgramContentResolver(repository, NullLogger<ProgramContentResolver>.Instance);
+        var resolver = new ProgramContentResolver(repository, NullLogger<ProgramContentResolver>.Instance, Substitute.For<INutritionPrescriptionRepository>());
         var result = await resolver.ResolveAsync(plan.PatientId.Value, DateOnly.FromDateTime(DateTime.UtcNow), CancellationToken.None);
         Assert.Null(result?.NutritionPlanId); Assert.Null(result?.NutritionPlanDayNumber);
     }

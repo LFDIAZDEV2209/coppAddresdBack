@@ -521,3 +521,19 @@ CycleId. C2 en revisión nunca oculta C1 vigente. Se mantienen dos SQL por pági
 con joins laterales sobre cabeceras, sin comidas. Tests con reloj fijo cubren
 el cambio a medianoche en Bogotá, solo borrador futuro y paginación estable;
 el test de 2.000 pacientes valida presupuesto de consultas y EXPLAIN real.
+
+### Misiones desde Nutrition (Ola 8, 8.5)
+
+ProgramContentResolver prioriza la prescripción publicada vigente por fecha local,
+incluso sin asignación wellness. SourcePrescriptionId/PrescriptionDayNumber son
+referencias internas distintas de NutritionPlanId/NutritionPlanDayNumber.
+El rango usa una carga de 100 cabeceras por paciente y decide por cada fecha.
+La misión lee solo comidas del día seleccionado y usa NutritionEngine.SumItems
+para Atwater; metas desde cabecera, menú y notas desde prescripción.
+El snapshot conserva nombres de campos: nutritionPlanId null, día de ciclo en
+nutritionPlanDayNumber; no se añaden campos al DTO móvil ni al de registro.
+El gate nut exige las comidas prescritas del día. Las escrituras de completación
+y de ingesta conservan sus FKs wellness null; CHECK weekday y FK no se alteran.
+Sin prescripción se conserva el fallback wellness y el ejercicio es independiente.
+Las pruebas PostgreSQL verifican el snapshot final, calorías Atwater frente a
+Calories100 deliberadamente distinto, el gate, replay, FKs nulas y fallback.

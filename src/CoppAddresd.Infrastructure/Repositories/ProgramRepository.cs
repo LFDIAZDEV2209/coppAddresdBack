@@ -873,6 +873,8 @@ public sealed partial class ProgramRepository(
         // enrollment). Si no hay resolver (tests) o no hay contenido activo,
         // los FKs quedan null (el input los trae null por defecto). XP se
         // otorga siempre (default MVP: sin contenido no bloquea).
+        Guid? resolvedSourcePrescriptionId = null;
+        int? resolvedPrescriptionDayNumber = null;
         Guid? resolvedNutritionPlanId = input.NutritionPlanId;
         short? resolvedNutritionPlanDayNumber = input.NutritionPlanDayNumber;
         Guid? resolvedExerciseRoutineId = input.ExerciseRoutineId;
@@ -889,8 +891,11 @@ public sealed partial class ProgramRepository(
             {
                 // nut: nutrition_plan_id y day_number del resolvedor.
                 // Si el plan no tiene día para el weekday → ambos null (AC-13).
-                resolvedNutritionPlanId = resolution.NutritionPlanId;
-                resolvedNutritionPlanDayNumber = resolution.NutritionPlanDayNumber.HasValue
+                resolvedSourcePrescriptionId = resolution.SourcePrescriptionId;
+                resolvedPrescriptionDayNumber = resolution.PrescriptionDayNumber;
+                // Las FKs wellness y el CHECK 1..7 nunca reciben una prescripción ni su día 1..30.
+                resolvedNutritionPlanId = resolution.SourcePrescriptionId is null ? resolution.NutritionPlanId : null;
+                resolvedNutritionPlanDayNumber = resolution.SourcePrescriptionId is null && resolution.NutritionPlanDayNumber.HasValue
                     ? (short?)resolution.NutritionPlanDayNumber.Value
                     : null;
 
@@ -916,13 +921,17 @@ public sealed partial class ProgramRepository(
         //     ya retornaron antes de llegar aquí.
         if (
             input.TaskCode == TaskCode.nut
-            && resolvedNutritionPlanId is not null
-            && resolvedNutritionPlanDayNumber is not null
+            && ((resolvedSourcePrescriptionId is not null && resolvedPrescriptionDayNumber is >= 1 and <= 30)
+                || (resolvedNutritionPlanId is not null && resolvedNutritionPlanDayNumber is not null))
         )
         {
             // Expected: tipos de comida DISTINTOS del plan-day (D4).
-            var expectedMealTypes = await dbContext
-                .NutritionPlanDays.AsNoTracking()
+            var expectedMealTypes = resolvedSourcePrescriptionId is { } prescriptionId
+                ? (await dbContext.NutritionPrescriptionMeals.AsNoTracking()
+                    .Where(m => m.PrescriptionId == prescriptionId && m.DayNumber == resolvedPrescriptionDayNumber
+                        && m.Prescription!.PatientId == enrollment.PatientId)
+                    .Select(m => m.MealType).Distinct().ToListAsync(ct)).Select(PrescriptionMealType).ToList()
+                : await dbContext.NutritionPlanDays.AsNoTracking()
                 .Where(d =>
                     d.PlanId == resolvedNutritionPlanId
                     && d.DayNumber == resolvedNutritionPlanDayNumber
@@ -2050,7 +2059,24 @@ public sealed partial class ProgramRepository(
 
         if (contentResolution is { })
         {
-            if (contentResolution.NutritionPlanId is { } planId)
+            if (contentResolution.SourcePrescriptionId is { } prescriptionId && contentResolution.PrescriptionDayNumber is { } prescriptionDay)
+            {
+                var prescription = await ReadMissionPrescriptionAsync(row.PatientId, prescriptionId, prescriptionDay, ct);
+                if (prescription is null)
+                    contentResolution = contentResolution with { SourcePrescriptionId = null, PrescriptionDayNumber = null };
+                else
+                {
+                    resolvedPlanName = "Plan nutricional";
+                    resolvedCalorieTarget = prescription.CalorieTarget is { } calories
+                        ? (int)CoppAddresd.Application.Features.Nutrition.Engine.NutritionEngine.R0(calories) : null;
+                    resolvedProteinTarget = (decimal?)prescription.ProteinTarget;
+                    resolvedCarbsTarget = (decimal?)prescription.CarbsTarget;
+                    resolvedFatTarget = (decimal?)prescription.FatTarget;
+                    resolvedFiberTarget = (decimal?)prescription.FiberTarget;
+                    resolvedMeals = PrescriptionMeals(prescription);
+                }
+            }
+            else if (contentResolution.NutritionPlanId is { } planId)
             {
                 var dayNumber = contentResolution.NutritionPlanDayNumber ?? 1;
 
@@ -2288,16 +2314,16 @@ public sealed partial class ProgramRepository(
                 else if (taskCode == TaskCode.nut)
                 {
                     // T-75: nut → campos nutritionPlan* del resolvedor.
-                    if (contentResolution is { NutritionPlanId: { } planId })
+                    if (contentResolution is { } nutrition && (nutrition.SourcePrescriptionId is not null || nutrition.NutritionPlanId is not null))
                     {
                         content = new TodayTaskContentDto(
                             MediaId: null,
                             Title: resolvedPlanName,
                             DurationSecs: null,
                             ThumbnailUrl: null,
-                            NutritionPlanId: planId,
+                            NutritionPlanId: nutrition.NutritionPlanId,
                             NutritionPlanName: resolvedPlanName,
-                            NutritionPlanDayNumber: contentResolution.NutritionPlanDayNumber,
+                            NutritionPlanDayNumber: nutrition.PrescriptionDayNumber ?? nutrition.NutritionPlanDayNumber,
                             DailyCalorieTarget: resolvedCalorieTarget,
                             DailyProteinTarget: resolvedProteinTarget,
                             DailyCarbsTarget: resolvedCarbsTarget,

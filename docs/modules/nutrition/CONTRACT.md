@@ -1067,3 +1067,38 @@ Ejemplo de campos adicionales cuando C2 no oculta C1 vigente:
 ```
 A las 05:00 UTC del 6/11 en America/Bogota, C1 terminado deja de ser vigente
 y C2 que inicia ese día deja de ser futuro; su estado de revisión se conserva.
+
+### 20.3 Tarea 8.5 — misiones desde la prescripción vigente
+
+ProgramContentResolver usa primero GetCurrentPublishedAsync(patientId, localDate).
+La resolución interna separa `sourcePrescriptionId` y `prescriptionDayNumber`
+(día = fecha local - inicio +1, inclusivo 1–30) de las referencias wellness.
+`nutritionPlanId` y `nutritionPlanDayNumber` de esa resolución quedan null si
+hay prescripción. ResolveRangeAsync carga una vez ListByPatientAsync(1,100),
+elige publicados aprobados vigentes por fecha (inicio DESC, UUID DESC) y mapea
+en memoria; wellness solo cubre las fechas sin prescripción. Ejercicio conserva
+su resolución independiente. Log Information declara source prescription/wellness,
+ID y día, sin contenido clínico.
+
+El snapshot del programa entrega las comidas del día prescrito y las metas
+actuales de la cabecera. Conserva la forma de TodayTaskContentDto y
+NutritionMealDto: `nutritionPlanId:null` con prescripción;
+`nutritionPlanDayNumber` del contenido representa su día de ciclo 1–30.
+Description = MenuName, Foods = nombre x gramos g por ítems ordenados;
+macros/calorías = NutritionEngine.SumItems (Atwater, no Calories100).
+Des/alm/mer/cen se adaptan a Desayuno/Almuerzo/Snack/Cena; SortOrder 0–3.
+WaterMl proviene de la comida; Notes usa su nota o Instructions de la cabecera.
+Ejemplo de los campos nutricionales de contenido (día 30):
+```json
+{"nutritionPlanId":null,"nutritionPlanName":"Plan nutricional","nutritionPlanDayNumber":30,"dailyCalorieTarget":2110,"dailyProteinTarget":110,"dailyCarbsTarget":240,"dailyFatTarget":70,"dailyFiberTarget":30,"nutritionMeals":[{"mealType":"Desayuno","description":"Prescrito 30 des","foods":"Alimento de prueba x 100 g","calories":165,"proteinG":10,"carbsG":20,"fatG":5,"fiberG":3,"waterMl":250,"notes":"Nota prescrita","sortOrder":0}],"contentUnavailable":false}
+```
+El ejemplo muestra una comida del array; el fixture real exige las cuatro.
+
+CompleteTaskCoreAsync usa las comidas del PrescriptionDayNumber para el gate
+NutritionMealCodeMapping.For, compara los mismos loggedCodes locales y conserva
+replays. Con prescripción escribe SIEMPRE nutrition_plan_id=null y
+nutrition_plan_day_number=null en task_completions, incluso si el cliente
+mandó un plan wellness. Los logs de ingesta también conservan esas FKs null.
+FK_task_completions_nutrition_plans_nutrition_plan_id y CHECK BETWEEN 1 AND 7
+permanecen intactos: no hay migración. Sin prescripción conserva el camino
+wellness. El DTO de registro y GET /api/v1/me/nutrition-plan (§14) no cambian.
