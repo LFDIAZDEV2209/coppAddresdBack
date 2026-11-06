@@ -61,6 +61,8 @@ internal static class SosRecipientDispatch
     {
         Id = alert.Id, PatientId = alert.PatientId, Patient = alert.Patient, CreatedAt = alert.CreatedAt,
         DestinationPhoneE164 = recipient.PhoneE164 ?? "", Latitude = alert.Latitude, Longitude = alert.Longitude,
+        AccuracyMeters = alert.AccuracyMeters, LocationCapturedAt = alert.LocationCapturedAt,
+        LocationDescription = alert.LocationDescription, LocationLookupCompletedAt = alert.LocationLookupCompletedAt,
         HeartRate = alert.HeartRate, Spo2 = alert.Spo2, BloodPressure = alert.BloodPressure,
         SmsChannelStatus = recipient.SmsChannelStatus, SmsDeliveryStatus = recipient.SmsDeliveryStatus,
         SmsDetail = recipient.SmsDetail, VoiceChannelStatus = recipient.VoiceChannelStatus,

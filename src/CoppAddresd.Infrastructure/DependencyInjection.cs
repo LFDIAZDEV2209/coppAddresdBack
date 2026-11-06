@@ -258,6 +258,19 @@ public static class DependencyInjection
     {
         services.AddScoped<ISosAlertRepository, SosAlertRepository>();
         services.AddSingleton<ISosLocationLinkService, SosLocationLinkService>();
+        services.Configure<SosGeocodingSettings>(configuration.GetSection("SosGeocoding"));
+        services.AddSingleton<Amazon.GeoPlaces.IAmazonGeoPlaces>(sp =>
+        {
+            var region = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SosGeocodingSettings>>().Value.Region;
+            return new Amazon.GeoPlaces.AmazonGeoPlacesClient(new Amazon.GeoPlaces.AmazonGeoPlacesConfig
+            {
+                RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(region),
+                MaxErrorRetry = 0,
+                Timeout = TimeSpan.FromMilliseconds(1500),
+            });
+        });
+        services.AddScoped<Func<Amazon.GeoPlaces.IAmazonGeoPlaces>>(sp => () => sp.GetRequiredService<Amazon.GeoPlaces.IAmazonGeoPlaces>());
+        services.AddScoped<SosLocationEnricher>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<ISosRateLimiter, SosRateLimitingService>();
         services.AddScoped<ISosSmsDispatcher, SosSmsDispatcher>();

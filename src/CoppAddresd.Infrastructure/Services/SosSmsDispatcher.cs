@@ -238,7 +238,16 @@ public static class SosSmsTemplate
         var phone = SosMessageFormatting.PatientPhone(patient);
         if (phone is not null) lines.Add($"Llamar: {phone}");
         var maps = SosMessageFormatting.LocationLink(alert, locationUrl);
-        lines.Add(maps is null ? "Ubicación no compartida." : $"Ver ubicación: {maps}");
+        if (maps is null) lines.Add("Ubicación no compartida.");
+        else
+        {
+            lines.Add(string.IsNullOrWhiteSpace(alert.LocationDescription)
+                ? "Dirección no disponible; consulta el mapa."
+                : "Dirección aproximada (Amazon Location): " + alert.LocationDescription);
+            lines.Add($"Ver ubicación: {maps}");
+            lines.Add(SosMessageFormatting.LocationCaptureTime(alert));
+            lines.Add(SosMessageFormatting.LocationAccuracy(alert));
+        }
         var vitals = SosMessageFormatting.SmsVitals(alert);
         if (vitals is not null) lines.Add(vitals);
         return string.Join("\n", lines);

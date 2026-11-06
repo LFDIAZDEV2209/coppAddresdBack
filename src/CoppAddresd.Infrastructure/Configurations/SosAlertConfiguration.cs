@@ -54,6 +54,9 @@ public sealed class SosAlertConfiguration : IEntityTypeConfiguration<SosAlert>
             .HasColumnName("location_captured_at")
             .HasColumnType("timestamptz");
 
+        builder.Property(x => x.LocationDescription).HasColumnName("location_description").HasMaxLength(300);
+        builder.Property(x => x.LocationLookupCompletedAt).HasColumnName("location_lookup_completed_at").HasColumnType("timestamptz");
+
         builder.Property(x => x.HeartRate).HasColumnName("heart_rate");
 
         builder.Property(x => x.Spo2).HasColumnName("spo2");

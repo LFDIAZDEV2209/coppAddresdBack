@@ -9239,6 +9239,15 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("timestamptz")
                         .HasColumnName("location_captured_at");
 
+                    b.Property<string>("LocationDescription")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("location_description");
+
+                    b.Property<DateTime?>("LocationLookupCompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("location_lookup_completed_at");
+
                     b.Property<double?>("Longitude")
                         .HasColumnType("double precision")
                         .HasColumnName("longitude");

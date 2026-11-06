@@ -50,6 +50,12 @@ public sealed class SosAlert
     /// <summary>Instante de la captura GPS reportado por la app (UTC).</summary>
     public DateTime? LocationCapturedAt { get; set; }
 
+    /// <summary>Dirección aproximada resuelta desde el GPS; nunca el domicilio del perfil.</summary>
+    public string? LocationDescription { get; set; }
+
+    /// <summary>Snapshot completado (también sin dirección); evita repetir llamadas de geocodificación.</summary>
+    public DateTime? LocationLookupCompletedAt { get; set; }
+
     // --- Signos vitales (opcional, demo) ---
 
     /// <summary>Frecuencia cardíaca en lpm reportada al activar (demo por ahora).</summary>

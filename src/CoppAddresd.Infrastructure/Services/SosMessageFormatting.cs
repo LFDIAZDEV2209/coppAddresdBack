@@ -74,6 +74,19 @@ internal static class SosMessageFormatting
         return utc.ToString("dd MMM yyyy · HH:mm 'UTC'", CultureInfo.GetCultureInfo("es"));
     }
 
+    /// <summary>Hora real de captura; no se sustituye por la hora de activación.</summary>
+    public static string LocationCaptureTime(SosAlert alert) =>
+        alert.LocationCapturedAt is { } captured && captured > DateTime.UnixEpoch && captured <= alert.CreatedAt.AddMinutes(1)
+            ? "GPS capturado: " + FormatMessageTime(captured)
+            : "Hora de captura no disponible";
+
+    public static string LocationAccuracy(SosAlert alert) =>
+        alert.AccuracyMeters is { } value && double.IsFinite(value) && value >= 0 && value <= 100_000
+            ? "Precisión GPS aprox.: " + (value < 1000
+                ? Math.Max(1, Math.Ceiling(value)).ToString("0", CultureInfo.InvariantCulture) + " m"
+                : (value / 1000).ToString("0.#", CultureInfo.GetCultureInfo("es-CO")) + " km")
+            : "Precisión GPS no disponible";
+
     /// <summary>Enlace válido de Google Maps; la precisión no forma parte de una URL.</summary>
     public static string? MapsLink(SosAlert alert)
     {

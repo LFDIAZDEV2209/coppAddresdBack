@@ -41,8 +41,8 @@ se define, se reutiliza `SosWebhook:BaseUrl`. Ejemplo de despliegue:
 cambia las URLs de callback de Twilio. El origen público no es un secreto.
 
 Los enlaces se firman usando la clave **existente** `Storage:SignatureKey`
-(al menos 32 bytes), con un propósito separado. No hay nuevas credenciales
-ni migraciones. Si falta el origen o la clave no cumple el mínimo, el mensaje
+(al menos 32 bytes), con un propósito separado. El enlace por sí solo no requiere nuevas credenciales
+ni migraciones (la dirección aproximada descrita abajo sí agrega un snapshot). Si falta el origen o la clave no cumple el mínimo, el mensaje
 conserva un enlace directo de Maps para no perder la ubicación durante la
 emergencia; en ese fallback SMS sí muestra las coordenadas dentro de la URL.
 Configurar el origen público es necesario para ocultarlas también en el SMS.
@@ -114,3 +114,101 @@ del proveedor, no prueba de entrega ni de llamada contestada.
 `tests/CoppAddresd.E2EHost` permite la prueba integrada contra Auth/API/Postgres
 con transportes externos exclusivamente simulados. Exige una base `copp_review_`
 y un directorio temporal. Nunca usar ese host para servir pacientes reales.
+
+
+## Dirección aproximada en SMS y correo
+
+El procesador de SOS resuelve el punto GPS mediante **Amazon Location Places V2**
+(`ReverseGeocode`), fuera de la petición HTTP de activación. SMS y correo incluyen:
+
+- Dirección aproximada (calle/ciudad cuando la precisión lo permite) y enlace de mapa.
+- Hora de captura GPS en UTC, separada de la hora de activación de la alerta.
+- Precisión declarada por el dispositivo, en metros o kilómetros; sin inventar valores.
+- Si no hay GPS: «Ubicación no compartida», sin dirección, fecha GPS ni botón de mapa.
+- Si falla la geocodificación: «Dirección no disponible» y mapa válido. El SOS continúa.
+
+La calle se incluye solo con precisión GPS conocida de 0–100 m y un resultado
+situado a 150 m o menos del punto. Con precisión gruesa/desconocida se muestra
+ciudad/área. La dirección siempre es aproximada: no demuestra un edificio concreto
+ni permite seguimiento en tiempo real. Nunca se sustituye por el domicilio del perfil.
+Fechas de captura imposibles (antes de Unix epoch o más de 1 minuto después de la
+activación) no se presentan como válidas ni se usan para enriquecer la dirección.
+
+El lookup tiene un presupuesto total de **2 segundos**, sin reintentos AWS. La
+activación HTTP no lo espera; el despacho de canales sí puede esperar ese máximo
+antes de continuar. No se envían nombre, teléfono, signos vitales ni identidad al
+geocodificador, solamente longitud/latitud y opciones de consulta. El servicio público
+de Nominatim no se usa para coordenadas personales.
+
+La migración `20261106203006_AddSosLocationDescription` agrega únicamente dos
+columnas nullable en `app.sos_alerts`: `location_description` (varchar 300) y
+`location_lookup_completed_at` (timestamptz). Se guarda tanto éxito como fallo para
+que los reintentos reutilicen el resultado; compare-and-set decide un único snapshot
+si dos réplicas compiten. No se agrega un índice ni se modifica información histórica.
+En una carrera dos réplicas pueden iniciar un lookup, pero conservan el mismo snapshot
+guardado. Si la persistencia falla se continúa sin dirección. Las plantillas por contacto
+conservan también precisión, captura y snapshot: el principal y el opcional ven lo mismo.
+
+### Activación en AWS
+
+La opción está **deshabilitada por defecto**. Aplicar la migración antes del backend
+nuevo y configurar en el task de la API:
+
+```text
+SosGeocoding__Enabled=true
+SosGeocoding__Region=us-east-2
+SosLocationLinks__PublicBaseUrl=https://<origen-publico-del-backend>
+```
+
+El pipeline de la API declara `https://erp.coppadresd.com` como origen del enlace.
+El origen debe enrutar `/api/v1/sos/maps/*` públicamente por HTTPS y ya debe existir
+`Storage__SignatureKey` (mínimo 32 bytes) en Secrets Manager. Sin origen/firma el
+mapa sigue disponible mediante URL directa de Google, pero el SMS expondrá las
+coordenadas dentro de esa URL. Verificar el origen real antes del rollout.
+
+Agregar **al task role de la API**, no solo al usuario que despliega:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": "geo-places:ReverseGeocode",
+    "Resource": "*",
+    "Condition": {"StringEquals": {"aws:RequestedRegion": "us-east-2"}}
+  }]
+}
+```
+
+No requiere Place Index ni API key en la app. El SDK usa el rol del task; localmente
+puede utilizar perfiles IAM estándar. Los perfiles `aws login` requieren
+`AWSSDK.Signin` para uso directo del SDK; como alternativa de QA se pueden exportar
+credenciales temporales con AWS CLI e inyectarlas solo en el entorno del proceso,
+sin imprimirlas ni guardarlas en el repositorio. El task de ECS utiliza su rol y no
+necesita ese paquete de desarrollo. No guardar claves AWS en el repositorio.
+Se solicita `IntendedUse=Storage` porque el resultado queda guardado y se reutiliza.
+La tarifa consultada para Ohio es US$0,004 por lookup (US$4/1.000), aparte de SMS/voz;
+revisar precio vigente antes de habilitar. No afirmar gratuidad del nivel Stored.
+
+Fuentes: [API ReverseGeocode](https://docs.aws.amazon.com/location/latest/APIReference/API_geoplaces_ReverseGeocode.html),
+[uso de resultados almacenados](https://docs.aws.amazon.com/location/latest/developerguide/places-intended-use.html),
+[precios](https://aws.amazon.com/location/pricing/),
+[atribución](https://docs.aws.amazon.com/location/latest/developerguide/data-attribution.html).
+El SMS identifica Amazon Location como fuente y el correo enlaza su atribución
+cuando muestra una dirección. Incluir también el enlace de atribución en los términos
+para los usuarios de la aplicación antes de habilitarlo en producción. Por la restricción
+de almacenamiento de AWS/HERE en Japón, una ventana conservadora (latitud 20–47,
+longitud 122–155) omite el lookup Storage; en esa región se conserva el mapa original.
+Ver [términos del servicio, sección 82](https://aws.amazon.com/service-terms/#82._Amazon_Location_Service).
+
+### Verificación E2E sin mensajes reales
+
+`antares-paciente/e2e/sos-location-messages.mjs` usa Playwright contra el host
+`tests/CoppAddresd.E2EHost`, JWT de pacientes sintéticos y PostgreSQL `copp_review_*`.
+Los transportes capturan cuerpos únicamente en `COP_E2E_OUTPUT` temporal; no envían
+SMS, llamadas ni correo. `COP_E2E_GEOCODING=synthetic` sustituye solo el límite AWS
+para probar direcciones de Colombia/EE. UU., GPS grueso/ausente, timeout, resultado
+vacío, texto HTML, fecha futura, región con restricciones de almacenamiento, contactos principal/opcional, replay y revocación.
+Las capturas prueban HTML en Chromium, no todos los clientes de correo ni entrega
+por un proveedor. El modo sintético no prueba IAM, conectividad ni calidad de datos AWS.
+El chequeo real usa solo coordenadas públicas de prueba y conserva transportes aislados.

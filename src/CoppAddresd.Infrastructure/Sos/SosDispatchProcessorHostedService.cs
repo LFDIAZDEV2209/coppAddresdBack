@@ -1,3 +1,4 @@
+using CoppAddresd.Infrastructure.Services;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums;
 using CoppAddresd.Infrastructure.Persistence;
@@ -81,6 +82,7 @@ public sealed class SosDispatchProcessorHostedService(
         // Los canales corren en serie con su propio presupuesto de error:
         // el fallo de uno no aborta a los otros (el estado final se registra
         // en la alerta y en el outbox).
+        await scope.ServiceProvider.GetRequiredService<SosLocationEnricher>().EnrichAsync(alert, ct);
         await smsDispatcher.DispatchAsync(alert, ct);
         await voiceDispatcher.DispatchAsync(alert, ct);
         await emailDispatcher.DispatchAsync(alert, ct);

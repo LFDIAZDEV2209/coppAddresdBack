@@ -26,9 +26,13 @@ public static class SosEmailTemplate
                 <p style="margin:7px 0 0;color:#53657f;font-size:14px;line-height:1.6">Contacta a {{firstName}} para saber dónde se encuentra.</p>
                 """
             : $$"""
-                <p style="margin:0 0 7px;color:#142855;font-size:16px;font-weight:700">Ubicación compartida</p>
-                <p style="margin:0 0 16px;color:#53657f;font-size:14px;line-height:1.6">Abre el mapa para consultar la ubicación enviada al activar la alerta.</p>
+                <p style="margin:0 0 7px;color:#035d4d;font-size:12px;font-weight:700;letter-spacing:.7px">{{(string.IsNullOrWhiteSpace(alert.LocationDescription) ? "Dirección no disponible" : "Dirección aproximada")}}</p>
+                <p style="margin:0 0 14px;color:#142855;font-size:19px;font-weight:700;line-height:1.45;overflow-wrap:anywhere">{{Encode(alert.LocationDescription ?? "Consulta el punto compartido en el mapa.")}}</p>
+                <p style="margin:0 0 6px;color:#53657f;font-size:13px;line-height:1.6">{{Encode(SosMessageFormatting.LocationCaptureTime(alert))}}</p>
+                <p style="margin:0 0 14px;color:#53657f;font-size:13px;line-height:1.6">{{Encode(SosMessageFormatting.LocationAccuracy(alert))}}</p>
+                <p style="margin:0 0 16px;color:#53657f;font-size:13px;line-height:1.6">Es una referencia del punto enviado con esta alerta; no es seguimiento en tiempo real. Confirma la dirección con {{firstName}}.</p>
                 {{Button(location, "Ver ubicación en el mapa", "#035d4d")}}
+                {{(string.IsNullOrWhiteSpace(alert.LocationDescription) ? "" : "<p style=\"margin:12px 0 0;font-size:11px;color:#53657f;line-height:1.5\">Dirección: Amazon Location · <a href=\"https://docs.aws.amazon.com/location/latest/developerguide/data-attribution.html\" style=\"color:#53657f\">Fuentes de datos</a></p>")}}
                 """;
         var readings = SosMessageFormatting.ReportedVitals(alert);
         var readingsContent = new StringBuilder();
