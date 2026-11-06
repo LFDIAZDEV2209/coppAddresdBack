@@ -52,14 +52,19 @@ Recursos ya definidos para el storage de archivos de la plataforma (implementado
 - Backups automáticos + restore probado; snapshots pre-migración.
 - Monitorear: connection utilization, CPU, deadlocks, disk.
 - Migraciones de esquema: ver skill `migrations` (CONCURRENTLY, NOT VALID, chunking, fuera de pico).
-- **Deploy automatizado (dev)**: `deploy-backend.yml` corre un job `migrate` (matrix api/telemedicine,
-  one-off task Fargate en la VPC, entrypoint del servicio en modo `--migrate`) que aplica las
-  migraciones de cada microservicio tras su rollout — idempotente. Cada uno tiene su propio
+- **Deploy automatizado (dev)**: `deploy-backend.yml` exige los tests antes de desplegar y ejecuta
+  un paso de migración para api/telemedicine (one-off task Fargate en la VPC, entrypoint del
+  servicio en modo `--migrate`) antes de activar la nueva revisión — idempotente. Cada uno tiene su propio
   historial: api → `public.__EFMigrationsHistory`, telemedicine → `tele.__ef_migrations_history`.
   Auth y Community además auto-migran al arrancar (`MigrateAsync` en su `Program.cs`), por lo que
   no requieren paso en el pipeline. **Permisos del role GHA `cooppadresd-gha-backend`**: el job
   `migrate` exige `ecs:RunTask` + `ecs:DescribeTasks` + `iam:PassRole` (task/execution roles del
   task def) + `logs:GetLogEvents` (opcional); sin ellos, `run-task` falla con `AccessDeniedException`.
+- **Recuperación manual**: `workflow_dispatch` valida y despliega los cuatro servicios completos.
+  No depende del diff del último commit: después de un deploy fallido, un commit que solo arregla
+  tests puede omitir servicios pendientes si se toma `HEAD~1` como base. Los pushes normales
+  conservan la selección por el rango completo del push; comprobar todos los servicios afectados
+  cuando se recupera una entrega anterior.
 
 ## CloudWatch
 

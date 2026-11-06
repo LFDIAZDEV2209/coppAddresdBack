@@ -72,6 +72,11 @@ jobs:
           # Cambios en infraestructura compartida (Infrastructure, Application, Domain,
           # slnx, Dockerfiles, workflows) afectan a todos los servicios backend.
           SHARED=$(echo "$CHANGED" | grep -E "(src/Shared/|src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows|scripts/ecs-migrate-task\.sh|tests/scripts/test_ecs_migrate_task\.py)" || true)
+          # Una recuperación manual debe incluir todos los servicios: HEAD~1
+          # puede ser solo un arreglo de CI y omitir cambios cuyo deploy falló.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            SHARED="workflow_dispatch"
+          fi
           if [ -n "$SHARED" ]; then
             SERVICES="auth api telemedicine community"
           fi

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.Services.ProgramProgress;
 using CoppAddresd.Domain.Entities.ProgramProgress;
@@ -81,18 +82,30 @@ public sealed class PushLanguageTests
     [Fact]
     public async Task Every_shipped_control_template_and_followup_has_reviewed_English_without_provider()
     {
-        var path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/CoppAddresd.Api/appsettings.Development.json"));
-        using var config = JsonDocument.Parse(await File.ReadAllTextAsync(path));
-        foreach (var template in config.RootElement.GetProperty("Program").GetProperty("Controls").GetProperty("Templates").EnumerateArray())
+        var path = Path.Combine(AppContext.BaseDirectory, "Localization", "Fixtures", "appsettings.Example.json");
+        using var config = JsonDocument.Parse(await File.ReadAllTextAsync(path), new JsonDocumentOptions
+        { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+        var controls = config.RootElement.GetProperty("Program").GetProperty("Controls");
+        var days = controls.GetProperty("Days").EnumerateArray().Select(day => day.GetInt32()).ToArray();
+        var templates = controls.GetProperty("Templates").EnumerateArray().ToArray();
+        Assert.Equal(new ProgramControlSettings().Days, days);
+        Assert.Equal(days.Order(), templates.Select(template => template.GetProperty("Day").GetInt32()).Order());
+        foreach (var template in templates)
         {
             var title = template.GetProperty("Title").GetString()!; var body = template.GetProperty("Message").GetString()!;
             var result = await PushContentLocalization.PrepareAsync([Device("en")], title, body, null, CancellationToken.None);
             Assert.NotEqual(title, result["en"].Title); Assert.NotEqual(body, result["en"].Body);
         }
-        var followup = new ProgramControlSettings().FollowupTemplate.Replace("{day}", "21");
-        var next = await PushContentLocalization.PrepareAsync([Device("en")], "Control del día 21", followup, null, CancellationToken.None);
-        Assert.Equal("Day 21 check-in", next["en"].Title);
-        Assert.StartsWith("Your day 21 check-in is still pending:", next["en"].Body);
+        var followups = new[] { controls.GetProperty("FollowupTemplate").GetString()!, new ProgramControlSettings().FollowupTemplate };
+        foreach (var template in followups.Distinct(StringComparer.Ordinal))
+        foreach (var day in days)
+        {
+            var number = day.ToString(CultureInfo.InvariantCulture);
+            var followup = template.Replace("{day}", number, StringComparison.Ordinal);
+            var next = await PushContentLocalization.PrepareAsync([Device("en")], $"Control del día {number}", followup, null, CancellationToken.None);
+            Assert.Equal($"Day {number} check-in", next["en"].Title);
+            Assert.StartsWith($"Your day {number} check-in is still pending:", next["en"].Body);
+        }
     }
 
     [Fact]

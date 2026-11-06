@@ -42,5 +42,8 @@
 
   <ItemGroup>
     <None Update="Nutrition/Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Fuente versionada sin secretos: los tests nunca leen appsettings privados del entorno. -->
+    <None Include="../../src/CoppAddresd.Api/appsettings.Example.json"
+          Link="Localization/Fixtures/appsettings.Example.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
