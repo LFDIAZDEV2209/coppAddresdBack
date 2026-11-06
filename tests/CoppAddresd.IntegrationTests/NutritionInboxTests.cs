@@ -41,6 +41,41 @@ public sealed partial class NutritionPlanWorkflowTests
     }
 
     [NutritionPostgresFact]
+    public async Task Inbox_CurrentPublicationIsIndependentOfFutureCycle_AndChangesAtLocalMidnight()
+    {
+        await using var db=Context(); var p=await InboxPatient(db,"Ciclos"); p.Timezone="America/Bogota";
+        var c1=InboxPlan(p.Id,InboxNow.AddDays(-2)); PublishInboxPlan(c1,new(2026,11,5));
+        var c2=InboxPlan(p.Id,InboxNow.AddDays(-1)); c2.StartDate=new(2026,11,6); c2.EndDate=new(2026,12,5);
+        c2.State="en_aprobacion";
+        db.NutritionPrescriptions.AddRange(c1,c2); await db.SaveChangesAsync();
+        var before=Assert.Single((await Inbox(db).Handle(new(InboxGlobal),CancellationToken.None)).Items);
+        Assert.Equal(c2.Id,before.Prescription!.Id); Assert.True(before.HasPublishedToday);
+        Assert.Equal(c1.StartDate,before.PublishedCycleStart); Assert.Equal(c1.EndDate,before.PublishedCycleEnd);
+        Assert.Equal("en_aprobacion",before.LatestDraftState); Assert.True(before.HasFutureDraft);
+        var after=Assert.Single((await Inbox(db,new DateTime(2026,11,6,5,0,0,DateTimeKind.Utc))
+            .Handle(new(InboxGlobal),CancellationToken.None)).Items);
+        Assert.False(after.HasPublishedToday); Assert.Null(after.PublishedCycleStart); Assert.Null(after.PublishedCycleEnd);
+        Assert.False(after.HasFutureDraft); Assert.Equal("en_aprobacion",after.LatestDraftState);
+    }
+
+    [NutritionPostgresFact]
+    public async Task Inbox_OnlyFutureDraft_AndAnyFutureDraftAreVisible_WithStablePaging()
+    {
+        await using var db=Context(); var p=await InboxPatient(db,"Futuro"); var q=await InboxPatient(db,"Otro");
+        var future=InboxPlan(p.Id,InboxNow.AddDays(-1)); future.StartDate=new(2026,12,1); future.EndDate=new(2026,12,30);
+        var latest=InboxPlan(p.Id,InboxNow); latest.State="devuelto";
+        var other=InboxPlan(q.Id,InboxNow); other.StartDate=new(2026,12,1); other.EndDate=new(2026,12,30);
+        db.NutritionPrescriptions.AddRange(future,latest,other); await db.SaveChangesAsync();
+        var first=await Inbox(db).Handle(new(InboxGlobal,PageSize:1),CancellationToken.None);
+        var second=await Inbox(db).Handle(new(InboxGlobal,Page:2,PageSize:1),CancellationToken.None);
+        Assert.Equal(2,first.Total); Assert.Equal(2,second.Total);
+        var rows=first.Items.Concat(second.Items).ToArray(); Assert.Equal(2,rows.Select(x=>x.PatientId).Distinct().Count());
+        Assert.All(rows,x=> { Assert.False(x.HasPublishedToday); Assert.True(x.HasFutureDraft); Assert.Null(x.PublishedCycleStart); });
+        Assert.Equal("devuelto",rows.Single(x=>x.PatientId==p.Id).LatestDraftState);
+        Assert.Equal(first.Items[0].PatientId,(await Inbox(db).Handle(new(InboxGlobal,PageSize:1),CancellationToken.None)).Items[0].PatientId);
+    }
+
+    [NutritionPostgresFact]
     public async Task Inbox_ScopeLatestDraftFiltersNameAndState_IncludePatientsWithoutPlan()
     {
         await using var db = Context(); var ana = await InboxPatient(db,"Ana"); var beto = await InboxPatient(db,"Beto");

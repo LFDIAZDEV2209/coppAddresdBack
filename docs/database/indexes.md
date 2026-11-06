@@ -177,3 +177,14 @@ clínicas grandes. La prueba de rollback valida la persistencia atómica del eve
 Tablas nuevas vacías: la creación inicial de índices no bloquea tablas existentes.
 No hay FK a auth.users: el actor es la identidad JWT de un servicio independiente.
 No se elimina el ledger al eliminar el medio.
+
+### Nutrición Ola 6: reservas
+
+| Índice | Tabla app | Columnas | Uso y costo |
+|---|---|---|---|
+| uq_nutrition_draft_patient_battery | nutrition_draft_reservations | patient_id,battery_assignment_id | Unique B-tree; idempotencia de evento/reintento, una entrada por reserva |
+| ix_nutrition_draft_pending | nutrition_draft_reservations | state,next_attempt_at | B-tree; cola vencida y lease recuperable, se actualiza al cambiar estado |
+
+Ambos índices nacen en tabla nueva, sin reconstruir índices de datos clínicos.
+El PK UUID permite reencontrar el borrador correlacionado. No se atribuye una
+latencia productiva medida; validar el plan con volumen operativo de reservas.

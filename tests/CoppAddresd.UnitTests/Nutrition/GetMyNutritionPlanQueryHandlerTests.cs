@@ -53,6 +53,7 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
             Assert.Equal(30, result.CurrentDay); Assert.Equal(7, result.Revision);
             var meal = Assert.Single(Assert.Single(result.Days).Meals);
             Assert.Equal("Snack", meal.MealType); Assert.Equal("Avena: 50 g", meal.Foods);
+            Assert.Equal("16:00", meal.SuggestedTime);
             Assert.Equal(176, meal.Calories); Assert.Equal(30m, meal.CarbsG); Assert.Equal(5m, meal.ProteinG);
             Assert.Equal(4m, meal.FatG); Assert.Equal(3m, meal.FiberG); Assert.Equal("Indicaciones", meal.Notes);
             await _wellness.DidNotReceive().ListPlanAssignmentsByPatientAsync(patient.Id, Arg.Any<CancellationToken>());
@@ -62,10 +63,39 @@ public sealed class GetMyNutritionPlanQueryHandlerTests
         Assert.Equal("id,name,targetCondition,durationDays,dailyCalorieTarget,dailyProteinTarget,dailyCarbsTarget,dailyFatTarget,dailyFiberTarget,dailyWaterMl,allergens,mealTiming,status,days,startDate,endDate,currentDay,revision",
             string.Join(',', json.EnumerateObject().Select(x => x.Name)));
         Assert.Equal("dayNumber,dailyWaterMl,meals", string.Join(',', json.GetProperty("days")[0].EnumerateObject().Select(x => x.Name)));
-        Assert.Equal("mealType,description,foods,calories,proteinG,carbsG,fatG,fiberG,waterMl,notes,sortOrder",
+        Assert.Equal("mealType,description,foods,calories,proteinG,carbsG,fatG,fiberG,waterMl,notes,sortOrder,suggestedTime",
             string.Join(',', json.GetProperty("days")[0].GetProperty("meals")[0].EnumerateObject().Select(x => x.Name)));
+        Assert.Equal(published ? "16:00" : null,
+            json.GetProperty("days")[0].GetProperty("meals")[0].GetProperty("suggestedTime").GetString());
         source.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query.Handle(new(Guid.NewGuid()), source.Token));
+    }
+
+    [Fact]
+    public async Task PublishedMenu_PreservesEachMealTimeIncludingSnack_InScheduledOrder()
+    {
+        var patient = BuildPatient(); patient.Timezone = "America/Bogota";
+        _patients.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(patient);
+        var repository = Substitute.For<INutritionPrescriptionRepository>();
+        var today = new DateOnly(2026, 11, 5);
+        var prescription = new NutritionPrescription
+        {
+            PatientId = patient.Id, StartDate = today, EndDate = today.AddDays(29),
+            Meals = [
+                new() { DayNumber = 1, MealType = "cen", ScheduledTime = new(19, 0) },
+                new() { DayNumber = 1, MealType = "mer", ScheduledTime = new(15, 30), MenuName = "Merienda prescrita" },
+                new() { DayNumber = 1, MealType = "des", ScheduledTime = new(7, 0) },
+                new() { DayNumber = 1, MealType = "alm", ScheduledTime = new(12, 0) },
+            ],
+        };
+        repository.GetCurrentPublishedAsync(patient.Id, today, Arg.Any<CancellationToken>()).Returns(prescription);
+        var handler = new GetMyNutritionPlanQueryHandler(_patients, _wellness,
+            Substitute.For<ILogger<GetMyNutritionPlanQueryHandler>>(), repository, new FixedClock());
+        var result = (await handler.Handle(new(Guid.NewGuid()), CancellationToken.None))!;
+        var meals = Assert.Single(result.Days).Meals;
+        Assert.Equal(["Desayuno", "Almuerzo", "Snack", "Cena"], meals.Select(m => m.MealType));
+        Assert.Equal(["07:00", "12:00", "15:30", "19:00"], meals.Select(m => m.SuggestedTime));
+        Assert.Equal("Merienda prescrita", meals[2].Description);
     }
 
     private readonly IPatientRepository _patients = Substitute.For<IPatientRepository>();

@@ -94,3 +94,16 @@ reutilizar pendientes/completados y respetar dos pendientes/diez solicitudes UTC
 No descarga ni convierte dentro de la transacción. El worker reclama con un UPDATE
 atómico + CTE `FOR UPDATE SKIP LOCKED`; el lease queda confirmado antes de cualquier
 E/S externa. La recuperación reutiliza la identidad del medio/trabajo.
+
+### Nutrición Ola 6: reserva, lease y generación
+
+Cada escritura de reserva/claim/resultado/fallo usa una transacción corta Read
+Committed con estrategia Npgsql y token; BEGIN instala GUC del actor y COMMIT
+los elimina. INSERT ON CONFLICT serializa replay por paciente/batería. Claim usa
+un UPDATE con subquery FOR UPDATE SKIP LOCKED, sin espera entre réplicas. El
+claim token impide que un worker antiguo confirme una lease tomada por otro.
+IA/cálculo ocurren fuera de esas transacciones. Generate conserva la transacción
+del agregado con lock del paciente; reutiliza el ID de reserva al reejecutar.
+El commit de agregado precede la confirmación ready: tras un corte, el retry
+relee el plan existente, no agrega otra versión ni otro evento. Cancelación
+deja la lease recuperable; cinco intentos agotados quedan failed y visibles.

@@ -15,7 +15,8 @@ public sealed record NutritionEdit(NutritionTargets? Targets = null, IReadOnlyLi
     string? Instructions = null, string? InstructionsEn = null, bool ConfirmManualEdits = false, int? SourceDay = null);
 public sealed record NutritionCaseCommand(NutritionOperation Operation, Guid PatientId, Guid? Id, int? Revision,
     NutritionActor Actor, NutritionGenerateInput? Generate = null, NutritionEdit? Edit = null,
-    string? Comment = null, bool CriticalConfirmed = false, DateOnly? StartDate = null) : IRequest<NutritionView>;
+    string? Comment = null, bool CriticalConfirmed = false, DateOnly? StartDate = null,
+    Guid? CorrelationId = null, Guid? BatteryAssignmentId = null) : IRequest<NutritionView>;
 public sealed record GetNutritionCaseQuery(Guid PatientId, Guid Id, NutritionActor Actor) : IRequest<NutritionView>;
 public sealed record ListNutritionCasesQuery(Guid PatientId, NutritionActor Actor, int Page = 1, int PageSize = 20) : IRequest<IReadOnlyList<NutritionView>>;
 public sealed record NutritionHistoryQuery(Guid PatientId, Guid Id, NutritionActor Actor) : IRequest<IReadOnlyList<NutritionPrescriptionEvent>>;
@@ -30,5 +31,10 @@ public sealed record DraftText(string Es, string En);
 public sealed record DraftFood(string FoodId, double Grams);
 public sealed record DraftMenu(string Key, string Name, IReadOnlyList<DraftFood> Items);
 public sealed record DraftTargets(double K, double C, double P, double F, double Fi, int WaterMl);
-public sealed record NutritionDraftRequest(DraftTargets Targets, IReadOnlyList<string> CatalogIds, IReadOnlyList<DraftMenu> Menus);
+public sealed record DraftMeasuredField(object? Value, string? Unit, string Source, string? SourceCode, DateTime? ObservedAt);
+public sealed record DraftAppliedRule(string Code, string Severity, string Message, bool Technical);
+public sealed record DraftClinicalProfile(string EngineVersion, IReadOnlyDictionary<string, DraftMeasuredField> Fields,
+    IReadOnlyList<DraftAppliedRule> AppliedRules, IReadOnlyList<string> MissingData);
+public sealed record NutritionDraftRequest(DraftTargets Targets, IReadOnlyList<string> CatalogIds, IReadOnlyList<DraftMenu> Menus,
+    DraftClinicalProfile? ClinicalProfile = null);
 public sealed record NutritionDraftResponse(DraftText Narratives, DraftText Instructions, IReadOnlyList<DraftMenu> Menus, string Source);

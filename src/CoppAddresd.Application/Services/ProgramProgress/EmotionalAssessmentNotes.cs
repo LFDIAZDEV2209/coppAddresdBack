@@ -20,6 +20,9 @@ public static class EmotionalAssessmentNotes
                 lines.Add($"Fecha del registro de sueño: {recorded.ToUniversalTime():O}.");
         }
         if (!string.IsNullOrWhiteSpace(assessment.Notes)) lines.Add(assessment.Notes.Trim());
+        if (assessment.SleepSource == "unknown") lines.Add("Sueño: sin dato reportado.");
+        if (assessment.SleepQuality is { } quality)
+            lines.Add("Descanso percibido: " + (quality switch { "poor" => "poco reparador", "fair" => "regular", "restorative" => "reparador", _ => quality }) + ".");
         return lines.Count == 0 ? null : string.Join(Environment.NewLine, lines);
     }
 }

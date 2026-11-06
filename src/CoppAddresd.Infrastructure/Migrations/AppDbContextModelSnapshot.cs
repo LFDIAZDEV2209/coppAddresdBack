@@ -4507,6 +4507,79 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("notification_dedupe_keys", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionDraftReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<Guid>("BatteryAssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("battery_assignment_id");
+
+                    b.Property<Guid?>("ClaimToken")
+                        .HasColumnType("uuid")
+                        .HasColumnName("claim_token");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("Fallback")
+                        .HasColumnType("boolean")
+                        .HasColumnName("fallback");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_until");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid?>("PrescriptionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("prescription_id");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("state");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PatientId", "BatteryAssignmentId")
+                        .IsUnique()
+                        .HasDatabaseName("uq_nutrition_draft_patient_battery");
+
+                    b.HasIndex("State", "NextAttemptAt")
+                        .HasDatabaseName("ix_nutrition_draft_pending");
+
+                    b.ToTable("nutrition_draft_reservations", "app", t =>
+                        {
+                            t.HasCheckConstraint("ck_nutrition_draft_state", "state IN ('pending','generating','ready','failed')");
+                        });
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionFoodItem", b =>
                 {
                     b.Property<string>("Id")
@@ -7010,6 +7083,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("smallint")
                         .HasColumnName("mood_score");
 
+                    b.Property<int?>("MotivationScore")
+                        .HasColumnType("integer")
+                        .HasColumnName("motivation_score");
+
                     b.Property<string>("Notes")
                         .HasColumnType("text")
                         .HasColumnName("notes");
@@ -7025,6 +7102,38 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Property<DateOnly>("RecordedLocalDate")
                         .HasColumnType("date")
                         .HasColumnName("recorded_local_date");
+
+                    b.Property<string>("SleepDeviceId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("sleep_device_id");
+
+                    b.Property<decimal?>("SleepMinutes")
+                        .HasPrecision(7, 2)
+                        .HasColumnType("numeric(7,2)")
+                        .HasColumnName("sleep_minutes");
+
+                    b.Property<DateOnly?>("SleepNightDate")
+                        .HasColumnType("date")
+                        .HasColumnName("sleep_night_date");
+
+                    b.Property<string>("SleepQuality")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("sleep_quality");
+
+                    b.Property<DateTime?>("SleepRecordedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("sleep_recorded_at");
+
+                    b.Property<string>("SleepSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("sleep_source");
+
+                    b.Property<int?>("StressScore")
+                        .HasColumnType("integer")
+                        .HasColumnName("stress_score");
 
                     b.HasKey("Id");
 
@@ -10395,6 +10504,15 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.Navigation("Metric");
 
                     b.Navigation("Unit");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionDraftReservation", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.PatientProfile", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.NutritionPlan", b =>

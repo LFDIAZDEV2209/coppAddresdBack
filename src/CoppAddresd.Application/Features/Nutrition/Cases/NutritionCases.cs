@@ -8,7 +8,8 @@ namespace CoppAddresd.Application.Features.Nutrition.Cases;
 
 /// <summary>Casos de uso nutricionales; la IA se invoca antes de abrir la transacción.</summary>
 public sealed class NutritionCases(INutritionPrescriptionRepository repository, INutritionCaseStore store,
-    INutritionDraftClient drafts, IClinicalContextService clinical, IProgramAssignmentRepository assessments, TimeProvider clock)
+    INutritionDraftClient drafts, IClinicalContextService clinical, IProgramAssignmentRepository assessments, TimeProvider clock,
+    IClinicalMeasurementRepository? clinicalMeasurements = null)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static T Read<T>(string json) => JsonSerializer.Deserialize<T>(json, Json)!;
@@ -47,9 +48,32 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
     }
     private async Task<NutritionEngine> FoodsAsync(CancellationToken ct) => new((await repository.ListFoodsAsync(ct)).ToDictionary(x => x.Id));
 
+    public async Task<NutritionMeasuredProfile> ReadMeasuredProfileAsync(Guid patientId, NutritionCaseContext context,
+        CancellationToken ct, NutritionGenerateInput? input = null, NutritionPatient? fallback = null)
+    {
+        var data = await clinical.ConsolidateAsync(patientId, ct);
+        var measured = context.BatteryId is { } battery ? await assessments.ReadProfileAsync(patientId, battery, ct) : null;
+        var real = clinicalMeasurements is null ? [] : await clinicalMeasurements.ListByPatientAsync(patientId, ct);
+        return NutritionMeasuredProfiles.Resolve(context, data, measured, real, Today(context), input, fallback);
+    }
+
+    public Task<NutritionView> ReadViewAsync(NutritionPrescription plan, NutritionCaseContext context, CancellationToken ct)
+        => ReadViewCoreAsync(plan, context, ct);
+    private async Task<NutritionView> ReadViewCoreAsync(NutritionPrescription plan, NutritionCaseContext context, CancellationToken ct)
+        => View(plan, context, await FoodsAsync(ct));
+
     public async Task<NutritionView> ExecuteAsync(NutritionCaseCommand command, CancellationToken ct)
     {
         var context = await AccessAsync(command.PatientId, command.Actor, ct);
+        if (command.CorrelationId is { } correlation)
+        {
+            if (command.Actor.UserId != NutritionSystemActor.Id || !NutritionSystemActor.IsActive
+                || command.Operation != NutritionOperation.Generate) throw new ForbiddenException("Correlación reservada al generador técnico.");
+            context = context with { BatteryId = command.BatteryAssignmentId };
+            if (await repository.GetByIdAsync(correlation, ct) is { } existing)
+                return existing.PatientId == command.PatientId ? View(existing, context, await FoodsAsync(ct))
+                    : throw new ForbiddenException("Correlación inválida.");
+        }
         if (command.Operation is NutritionOperation.Approve or NutritionOperation.Return ? !command.Actor.CanApprove : !command.Actor.CanManage)
             throw new ForbiddenException("El actor no tiene permiso para esta acción.");
         if (command.Comment?.Length > 4000) Invalid("Comentario demasiado largo.");
@@ -73,6 +97,12 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             NutritionPrescription plan;
             if (command.Operation == NutritionOperation.Generate)
             {
+                if (command.CorrelationId is { } reservedId)
+                {
+                    // El lock de paciente serializa la publicación de dos workers con la misma correlación.
+                    if (await repository.GetByIdAsync(reservedId, txCt) is { } existing) return View(existing, currentContext, engine);
+                    generated!.Id = reservedId;
+                }
                 plan = generated!; plan.CreatedBy = command.Actor.UserId;
                 if (!currentContext.TestsComplete) plan.Provisional = true;
                 await repository.AddAsync(plan, txCt);
@@ -149,45 +179,30 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
     private async Task<NutritionPrescription> GenerateAsync(Guid patientId, NutritionGenerateInput input,
         NutritionCaseContext context, NutritionEngine engine, CancellationToken ct, NutritionPatient? fallback = null)
     {
-        var data = await clinical.ConsolidateAsync(patientId, ct);
-        var measured = context.BatteryId is { } battery ? await assessments.ReadProfileAsync(patientId, battery, ct) : null;
-        double? Biometric(string[] codes, string unit) => measured?.Biometrics.FirstOrDefault(x => codes.Contains(x.QuestionCode.ToLowerInvariant())
-            && x.Unit == unit && (x.Minimum == null || x.Value >= x.Minimum) && (x.Maximum == null || x.Value <= x.Maximum)) is { } value ? (double)value.Value : null;
-        double? Measurement(string[] codes, string unit) => data.Measurements.FirstOrDefault(x => codes.Contains(x.Metric.ToLowerInvariant()) && x.Unit == unit) is { } m ? (double)m.Value : null;
-        var birth = input.BirthDate ?? context.BirthDate ?? fallback?.BirthDate; var today = Today(context);
-        var manual = input.Manual;
-        var weight = manual is { Peso: > 0 } ? manual.Peso : Biometric(["peso", "weight", "weight_kg"], "kg") ?? Measurement(["weight", "weight_kg"], "kg") ?? fallback?.Peso;
-        var height = manual is { Talla: > 0 } ? manual.Talla : Biometric(["talla", "height", "height_cm"], "cm") ?? Measurement(["height", "height_cm"], "cm") ?? fallback?.Talla;
-        var sex = (manual?.Sexo ?? context.Sex ?? fallback?.Sexo)?.ToLowerInvariant() switch { "f" or "female" or "femenino" => "F", "m" or "male" or "masculino" => "M", _ => null };
-        if (birth is null || birth >= today || weight is null || height is null || sex is null) Invalid("Completa peso, talla, nacimiento y sexo; no se inventan datos clínicos.");
-        var age = today.Year - birth!.Value.Year; if (birth > today.AddYears(-age)) age--;
-        if (age < 18 || age > 120 || !double.IsFinite(weight!.Value) || !double.IsFinite(height!.Value)
-            || weight <= 0 || height <= 0) Invalid("Datos mínimos fuera de rango.");
-        var p = (manual ?? fallback ?? new NutritionPatient(weight!.Value, height!.Value, age, sex!, 0)) with
-        {
-            Peso = weight!.Value, Talla = height!.Value, Edad = age, Sexo = sex!, BirthDate = birth,
-            // El prototipo acepta IMC medido independiente; solo derivarlo si no existe.
-            Imc = manual is { Imc: > 0 } ? manual.Imc : Biometric(["bmi", "imc"], "kg/m2")
-                ?? Measurement(["bmi", "imc"], "kg/m2") ?? NutritionEngine.R1(weight.Value / Math.Pow(height.Value / 100, 2)),
-            Hba1c = manual?.Hba1c ?? Biometric(["a1c", "hba1c"], "%") ?? Measurement(["a1c", "hba1c"], "%") ?? fallback?.Hba1c
-        };
+        var profile = await ReadMeasuredProfileAsync(patientId, context, ct, input, fallback);
+        var p = profile.Patient ?? throw new UnprocessableEntityException("Completa los datos mínimos ausentes; no se inventan datos clínicos.");
         ValidatePatient(p);
-        var missing = new List<string>();
-        if (!context.TestsComplete) missing.Add("bateria_9_tests");
-        foreach (var field in new (string Name, object? Value)[] { ("hba1c", p.Hba1c), ("mov", p.Mov), ("nutRiesgo", p.NutRiesgo),
-            ("sleepRF", p.SleepRF), ("sleepNivel", p.SleepNivel), ("adh", p.Adh), ("riesgoNum", p.RiesgoNum), ("estres", p.Estres) })
-            if (field.Value is null) missing.Add(field.Name);
+        // Se conservan códigos anteriores del contrato de prescripción; workspace entrega nombres de campo legibles.
+        var missing = profile.MissingData.Select(x => x switch { "movement" => "mov", "nutritionRisk" => "nutRiesgo",
+            "sleepRiskFlags" => "sleepRF", "sleepLevel" => "sleepNivel", "testAdherence" => "adh",
+            "cardiometabolicRisk" => "riesgoNum", "stress" => "estres", _ => x }).ToArray();
         var targets = NutritionEngine.ComputeTargets(p); var days = engine.BuildDays(p, ct);
         ValidateTargets(targets);
         var menus = days.SelectMany(day => NutritionEngine.MealOrder.Select(m => new DraftMenu($"{m}:{day.Tpl[m]}",
             NutritionMenus.Templates[m][day.Tpl[m]].Name, day.Meals[m].Select(i => new DraftFood(i.Id, i.G)).ToArray())))
             .DistinctBy(m => m.Key).ToArray();
         var request = new NutritionDraftRequest(new(targets.K, targets.C, targets.P, targets.F, targets.Fi, (int)(targets.Vasos * 250)),
-            (await repository.ListFoodsAsync(ct)).Select(f => f.Id).ToArray(), menus);
+            (await repository.ListFoodsAsync(ct)).Select(f => f.Id).ToArray(), menus,
+            new("nutrition-engine-v1", profile.Fields.Where(x => x.Key != "birthDate").ToDictionary(x => x.Key,
+                x => new DraftMeasuredField(x.Value.Value, x.Value.Unit, x.Value.Source, x.Value.SourceCode, x.Value.ObservedAt)),
+                engine.AllFlags(p, targets, days).Select((a, i) => new DraftAppliedRule($"engine-{i + 1}", a.S, a.M, a.Tec)).ToArray(), missing));
         var draft = await drafts.GenerateAsync(request, ct);
         var accepted = TryApplyDraft(draft, request, days, targets, engine);
-        var plan = new NutritionPrescription { PatientId = patientId, Provisional = missing.Count != 0,
-            ClinicalProfileJson = Write(p), MissingDataJson = Write(missing), NarrativeSource = accepted ? draft.Source : "deterministic_fallback",
+        var snapshot = JsonSerializer.SerializeToNode(p, Json)!.AsObject();
+        snapshot["measuredFields"] = JsonSerializer.SerializeToNode(profile.Fields, Json);
+        snapshot["assessmentResults"] = JsonSerializer.SerializeToNode(profile.Results, Json);
+        var plan = new NutritionPrescription { PatientId = patientId, Provisional = missing.Length != 0,
+            ClinicalProfileJson = snapshot.ToJsonString(Json), MissingDataJson = Write(missing), NarrativeSource = accepted ? draft.Source : "deterministic_fallback",
             Instructions = accepted ? draft.Narratives.Es + "\n" + draft.Instructions.Es : "Propuesta determinista: revisa porciones y alertas antes de aprobar.",
             InstructionsEn = accepted ? draft.Narratives.En + "\n" + draft.Instructions.En : "Deterministic proposal: review portions and alerts before approval." };
         SetTargets(plan, targets);
@@ -303,7 +318,8 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
         var flags = Flags(plan, engine);
         await store.AddEventAsync(new() { PrescriptionId = plan.Id, ActorUserId = command.Actor.UserId,
             OccurredAt = clock.GetUtcNow().UtcDateTime, Action = action ?? command.Operation.ToString().ToLowerInvariant(), Revision = plan.Revision,
-            Comment = command.Comment, CriticalCount = flags.Count(f => f.S == "crit"), CriticalConfirmed = command.CriticalConfirmed,
+            Comment = command.Actor.UserId == NutritionSystemActor.Id ? NutritionSystemActor.Name : command.Comment,
+            CriticalCount = flags.Count(f => f.S == "crit"), CriticalConfirmed = command.CriticalConfirmed,
             AutoApproved = action is null && command.Operation == NutritionOperation.Approve && plan.CreatedBy == command.Actor.UserId,
             SnapshotJson = Write(new { plan.Id, plan.PatientId, plan.CycleId, plan.Version, plan.Revision, plan.State, plan.Provisional,
                 plan.IsPublished, plan.StartDate, plan.EndDate, plan.ManualEditsConfirmed, plan.ClinicalProfileJson, plan.TargetsJson,

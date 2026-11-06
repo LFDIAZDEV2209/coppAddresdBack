@@ -1,8 +1,8 @@
 namespace CoppAddresd.Application.Interfaces;
 
 /// <summary>
-/// Resolvedor de contenido activo del programa para un paciente en una fecha
-/// local dada (SPEC §4.2/§4.3/§6.10). Servicio de solo lectura que determina:
+/// Resolvedor de contenido activo por fecha local. Prioriza la prescripción
+/// publicada de Nutrition y usa bienestar únicamente en su ausencia:
 /// <list type="bullet">
 ///   <item>El plan de alimentación activo (status Active, ventana de fechas vigente).</item>
 ///   <item>Si el plan tiene un día para el weekday de la fecha consultada.</item>
@@ -17,8 +17,8 @@ public interface IProgramContentResolver
 {
     /// <summary>
     /// Resuelve el contenido activo del programa para el paciente en la fecha
-    /// local indicada. Devuelve <c>null</c> si no hay ninguna asignación activa
-    /// (ni plan de alimentación ni rutina de ejercicio).
+    /// local indicada. Devuelve <c>null</c> si no hay prescripción publicada
+    /// ni asignación activa de alimentación o ejercicio.
     /// </summary>
     /// <param name="patientId">ID del paciente.</param>
     /// <param name="localDate">Fecha local del paciente (no UTC).</param>
@@ -47,13 +47,19 @@ public interface IProgramContentResolver
 /// <summary>
 /// Resolución de contenido activo del programa para un paciente en una fecha
 /// local (SPEC §4.2/§4.3/§6.10). Resultado inmutable del resolvedor.
-/// Todos los campos son opcionales: <c>null</c> indica ausencia de contenido
-/// activo para ese componente.
+/// Los IDs de prescripción y de bienestar son fuentes distintas; nunca se
+/// mezclan sus días ni sus referencias de persistencia.
 /// </summary>
 public sealed record ProgramContentResolution
 {
     /// <summary>ID del plan de alimentación activo, o <c>null</c> si no hay asignación vigente.</summary>
     public Guid? NutritionPlanId { get; init; }
+
+    /// <summary>Prescripción publicada de Nutrition; nunca se persiste como FK wellness.</summary>
+    public Guid? SourcePrescriptionId { get; init; }
+
+    /// <summary>Día inclusivo del ciclo de la prescripción (1–30), separado del weekday wellness.</summary>
+    public int? PrescriptionDayNumber { get; init; }
 
     /// <summary>
     /// Número de día del plan que coincide con el weekday de la fecha consultada
@@ -63,12 +69,10 @@ public sealed record ProgramContentResolution
     public int? NutritionPlanDayNumber { get; init; }
 
     /// <summary>
-    /// <c>true</c> si el plan de alimentación activo tiene al menos un día para
-    /// el weekday de la fecha consultada. Equivalente a
-    /// <see cref="NutritionPlanDayNumber"/>.HasValue, pero explícito para
-    /// consumidores que solo necesitan el indicador booleano.
+    /// <c>true</c> si hay día nutricional resuelto, del ciclo prescrito o del plan wellness.
+    /// Se conserva el nombre existente para los consumidores del programa.
     /// </summary>
-    public bool HasDayForWeekday => NutritionPlanDayNumber.HasValue;
+    public bool HasDayForWeekday => NutritionPlanDayNumber.HasValue || PrescriptionDayNumber.HasValue;
 
     /// <summary>ID de la rutina de ejercicio activa, o <c>null</c> si no hay asignación vigente.</summary>
     public Guid? ExerciseRoutineId { get; init; }

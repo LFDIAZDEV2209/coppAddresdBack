@@ -561,25 +561,68 @@ Estas preguntas siguen abiertas en el plan y se recomienda resolver antes de emp
 Antes solicitaba `int.MaxValue` al listado, cuyo límite de 100 truncaba el archivo.
 El orden incorpora `PatientId` como desempate. La regresión del handler verifica
 205 filas, propagación de todos los filtros y cancelación antes de consultar.
-## Evaluación emocional del protocolo (Diomedes)
+## Evaluación emocional y sueño del wearable
 
-`POST /api/v1/program/tasks/complete` acepta el campo aditivo `emotional`
-solamente para `taskCode=emocional`. Incluye `stressScore` y `motivationScore`
-(1–10, opcionales), `sleepMinutes` (0–1440), `sleepSource` (`manual` o
-`wearable`), `sleepRecordedAt` obligatorio cuando procede del wearable y
-`notes` (hasta 2000 caracteres). Se conserva el `moodScore` obligatorio (1–5)
-y la barrera opcional del contrato anterior.
+`POST /api/v1/program/tasks/complete` acepta `emotional` solo para la tarea
+`emocional`. El ánimo (`moodScore`, 1–5) sigue siendo obligatorio. Estrés y
+motivación (1–10), barrera, nota y percepción de descanso son opcionales y no
+se inventan a partir del ánimo ni de la posición inicial de un slider.
 
-El repositorio conserva todos los valores enviados en `emotional_records.notes`
-con texto clínico legible, origen y fecha del sueño; mantiene las notas previas
-si ya existían. No agrega columnas ni supone respuestas para campos omitidos.
-La transacción/idempotencia de la completación y XP no cambia. La app ofrece
-solo sueño del dispositivo real seleccionado con fecha de despertar de hoy;
-una corrección manual elimina la procedencia y fecha del wearable.
+`20261105210600_AddStructuredEmotionalAssessment` agrega ocho columnas nullable
+a `app.emotional_records`: `stress_score`, `motivation_score`, `sleep_minutes`,
+`sleep_source`, `sleep_recorded_at`, `sleep_device_id`, `sleep_night_date` y
+`sleep_quality`. Conserva los registros y notas anteriores; no intenta extraer
+puntuaciones del texto histórico. Las notas siguen incluyendo un resumen para
+los lectores clínicos existentes. La motivación del motor usa la última respuesta
+real del período, y ya no multiplica el ánimo por dos. No se agregan dashboards,
+rollups ni criterios nuevos de intervención: la lectura es un punto por
+paciente/período, no una agregación. Las reglas de promedio de sueño/estrés
+siguen latentes; guardar campos no equivale a habilitar esas reglas.
 
-Verificación: `EmotionalAssessmentPayloadTests`, `CompleteTaskHandlerTests` y
-`ProgramRepositoryTests.TareaEmocional_PersisteRegistroEmocionalYAnimoDelDia`.
-Este último se ejecuta con PostgreSQL aislado mediante `COP_TEST_DB_CONNECTION`.
+El sueño admite `manual`, `wearable` o `unknown`. `unknown` exige duración null,
+no cero. La percepción (`poor`, `fair`, `restorative`) es autorreporte separado.
+Una corrección manual borra hora/dispositivo del wearable en esta evaluación,
+sin modificar las muestras BLE. Los clientes anteriores siguen funcionando sin
+los nuevos metadatos; cuando se informa `sleepNightDate` debe coincidir con la
+fecha local de la completación. Las muestras conservan su hora de despertar,
+no la hora de sincronización.
+
+El snapshot autenticado de hoy devuelve `todayTasks[].emotionalAssessment`
+con ánimo, barrera y respuestas de la fila realmente persistida. Usa el mismo
+join de completaciones, sin una consulta por tarea ni endpoints públicos nuevos.
+La app lo presenta al reabrir una evaluación completada. Una completación
+offline conserva el payload en la cola existente y muestra pendiente, sin
+presentar un guardado confirmado ni otorgar XP local.
+
+### Despliegue y rollback
+
+El workflow ahora ejecuta `scripts/ecs-migrate-task.sh` con el ARN exacto de la
+nueva revisión antes de `update-service` para API y Telemedicine. Un rechazo de
+RunTask, salida faltante/no cero o timeout impide activar la imagen. Se conserva
+la autenticación IAM/red ECS existentes. Auth/Community mantienen su estrategia
+de migración propia. No hay configuración ni cambios de SOS/Amazon Location en
+esta entrega.
+
+Aplicar la migración antes de recibir tráfico con el nuevo modelo EF. Es una
+expansión aditiva: rollback operativo al binario anterior conservando columnas.
+El Down elimina solo los ocho campos nuevos (perdería esas respuestas), por eso
+se comprueba únicamente en una base aislada. No se borran filas ni se hace
+backfill de notas.
+
+### Verificación
+
+- 9 validaciones unitarias de payload y 4 pruebas emocionales contra PostgreSQL
+  aislado: persistencia, lectura de snapshot, datos ausentes, ausencia de ánimo
+  y migración Down/Up conservando registros anteriores.
+- Suite core sin BD: 1.652 correctas y 105 omitidas (requieren integración).
+- Suite ampliada de ProgramRepository con BD: siete fallos de racha/bonus y
+  recent-vitals reproducidos con los mismos nombres en dev7208a10 sin cambios;
+  no se presentan como regresiones de este feature ni como suite verde.
+- Gate ECS: éxito con revisión exacta, tarea rechazada y salida no cero/ausente
+  verificados con AWS simulado; YAML y orden de pasos revisados.
+- App: 1.353 pruebas, lint/i18n/build y guards nativos/release correctos. Prueba
+  Ionic real a320/390/768px con Playwright y transportes/dispositivo simulados.
+- No se ha validado una noche nueva durmiendo con H59/R88 físicos en esta entrega.
 
 
 ### Asignación post-tests: catálogo y persistencia (paquete 1)

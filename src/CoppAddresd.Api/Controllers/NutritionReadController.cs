@@ -27,8 +27,24 @@ public sealed class NutritionReadController(IMediator mediator, ICurrentContext 
     public async Task<ActionResult<IReadOnlyList<NutritionFoodDto>>> Foods(CancellationToken ct)
         => Ok(await mediator.Send(new NutritionFoodCatalogQuery(await ActorAsync(ct)), ct));
 
+    /// <summary>Reserva o recupera la generación; el worker construye el borrador fuera de la petición.</summary>
+    [HttpPost("patients/{patientId:guid}/draft-generation")]
+    [ProducesResponseType(typeof(NutritionDraftGenerationResult), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(typeof(NutritionDraftGenerationResult), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DraftGeneration(Guid patientId, CancellationToken ct)
+    {
+        var result = await mediator.Send(new NutritionDraftGenerationCommand(patientId, await ActorAsync(ct)), ct);
+        return result.State == "ready" ? Ok(result) : StatusCode(StatusCodes.Status202Accepted, result);
+    }
+
     private async Task<NutritionActor> ActorAsync(CancellationToken ct) => new(
         context.UserId ?? throw new UnauthorizedAccessException(), await context.GetProfessionalIdAsync(ct),
         User.HasClaim(PermissionClaimTypes.Permission, PermissionCodes.PatientsView),
         await context.HasPermissionAsync(PermissionCodes.NutritionManage, ct), await context.HasPermissionAsync(PermissionCodes.NutritionApprove, ct));
+
+    /// <summary>Ficha completa bajo alcance Nutrition; no exige permisos ajenos para identidad o perfil.</summary>
+    [HttpGet("patients/{patientId:guid}/workspace")]
+    public async Task<ActionResult<NutritionWorkspaceView>> Workspace(Guid patientId, [FromQuery] int historyPage = 1,
+        [FromQuery] int historyPageSize = 20, [FromQuery] Guid? prescriptionId = null, CancellationToken ct = default)
+        => Ok(await mediator.Send(new NutritionWorkspaceQuery(patientId, await ActorAsync(ct), historyPage, historyPageSize, prescriptionId), ct));
 }

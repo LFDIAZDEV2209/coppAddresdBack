@@ -91,7 +91,8 @@ public sealed class SubmitEvaluationCommandHandler(
     IPublisher? publisher = null,
     IProgramAssignmentRepository? assignmentRepository = null,
     IOptionsMonitor<ProgramAssignmentSettings>? assignmentSettings = null,
-    ILogger<SubmitEvaluationCommandHandler>? logger = null
+    ILogger<SubmitEvaluationCommandHandler>? logger = null,
+    INutritionDraftWorkflow? nutritionDraftWorkflow = null
 ) : IRequestHandler<SubmitEvaluationCommand, HealthTestEvaluationDto>
 {
     public async Task<HealthTestEvaluationDto> Handle(
@@ -99,6 +100,8 @@ public sealed class SubmitEvaluationCommandHandler(
         CancellationToken ct
     )
     {
+        // Compatibilidad de constructores: el gate se aplica únicamente en el consumidor legacy.
+        _ = assignmentSettings;
         var result = await repository.ExecuteInTransactionAsync(
             async () =>
             {
@@ -342,7 +345,24 @@ public sealed class SubmitEvaluationCommandHandler(
             ct
         );
 
-        if (nutritionWorkflow is not null)
+        // La señal clínica de Nutrition es independiente del gate y de la inscripción legacy.
+        if (publisher is not null && assignmentRepository is not null)
+        {
+            try
+            {
+                var assignment = await repository.GetAssignmentByIdAsync(result.AssignmentId, ct);
+                if (assignment?.BatteryAssignmentId is Guid batteryAssignmentId
+                    && await assignmentRepository.FindCompletedInitialBatteryAsync(result.PatientId, batteryAssignmentId, ct) is Guid completed)
+                    await publisher.Publish(new BatteryCompletedEvent(result.PatientId, completed), ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                logger?.LogWarning("Nutrition.BatteryHookRetry FailureType={FailureType}", ex.GetType().Name);
+            }
+        }
+
+        if (nutritionWorkflow is not null && nutritionDraftWorkflow is null)
         {
             // Solo reserva trabajo durable después del commit; la IA corre en el worker.
             try { await nutritionWorkflow.QueueIfReadyAsync(result.PatientId, ct); }
@@ -357,21 +377,7 @@ public sealed class SubmitEvaluationCommandHandler(
         // D-01: la transacción clínica ya hizo COMMIT y fue liberada por el repositorio.
         // Cualquier fallo del hook (incluida la cancelación posterior al commit) se registra
         // y conserva el resultado clínico. El token se propaga a todas las operaciones.
-        if (assignmentSettings?.CurrentValue.Enabled == true && publisher is not null && assignmentRepository is not null)
-        {
-            try
-            {
-                var assignment = await repository.GetAssignmentByIdAsync(result.AssignmentId, ct);
-                if (assignment?.BatteryAssignmentId is Guid batteryAssignmentId
-                    && !await assignmentRepository.HasCurrentEnrollmentAsync(result.PatientId, ct)
-                    && await assignmentRepository.FindCompletedInitialBatteryAsync(result.PatientId, batteryAssignmentId, ct) is Guid completed)
-                    await publisher.Publish(new BatteryCompletedEvent(result.PatientId, completed), ct);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(ex, "Program.AssignmentHookFailed EvaluationId={EvaluationId}", result.Id);
-            }
-        }
+        // El consumidor legacy conserva su propio gate, idempotencia y recuperación.
         return result;
     }
 

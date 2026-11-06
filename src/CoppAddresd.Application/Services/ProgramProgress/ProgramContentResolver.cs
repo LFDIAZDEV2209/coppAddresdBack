@@ -14,27 +14,30 @@ namespace CoppAddresd.Application.Services.ProgramProgress;
 ///   <item>Devuelve la rutina de ejercicio activa (o <c>null</c> si no hay).</item>
 /// </list>
 ///
-/// Algoritmo de selección (SPEC §6.10): de todas las asignaciones con status
-/// Active y ventana de fechas que cubre localDate, gana la de start_date más
-/// reciente (overlap rule).
+/// Selección nutricional: prescripción publicada vigente por fecha local;
+/// sin ella, se conserva la selección wellness por ventana de asignación.
 ///
-/// Servicio de solo lectura; consume <see cref="IWellnessRepository"/> (MVP:
+/// Servicio de solo lectura; consume Nutrition y <see cref="IWellnessRepository"/> (MVP:
 /// lectura completa por paciente + filtrado en memoria, aceptable para single
 /// patient). Evita N+1 cargando los días del plan una sola vez por resolved plan
 /// (skill n-plus-one).
 /// </summary>
 public sealed class ProgramContentResolver(
     IWellnessRepository wellnessRepository,
-    ILogger<ProgramContentResolver> logger) : IProgramContentResolver
+    ILogger<ProgramContentResolver> logger,
+    INutritionPrescriptionRepository prescriptions) : IProgramContentResolver
 {
     public async Task<ProgramContentResolution?> ResolveAsync(
         Guid patientId,
         DateOnly localDate,
         CancellationToken ct = default)
     {
+        // Nutrition es la fuente primaria por fecha local; bienestar solo suple su ausencia.
+        var prescription = await prescriptions.GetCurrentPublishedAsync(patientId, localDate, ct);
         // --- 1. Cargar asignaciones del paciente (2 queries batch) ---
-        var planAssignments = await wellnessRepository
-            .ListPlanAssignmentsByPatientAsync(patientId, ct);
+        var planAssignments = prescription is null
+            ? await wellnessRepository.ListPlanAssignmentsByPatientAsync(patientId, ct)
+            : Array.Empty<NutritionPlanAssignment>();
         var routineAssignments = await wellnessRepository
             .ListAssignmentsByPatientAsync(patientId, ct);
 
@@ -67,7 +70,7 @@ public sealed class ProgramContentResolver(
             .FirstOrDefault();
 
         // --- 4. Si no hay contenido activo, devolver null ---
-        if (activePlanAssignment is null && activeRoutineAssignment is null)
+        if (prescription is null && activePlanAssignment is null && activeRoutineAssignment is null)
         {
             logger.LogDebug(
                 "Program.ContentResolver: patient={PatientId} date={LocalDate} → sin contenido activo",
@@ -77,11 +80,14 @@ public sealed class ProgramContentResolver(
 
         var resolution = new ProgramContentResolution
         {
+            SourcePrescriptionId = prescription?.Id,
+            PrescriptionDayNumber = prescription?.StartDate is { } start ? localDate.DayNumber - start.DayNumber + 1 : null,
             NutritionPlanId = nutritionPlanId,
             NutritionPlanDayNumber = resolvedDayNumber,
             ExerciseRoutineId = activeRoutineAssignment?.RoutineId,
         };
 
+        LogSource(resolution);
         logger.LogInformation(
             "Program.ContentResolver: patient={PatientId} date={LocalDate} " +
             "nutritionPlan={NutritionPlanId} day={DayNumber} routine={RoutineId}",
@@ -101,10 +107,10 @@ public sealed class ProgramContentResolver(
         DateOnly to,
         CancellationToken ct = default)
     {
+        var published = await prescriptions.ListByPatientAsync(patientId, 1, 100, ct);
         // T-83 (B18): una sola carga de asignaciones para toda la ventana
         // (independiente del número de fechas) + cache de días por plan.
-        var planAssignments = await wellnessRepository
-            .ListPlanAssignmentsByPatientAsync(patientId, ct);
+        var planAssignments = await wellnessRepository.ListPlanAssignmentsByPatientAsync(patientId, ct);
         var routineAssignments = await wellnessRepository
             .ListAssignmentsByPatientAsync(patientId, ct);
 
@@ -113,6 +119,10 @@ public sealed class ProgramContentResolver(
 
         for (var date = from; date <= to; date = date.AddDays(1))
         {
+            ct.ThrowIfCancellationRequested();
+            var prescription = published.Where(p => p.IsPublished && p.State == "aprobado"
+                    && p.StartDate <= date && p.EndDate >= date && p.StartDate > date.AddDays(-30))
+                .OrderByDescending(p => p.StartDate).ThenByDescending(p => p.Id).FirstOrDefault();
             var activePlanAssignment = planAssignments
                 .Where(a => a.Status == AssignmentStatus.Active
                             && IsDateInWindow(a.StartDate, a.EndDate, date))
@@ -125,13 +135,13 @@ public sealed class ProgramContentResolver(
                 .OrderByDescending(a => a.StartDate)
                 .FirstOrDefault();
 
-            if (activePlanAssignment is null && activeRoutineAssignment is null)
+            if (prescription is null && activePlanAssignment is null && activeRoutineAssignment is null)
             {
                 continue;
             }
 
             int? resolvedDayNumber = null;
-            if (activePlanAssignment is not null)
+            if (prescription is null && activePlanAssignment is not null)
             {
                 if (!planCache.TryGetValue(activePlanAssignment.PlanId, out var plan))
                 {
@@ -145,14 +155,22 @@ public sealed class ProgramContentResolver(
 
             result[date] = new ProgramContentResolution
             {
+                SourcePrescriptionId = prescription?.Id,
+                PrescriptionDayNumber = prescription?.StartDate is { } start ? date.DayNumber - start.DayNumber + 1 : null,
                 NutritionPlanId = resolvedDayNumber is not null ? activePlanAssignment?.PlanId : null,
                 NutritionPlanDayNumber = resolvedDayNumber,
                 ExerciseRoutineId = activeRoutineAssignment?.RoutineId,
             };
+            LogSource(result[date]);
         }
 
         return result;
     }
+
+    private void LogSource(ProgramContentResolution resolution)
+        => logger.LogInformation("Program.ContentSource Source={Source} PrescriptionId={PrescriptionId} PlanId={PlanId} DayNumber={DayNumber}",
+            resolution.SourcePrescriptionId.HasValue ? "prescription" : "wellness", resolution.SourcePrescriptionId,
+            resolution.NutritionPlanId, resolution.PrescriptionDayNumber ?? resolution.NutritionPlanDayNumber);
 
     /// <summary>
     /// Verifica si la fecha local cae dentro de la ventana de la asignación.

@@ -827,6 +827,19 @@ public sealed partial class ProgramRepository(
                 }
             }
 
+            if (input.Emotional is { } answers)
+            {
+                emotional.StressScore = answers.StressScore;
+                emotional.MotivationScore = answers.MotivationScore;
+                emotional.SleepMinutes = answers.SleepMinutes;
+                emotional.SleepSource = answers.SleepSource;
+                emotional.SleepRecordedAt = answers.SleepSource == "wearable" && answers.SleepRecordedAt is { } captured
+                    ? captured.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(captured, DateTimeKind.Utc) : captured.ToUniversalTime()
+                    : null;
+                emotional.SleepDeviceId = answers.SleepSource == "wearable" ? answers.SleepDeviceId : null;
+                emotional.SleepNightDate = answers.SleepNightDate ?? (answers.SleepMinutes.HasValue ? input.LocalDate : null);
+                emotional.SleepQuality = answers.SleepQuality;
+            }
             // Save intermedio: la completación referencia el Id del registro.
             await dbContext.SaveChangesAsync(ct);
             emotionalRecordId = emotional.Id;
@@ -860,6 +873,8 @@ public sealed partial class ProgramRepository(
         // enrollment). Si no hay resolver (tests) o no hay contenido activo,
         // los FKs quedan null (el input los trae null por defecto). XP se
         // otorga siempre (default MVP: sin contenido no bloquea).
+        Guid? resolvedSourcePrescriptionId = null;
+        int? resolvedPrescriptionDayNumber = null;
         Guid? resolvedNutritionPlanId = input.NutritionPlanId;
         short? resolvedNutritionPlanDayNumber = input.NutritionPlanDayNumber;
         Guid? resolvedExerciseRoutineId = input.ExerciseRoutineId;
@@ -876,8 +891,11 @@ public sealed partial class ProgramRepository(
             {
                 // nut: nutrition_plan_id y day_number del resolvedor.
                 // Si el plan no tiene día para el weekday → ambos null (AC-13).
-                resolvedNutritionPlanId = resolution.NutritionPlanId;
-                resolvedNutritionPlanDayNumber = resolution.NutritionPlanDayNumber.HasValue
+                resolvedSourcePrescriptionId = resolution.SourcePrescriptionId;
+                resolvedPrescriptionDayNumber = resolution.PrescriptionDayNumber;
+                // Las FKs wellness y el CHECK 1..7 nunca reciben una prescripción ni su día 1..30.
+                resolvedNutritionPlanId = resolution.SourcePrescriptionId is null ? resolution.NutritionPlanId : null;
+                resolvedNutritionPlanDayNumber = resolution.SourcePrescriptionId is null && resolution.NutritionPlanDayNumber.HasValue
                     ? (short?)resolution.NutritionPlanDayNumber.Value
                     : null;
 
@@ -903,13 +921,17 @@ public sealed partial class ProgramRepository(
         //     ya retornaron antes de llegar aquí.
         if (
             input.TaskCode == TaskCode.nut
-            && resolvedNutritionPlanId is not null
-            && resolvedNutritionPlanDayNumber is not null
+            && ((resolvedSourcePrescriptionId is not null && resolvedPrescriptionDayNumber is >= 1 and <= 30)
+                || (resolvedNutritionPlanId is not null && resolvedNutritionPlanDayNumber is not null))
         )
         {
             // Expected: tipos de comida DISTINTOS del plan-day (D4).
-            var expectedMealTypes = await dbContext
-                .NutritionPlanDays.AsNoTracking()
+            var expectedMealTypes = resolvedSourcePrescriptionId is { } prescriptionId
+                ? (await dbContext.NutritionPrescriptionMeals.AsNoTracking()
+                    .Where(m => m.PrescriptionId == prescriptionId && m.DayNumber == resolvedPrescriptionDayNumber
+                        && m.Prescription!.PatientId == enrollment.PatientId)
+                    .Select(m => m.MealType).Distinct().ToListAsync(ct)).Select(PrescriptionMealType).ToList()
+                : await dbContext.NutritionPlanDays.AsNoTracking()
                 .Where(d =>
                     d.PlanId == resolvedNutritionPlanId
                     && d.DayNumber == resolvedNutritionPlanDayNumber
@@ -1919,6 +1941,12 @@ public sealed partial class ProgramRepository(
                 t.TaskCode,
                 t.CompletedAt,
                 t.MediaId,
+                EmotionalAssessment = t.EmotionalRecord == null ? null : new SavedEmotionalAssessmentDto(
+                    t.EmotionalRecord.MoodScore, t.EmotionalRecord.Barriers,
+                    new EmotionalAssessmentPayload(t.EmotionalRecord.StressScore, t.EmotionalRecord.MotivationScore,
+                        t.EmotionalRecord.SleepMinutes, t.EmotionalRecord.SleepSource, t.EmotionalRecord.SleepRecordedAt,
+                        t.EmotionalRecord.Notes, t.EmotionalRecord.SleepDeviceId, t.EmotionalRecord.SleepNightDate,
+                        t.EmotionalRecord.SleepQuality)),
             })
             .ToListAsync(ct);
 
@@ -2031,7 +2059,24 @@ public sealed partial class ProgramRepository(
 
         if (contentResolution is { })
         {
-            if (contentResolution.NutritionPlanId is { } planId)
+            if (contentResolution.SourcePrescriptionId is { } prescriptionId && contentResolution.PrescriptionDayNumber is { } prescriptionDay)
+            {
+                var prescription = await ReadMissionPrescriptionAsync(row.PatientId, prescriptionId, prescriptionDay, ct);
+                if (prescription is null)
+                    contentResolution = contentResolution with { SourcePrescriptionId = null, PrescriptionDayNumber = null };
+                else
+                {
+                    resolvedPlanName = "Plan nutricional";
+                    resolvedCalorieTarget = prescription.CalorieTarget is { } calories
+                        ? (int)CoppAddresd.Application.Features.Nutrition.Engine.NutritionEngine.R0(calories) : null;
+                    resolvedProteinTarget = (decimal?)prescription.ProteinTarget;
+                    resolvedCarbsTarget = (decimal?)prescription.CarbsTarget;
+                    resolvedFatTarget = (decimal?)prescription.FatTarget;
+                    resolvedFiberTarget = (decimal?)prescription.FiberTarget;
+                    resolvedMeals = PrescriptionMeals(prescription);
+                }
+            }
+            else if (contentResolution.NutritionPlanId is { } planId)
             {
                 var dayNumber = contentResolution.NutritionPlanDayNumber ?? 1;
 
@@ -2272,16 +2317,16 @@ public sealed partial class ProgramRepository(
                 else if (taskCode == TaskCode.nut)
                 {
                     // T-75: nut → campos nutritionPlan* del resolvedor.
-                    if (contentResolution is { NutritionPlanId: { } planId })
+                    if (contentResolution is { } nutrition && (nutrition.SourcePrescriptionId is not null || nutrition.NutritionPlanId is not null))
                     {
                         content = new TodayTaskContentDto(
                             MediaId: null,
                             Title: resolvedPlanName,
                             DurationSecs: null,
                             ThumbnailUrl: null,
-                            NutritionPlanId: planId,
+                            NutritionPlanId: nutrition.NutritionPlanId,
                             NutritionPlanName: resolvedPlanName,
-                            NutritionPlanDayNumber: contentResolution.NutritionPlanDayNumber,
+                            NutritionPlanDayNumber: nutrition.PrescriptionDayNumber ?? nutrition.NutritionPlanDayNumber,
                             DailyCalorieTarget: resolvedCalorieTarget,
                             DailyProteinTarget: resolvedProteinTarget,
                             DailyCarbsTarget: resolvedCarbsTarget,
@@ -2360,7 +2405,8 @@ public sealed partial class ProgramRepository(
                     done is null ? "Pending" : "Completed",
                     done?.CompletedAt,
                     content,
-                    contentUnavailable
+                    contentUnavailable,
+                    done?.EmotionalAssessment
                 );
             })
             .ToList();
@@ -5813,24 +5859,13 @@ public sealed partial class ProgramRepository(
             bodyFatMetricId = bodyFatBaseline.MetricId;
         }
 
-        // Motivación (SPEC §21, B.5): proxy del último registro emocional del
-        // período — el módulo solo persiste mood 1..5, se escala ×2 a la escala
-        // 1..10 del motor (documentado en SPEC §21, B.5).
-        decimal? motivationScore = null;
-        var latestMood = await dbContext
-            .EmotionalRecords.AsNoTracking()
-            .Where(r =>
-                r.PatientId == patientId
-                && r.RecordedLocalDate >= periodStart
-                && r.RecordedLocalDate <= periodEnd
-            )
-            .OrderByDescending(r => r.RecordedLocalDate)
-            .Select(r => (short?)r.MoodScore)
-            .FirstOrDefaultAsync(ct);
-        if (latestMood is { } mood)
-        {
-            motivationScore = mood * 2m;
-        }
+        // Motivación reportada: nunca se infiere multiplicando el ánimo.
+        // Consulta puntual por paciente/período, sin nueva agregación de dashboard.
+        decimal? motivationScore = await dbContext.EmotionalRecords.AsNoTracking()
+            .Where(r => r.PatientId == patientId && r.RecordedLocalDate >= periodStart
+                && r.RecordedLocalDate <= periodEnd && r.MotivationScore.HasValue)
+            .OrderByDescending(r => r.RecordedLocalDate).ThenByDescending(r => r.CreatedAt)
+            .Select(r => (decimal?)r.MotivationScore).FirstOrDefaultAsync(ct);
 
         // Estrés y sueño (SPEC §21, B.6/B.7): sin fuente física en el esquema
         // actual → null → reglas latentes (no disparan). Se dejan en el paquete

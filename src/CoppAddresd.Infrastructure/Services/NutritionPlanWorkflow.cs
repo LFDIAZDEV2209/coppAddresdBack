@@ -50,6 +50,11 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
 
     public async Task QueueIfReadyAsync(Guid patientId, CancellationToken ct)
     {
+        // La batería inicial pertenece al productor nuevo incluso antes de que llegue su evento.
+        if (await db.NutritionDraftReservations.AsNoTracking().AnyAsync(r => r.PatientId == patientId, ct)
+            || await db.HealthTestBatteryAssignments.AsNoTracking().AnyAsync(b => b.PatientId == patientId
+                && b.Status != HealthTestAssignmentStatus.cancelled && b.Battery!.Code == "bateria-inicial"
+                && b.Battery.IsActive && b.Battery.AutoAssignOnPatientCreate, ct)) return;
         if (!(await ReadinessAsync(patientId, ct)).Ready) return;
         var plans = db.NutritionPlans.AsNoTracking().Where(x => x.PatientId == patientId && !x.IsTemplate);
         if (await plans.AnyAsync(x => x.ReviewStatus == "pending_review" && x.Status != NutritionPlanStatus.Archived, ct)) return;
@@ -81,7 +86,11 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
         // Recupera el hook perdido por un reinicio y renueva ciclos vencidos.
         // El índice patient_id de las asignaciones y el de planes mantienen el batch acotado.
         var ids = await db.HealthTestBatteryAssignments.AsNoTracking()
-            .Where(b => b.Status != HealthTestAssignmentStatus.cancelled
+            .Where(b => !db.NutritionDraftReservations.Any(r => r.PatientId == b.PatientId)
+                && !db.HealthTestBatteryAssignments.Any(initial => initial.PatientId == b.PatientId
+                    && initial.Status != HealthTestAssignmentStatus.cancelled && initial.Battery!.Code == "bateria-inicial"
+                    && initial.Battery.IsActive && initial.Battery.AutoAssignOnPatientCreate)
+                && b.Status != HealthTestAssignmentStatus.cancelled
                 && !db.HealthTestBatteryAssignments.Any(other => other.PatientId == b.PatientId
                     && other.Status != HealthTestAssignmentStatus.cancelled
                     && (!other.Assignments.Any()
@@ -105,7 +114,11 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
     public async Task<bool> ProcessNextAsync(CancellationToken ct)
     {
         var now = DateTime.UtcNow;
-        var plan = await db.NutritionPlans.Where(p => p.Status != NutritionPlanStatus.Archived).Where(p =>
+        var plan = await db.NutritionPlans.Where(p => p.Status != NutritionPlanStatus.Archived
+            && !db.NutritionDraftReservations.Any(r => r.PatientId == p.PatientId)
+            && !db.HealthTestBatteryAssignments.Any(initial => initial.PatientId == p.PatientId
+                && initial.Status != HealthTestAssignmentStatus.cancelled && initial.Battery!.Code == "bateria-inicial"
+                && initial.Battery.IsActive && initial.Battery.AutoAssignOnPatientCreate)).Where(p =>
                 p.GenerationAttempts < 5 && (p.GenerationStatus == "queued" || p.GenerationStatus == "failed") && p.GenerationNextAttemptAt <= now
                     || p.GenerationStatus == "generating" && p.GenerationLeaseUntil < now)
             .OrderBy(p => p.GenerationNextAttemptAt).ThenBy(p => p.Id).FirstOrDefaultAsync(ct);

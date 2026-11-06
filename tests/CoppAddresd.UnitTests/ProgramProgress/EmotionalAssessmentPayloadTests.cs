@@ -49,4 +49,16 @@ public sealed class EmotionalAssessmentPayloadTests
         Assert.False(validator.Validate(Command(new(Notes: new string('a', 2001)))).IsValid);
         Assert.False(validator.Validate(Command(new(StressScore: 3), TaskCode.nutraceutico)).IsValid);
     }
+
+    [Fact]
+    public void SuenoDesconocido_NoEsCeroYNoConservaProcedenciaFalsa()
+    {
+        var validator = new CompleteTaskCommandValidator();
+        Assert.True(validator.Validate(Command(new(SleepSource: "unknown", SleepQuality: "fair"))).IsValid);
+        Assert.False(validator.Validate(Command(new(SleepMinutes: 0, SleepSource: "unknown"))).IsValid);
+        Assert.False(validator.Validate(Command(new(SleepMinutes: 420, SleepSource: "manual", SleepDeviceId: "ring"))).IsValid);
+        Assert.False(validator.Validate(Command(new(SleepMinutes: 420, SleepSource: "manual", SleepRecordedAt: DateTime.UtcNow))).IsValid);
+        Assert.False(validator.Validate(Command(new(SleepQuality: "diagnostico"))).IsValid);
+        Assert.False(validator.Validate(Command(new(SleepMinutes: 420, SleepSource: "manual", SleepNightDate: new DateOnly(2026, 11, 2)))).IsValid);
+    }
 }

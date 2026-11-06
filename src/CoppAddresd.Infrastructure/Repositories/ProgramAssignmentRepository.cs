@@ -83,7 +83,7 @@ public sealed class ProgramAssignmentRepository(AppDbContext db) : IProgramAssig
             .Where(e => e.PatientId == patientId && e.Status == HealthTestEvaluationStatus.completed
                 && e.Assignment!.BatteryAssignmentId == batteryAssignmentId)
             .OrderByDescending(e => e.CompletedAt).ThenBy(e => e.Id)
-            .Select(e => new { e.Id, e.VersionId, TestCode = e.Version!.Instrument!.Code }).ToListAsync(ct);
+            .Select(e => new { e.Id, e.VersionId, e.CompletedAt, TestCode = e.Version!.Instrument!.Code }).ToListAsync(ct);
         var latest = evaluations.GroupBy(e => e.TestCode).Select(g => g.First()).ToArray();
         var ids = latest.Select(e => e.Id).ToArray();
         var versions = latest.Select(e => e.VersionId).ToArray();
@@ -100,7 +100,7 @@ public sealed class ProgramAssignmentRepository(AppDbContext db) : IProgramAssig
             var maximum = maxima.Where(m => m.VersionId == evaluation.VersionId
                 && (r.ResultType != HealthTestResultType.subscale || m.Section == r.Code)).Sum(m => m.Max);
             return new AssignmentResult(r.EvaluationId, evaluation.TestCode, r.ResultType.ToString(), r.Code,
-                r.Value, r.Severity?.ToString(), r.Qualifier, maximum > 0 ? maximum : null);
+                r.Value, r.Severity?.ToString(), r.Qualifier, maximum > 0 ? maximum : null, evaluation.CompletedAt);
         }).ToArray();
         var numeric = await db.HealthTestResponses.AsNoTracking()
             .Where(r => ids.Contains(r.EvaluationId) && r.Question!.Type == HealthTestQuestionType.num
@@ -110,7 +110,8 @@ public sealed class ProgramAssignmentRepository(AppDbContext db) : IProgramAssig
             .ToListAsync(ct);
         var biometrics = numeric.Where(r => decimal.TryParse(r.ValueText, NumberStyles.Float, CultureInfo.InvariantCulture, out _))
             .Select(r => new AssignmentBiometric(r.EvaluationId, r.Code,
-                decimal.Parse(r.ValueText!, NumberStyles.Float, CultureInfo.InvariantCulture), r.Unit, r.MinValue, r.MaxValue)).ToArray();
+                decimal.Parse(r.ValueText!, NumberStyles.Float, CultureInfo.InvariantCulture), r.Unit, r.MinValue, r.MaxValue,
+                latest.Single(e => e.Id == r.EvaluationId).CompletedAt)).ToArray();
         return new(patientId, batteryAssignmentId, patient.Gender, patient.Ethnicity, results, biometrics);
     }
 

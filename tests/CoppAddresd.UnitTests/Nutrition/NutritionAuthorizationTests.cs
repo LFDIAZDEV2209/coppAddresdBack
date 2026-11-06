@@ -71,7 +71,7 @@ public sealed class NutritionAuthorizationTests
         }
         public void Dispose() { Client.Dispose(); host.Dispose(); }
     }
-    private static async Task<Harness> StartAsync()
+    private static async Task<Harness> StartAsync(string generationState = "pending")
     {
         var key = new SymmetricSecurityKey(RandomNumberGenerator.GetBytes(32));
         var saved = new List<NutritionPrescription>(); var events = new List<NutritionPrescriptionEvent>();
@@ -98,7 +98,7 @@ public sealed class NutritionAuthorizationTests
             CreatedBy = Owner, ClinicalProfileJson = plan.ClinicalProfileJson, TargetsJson = plan.TargetsJson, Meals = plan.Meals };
         repository.GetByIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(c => c.Arg<Guid>() == ForeignPlanId ? foreignPlan : plan);
         repository.When(r => r.AddAsync(Arg.Any<NutritionPrescription>(), Arg.Any<CancellationToken>())).Do(c => saved.Add(c.Arg<NutritionPrescription>()));
-        store.GetContextAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new NutritionCaseContext(new(1988, 1, 1), "F", "America/Bogota", false, null));
+        store.GetContextAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new NutritionCaseContext(new(1988, 1, 1), "F", "America/Bogota", true, PlanId));
         store.CanAccessAsync(Arg.Any<Guid>(), Arg.Any<NutritionActor>(), Arg.Any<CancellationToken>()).Returns(c =>
             c.Arg<NutritionActor>().ViewAll || c.Arg<Guid>() == OwnPatient && c.Arg<NutritionActor>().ProfessionalId == Professional);
         store.ExecuteAsync(Arg.Any<Guid>(), Arg.Any<Func<CancellationToken, Task<NutritionView>>>(), Arg.Any<CancellationToken>())
@@ -117,14 +117,50 @@ public sealed class NutritionAuthorizationTests
             s.AddAuthorization(o => o.AddPolicy(NutritionPolicies.Staff, NutritionPolicies.Configure));
             s.AddMediatR(c => c.RegisterServicesFromAssemblyContaining<NutritionCaseCommand>());
             s.AddScoped<NutritionCases>(); s.AddSingleton(repository); s.AddSingleton(store); s.AddSingleton(clinical);
-            s.AddSingleton(drafts); s.AddSingleton(Substitute.For<IProgramAssignmentRepository>()); s.AddSingleton(TimeProvider.System);
+            var assessments=Substitute.For<IProgramAssignmentRepository>();
+            assessments.FindCompletedInitialBatteryAsync(Arg.Any<Guid>(),Arg.Any<Guid>(),Arg.Any<CancellationToken>()).Returns(PlanId);
+            s.AddSingleton(drafts); s.AddSingleton(assessments); s.AddSingleton(TimeProvider.System);
             s.AddSingleton(inbox);
+            var reservations=Substitute.For<INutritionDraftReservationStore>();
+            reservations.RequestAsync(Arg.Any<Guid>(),Arg.Any<Guid>(),Arg.Any<DateTime>(),Arg.Any<CancellationToken>())
+                .Returns(new NutritionDraftReservation { Id=PlanId, State=generationState, PrescriptionId=generationState=="ready" ? PlanId : null });
+            s.AddSingleton(reservations);
         }).Configure(app =>
         {
             app.UseMiddleware<ExceptionHandlingMiddleware>(); app.UseRouting(); app.UseAuthentication(); app.UseAuthorization();
             app.UseEndpoints(e => e.MapControllers());
         })).StartAsync();
         return new(host, key, saved, events);
+    }
+
+    [Fact]
+    public async Task HttpDraftGeneration_ReadyReturnsExistingPrescription()
+    {
+        using var h=await StartAsync("ready"); h.Authenticate("own");
+        var response=await h.Client.PostAsync($"/api/v1/nutrition/patients/{OwnPatient}/draft-generation",null);
+        Assert.Equal(HttpStatusCode.OK,response.StatusCode);
+        var json=await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("ready",json.GetProperty("state").GetString());
+        Assert.Equal(PlanId,json.GetProperty("prescriptionId").GetGuid()); Assert.Empty(h.Saved);
+    }
+
+    [Theory]
+    [InlineData("own",202)] [InlineData("global",202)] [InlineData("reviewer",403)]
+    [InlineData("absent",401)] [InlineData("none",403)] [InlineData("app",403)]
+    public async Task HttpDraftGeneration_RequiresManageAndReturnsOnlyReservation(string mode,int status)
+    {
+        using var h=await StartAsync(); h.Authenticate(mode);
+        var response=await h.Client.PostAsync($"/api/v1/nutrition/patients/{OwnPatient}/draft-generation",null);
+        Assert.Equal(status,(int)response.StatusCode);
+        if (status==202)
+        {
+            var json=await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("reservationId,state,prescriptionId",string.Join(',',json.EnumerateObject().Select(x=>x.Name)));
+            Assert.Equal("pending",json.GetProperty("state").GetString());
+            Assert.Equal(JsonValueKind.Null,json.GetProperty("prescriptionId").ValueKind);
+            Assert.Empty(h.Saved);
+            if (mode=="own") Assert.Equal(HttpStatusCode.NotFound,(await h.Client.PostAsync($"/api/v1/nutrition/patients/{Guid.NewGuid()}/draft-generation",null)).StatusCode);
+        }
     }
 
     [Theory]
@@ -189,7 +225,7 @@ public sealed class NutritionAuthorizationTests
         Assert.Equal("items,total,page,pageSize",string.Join(',',json.EnumerateObject().Select(x => x.Name)));
         Assert.Equal(total,json.GetProperty("total").GetInt32());
         var item = json.GetProperty("items")[0];
-        Assert.Equal("patientId,patientName,state,prescription",string.Join(',',item.EnumerateObject().Select(x => x.Name)));
+        Assert.Equal("patientId,patientName,state,prescription,generationState,generationFallback,generationReason,generationUpdatedAt,hasPublishedToday,publishedCycleStart,publishedCycleEnd,latestDraftState,hasFutureDraft",string.Join(',',item.EnumerateObject().Select(x => x.Name)));
         Assert.Equal(OwnPatient,item.GetProperty("patientId").GetGuid()); Assert.Equal("sin_plan",item.GetProperty("state").GetString());
         Assert.Equal(JsonValueKind.Null,item.GetProperty("prescription").ValueKind);
     }

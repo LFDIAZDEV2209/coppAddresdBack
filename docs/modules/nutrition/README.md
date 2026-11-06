@@ -1,5 +1,17 @@
 # Módulo: Nutrición — generación, revisión clínica y lectura del paciente
 
+### Horario individual de comidas en la app
+
+La lectura `GET /api/v1/me/nutrition-plan` añade el campo opcional
+`days[].meals[].suggestedTime` (`HH:mm`) a partir del horario persistido en
+las prescripciones publicadas. Conserva `Snack` como tipo de merienda y
+`sortOrder` como orden del menú. En planes legacy, que solo conservan un
+horario general, el campo individual es `null`: la app no asigna la lista
+completa de horarios a cada comida ni infiere uno. Es un cambio aditivo de
+lectura; no requiere migración, no altera dietas aprobadas ni añade tiempos
+de comida al motor. Las meriendas ausentes se muestran como pendientes de
+indicación profesional, sin proponer alimentos automáticamente.
+
 ## Ola 2: motor y prescripciones profesionales
 
 Los catálogos de Auth y API conservan los permisos legacy y añaden
@@ -458,3 +470,70 @@ El filtro amplio necesita COP_TEST_DB_CONNECTION a una base aislada con
 migraciones Auth/API para los tests antiguos de FoodAI; Workflow crea además
 una base propia por caso. No se usan BD de pacientes reales ni se cambian los
 14 fallos históricos ajenos. Las rutas anteriores y el DTO móvil no cambian.
+
+## Ola 6: borrador automático y reserva durable
+
+`BatteryCompletedEvent` se emite tras el commit clínico sin depender del flag de
+asignación ni de la existencia de una inscripción. El consumidor legacy mantiene
+su propio gate. `NutritionBatteryCompletedHandler` valida la batería inicial y
+reserva `(patient_id,battery_assignment_id)`; el worker invoca el caso Generate
+con identidad técnica `system:nutrition`, sin aprobar. Un reconciliador independiente
+recupera hechos perdidos desde baterías persistidas, en lotes de 25 por minuto.
+
+La reserva usa estados `pending/generating/ready/failed`, lease de tres minutos,
+claim token, cinco intentos y espera de un minuto tras fallo. El ID de reserva es
+también el ID del borrador: reiniciar después de guardar el plan pero antes de
+confirmar la reserva reutiliza exactamente ese plan y su evento. La transacción
+del agregado y la confirmación de outbox son cortas y separadas; el estado puede
+quedar transitoriamente generating, nunca crear otro borrador por ese corte.
+La IA se invoca antes de la transacción y su fallback queda identificado.
+
+La batería inicial activa/autoasignada pertenece al productor nuevo, aun si no llegó
+su evento; también se excluyen pacientes con reserva. Así el worker legacy no
+encola ni procesa otro plan por anticiparse al evento. Publicaciones y datos
+legacy existentes se conservan; el productor viejo sigue para sus otros pacientes.
+La identidad técnica tiene GUID reservado `00000000-0000-0000-0000-000000000061`,
+sin usuario autenticable ni permiso de aprobar; la bitácora lo identifica con
+comentario `system:nutrition`. GUC transmite SYSTEM, user_id NULL y user_role
+system:nutrition; el scope restaura la identidad al salir. El trigger excluye
+claim_token. No se alteran el handler legacy, ECS, la app ni su DTO.
+
+La migración agrega únicamente `app.nutrition_draft_reservations`; Down conserva
+la tabla por diseño y documenta retirada manual. Up idempotente permite reaplicar
+tras rollback del binario sin perder reservas ni tocar datos legacy.
+
+### Recuperación de generación (Ola 8, 8.3)
+
+`POST /api/v1/nutrition/patients/{patientId}/draft-generation`: Nutrition.Manage,
+actor JWT y 404 fuera de alcance. Devuelve 202 con reserva sin contenido parcial,
+o 200 con prescriptionId si ya está lista. La reserva paciente+batería reutiliza
+ON CONFLICT dentro de una transacción corta; reprogramar failed conserva attempts.
+Pending permite un intento manual adicional tras agotar los cinco automáticos.
+La bandeja expone estado/fallback/motivo técnico/fecha de la última reserva usando
+los mismos dos SQL por página, sin cargar comidas ni añadir consultas por fila.
+
+### Vigencia en bandeja (Ola 8, 8.4)
+
+La cabecera del último plan y la publicación vigente se resuelven por separado.
+La fila añade hasPublishedToday/publishedCycleStart/publishedCycleEnd,
+latestDraftState y hasFutureDraft por fecha local del paciente, sin depender de
+CycleId. C2 en revisión nunca oculta C1 vigente. Se mantienen dos SQL por página
+con joins laterales sobre cabeceras, sin comidas. Tests con reloj fijo cubren
+el cambio a medianoche en Bogotá, solo borrador futuro y paginación estable;
+el test de 2.000 pacientes valida presupuesto de consultas y EXPLAIN real.
+
+### Misiones desde Nutrition (Ola 8, 8.5)
+
+ProgramContentResolver prioriza la prescripción publicada vigente por fecha local,
+incluso sin asignación wellness. SourcePrescriptionId/PrescriptionDayNumber son
+referencias internas distintas de NutritionPlanId/NutritionPlanDayNumber.
+El rango usa una carga de 100 cabeceras por paciente y decide por cada fecha.
+La misión lee solo comidas del día seleccionado y usa NutritionEngine.SumItems
+para Atwater; metas desde cabecera, menú y notas desde prescripción.
+El snapshot conserva nombres de campos: nutritionPlanId null, día de ciclo en
+nutritionPlanDayNumber; no se añaden campos al DTO móvil ni al de registro.
+El gate nut exige las comidas prescritas del día. Las escrituras de completación
+y de ingesta conservan sus FKs wellness null; CHECK weekday y FK no se alteran.
+Sin prescripción se conserva el fallback wellness y el ejercicio es independiente.
+Las pruebas PostgreSQL verifican el snapshot final, calorías Atwater frente a
+Calories100 deliberadamente distinto, el gate, replay, FKs nulas y fallback.

@@ -11,6 +11,8 @@ using CoppAddresd.Domain.Exceptions;
 using CoppAddresd.Infrastructure.Persistence;
 using CoppAddresd.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1956,7 +1958,8 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
                     Emotional: new EmotionalAssessmentPayload(StressScore: 3, MotivationScore: 8,
                         SleepMinutes: 427, SleepSource: "wearable",
                         SleepRecordedAt: new DateTime(2026, 11, 3, 12, 0, 0, DateTimeKind.Utc),
-                        Notes: "Descansé mejor anoche.")
+                        Notes: "Descansé mejor anoche.", SleepDeviceId: "r88-test",
+                        SleepNightDate: tuesday, SleepQuality: "restorative")
                 )
             );
         }
@@ -1980,12 +1983,72 @@ public sealed class ProgramRepositoryTests(ProgramRepositoryTestDb fixture)
         Assert.Contains("427 minutos (wearable)", emotional.Notes);
         Assert.Contains("2026-11-03T12:00:00.0000000Z", emotional.Notes);
         Assert.Contains("Descansé mejor anoche.", emotional.Notes);
+        Assert.Equal(3, emotional.StressScore);
+        Assert.Equal(8, emotional.MotivationScore);
+        Assert.Equal(427m, emotional.SleepMinutes);
+        Assert.Equal("wearable", emotional.SleepSource);
+        Assert.Equal("r88-test", emotional.SleepDeviceId);
+        Assert.Equal(tuesday, emotional.SleepNightDate);
+        Assert.Equal("restorative", emotional.SleepQuality);
+        var snapshot = await new ProgramRepository(verifyDb, Configuration()).GetSnapshotAsync(enrollmentId, tuesday);
+        var saved = Assert.Single(snapshot!.TodayTasks, t => t.TaskCode == TaskCode.emocional).EmotionalAssessment;
+        Assert.NotNull(saved);
+        Assert.Equal(427m, saved.Answers.SleepMinutes);
+        Assert.Equal("r88-test", saved.Answers.SleepDeviceId);
+        Assert.Equal(3, saved.Answers.StressScore);
 
         var checkin = await verifyDb
             .DailyCheckIns.AsNoTracking()
             .SingleAsync(c => c.EnrollmentId == enrollmentId && c.LocalDate == tuesday);
         Assert.Equal((short?)4, checkin.MoodScore);
         Assert.Equal("fatiga", checkin.Barriers);
+    }
+
+    [RequiresPostgresFact]
+    public async Task TareaEmocional_SinDatoYClienteAnterior_NoInfiereValores()
+    {
+        var enrollmentId = await EnrollAsync();
+        var tuesday = _monday.AddDays(1);
+        await using var db = fixture.CreateDbContext();
+        var repo = new ProgramRepository(db, Configuration());
+        foreach (var (date, answers) in new[] {
+            (tuesday, (EmotionalAssessmentPayload?)new(SleepSource: "unknown", SleepQuality: "fair")),
+            (tuesday.AddDays(1), (EmotionalAssessmentPayload?)null),
+        })
+        {
+            await repo.CompleteTaskAsync(new CompleteTaskInput(enrollmentId, date,
+                TaskCode.emocional, $"emo-empty-{date}", null, 4, null, null, Emotional: answers));
+            var record = await db.EmotionalRecords.AsNoTracking().SingleAsync(r =>
+                r.ProgramEnrollmentId == enrollmentId && r.RecordedLocalDate == date);
+            Assert.Null(record.StressScore);
+            Assert.Null(record.MotivationScore);
+            Assert.Null(record.SleepMinutes);
+            Assert.Null(record.SleepRecordedAt);
+            Assert.Null(record.SleepDeviceId);
+            Assert.Equal(answers?.SleepSource, record.SleepSource);
+        }
+    }
+
+    [RequiresPostgresFact]
+    public async Task TareaEmocional_MigracionReversible_ConservaRegistrosAnteriores()
+    {
+        var enrollmentId = await EnrollAsync();
+        var date = _monday.AddDays(1);
+        await using var db = fixture.CreateDbContext();
+        await new ProgramRepository(db, Configuration()).CompleteTaskAsync(new CompleteTaskInput(
+            enrollmentId, date, TaskCode.emocional, "emo-migration", null, 4, "tiempo", null));
+        var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+        Assert.EndsWith("_AddStructuredEmotionalAssessment", migrations[^1]);
+        var migrator = db.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[^2]);
+        var count = await db.Database.SqlQuery<int>($"SELECT COUNT(*)::integer AS \"Value\" FROM app.emotional_records WHERE program_enrollment_id = {enrollmentId}").SingleAsync();
+        Assert.Equal(1, count);
+        await migrator.MigrateAsync(migrations[^1]);
+        var restored = await db.EmotionalRecords.AsNoTracking().SingleAsync(r => r.ProgramEnrollmentId == enrollmentId);
+        Assert.Equal(4, restored.MoodScore);
+        Assert.Equal("tiempo", restored.Barriers);
+        Assert.Null(restored.MotivationScore);
+        Assert.Null(restored.SleepMinutes);
     }
 
     [RequiresPostgresFact]

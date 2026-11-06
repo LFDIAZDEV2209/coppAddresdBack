@@ -55,4 +55,33 @@ public sealed class NutritionDraftClientTests
         using var handler = new Handler((_, ct) => { ct.ThrowIfCancellationRequested(); return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)); });
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Client(handler).GenerateAsync(Request, cts.Token));
     }
+
+    [Fact]
+    public async Task WireContract_MeasuredProfileAndRules_AreBilingualContextWithoutPatientIdentifiers()
+    {
+        var request = Request with
+        {
+            Menus = new[] { "des", "alm", "mer", "cen" }.Select(m => new DraftMenu(m + ":0", "Avena", [new("avena", 40)])).ToArray(),
+            ClinicalProfile = new("nutrition-engine-v1", new Dictionary<string, DraftMeasuredField>
+            {
+                ["hba1c"] = new(5.9, "%", "clinical_measurements", "hba1c", new DateTime(2026, 11, 5, 10, 0, 0, DateTimeKind.Utc)),
+                ["bodyFatPercent"] = new(null, "%", "missing", null, null)
+            }, [new("engine-1", "info", "Revisar fibra y carbohidratos", false)], ["sleepRF"])
+        };
+        using var handler = new Handler(async (call, ct) =>
+        {
+            var json = await call.Content!.ReadAsStringAsync(ct);
+            using var body = JsonDocument.Parse(json);
+            var profile = body.RootElement.GetProperty("clinical_profile");
+            Assert.Equal(5.9, profile.GetProperty("fields").GetProperty("hba1c").GetProperty("value").GetDouble());
+            Assert.Equal(JsonValueKind.Null, profile.GetProperty("fields").GetProperty("bodyFatPercent").GetProperty("value").ValueKind);
+            Assert.Equal("info", profile.GetProperty("applied_rules")[0].GetProperty("severity").GetString());
+            Assert.DoesNotContain("patient_id", json); Assert.DoesNotContain("evaluation_id", json);
+            if (Environment.GetEnvironmentVariable("COP_NUTRITION_DRAFT_CAPTURE_PATH") is { Length: > 0 } path)
+                await File.WriteAllTextAsync(path, json, ct);
+            return new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(new NutritionDraftResponse(
+                new("ES", "EN"), new("ES", "EN"), request.Menus, "llm"), NutritionDraftClient.Json)) };
+        });
+        Assert.Equal("llm", (await Client(handler).GenerateAsync(request, CancellationToken.None)).Source);
+    }
 }

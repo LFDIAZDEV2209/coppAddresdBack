@@ -77,11 +77,21 @@ public sealed class CompleteTaskCommandValidator : AbstractValidator<CompleteTas
             RuleFor(x => x.Emotional!.SleepMinutes).InclusiveBetween(0m, 1440m)
                 .When(x => x.Emotional!.SleepMinutes.HasValue);
             RuleFor(x => x.Emotional!.SleepSource)
-                .Must(source => source is null or "manual" or "wearable");
+                .Must(source => source is null or "manual" or "wearable" or "unknown");
             RuleFor(x => x.Emotional!.SleepSource).NotEmpty()
                 .When(x => x.Emotional!.SleepMinutes.HasValue);
             RuleFor(x => x.Emotional!.SleepRecordedAt).NotNull()
                 .When(x => x.Emotional!.SleepSource == "wearable");
+            RuleFor(x => x.Emotional!.SleepMinutes).Null()
+                .When(x => x.Emotional!.SleepSource == "unknown");
+            RuleFor(x => x.Emotional!.SleepRecordedAt).Null()
+                .When(x => x.Emotional!.SleepSource != "wearable");
+            RuleFor(x => x.Emotional!.SleepDeviceId).MaximumLength(128);
+            RuleFor(x => x.Emotional!.SleepDeviceId).Null()
+                .When(x => x.Emotional!.SleepSource != "wearable");
+            RuleFor(x => x.Emotional!.SleepNightDate).Must((command, date) => date == command.LocalDate)
+                .When(x => x.Emotional!.SleepNightDate.HasValue);
+            RuleFor(x => x.Emotional!.SleepQuality).Must(value => value is null or "poor" or "fair" or "restorative");
             RuleFor(x => x.Emotional!.Notes).MaximumLength(2000);
         });
 

@@ -10,7 +10,10 @@ namespace CoppAddresd.Application.Features.Nutrition.Queries;
 
 public sealed record NutritionInboxPrescription(Guid Id, int Version, int Revision, string State,
     bool Provisional, double? K, DateOnly? StartDate, DateOnly? EndDate, bool IsPublished, int CriticalAlertCount);
-public sealed record NutritionInboxItem(Guid PatientId, string PatientName, string State, NutritionInboxPrescription? Prescription);
+public sealed record NutritionInboxItem(Guid PatientId, string PatientName, string State, NutritionInboxPrescription? Prescription,
+    string? GenerationState = null, bool GenerationFallback = false, string? GenerationReason = null, DateTime? GenerationUpdatedAt = null,
+    bool HasPublishedToday = false, DateOnly? PublishedCycleStart = null, DateOnly? PublishedCycleEnd = null,
+    string? LatestDraftState = null, bool HasFutureDraft = false);
 public sealed record NutritionInboxPage(IReadOnlyList<NutritionInboxItem> Items, int Total, int Page, int PageSize);
 public sealed record NutritionInboxQuery(NutritionActor Actor, int Page = 1, int PageSize = 20,
     string? State = null, string? Search = null) : IRequest<NutritionInboxPage>;
@@ -48,7 +51,9 @@ public sealed class NutritionInboxQueryHandler(INutritionInboxRepository reposit
                 row.StartDate, row.EndDate, row.IsPublished,
                 NutritionEngine.ClinicalFlags(JsonSerializer.Deserialize<NutritionPatient>(row.ClinicalProfileJson!, Json)!,
                     JsonSerializer.Deserialize<NutritionTargets>(row.TargetsJson!, Json)!).Count(x => x.S == "crit")) : null;
-            return new NutritionInboxItem(row.PatientId, row.PatientName, row.State, prescription);
+            return new NutritionInboxItem(row.PatientId, row.PatientName, row.State, prescription,
+                row.GenerationState, row.GenerationFallback, row.GenerationReason, row.GenerationUpdatedAt,
+                row.HasPublishedToday, row.PublishedCycleStart, row.PublishedCycleEnd, row.LatestDraftState, row.HasFutureDraft);
         }).ToArray();
         return new(items, result.Total, request.Page, request.PageSize);
     }

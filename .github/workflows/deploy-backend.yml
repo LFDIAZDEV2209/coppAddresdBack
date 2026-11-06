@@ -23,7 +23,6 @@ jobs:
     outputs:
       services: ${{ steps.detect.outputs.services }}
       test_projects: ${{ steps.detect.outputs.test_projects }}
-      migrate: ${{ steps.detect.outputs.migrate }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -72,7 +71,7 @@ jobs:
 
           # Cambios en infraestructura compartida (Infrastructure, Application, Domain,
           # slnx, Dockerfiles, workflows) afectan a todos los servicios backend.
-          SHARED=$(echo "$CHANGED" | grep -E "(src/Shared/|src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows)" || true)
+          SHARED=$(echo "$CHANGED" | grep -E "(src/Shared/|src/CoppAddresd\.(Infrastructure|Application|Domain)|CoppAddresd\.slnx|Dockerfile|\.github/workflows|scripts/ecs-migrate-task\.sh|tests/scripts/test_ecs_migrate_task\.py)" || true)
           if [ -n "$SHARED" ]; then
             SERVICES="auth api telemedicine community"
           fi
@@ -81,7 +80,6 @@ jobs:
             echo "Sin cambios backend relevantes — no se despliega nada"
             echo "services=[]" >> "$GITHUB_OUTPUT"
             echo "test_projects=[]" >> "$GITHUB_OUTPUT"
-            echo "migrate=[]" >> "$GITHUB_OUTPUT"
           else
             # Deduplicar: un commit puede tocar Auth y tests/UnitTests a la vez
             # (auth + auth api) y un servicio duplicado lanzaría dos deploys en
@@ -105,9 +103,7 @@ jobs:
             fi
             TESTS_JSON=$(echo "$TESTS" | xargs | tr ' ' '\n' | sort -u | jq -R . | jq -s -c .)
             echo "test_projects=$TESTS_JSON" >> "$GITHUB_OUTPUT"
-            # Migraciones solo donde aplica (auth/community auto-migran).
-            MIGRATE=$(echo "$SERVICES" | xargs | tr ' ' '\n' | grep -E "^(api|telemedicine)$" | jq -R . | jq -s -c . || true)
-            echo "migrate=$MIGRATE" >> "$GITHUB_OUTPUT"
+
           fi
 
   test:
@@ -127,6 +123,12 @@ jobs:
       - name: Test unitarios (${{ matrix.project }}, CI-safe, sin RDS)
         run: |
           dotnet test ${{ matrix.project }} -c Release --nologo
+
+      - name: Validar el gate de migraciones ECS
+        if: matrix.project == 'tests/CoppAddresd.UnitTests'
+        run: |
+          bash -n scripts/ecs-migrate-task.sh
+          python3 tests/scripts/test_ecs_migrate_task.py
 
   deploy:
     needs: [detect, test]
@@ -271,6 +273,15 @@ jobs:
           echo "arn=$(echo "$REGISTERED" | jq -r '.taskDefinition.taskDefinitionArn')" >> "$GITHUB_OUTPUT"
           echo "rev=$(echo "$REGISTERED" | jq -r '.taskDefinition.revision')" >> "$GITHUB_OUTPUT"
 
+      # Las columnas nuevas deben existir antes de que la imagen reciba tráfico.
+      - name: Aplicar migraciones antes de activar API/Telemedicine
+        if: matrix.service == 'api' || matrix.service == 'telemedicine'
+        timeout-minutes: 21
+        env:
+          MIGRATION_SERVICE: cooppadresd-${{ matrix.service }}
+          MIGRATION_TASK_DEFINITION: ${{ steps.taskdef.outputs.arn }}
+        run: bash scripts/ecs-migrate-task.sh
+
       - name: Actualizar ECS Service
         run: |
           aws ecs update-service \
@@ -408,111 +419,3 @@ jobs:
               --output json
           done
           # re-register
-
-  migrate:
-    needs: [detect, deploy]
-    # always(): un fallo en el deploy de OTRO servicio (p. ej. community) no debe
-    # saltarse las migraciones pendientes de api/telemedicine. El cuerpo del job
-    # resuelve el task def por nombre y es idempotente (EF omite lo ya aplicado).
-    if: >
-      always() &&
-      needs.detect.outputs.migrate != '' &&
-      needs.detect.outputs.migrate != '[]'
-    runs-on: ubuntu-24.04
-    env:
-      AWS_REGION: us-east-2
-      ECS_CLUSTER: cooppadresd-cluster
-    strategy:
-      fail-fast: false
-      matrix:
-        service: ${{ fromJson(needs.detect.outputs.migrate) }}
-    steps:
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::933629770820:role/cooppadresd-gha-backend
-          aws-region: ${{ env.AWS_REGION }}
-
-      # Cada microservicio tiene su PROPIO historial de migraciones en su schema
-      # (api → public.__EFMigrationsHistory, telemedicine → tele.__ef_migrations_history);
-      # el runner de CI no alcanza el RDS (subred privada), así que la migración
-      # corre como one-off task Fargate DENTRO de la VPC, con el task def del
-      # servicio recién registrado (imagen nueva con la migración embebida) y el
-      # entrypoint en modo --migrate (ver Program.cs de cada servicio). La conexión
-      # sale de las env vars del task def (ConnectionStrings__DefaultConnection).
-      # Idempotente: EF omite las migraciones ya aplicadas.
-      # Auth y Community auto-migran al arrancar (MigrateAsync en su Program.cs):
-      # no necesitan paso en el pipeline.
-      # REQUISITO IAM en el role cooppadresd-gha-backend: ecs:RunTask,
-      # ecs:DescribeTasks, iam:PassRole (task/execution roles del task def) y
-      # logs:GetLogEvents (opcional, tail de logs en fallo). AccessDenied en
-      # RunTask = falta el permiso en el role, no un error del flujo.
-      - name: Aplicar migraciones (${{ matrix.service }}, one-off task ECS)
-        timeout-minutes: 20
-        shell: bash
-        run: |
-          set -euo pipefail
-          # La matriz ya viene filtrada a api|telemedicine (auth/community
-          # auto-migran al arrancar, ver comentario del job).
-          TD_NAME="cooppadresd-${{ matrix.service }}"
-          TD_ARN=$(aws ecs describe-task-definition \
-            --task-definition "$TD_NAME" --region "$AWS_REGION" \
-            --query "taskDefinition.taskDefinitionArn" --output text)
-          CONTAINER=$(aws ecs describe-task-definition \
-            --task-definition "$TD_NAME" --region "$AWS_REGION" \
-            --query "taskDefinition.containerDefinitions[0].name" --output text)
-          NET_CFG=$(aws ecs describe-services \
-            --cluster "$ECS_CLUSTER" --services "$TD_NAME" --region "$AWS_REGION" \
-            --query "services[0].networkConfiguration" --output json)
-
-          TASK=$(aws ecs run-task \
-            --cluster "$ECS_CLUSTER" \
-            --task-definition "$TD_ARN" \
-            --region "$AWS_REGION" \
-            --launch-type FARGATE \
-            --network-configuration "$NET_CFG" \
-            --overrides "{\"containerOverrides\":[{\"name\":\"$CONTAINER\",\"command\":[\"--migrate\"]}]}" \
-            --query "tasks[0].taskArn" --output text)
-          echo "Task de migración (${{ matrix.service }}): $TASK"
-
-          DEADLINE=$((SECONDS + 1200))
-          while true; do
-            STATE=$(aws ecs describe-tasks \
-              --cluster "$ECS_CLUSTER" --tasks "$TASK" --region "$AWS_REGION" \
-              --query "tasks[0].lastStatus" --output text)
-            EXIT=$(aws ecs describe-tasks \
-              --cluster "$ECS_CLUSTER" --tasks "$TASK" --region "$AWS_REGION" \
-              --query "tasks[0].containers[0].exitCode" --output text)
-            echo "[$(date -u +%H:%M:%S)] task=$STATE exit=$EXIT"
-
-            if [ "$STATE" = "STOPPED" ]; then
-              if [ "$EXIT" = "0" ]; then
-                echo "Migraciones de ${{ matrix.service }} aplicadas correctamente"
-                exit 0
-              fi
-              echo "::error::La migración de ${{ matrix.service }} falló (exit=$EXIT)"
-              LOG_GROUP=$(aws ecs describe-task-definition \
-                --task-definition "$TD_NAME" --region "$AWS_REGION" \
-                --query "taskDefinition.containerDefinitions[0].logConfiguration.options[\"awslogs-group\"]" \
-                --output text 2>/dev/null || true)
-              if [ -n "$LOG_GROUP" ] && [ "$LOG_GROUP" != "None" ]; then
-                PREFIX=$(aws ecs describe-task-definition \
-                  --task-definition "$TD_NAME" --region "$AWS_REGION" \
-                  --query "taskDefinition.containerDefinitions[0].logConfiguration.options[\"awslogs-stream-prefix\"]" \
-                  --output text 2>/dev/null || true)
-                TASK_ID=$(basename "$TASK")
-                aws logs get-log-events \
-                  --log-group-name "$LOG_GROUP" \
-                  --log-stream-name "$PREFIX/$CONTAINER/$TASK_ID" \
-                  --region "$AWS_REGION" --query "events[*].message" --output text \
-                  2>/dev/null | tail -40 || true
-              fi
-              exit 1
-            fi
-
-            if [ "$SECONDS" -ge "$DEADLINE" ]; then
-              echo "::error::Timeout 20 min esperando la migración de ${{ matrix.service }} (task=$STATE)"
-              exit 1
-            fi
-            sleep 10
-          done
