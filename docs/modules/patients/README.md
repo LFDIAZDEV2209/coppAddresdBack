@@ -1,5 +1,41 @@
 # Módulo de Pacientes / Profesionales — Documentación
 
+## Contexto interno para agentes IA
+
+`GET /api/v1/internal/agents/patient-context?userId={guid}` exige `X-Internal-Key`
+contra `AiService:InternalApiKey` (sin JWT). Sin clave configurada o con clave
+inválida responde 401. Usuario sin paciente `Activo`, o eliminado, responde 404.
+La respuesta no se almacena en caché HTTP.
+
+`GetPatientAiContextQueryHandler` compone `PatientAiContextDto`: últimas mediciones
+cardiometabólicas/corporales por código con valor, unidad y fecha; plan vigente
+con nombre, metas kcal/proteína/carbohidratos/fibra y hasta seis comidas del día;
+métricas del dispositivo de los últimos siete días; diagnóstico principal CIE-10.
+La selección y el mapeo del plan se comparten con `/me/nutrition-plan`, incluidas
+la prioridad de publicaciones nuevas y la vigencia de asignaciones legacy.
+El menú semanal se repite dentro del ciclo. No se envía el calendario completo.
+
+Las mediciones usan `GetLastPerMetricAsync` del repositorio clínico (una consulta
+agrupada). Dispositivo usa la misma tabla real `app.clinical_measurements` que
+`program/me/metrics-history` y `device-metrics`, fuente `device`, códigos
+`step_count`, `distance_m`, `activity_kcal`, `sleep_minutes`; la ventana se filtra
+en SQL por paciente/fecha con el índice existente
+`ix_clinical_measurements_patient_observed`. Se conserva la última lectura por
+código y fecha UTC, sin sumar contadores acumulativos. Diagnóstico usa una
+proyección por paciente y `IsPrimary`, con desempate por fecha/ID; el modelo de
+diagnósticos no tiene estado activo, por lo que no se inventa ese dato ni se
+elige un diagnóstico secundario como principal.
+
+Se resuelve la identidad una sola vez y se consulta cada bloque de forma
+secuencial, sin N+1 ni cambios de esquema/índices. Ausencias o fallos de bloques
+devuelven `null`/`[]` y advertencias sin valores clínicos; un fallo al resolver
+identidad devuelve 404. La cancelación del request se propaga. No se calculan
+mediciones ni metas ausentes. El JSON compacto se limita a menos de 8000 bytes
+UTF-8, recortando textos y, si hace falta, comidas y puntos antiguos.
+
+Validación local: build de la solución y tests unitarios filtrados por
+`GetPatientAiContext`; no se afirma validación EXPLAIN contra PostgreSQL real.
+
 Estado: **Fases 1, 2, 3 y 4 completadas** (domain foundation + authorization con
 scopes + professional onboarding + patient scoping). El plan maestro vive en
 [`PLAN.md`](PLAN.md) — leer antes de trabajar en este módulo.

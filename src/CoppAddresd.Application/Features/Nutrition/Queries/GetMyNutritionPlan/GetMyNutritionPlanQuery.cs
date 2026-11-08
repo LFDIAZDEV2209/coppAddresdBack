@@ -43,6 +43,14 @@ public sealed class GetMyNutritionPlanQueryHandler(
             );
         }
 
+        return await ReadForPatientAsync(patient, wellness, logger, prescriptions, clock, ct);
+    }
+
+    // Lectura compartida con el contexto interno: misma vigencia y mapeo, sin resolver identidad dos veces.
+    internal static async Task<MyNutritionPlanDto?> ReadForPatientAsync(
+        PatientProfile patient, IWellnessRepository wellness, ILogger logger,
+        INutritionPrescriptionRepository prescriptions, TimeProvider clock, CancellationToken ct)
+    {
         // 2) Día del paciente: primero publicación nueva; si no hay vigente,
         // se conserva el plan legacy aprobado con asignación Active y ventana
         // vigente. En cada modelo gana el inicio más reciente y luego el ID.

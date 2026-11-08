@@ -20,6 +20,21 @@ namespace CoppAddresd.Infrastructure.Repositories;
 public sealed class PatientMeasurementRepository(AppDbContext dbContext)
     : IPatientMeasurementRepository
 {
+    public async Task<IReadOnlyList<MeasurementItemDto>> GetDeviceWindowAsync(
+        Guid patientId, DateTime fromUtc, DateTime toUtc, CancellationToken ct)
+    {
+        string[] codes = ["step_count", "distance_m", "activity_kcal", "sleep_minutes"];
+        // Ventana por patient_id + observed_at: índice existente patient_observed.
+        return await dbContext.ClinicalMeasurements.AsNoTracking()
+            .Where(m => m.PatientId == patientId && m.Source == "device"
+                && m.ObservedAt >= fromUtc && m.ObservedAt <= toUtc && codes.Contains(m.Metric!.Code))
+            .OrderBy(m => m.ObservedAt).ThenBy(m => m.Id)
+            .Select(m => new MeasurementItemDto(m.Id, m.Metric!.Code, m.Metric.Name,
+                m.Value, m.Unit!.Code, m.Unit.Symbol,
+                new DateTimeOffset(DateTime.SpecifyKind(m.ObservedAt, DateTimeKind.Utc)), m.Source))
+            .ToListAsync(ct);
+    }
+
     /// <inheritdoc />
     public async Task<CursorPagedResult<MeasurementItemDto>> GetPagedAsync(
         Guid patientId,

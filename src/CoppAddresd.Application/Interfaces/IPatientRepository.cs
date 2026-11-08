@@ -10,6 +10,9 @@ namespace CoppAddresd.Application.Interfaces;
 /// </summary>
 public interface IPatientRepository
 {
+    /// <summary>Diagnóstico principal CIE-10, sin cargar el agregado completo.</summary>
+    Task<DiagnosisDto?> GetPrimaryDiagnosisAsync(Guid patientId, CancellationToken ct);
+
     /// <summary>Paciente completo con agregado (insurer + diagnósticos + medicamentos + alergias + vitales). Excluye eliminados (soft delete).</summary>
     Task<PatientProfile?> GetByIdAsync(Guid id, CancellationToken ct = default);
 

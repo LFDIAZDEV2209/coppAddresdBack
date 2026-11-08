@@ -13,6 +13,10 @@ namespace CoppAddresd.Application.Interfaces;
 /// </summary>
 public interface IPatientMeasurementRepository
 {
+    /// <summary>Métricas de dispositivo en la ventana UTC indicada, con la proyección self-service.</summary>
+    Task<IReadOnlyList<Features.Measurements.Queries.GetMyMeasurements.MeasurementItemDto>> GetDeviceWindowAsync(
+        Guid patientId, DateTime fromUtc, DateTime toUtc, CancellationToken ct);
+
     /// <summary>
     /// Página de mediciones del paciente, orden estable (la define la
     /// implementación). <paramref name="metricCodes"/> null o vacío = sin

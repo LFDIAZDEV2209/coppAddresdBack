@@ -8,6 +8,16 @@ namespace CoppAddresd.Infrastructure.Repositories;
 
 public sealed class PatientRepository(AppDbContext dbContext) : IPatientRepository
 {
+    public async Task<DiagnosisDto?> GetPrimaryDiagnosisAsync(Guid patientId, CancellationToken ct) =>
+        await dbContext.PatientProfiles.AsNoTracking()
+            .Where(p => p.Id == patientId && p.DeletedAt == null)
+            .SelectMany(p => p.Diagnoses)
+            .Where(d => d.IsPrimary)
+            .OrderByDescending(d => d.CreatedAt).ThenByDescending(d => d.Id)
+            .Select(d => new DiagnosisDto(d.Id, d.Icd10CodeId, d.Icd10Code!.Code,
+                d.Icd10Code.Description, d.IsPrimary))
+            .FirstOrDefaultAsync(ct);
+
     public async Task<PatientProfile?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         await QueryDetail().FirstOrDefaultAsync(x => x.Id == id, ct);
 
