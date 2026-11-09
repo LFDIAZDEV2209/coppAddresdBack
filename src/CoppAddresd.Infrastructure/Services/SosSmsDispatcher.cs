@@ -242,7 +242,7 @@ public static class SosSmsTemplate
         // representarse fielmente en GSM, se conserva Unicode (dos partes
         // como objetivo) en vez de borrar caracteres o invalidar el mapa.
         var budget = gsm ? 160 : 134;
-        var header = "SOS Copp Adresd: " + Clip(name, gsm ? 20 : 12, gsm);
+        var header = "SOS Copp Adresd\n" + Clip(name, gsm ? 28 : 12, gsm) + " necesita ayuda.";
         string body;
         if (maps is null)
         {
@@ -252,11 +252,11 @@ public static class SosSmsTemplate
         {
             var prefix = address is null ? "" : "Aprox: ";
             var reference = address ?? "Direccion no disponible.";
-            var available = budget - Units(header + "\n" + prefix + "\n" + maps, gsm);
+            var available = budget - Units(header + "\n" + prefix + "\nMapa: " + maps, gsm);
             // Una URL de origen excepcionalmente larga puede necesitar más
             // partes. Nunca se recorta el enlace firmado para imponer el límite.
             reference = FitAddress(reference, Math.Max(8, available), gsm);
-            body = header + "\n" + prefix + reference + "\n" + maps;
+            body = header + "\n" + prefix + reference + "\nMapa: " + maps;
         }
         var phone = SosMessageFormatting.PatientPhone(alert.Patient);
         var withPhone = phone is null ? body : body + "\nLlamar: " + phone;

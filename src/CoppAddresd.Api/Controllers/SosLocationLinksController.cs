@@ -14,6 +14,7 @@ namespace CoppAddresd.Api.Controllers;
 public sealed class SosLocationLinksController(IMediator mediator) : ControllerBase
 {
     [HttpGet("{token}")]
+    [HttpGet("/api/v1/s/{token}")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

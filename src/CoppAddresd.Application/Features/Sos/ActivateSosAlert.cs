@@ -84,7 +84,8 @@ public sealed class ActivateSosAlertHandler(
     ISosAlertRepository repository,
     ISosRateLimiter rateLimiter,
     ISosDispatchQueue dispatchQueue,
-    ILogger<ActivateSosAlertHandler> logger
+    ILogger<ActivateSosAlertHandler> logger,
+    ISosLocationLinkService? locationLinks = null
 ) : IRequestHandler<ActivateSosAlertCommand, ActivateSosAlertResult>
 {
     public async Task<ActivateSosAlertResult> Handle(
@@ -194,6 +195,8 @@ public sealed class ActivateSosAlertHandler(
             DestinationEmail = destinationEmail,
             Recipients = SosSupport.SnapshotRecipients(profile.EmergencyContact),
         };
+
+        locationLinks?.Prepare(alert);
 
         // Outbox: sms + voz + correo + una fila por profesional asignado (push).
         var staffUserIds = await repository.GetAssignedStaffUserIdsAsync(request.PatientId, ct);

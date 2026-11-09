@@ -53,6 +53,9 @@ public sealed class SosAlert
     /// <summary>Dirección aproximada resuelta desde el GPS; nunca el domicilio del perfil.</summary>
     public string? LocationDescription { get; set; }
 
+    /// <summary>SHA-256 de la capacidad corta del mapa; nunca el código compartido.</summary>
+    public string? LocationLinkHash { get; set; }
+
     /// <summary>Snapshot completado (también sin dirección); evita repetir llamadas de geocodificación.</summary>
     public DateTime? LocationLookupCompletedAt { get; set; }
 

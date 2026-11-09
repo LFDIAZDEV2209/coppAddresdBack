@@ -20,8 +20,11 @@ public sealed class ResolveSosLocationLinkHandler(
     public async Task<string?> Handle(ResolveSosLocationLinkQuery request, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (!links.TryReadToken(request.Token, out var id)) return null;
-        var alert = await repository.GetByIdAsync(id, ct);
+        var alert = links.TryReadToken(request.Token, out var id)
+            ? await repository.GetByIdAsync(id, ct)
+            : links.TryGetShortCodeHash(request.Token, out var hash)
+                ? await repository.GetByLocationLinkHashAsync(hash, ct)
+                : null;
         if (alert is null || alert.Status == SosAlertStatus.Cancelada) return null;
         var createdAt = new DateTimeOffset(DateTime.SpecifyKind(alert.CreatedAt, DateTimeKind.Utc));
         var age = clock.GetUtcNow() - createdAt;

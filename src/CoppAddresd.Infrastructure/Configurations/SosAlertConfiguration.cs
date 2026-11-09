@@ -55,6 +55,10 @@ public sealed class SosAlertConfiguration : IEntityTypeConfiguration<SosAlert>
             .HasColumnType("timestamptz");
 
         builder.Property(x => x.LocationDescription).HasColumnName("location_description").HasMaxLength(300);
+        builder.Property(x => x.LocationLinkHash).HasColumnName("location_link_hash").HasMaxLength(64);
+        builder.HasIndex(x => x.LocationLinkHash).IsUnique()
+            .HasDatabaseName("ux_sos_alerts_location_link_hash")
+            .HasFilter("location_link_hash IS NOT NULL");
         builder.Property(x => x.LocationLookupCompletedAt).HasColumnName("location_lookup_completed_at").HasColumnType("timestamptz");
 
         builder.Property(x => x.HeartRate).HasColumnName("heart_rate");

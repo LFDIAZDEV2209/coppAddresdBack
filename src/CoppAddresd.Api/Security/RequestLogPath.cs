@@ -4,5 +4,6 @@ namespace CoppAddresd.Api.Security;
 public static class RequestLogPath
 {
     public static string Redact(PathString path) => path.StartsWithSegments("/api/v1/sos/maps")
-        ? "/api/v1/sos/maps/[redacted]" : path.ToString();
+        ? "/api/v1/sos/maps/[redacted]"
+        : path.StartsWithSegments("/api/v1/s") ? "/api/v1/s/[redacted]" : path.ToString();
 }

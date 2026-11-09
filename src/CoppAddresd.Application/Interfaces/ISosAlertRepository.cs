@@ -30,6 +30,9 @@ public interface ISosAlertRepository
     /// <summary>Alerta por id (con paciente para el snapshot de contacto).</summary>
     Task<SosAlert?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>Solo ubicación/estado para la capacidad pública, sin cargar paciente/contactos.</summary>
+    Task<SosAlert?> GetByLocationLinkHashAsync(string hash, CancellationToken ct = default);
+
     /// <summary>Alerta por (patientId, idempotencyKey) — fast path del replay.</summary>
     Task<SosAlert?> GetByPatientAndKeyAsync(
         Guid patientId,

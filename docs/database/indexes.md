@@ -176,3 +176,10 @@ clínicas grandes. La prueba de rollback valida la persistencia atómica del eve
 Ambos índices nacen en tabla nueva, sin reconstruir índices de datos clínicos.
 El PK UUID permite reencontrar el borrador correlacionado. No se atribuye una
 latencia productiva medida; validar el plan con volumen operativo de reservas.
+
+
+## Capacidad corta de ubicación SOS
+
+| Index | Tabla | Columnas | Tipo | Motivo | Query que beneficia | Impacto esperado | Costo potencial |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `ux_sos_alerts_location_link_hash` | `app.sos_alerts` | `location_link_hash` | UNIQUE B-tree parcial (`IS NOT NULL`) | Resolver una capacidad privada sin escanear alertas ni cargar PII; unicidad de digest | `WHERE location_link_hash = @hash LIMIT 1`, proyección id/estado/fecha/GPS | Lookup de alta selectividad; creación concurrente; sin backfill | Una entrada SHA-256 hex por alerta nueva con GPS; filas antiguas/null no ocupan entrada |

@@ -20,6 +20,16 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
     private const string IdempotencyUniqueIndex = "uq_sos_alerts_patient_idempotency";
     private const string ActiveUniqueIndex = "uq_sos_alerts_patient_active";
 
+    public Task<SosAlert?> GetByLocationLinkHashAsync(string hash, CancellationToken ct = default) =>
+        dbContext.SosAlerts.IgnoreAutoIncludes().AsNoTracking()
+            .Where(x => x.LocationLinkHash == hash)
+            .Select(x => new SosAlert
+            {
+                Id = x.Id, Status = x.Status, CreatedAt = x.CreatedAt,
+                Latitude = x.Latitude, Longitude = x.Longitude,
+            })
+            .FirstOrDefaultAsync(ct);
+
     public Task<SosAlert?> GetByIdAsync(Guid id, CancellationToken ct = default) =>
         // Include del paciente: las plantillas server-side (SMS/voz) usan su
         // nombre de pila; sin el join caerían al fallback genérico.

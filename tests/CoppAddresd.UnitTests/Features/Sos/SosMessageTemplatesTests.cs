@@ -33,7 +33,7 @@ public sealed class SosMessageTemplatesTests
         var alert = Alert();
         var sms = SosSmsTemplate.Build(alert);
 
-        Assert.StartsWith("SOS Copp Adresd: Sofia Vega\n", sms);
+        Assert.StartsWith("SOS Copp Adresd\nSofia Vega necesita ayuda.\n", sms);
         Assert.Contains("Llamar: +573053924819", sms);
         Assert.DoesNotContain(alert.Patient!.DocumentNumber!, sms);
         Assert.DoesNotContain(alert.Id.ToString()[..8], sms);
@@ -203,7 +203,7 @@ public sealed class SosMessageTemplatesTests
         alert.Patient!.FirstName = "Sofía\r\nVega";
         alert.Patient.LastName = "López";
         var sms = SosSmsTemplate.Build(alert);
-        Assert.StartsWith("SOS Copp Adresd: Sofia Vega Lopez", sms);
+        Assert.StartsWith("SOS Copp Adresd\nSofia Vega Lopez necesita ayuda.", sms);
         Assert.DoesNotContain("\r", sms);
     }
 

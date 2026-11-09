@@ -63,6 +63,7 @@ internal static class SosRecipientDispatch
         DestinationPhoneE164 = recipient.PhoneE164 ?? "", Latitude = alert.Latitude, Longitude = alert.Longitude,
         AccuracyMeters = alert.AccuracyMeters, LocationCapturedAt = alert.LocationCapturedAt,
         LocationDescription = alert.LocationDescription, LocationLookupCompletedAt = alert.LocationLookupCompletedAt,
+        LocationLinkHash = alert.LocationLinkHash,
         HeartRate = alert.HeartRate, Spo2 = alert.Spo2, BloodPressure = alert.BloodPressure,
         SmsChannelStatus = recipient.SmsChannelStatus, SmsDeliveryStatus = recipient.SmsDeliveryStatus,
         SmsDetail = recipient.SmsDetail, VoiceChannelStatus = recipient.VoiceChannelStatus,

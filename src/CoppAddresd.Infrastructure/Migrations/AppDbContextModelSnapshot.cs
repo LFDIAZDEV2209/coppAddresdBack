@@ -9244,6 +9244,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(300)")
                         .HasColumnName("location_description");
 
+                    b.Property<string>("LocationLinkHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("location_link_hash");
+
                     b.Property<DateTime?>("LocationLookupCompletedAt")
                         .HasColumnType("timestamptz")
                         .HasColumnName("location_lookup_completed_at");
@@ -9346,6 +9351,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnName("voice_updated_at");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("LocationLinkHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_sos_alerts_location_link_hash")
+                        .HasFilter("location_link_hash IS NOT NULL");
 
                     b.HasIndex("PatientId")
                         .IsUnique()

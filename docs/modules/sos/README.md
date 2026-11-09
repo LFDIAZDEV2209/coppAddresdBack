@@ -45,28 +45,53 @@ dispositivo; no se asume que un paciente en Estados Unidos esté en Colombia.
 ## Enlaces de ubicación legibles
 
 `SosLocationLinks:PublicBaseUrl` configura el origen HTTPS público de la API
-o del gateway que enruta `/api/v1/sos/maps/*`, sin ruta ni parámetros. Si no
-se define, se reutiliza `SosWebhook:BaseUrl`. Ejemplo de despliegue:
-`SosLocationLinks__PublicBaseUrl=https://erp.coppadresd.com`. Esta opción no
-cambia las URLs de callback de Twilio. El origen público no es un secreto.
+o del gateway que enruta `/api/v1/s/*` y `/api/v1/sos/maps/*`, sin ruta ni parámetros.
+Si no se define, se reutiliza `SosWebhook:BaseUrl`. Ejemplo:
+`SosLocationLinks__PublicBaseUrl=https://erp.coppadresd.com`. No cambia los
+callbacks de Twilio. Ambas rutas quedan dentro del catch-all `/api/v1/*` existente.
 
-Los enlaces se firman usando la clave **existente** `Storage:SignatureKey`
-(al menos 32 bytes), con un propósito separado. El enlace por sí solo no requiere nuevas credenciales
-ni migraciones (la dirección aproximada descrita abajo sí agrega un snapshot). Si falta el origen o la clave no cumple el mínimo, el mensaje
-conserva un enlace directo de Maps para no perder la ubicación durante la
-emergencia; en ese fallback SMS sí muestra las coordenadas dentro de la URL.
-Configurar el origen público es necesario para ocultarlas también en el SMS.
+Las alertas nuevas usan `/api/v1/s/{codigo}` con 22 caracteres base64url:
+128 bits de HMAC derivados de `Storage:SignatureKey` (mínimo 32 bytes), con
+propósito v2 separado del Storage y de los tokens v1. El código no contiene
+coordenadas, identidad ni el UUID público de la alerta. Se regenera para los
+canales y **solo su SHA-256** queda en `app.sos_alerts.location_link_hash`,
+en el mismo commit que la alerta/outbox. El lookup usa un índice único parcial
+y proyecta únicamente id, estado, fecha y coordenadas; no carga paciente/contactos.
+No se añade proveedor de acortamiento ni otra clave secreta.
 
-El token no contiene coordenadas, nombre ni teléfono. El endpoint valida la
-firma antes de consultar la alerta y solo redirige a Google Maps. Caduca a
-las 24 horas de crear la alerta; cancelarla lo revoca de inmediato. Marcarla
-como atendida no rompe la ubicación ya compartida durante esa ventana.
-No devuelve datos clínicos ni el perfil del paciente. Usa `no-store`,
-`no-referrer`, `noindex` y un límite de 30 consultas/minuto por IP.
+La migración `AddSosLocationShortLink` agrega una columna nullable sin backfill
+y crea el índice concurrentemente. Las filas anteriores conservan el enlace
+firmado `/api/v1/sos/maps/{token43}` y ambas rutas siguen funcionando. Si la
+clave rota entre activación y despacho, el dispatcher usa el formato v1 firmado
+con la nueva clave; los códigos cortos ya emitidos conservan su ventana de acceso.
+Si falta el origen o la clave no cumple el mínimo, el mensaje conserva el
+fallback directo de Maps (con coordenadas en la URL). El origen público es
+necesario para ocultarlas también en SMS.
 
-El middleware de aplicación oculta el token en rutas de logs y errores.
-Los registros de acceso del proxy/ALB deben omitir o redactar el segmento
-`/api/v1/sos/maps/*`; la URL compartida es una capacidad privada del contacto.
+Ambos formatos caducan a las 24 horas de crear la alerta; cancelarla revoca
+el enlace. Atenderla no impide consultarlo durante esa ventana. Solo redirigen
+al dominio fijo de Google Maps; nunca a un destino elegido por el cliente.
+No devuelven perfil ni datos clínicos. Usan `no-store`, `no-referrer`, `noindex`
+y un límite compartido de 30 consultas/minuto por IP.
+
+El middleware oculta los códigos de ambas rutas en logs y errores. Los registros
+de acceso de proxy/ALB deben omitir o redactar `/api/v1/s/*` y
+`/api/v1/sos/maps/*`; la URL es una capacidad privada del contacto.
+
+### Validación de migración y lookup
+
+SQL Up/Down revisado: `ADD COLUMN` nullable; `CREATE UNIQUE INDEX CONCURRENTLY`
+fuera de transacción; rollback con `DROP INDEX CONCURRENTLY` y luego columna.
+Up → Down → Up se comprobó en PostgreSQL 18 aislado con 2.002 alertas históricas,
+sin pérdida de filas. Con 2.000 digests sintéticos y estadísticas actualizadas,
+`EXPLAIN (ANALYZE, BUFFERS)` confirmó Index Scan sobre
+`ux_sos_alerts_location_link_hash`; sin ese índice usó Seq Scan. Son mediciones
+locales de corrección del plan, no una prueba de carga ni una promesa de latencia.
+El rollback elimina los digests cortos, por lo que requiere
+volver a la versión anterior antes de emitir más enlaces; las URLs cortas ya
+emitidas dejan de resolver tras ese rollback. No ejecutar Down con la versión
+nueva en servicio. Si falla la creación concurrente, revisar/eliminar el índice
+inválido antes de reintentar; no dar por válida su mera existencia.
 
 ## Entrega y privacidad
 
@@ -173,7 +198,7 @@ SosLocationLinks__PublicBaseUrl=https://<origen-publico-del-backend>
 ```
 
 El pipeline de la API declara `https://erp.coppadresd.com` como origen del enlace.
-El origen debe enrutar `/api/v1/sos/maps/*` públicamente por HTTPS y ya debe existir
+El origen debe enrutar `/api/v1/s/*` y `/api/v1/sos/maps/*` públicamente por HTTPS y ya debe existir
 `Storage__SignatureKey` (mínimo 32 bytes) en Secrets Manager. Sin origen/firma el
 mapa sigue disponible mediante URL directa de Google, pero el SMS expondrá las
 coordenadas dentro de esa URL. Verificar el origen real antes del rollout.
@@ -270,3 +295,26 @@ endpoint Messages, método POST, remitente, destinos permitidos y campos del
 formulario. Los recorridos verifican un segmento GSM-7 para los casos latinos,
 dirección, mapa válido, cancelación y deduplicación. Ni pruebas ni capturas
 certifican por sí solas la recepción en un teléfono real del nuevo texto.
+
+
+### Presentación de mensajes y enlaces cortos
+
+El SMS presenta marca, persona que necesita ayuda, dirección aproximada y `Mapa:`
+con URL íntegra. El presupuesto sigue siendo 160 septetos GSM-7 para casos latinos;
+se conserva Unicode cuando no admite transliteración fiel. El dominio público
+actual con código de 22 caracteres ahorra 28 caracteres frente al formato v1.
+El teléfono se añade solo si cabe; el correo siempre ofrece llamada si hay número válido.
+
+El correo HTML incluye llamada, dirección completa, captura/precisión GPS, botón
+de mapa, ventana privada de acceso, tres pasos de ayuda y lecturas reportadas
+o ausencia explícita. No presenta coordenadas sueltas ni una URL larga como texto.
+`BuildText` conserva la información completa para consumidores sin HTML, pero el
+transporte SOS actual sigue enviando HTML. Las horas se identifican como UTC.
+
+Evidencia: Playwright sobre API/JWT/PostgreSQL reales y HTML saliente renderizado
+a 320/390/768 px. Fronteras Twilio/email/voz y geocodificador sintéticos: no envía
+mensajes reales ni prueba recepción en iPhone o todos los clientes de correo.
+Se comprueban ambos contactos, SDK SMS real con red aislada, integridad del enlace,
+manipulación, cancelación, atención, expiración, compatibilidad v1, escape HTML,
+datos ausentes y nombres largos/Unicode. El baseline falló por el texto anterior
+antes de implementar los cambios.
