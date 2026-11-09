@@ -1,0 +1,24 @@
+Continue the authorized Copp Adresd GPS SOS delivery test on this machine, which has AWS access.
+
+User-authorized recipients: SMS +573046187603 and email diomedescerda@gmail.com. Use one clearly labeled PRUEBA CONTROLADA message per channel. Do not place voice calls, call emergency services, send push notifications, or update a real patient's emergency contacts.
+
+Freshly verified on the Mac, 2026-11-09:
+- Backend origin/dev: 3e045df9bd347e88f8f4f66af7139d3431a63dac.
+- GPS implementation: f7cb7333ace0431f47cbaad350e0c2c7aef55663; enablement: 6743c4a7c3d0c3f83c47c3e8914b4d786d20871e. Branch feat/sos-location-messages is already in dev.
+- Backend deployment https://github.com/LFDIAZDEV2209/coppAddresdBack/actions/runs/42501409274 succeeded. API rollout COMPLETED, running1/desired1; all five warmup probes200. Public health200, unauthenticated SOS active endpoint401 as expected.
+- Deployed settings SosGeocoding__Enabled=true, SosGeocoding__Region=us-east-2, SosLocationLinks__PublicBaseUrl=https://erp.coppadresd.com. Production uses the ECS task role; SMS Twilio and SMTP are already configured. Do not redeploy just to enable them.
+- App dev 126b5df68aa8e3966416cc102c7acce8b74cca10 reached TestFlight: https://github.com/FontalvoB/antares-paciente/actions/runs/42299587044.
+
+Use the CURRENT deployed SOS code and templates, not the old parked stash implementation. The deployed version uses LocationDescription/LocationLookupCompletedAt and migration 20261106203006_AddSosLocationDescription; geocoding option is SosGeocoding, not the older SosLocation option. The old Mac stash has a different, unmerged implementation; do not blindly apply it over dev.
+
+Test scope:
+1. Use existing AWS access and notification settings without printing secrets or message bodies in general logs. Do not send credentials to the Mac.
+2. Prepare a controlled send with a synthetic QA identity clearly labeled PRUEBA CONTROLADA, an explicitly identified public test GPS point, and the actual Amazon Location response. Do not claim this is the iPhone's current GPS.
+3. Use actual fresh vital signs only if available; otherwise preserve the product's no-recent-vitals fallback. Never invent readings as patient data.
+4. Prefer the real SOS templates/transports, with hard guards limiting destinations to the two above and channels to SMS/email. A full production SOS activation also places a voice call, so do not trigger it blindly. Do not toggle production-wide voice settings for this test. A standalone guarded provider/template test is acceptable; state its limits compared with full app/outbox E2E.
+5. Verify readable approximate address, original GPS map destination, capture time, sensible accuracy labeling, and latest-vitals/no-data wording. Do not generate a signed map URL for a nonexistent alert; verify a real link or document direct-map fallback.
+6. Send once, record sanitized provider IDs/status/errors, and distinguish accepted from delivered. Check SMS delivery status without resending; ask user for actual inbox/device receipt if needed. SMTP acceptance alone does not prove inbox receipt.
+
+No SMS, email, AWS lookup, patient change, or new deployment has been performed by this Mac for this real delivery test. Local credential request was abandoned when user asked to continue in Copp Adresd chat. Cross-machine/thread transfer tools are unavailable on the Mac, so this handoff is now versioned on feat/sos-location-messages for the target machine to pull.
+
+Preserve unrelated work: all Mac exercise-media feature branches have uncommitted work. Exercise evidence is saved; no exercise commit/merge/push is authorized. Load testing belongs to Diomedes and remains deferred. Commit identity, if needed for necessary new test tooling: Kenma <100098811+diomedescerda@users.noreply.github.com> / diomedescerda; never commit credentials or real patient data. The test destinations above are explicitly authorized by the user.
