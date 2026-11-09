@@ -7,11 +7,12 @@ acción independiente y no se presenta como un despacho automático.
 
 ## Mensajes
 
-- `SosSmsTemplate.Build(alert, locationUrl?)`: SMS compacto con identidad,
-  dirección aproximada y enlace de mapa completo. Usa hasta 160 septetos
-  GSM-7 como objetivo; abrevia la identidad y la referencia cuando hace falta
-  e indica el recorte con `...`. El teléfono del paciente se incluye si cabe.
-  Las lecturas, la hora de captura y la precisión quedan completas en el correo.
+- `SosSmsTemplate.Build(alert, locationUrl?)`: abre con «Alerta SOS: {nombre}
+  necesita tu ayuda». Incluye marca, todos los signos reportados, `Direccion:`,
+  mapa completo y teléfono del paciente cuando es válido. Sin signos, lo indica.
+  El objetivo es hasta dos segmentos GSM-7 (306 septetos), hasta cuatro Unicode
+  con signos (268 unidades) o tres sin ellos. Abrevia nombre/referencia con `...`
+  si hace falta; nunca elimina signos ni corta el enlace para imponer ese objetivo.
   No incorpora documento, edad ni referencia interna de alerta.
 - `SosEmailTemplate.BuildHtml(alert, locationUrl?)`: correo HTML con marca Copp
   Adresd, nombre, fecha UTC explícita, llamada y ubicación como botones,
@@ -279,37 +280,39 @@ cuenta, remitente y formulario `To`/`From`/`Body` del diagnóstico corto recibid
 Conserva `StatusCallback` para seguir la entrega; no añade otro proveedor ni
 reenvía automáticamente un mensaje que figure entregado.
 
-La plantilla prioriza nombre, calle/ciudad aproximadas y enlace firmado intacto.
+La plantilla prioriza nombre, signos reportados, calle/ciudad y enlace firmado intacto.
 Omite región/país repetidos cuando el snapshot ya contiene calle/ciudad. Solo
 normaliza para SMS los diacríticos latinos que no caben en GSM-7; caracteres GSM
 como `ñ` y `é` se conservan. No modifica datos guardados ni correo/voz. El
 presupuesto cuenta los caracteres extendidos GSM como dos septetos. No corta
 pares Unicode ni trunca el token del mapa. Los nombres/direcciones no latinos se
-conservan en Unicode con objetivo de dos segmentos; un origen de mapa
+conservan en Unicode con objetivo de hasta cuatro segmentos con signos; un origen de mapa
 excepcionalmente largo también puede requerir más de un segmento. La entrega
 final sigue dependiendo del operador y del terminal.
 
 El host E2E ejecuta ahora `TwilioSmsSender` y el SDK productivo; solo reemplaza
 `ITwilioRestClient` en la frontera de red. Comprueba host, cuenta sintética,
 endpoint Messages, método POST, remitente, destinos permitidos y campos del
-formulario. Los recorridos verifican un segmento GSM-7 para los casos latinos,
+formulario. Los recorridos verifican hasta dos segmentos GSM-7 para los casos latinos,
 dirección, mapa válido, cancelación y deduplicación. Ni pruebas ni capturas
 certifican por sí solas la recepción en un teléfono real del nuevo texto.
 
 
 ### Presentación de mensajes y enlaces cortos
 
-El SMS presenta marca, persona que necesita ayuda, dirección aproximada y `Mapa:`
-con URL íntegra. El presupuesto sigue siendo 160 septetos GSM-7 para casos latinos;
-se conserva Unicode cuando no admite transliteración fiel. El dominio público
-actual con código de 22 caracteres ahorra 28 caracteres frente al formato v1.
-El teléfono se añade solo si cabe; el correo siempre ofrece llamada si hay número válido.
+El SMS usa «Alerta SOS: {nombre} necesita tu ayuda», incluye los signos vitales
+persistidos sin inventar lecturas y rotula la dirección como `Direccion:`.
+Conserva la URL íntegra; el dominio actual con código de 22 caracteres ahorra
+28 caracteres frente al formato v1. La información adicional puede requerir
+varios segmentos; el objetivo de dos partes GSM no equivale a garantía de entrega.
 
-El correo HTML incluye llamada, dirección completa, captura/precisión GPS, botón
-de mapa, ventana privada de acceso, tres pasos de ayuda y lecturas reportadas
-o ausencia explícita. No presenta coordenadas sueltas ni una URL larga como texto.
-`BuildText` conserva la información completa para consumidores sin HTML, pero el
-transporte SOS actual sigue enviando HTML. Las horas se identifican como UTC.
+El correo es una tarjeta compacta con nombre, fecha UTC, llamada, dirección,
+mapa y tabla de signos (o ausencia explícita). Se elimina el bloque de tres pasos
+y las explicaciones repetidas. Captura/precisión GPS y vigencia del enlace se
+conservan como texto secundario breve. El rótulo visible es «Dirección»; los datos
+siguen siendo una referencia GPS, sin seguimiento en tiempo real.
+`BuildText` mantiene la misma información esencial, pero el transporte SOS actual
+sigue enviando HTML.
 
 Evidencia: Playwright sobre API/JWT/PostgreSQL reales y HTML saliente renderizado
 a 320/390/768 px. Fronteras Twilio/email/voz y geocodificador sintéticos: no envía

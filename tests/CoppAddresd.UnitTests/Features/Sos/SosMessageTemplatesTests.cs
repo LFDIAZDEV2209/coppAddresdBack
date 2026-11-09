@@ -33,7 +33,7 @@ public sealed class SosMessageTemplatesTests
         var alert = Alert();
         var sms = SosSmsTemplate.Build(alert);
 
-        Assert.StartsWith("SOS Copp Adresd\nSofia Vega necesita ayuda.\n", sms);
+        Assert.StartsWith("Alerta SOS: Sofia Vega necesita tu ayuda.\nCopp Adresd\n", sms);
         Assert.Contains("Llamar: +573053924819", sms);
         Assert.DoesNotContain(alert.Patient!.DocumentNumber!, sms);
         Assert.DoesNotContain(alert.Id.ToString()[..8], sms);
@@ -156,6 +156,7 @@ public sealed class SosMessageTemplatesTests
         foreach (var value in new[] { "72 lpm", "98%", "118/76 mmHg" })
         {
             Assert.Contains(value, html);
+            Assert.Contains(value, sms);
         }
         Assert.Contains("Lecturas compartidas", html);
         Assert.DoesNotContain("Lecturas compartidas", sms);
@@ -203,7 +204,7 @@ public sealed class SosMessageTemplatesTests
         alert.Patient!.FirstName = "Sofía\r\nVega";
         alert.Patient.LastName = "López";
         var sms = SosSmsTemplate.Build(alert);
-        Assert.StartsWith("SOS Copp Adresd\nSofia Vega Lopez necesita ayuda.", sms);
+        Assert.StartsWith("Alerta SOS: Sofia Vega Lopez necesita tu ayuda.", sms);
         Assert.DoesNotContain("\r", sms);
     }
 

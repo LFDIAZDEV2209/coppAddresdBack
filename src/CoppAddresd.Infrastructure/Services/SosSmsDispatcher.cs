@@ -237,30 +237,24 @@ public static class SosSmsTemplate
         // En SMS se priorizan los dos primeros; el correo conserva todo.
         var address = maps is null || string.IsNullOrWhiteSpace(alert.LocationDescription) ? null
             : GsmFriendly(string.Join(", ", alert.LocationDescription.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(2)));
-        var gsm = IsGsm(name + address + maps);
-        // GSM-7: una parte de 160 septetos. Si un nombre/dirección no puede
-        // representarse fielmente en GSM, se conserva Unicode (dos partes
-        // como objetivo) en vez de borrar caracteres o invalidar el mapa.
-        var budget = gsm ? 160 : 134;
-        var header = "SOS Copp Adresd\n" + Clip(name, gsm ? 28 : 12, gsm) + " necesita ayuda.";
-        string body;
-        if (maps is null)
-        {
-            body = header + "\nUbicacion no compartida.";
-        }
-        else
-        {
-            var prefix = address is null ? "" : "Aprox: ";
-            var reference = address ?? "Direccion no disponible.";
-            var available = budget - Units(header + "\n" + prefix + "\nMapa: " + maps, gsm);
-            // Una URL de origen excepcionalmente larga puede necesitar más
-            // partes. Nunca se recorta el enlace firmado para imponer el límite.
-            reference = FitAddress(reference, Math.Max(8, available), gsm);
-            body = header + "\n" + prefix + reference + "\nMapa: " + maps;
-        }
+        var readings = SosMessageFormatting.ReportedVitals(alert);
+        var vitals = readings.Count == 0 ? "Signos no compartidos."
+            : "Signos: " + string.Join("; ", readings.Select(r => GsmFriendly($"{r.Label} {r.Value}")));
         var phone = SosMessageFormatting.PatientPhone(alert.Patient);
-        var withPhone = phone is null ? body : body + "\nLlamar: " + phone;
-        return Units(withPhone, gsm) <= budget ? withPhone : body;
+        var gsm = IsGsm(name + address + maps + vitals);
+        // Se priorizan los signos completos y el mapa íntegro: hasta dos
+        // partes GSM como objetivo; Unicode puede requerir hasta cuatro.
+        var budget = gsm ? 306 : readings.Count > 0 ? 268 : 201;
+        var header = "Alerta SOS: " + Clip(name, gsm ? 48 : 24, gsm) + " necesita tu ayuda.\nCopp Adresd";
+        var contact = phone is null ? "" : "\nLlamar: " + phone;
+        if (maps is null) return header + "\n" + vitals + "\nUbicacion no compartida." + contact;
+        var prefix = address is null ? "" : "Direccion: ";
+        var reference = address ?? "Direccion no disponible.";
+        var available = budget - Units(header + "\n" + vitals + "\n" + prefix + "\nMapa: " + maps + contact, gsm);
+        // Nunca recorta signos ni la capacidad del mapa por imponer un número
+        // de segmentos. Un origen excepcionalmente largo puede necesitar más.
+        reference = FitAddress(reference, Math.Max(8, available), gsm);
+        return header + "\n" + vitals + "\n" + prefix + reference + "\nMapa: " + maps + contact;
     }
 
     private static bool IsGsm(string text) => text.All(c => GsmBasic.Contains(c) || GsmExtended.Contains(c));
