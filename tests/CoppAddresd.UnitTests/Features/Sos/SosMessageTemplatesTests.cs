@@ -33,8 +33,7 @@ public sealed class SosMessageTemplatesTests
         var alert = Alert();
         var sms = SosSmsTemplate.Build(alert);
 
-        Assert.StartsWith("SOS | Copp Adresd\nSofía Vega necesita tu ayuda.", sms);
-        Assert.Contains("Llámale ahora", sms);
+        Assert.StartsWith("SOS Copp Adresd: Sofia Vega\n", sms);
         Assert.Contains("Llamar: +573053924819", sms);
         Assert.DoesNotContain(alert.Patient!.DocumentNumber!, sms);
         Assert.DoesNotContain(alert.Id.ToString()[..8], sms);
@@ -49,7 +48,7 @@ public sealed class SosMessageTemplatesTests
         const string sharedLink = "https://erp.example.test/api/v1/sos/maps/opaque-token";
         var sms = SosSmsTemplate.Build(Alert(), sharedLink);
 
-        Assert.Contains("Ver ubicación: " + sharedLink, sms);
+        Assert.Contains(sharedLink, sms);
         Assert.DoesNotContain("4.711", sms);
         Assert.DoesNotContain("-74.0721", sms);
         Assert.DoesNotContain("maps.google.com", sms);
@@ -132,7 +131,7 @@ public sealed class SosMessageTemplatesTests
         Assert.DoesNotContain("maps.google.com", html);
         Assert.DoesNotContain("Ver ubicación en el mapa", html);
         Assert.DoesNotContain(alert.Patient!.Address!, html);
-        Assert.Contains("Ubicación no compartida.", SosSmsTemplate.Build(alert));
+        Assert.Contains("Ubicacion no compartida.", SosSmsTemplate.Build(alert));
     }
 
     [Fact]
@@ -156,10 +155,10 @@ public sealed class SosMessageTemplatesTests
 
         foreach (var value in new[] { "72 lpm", "98%", "118/76 mmHg" })
         {
-            Assert.Contains(value, sms);
             Assert.Contains(value, html);
         }
         Assert.Contains("Lecturas compartidas", html);
+        Assert.DoesNotContain("Lecturas compartidas", sms);
     }
 
     [Theory]
@@ -204,7 +203,7 @@ public sealed class SosMessageTemplatesTests
         alert.Patient!.FirstName = "Sofía\r\nVega";
         alert.Patient.LastName = "López";
         var sms = SosSmsTemplate.Build(alert);
-        Assert.Contains("Sofía Vega López necesita tu ayuda", sms);
+        Assert.StartsWith("SOS Copp Adresd: Sofia Vega Lopez", sms);
         Assert.DoesNotContain("\r", sms);
     }
 

@@ -6,6 +6,10 @@ using Amazon.GeoPlaces.Model;
 using Amazon.Runtime;
 using CoppAddresd.Application.DTOs.Email;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Common;
+using CoppAddresd.Infrastructure.Services;
+using Microsoft.Extensions.Options;
+using Twilio.Clients;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -42,10 +46,42 @@ sealed class TestApiFactory(string output) : WebApplicationFactory<ApiEntry::Pro
             }
             services.RemoveAll<ISmsSender>(); services.RemoveAll<IVoiceCaller>(); services.RemoveAll<IEmailService>();
             services.AddSingleton(new EmergencyTransport(output));
-            services.AddSingleton<ISmsSender>(sp => sp.GetRequiredService<EmergencyTransport>());
+            // Ejercita también el sender productivo y el formulario Twilio real;
+            // solo se sustituye el límite de red, nunca se usan credenciales reales.
+            services.RemoveAll<ITwilioRestClient>();
+            services.AddSingleton<ITwilioRestClient>(sp => new IsolatedSmsClient(output, sp.GetRequiredService<EmergencyTransport>()));
+            services.AddSingleton(Options.Create(new SmsSettings
+            {
+                Provider = "Twilio", IsEnabled = true, AccountSid = "AC" + new string('0', 32),
+                AuthToken = "isolated-sms-only", FromNumber = "+12025550199",
+            }));
+            services.AddScoped<ISmsSender, TwilioSmsSender>();
             services.AddSingleton<IVoiceCaller>(sp => sp.GetRequiredService<EmergencyTransport>());
             services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<EmergencyTransport>());
         });
+    }
+}
+
+sealed class IsolatedSmsClient(string output, EmergencyTransport transport) : ITwilioRestClient
+{
+    public string AccountSid => "AC" + new string('0', 32);
+    public string Region => null!;
+    public Twilio.Http.HttpClient HttpClient => null!;
+    public Twilio.Http.Response Request(Twilio.Http.Request request) => throw new NotSupportedException();
+    public async Task<Twilio.Http.Response> RequestAsync(Twilio.Http.Request request)
+    {
+        var form = request.PostParams.ToDictionary(p => p.Key, p => p.Value);
+        if (request.Uri.Host != "api.twilio.com" || request.Uri.AbsolutePath != $"/2010-04-01/Accounts/{AccountSid}/Messages.json"
+            || request.Method != Twilio.Http.HttpMethod.Post || form["From"] != "+12025550199"
+            || form.Keys.Any(k => k is not ("To" or "From" or "Body" or "StatusCallback"))
+            || form["To"] is not ("+12025550101" or "+12025550102"))
+            throw new InvalidOperationException("SMS fuera del contrato de QA; no existe transporte de red.");
+        await File.AppendAllTextAsync(Path.Combine(output, "sms-wire-ledger.jsonl"),
+            JsonSerializer.Serialize(new { endpoint = request.Uri.AbsoluteUri, method = "POST", fields = form.Keys.Order().ToArray(), from = form["From"], at = DateTime.UtcNow }) + "\n");
+        var result = await transport.SendAsync(form["To"], form["Body"], statusCallbackUrl: form.GetValueOrDefault("StatusCallback"));
+        return result.Success
+            ? new Twilio.Http.Response(System.Net.HttpStatusCode.Created, JsonSerializer.Serialize(new { sid = result.ProviderMessageId, status = "queued" }))
+            : new Twilio.Http.Response(System.Net.HttpStatusCode.BadRequest, "{\"code\":21211,\"message\":\"Synthetic rejected destination\",\"status\":400}");
     }
 }
 
@@ -69,7 +105,7 @@ sealed class EmergencyTransport(string output) : ISmsSender, IVoiceCaller, IEmai
     }
     public async Task<VoiceCallResult> CallAsync(string phoneNumber, string sayText, string language, CancellationToken ct = default, string? statusCallbackUrl = null)
     {
-        await RecordAsync("voice", phoneNumber, statusCallbackUrl, ct);
+        await RecordAsync("voice", phoneNumber, statusCallbackUrl, ct, sayText);
         return File.Exists(Path.Combine(output, "fail-primary")) && phoneNumber.EndsWith("0101", StringComparison.Ordinal)
             ? new(false, null, "twilio:21211") : new(true, "CA" + Guid.NewGuid().ToString("N"), null);
     }

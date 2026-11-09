@@ -7,10 +7,12 @@ acción independiente y no se presenta como un despacho automático.
 
 ## Mensajes
 
-- `SosSmsTemplate.Build(alert, locationUrl?)`: SMS breve con el nombre, la
-  acción de llamar, teléfono válido del paciente cuando existe, enlace de
-  ubicación y solo las lecturas recibidas. No incorpora documento, edad,
-  referencia interna de alerta ni precisión GPS.
+- `SosSmsTemplate.Build(alert, locationUrl?)`: SMS compacto con identidad,
+  dirección aproximada y enlace de mapa completo. Usa hasta 160 septetos
+  GSM-7 como objetivo; abrevia la identidad y la referencia cuando hace falta
+  e indica el recorte con `...`. El teléfono del paciente se incluye si cabe.
+  Las lecturas, la hora de captura y la precisión quedan completas en el correo.
+  No incorpora documento, edad ni referencia interna de alerta.
 - `SosEmailTemplate.BuildHtml(alert, locationUrl?)`: correo HTML con marca Copp
   Adresd, nombre, fecha UTC explícita, llamada y ubicación como botones,
   lecturas opcionales y explicación de por qué el destinatario lo recibe.
@@ -19,6 +21,14 @@ acción independiente y no se presenta como un despacho automático.
   El contrato actual de `IEmailService` envía un único cuerpo; el despacho SOS
   usa HTML, sin afirmar que envíe una alternativa MIME de texto.
 - `SosEmailTemplate.Subject` es estático, sin datos personales en el asunto.
+- `SosVoiceTemplate.Build(alert)`: lee la dirección aproximada del snapshot GPS
+  antes de las lecturas opcionales. Ambos contactos oyen la misma referencia,
+  sin URLs ni coordenadas dictadas. Con GPS grueso/desconocido se conserva
+  únicamente la ciudad/área que resolvió el enriquecedor. Sin dirección o sin
+  GPS, lo informa y pide confirmar la ubicación al contactar al paciente.
+  Nunca sustituye el GPS por el domicilio del perfil ni afirma que el SMS ya
+  llegó. Recomienda los servicios de emergencia de la ubicación, sin imponer
+  un 911 que puede ser incorrecto fuera de Estados Unidos.
 
 El enlace opcional permite usar una URL compartida del propio servicio, sin
 coordenadas en el mensaje. Cuando no hay ese servicio/configuración se conserva
@@ -76,9 +86,9 @@ alerta, sin copiar mensajes del proveedor que puedan contener datos personales.
 Las pruebas de `SosMessageTemplatesTests`, `SosEmailTransportReadinessTests`,
 `SosLocationLinkTests` y `SosDispatchersTests` comprueban acciones, HTML escapado,
 esquemas de enlaces, firma, caducidad, revocación, datos ausentes, privacidad de
-logs y entrega no configurada. Las 134 pruebas SOS pasan en este entorno. No
-envían mensajes ni efectúan llamadas reales. La integración con PostgreSQL
-requiere una base de pruebas aislada y no se ejecutó en esta entrega.
+logs y entrega no configurada. No envían mensajes ni efectúan llamadas reales.
+La integración con PostgreSQL requiere una base de pruebas aislada; el host
+E2E descrito más abajo permite recorrer los canales sin transportes reales.
 
 ```sh
 dotnet test tests/CoppAddresd.UnitTests --filter 'FullyQualifiedName~Features.Sos'
@@ -196,8 +206,8 @@ Fuentes: [API ReverseGeocode](https://docs.aws.amazon.com/location/latest/APIRef
 [uso de resultados almacenados](https://docs.aws.amazon.com/location/latest/developerguide/places-intended-use.html),
 [precios](https://aws.amazon.com/location/pricing/),
 [atribución](https://docs.aws.amazon.com/location/latest/developerguide/data-attribution.html).
-El SMS identifica Amazon Location como fuente y el correo enlaza su atribución
-cuando muestra una dirección. La confirmación de SOS en la app informa del envío del punto GPS a Amazon
+El correo enlaza la atribución de Amazon Location cuando muestra una dirección.
+La confirmación de SOS en la app informa del envío del punto GPS a Amazon
 Location y permite abrir sus fuentes antes de activar la alerta. Por la restricción
 de almacenamiento de AWS/HERE en Japón, una ventana conservadora (latitud 20–47,
 longitud 122–155) omite el lookup Storage; en esa región se conserva el mapa original.
@@ -214,3 +224,49 @@ vacío, texto HTML, fecha futura, región con restricciones de almacenamiento, c
 Las capturas prueban HTML en Chromium, no todos los clientes de correo ni entrega
 por un proveedor. El modo sintético no prueba IAM, conectividad ni calidad de datos AWS.
 El chequeo real usa solo coordenadas públicas de prueba y conserva transportes aislados.
+
+El host E2E captura también el guion real de voz, exclusivamente en el directorio
+temporal de QA. El recorrido comprueba dirección/calle, ciudad, GPS ausente,
+timeout, fecha imposible y coincidencia entre principal/respaldo sin efectuar
+llamadas. Capturar el guion no prueba pronunciación de Polly ni recepción por
+un teléfono real.
+
+### Diagnóstico de SMS no recibido
+
+Registrar el SID y los estados sin cuerpo ni teléfonos completos. `queued`/
+`sent`/`delivered` son estados del proveedor: `delivered` representa su recibo
+del operador (y del terminal cuando está disponible), no confirma que el usuario
+vea el mensaje. Si el usuario informa no recepción pese a ese estado, conservar
+el incidente como discrepancia, revisar filtros/bloqueados del teléfono y escalar
+al operador/Twilio con SID, hora y cantidad de segmentos. No reenviar SOS ni
+alterar la deduplicación para compensar un recibo dudoso.
+
+En Colombia puede cambiar el remitente mostrado y el soporte de concatenación
+depende del tipo de remitente/codificación. Un SMS largo dividido en partes es
+un dato para investigar, no prueba por sí solo la causa de la no recepción.
+Fuentes: [estados de mensajes](https://www.twilio.com/docs/messaging/api/message-resource#message-status-values),
+[guía de Colombia](https://www.twilio.com/en-us/guidelines/co/sms).
+
+### SMS compacto y equivalencia de transporte
+
+El SOS utiliza el mismo `POST /2010-04-01/Accounts/{AccountSid}/Messages.json`,
+cuenta, remitente y formulario `To`/`From`/`Body` del diagnóstico corto recibido.
+Conserva `StatusCallback` para seguir la entrega; no añade otro proveedor ni
+reenvía automáticamente un mensaje que figure entregado.
+
+La plantilla prioriza nombre, calle/ciudad aproximadas y enlace firmado intacto.
+Omite región/país repetidos cuando el snapshot ya contiene calle/ciudad. Solo
+normaliza para SMS los diacríticos latinos que no caben en GSM-7; caracteres GSM
+como `ñ` y `é` se conservan. No modifica datos guardados ni correo/voz. El
+presupuesto cuenta los caracteres extendidos GSM como dos septetos. No corta
+pares Unicode ni trunca el token del mapa. Los nombres/direcciones no latinos se
+conservan en Unicode con objetivo de dos segmentos; un origen de mapa
+excepcionalmente largo también puede requerir más de un segmento. La entrega
+final sigue dependiendo del operador y del terminal.
+
+El host E2E ejecuta ahora `TwilioSmsSender` y el SDK productivo; solo reemplaza
+`ITwilioRestClient` en la frontera de red. Comprueba host, cuenta sintética,
+endpoint Messages, método POST, remitente, destinos permitidos y campos del
+formulario. Los recorridos verifican un segmento GSM-7 para los casos latinos,
+dirección, mapa válido, cancelación y deduplicación. Ni pruebas ni capturas
+certifican por sí solas la recepción en un teléfono real del nuevo texto.

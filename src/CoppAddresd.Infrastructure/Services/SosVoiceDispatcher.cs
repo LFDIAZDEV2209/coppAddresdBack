@@ -226,10 +226,10 @@ public sealed class SosVoiceDispatcher(
 
 /// <summary>
 /// Plantilla de la llamada de voz SOS enriquecida: 100% server-side, en
-/// español, sin URLs ni coordenadas (la ubicación se indica por SMS). Incluye
-/// nombre completo, edad, documento y signos vitales (demo); recomienda
-/// revisar el mensaje de texto y llamar al 911. El guion se repite una vez y
-/// NUNCA se registra en logs.
+/// español, sin URLs ni coordenadas. Lee el snapshot de dirección aproximada
+/// cuando existe; nunca usa el domicilio del perfil como ubicación actual.
+/// Conserva identidad y lecturas reportadas. El guion se repite una vez y
+/// NUNCA se registra en logs de producción.
 /// </summary>
 public static class SosVoiceTemplate
 {
@@ -247,12 +247,24 @@ public static class SosVoiceTemplate
             + (document is null ? string.Empty : $", documento {document}");
 
         var vitals = SosMessageFormatting.VoiceVitals(alert);
+        var hasGps = SosMessageFormatting.MapsLink(alert) is not null;
+        var validCapture = alert.LocationCapturedAt is null ||
+            (alert.LocationCapturedAt > DateTime.UnixEpoch && alert.LocationCapturedAt <= alert.CreatedAt.AddMinutes(1));
+        var address = hasGps && validCapture && !string.IsNullOrWhiteSpace(alert.LocationDescription)
+            ? SosMessageFormatting.SingleLine(alert.LocationDescription).TrimEnd('.', ' ')
+            : null;
+        var location = !hasGps
+            ? "No se compartió la ubicación GPS. Confirma dónde se encuentra al comunicarte. "
+            : string.IsNullOrWhiteSpace(address)
+                ? "La dirección aproximada no está disponible. Confirma dónde se encuentra al comunicarte. "
+                : $"Dirección aproximada registrada con esta alerta: {address}. No es seguimiento en tiempo real. Confirma la dirección al comunicarte. ";
 
         var message =
             $"Alerta de emergencia de Copp Adresd. {identity} activó una alerta SOS y necesita ayuda inmediata. "
+            + location
             + (vitals is null ? string.Empty : vitals + " ")
-            + "Revisa el mensaje de texto con su ubicación. "
-            + "Comuníquese de inmediato y, de ser necesario, llame al 911.";
+            + (hasGps ? "Si recibiste el SMS o correo, consulta también el mapa compartido. " : string.Empty)
+            + "Comunícate de inmediato y, de ser necesario, contacta a los servicios de emergencia de su ubicación.";
 
         return $"{message} Repito: {message}";
     }

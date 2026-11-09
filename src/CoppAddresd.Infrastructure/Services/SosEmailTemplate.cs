@@ -60,7 +60,7 @@ public static class SosEmailTemplate
                     </td></tr>
                     <tr><td style="padding:30px 32px 20px">
                       <p style="margin:0 0 18px;color:#b9463c;font-size:12px;font-weight:700;letter-spacing:1.5px">ALERTA SOS</p>
-                      <h1 style="margin:0 0 12px;color:#142855;font-size:28px;line-height:1.2;letter-spacing:-.6px">{{name}} necesita tu ayuda</h1>
+                      <h1 style="margin:0 0 12px;color:#142855;font-size:28px;line-height:1.2;letter-spacing:-.6px;overflow-wrap:anywhere;word-break:break-word">{{name}} necesita tu ayuda</h1>
                       <p style="margin:0 0 12px;color:#53657f;font-size:16px;line-height:1.65">Activó una alerta desde Copp Adresd. Comunícate ahora para confirmar cómo se encuentra y ofrecerle ayuda.</p>
                       <p style="margin:0 0 22px;color:#53657f;font-size:13px;line-height:1.5">Alerta activada · {{time}}</p>
                       {{callAction}}

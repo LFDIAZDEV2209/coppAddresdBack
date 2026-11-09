@@ -226,30 +226,92 @@ public sealed class SosSmsDispatcher(
 /// </summary>
 public static class SosSmsTemplate
 {
+    private const string GsmBasic = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+    private const string GsmExtended = "\f^{}\\[~]|€";
+
     public static string Build(SosAlert alert, string? locationUrl = null)
     {
-        var patient = alert.Patient;
-        var name = SosMessageFormatting.FullName(patient, "Tu contacto");
-        var lines = new List<string>
-        {
-            "SOS | Copp Adresd",
-            $"{name} necesita tu ayuda. Llámale ahora.",
-        };
-        var phone = SosMessageFormatting.PatientPhone(patient);
-        if (phone is not null) lines.Add($"Llamar: {phone}");
+        var name = GsmFriendly(SosMessageFormatting.FullName(alert.Patient, "Tu contacto"));
         var maps = SosMessageFormatting.LocationLink(alert, locationUrl);
-        if (maps is null) lines.Add("Ubicación no compartida.");
+        // El snapshot del enriquecedor ordena calle, ciudad/área, región, país.
+        // En SMS se priorizan los dos primeros; el correo conserva todo.
+        var address = maps is null || string.IsNullOrWhiteSpace(alert.LocationDescription) ? null
+            : GsmFriendly(string.Join(", ", alert.LocationDescription.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(2)));
+        var gsm = IsGsm(name + address + maps);
+        // GSM-7: una parte de 160 septetos. Si un nombre/dirección no puede
+        // representarse fielmente en GSM, se conserva Unicode (dos partes
+        // como objetivo) en vez de borrar caracteres o invalidar el mapa.
+        var budget = gsm ? 160 : 134;
+        var header = "SOS Copp Adresd: " + Clip(name, gsm ? 20 : 12, gsm);
+        string body;
+        if (maps is null)
+        {
+            body = header + "\nUbicacion no compartida.";
+        }
         else
         {
-            lines.Add(string.IsNullOrWhiteSpace(alert.LocationDescription)
-                ? "Dirección no disponible; consulta el mapa."
-                : "Dirección aproximada (Amazon Location): " + alert.LocationDescription);
-            lines.Add($"Ver ubicación: {maps}");
-            lines.Add(SosMessageFormatting.LocationCaptureTime(alert));
-            lines.Add(SosMessageFormatting.LocationAccuracy(alert));
+            var prefix = address is null ? "" : "Aprox: ";
+            var reference = address ?? "Direccion no disponible.";
+            var available = budget - Units(header + "\n" + prefix + "\n" + maps, gsm);
+            // Una URL de origen excepcionalmente larga puede necesitar más
+            // partes. Nunca se recorta el enlace firmado para imponer el límite.
+            reference = FitAddress(reference, Math.Max(8, available), gsm);
+            body = header + "\n" + prefix + reference + "\n" + maps;
         }
-        var vitals = SosMessageFormatting.SmsVitals(alert);
-        if (vitals is not null) lines.Add(vitals);
-        return string.Join("\n", lines);
+        var phone = SosMessageFormatting.PatientPhone(alert.Patient);
+        var withPhone = phone is null ? body : body + "\nLlamar: " + phone;
+        return Units(withPhone, gsm) <= budget ? withPhone : body;
+    }
+
+    private static bool IsGsm(string text) => text.All(c => GsmBasic.Contains(c) || GsmExtended.Contains(c));
+    private static int Units(string text, bool gsm) => gsm ? text.Sum(c => GsmExtended.Contains(c) ? 2 : 1) : text.Length;
+
+    private static string FitAddress(string reference, int budget, bool gsm)
+    {
+        if (Units(reference, gsm) <= budget) return reference;
+        var separator = reference.IndexOf(", ", StringComparison.Ordinal);
+        if (separator >= 0)
+        {
+            var locality = reference[(separator + 2)..];
+            var streetBudget = budget - Units(", " + locality, gsm);
+            if (streetBudget >= 8) return Clip(reference[..separator], streetBudget, gsm) + ", " + locality;
+        }
+        return Clip(reference, budget, gsm);
+    }
+
+    /// <summary>Solo presentación SMS: no modifica nombres/direcciones persistidos.</summary>
+    private static string GsmFriendly(string text)
+    {
+        var result = new System.Text.StringBuilder();
+        var singleLine = SosMessageFormatting.SingleLine(text)
+            .Replace('’', '\'').Replace('‘', '\'').Replace('“', '"').Replace('”', '"')
+            .Replace('–', '-').Replace('—', '-').Replace("…", "...");
+        foreach (var rune in singleLine.EnumerateRunes())
+        {
+            var value = rune.ToString();
+            if (IsGsm(value)) { result.Append(value); continue; }
+            var plain = string.Concat(value.Normalize(System.Text.NormalizationForm.FormD)
+                .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark));
+            // Mantiene intactos los caracteres que no admiten transliteración
+            // latina (p.ej. nombres chinos); no los convierte en signos «?».
+            result.Append(IsGsm(plain) ? plain : value);
+        }
+        return result.ToString();
+    }
+
+    private static string Clip(string text, int budget, bool gsm)
+    {
+        if (Units(text, gsm) <= budget) return text;
+        var result = new System.Text.StringBuilder();
+        var elements = System.Globalization.StringInfo.GetTextElementEnumerator(text);
+        var used = 0;
+        while (elements.MoveNext())
+        {
+            var value = elements.GetTextElement();
+            var units = Units(value, gsm);
+            if (used + units > Math.Max(0, budget - 3)) break;
+            result.Append(value); used += units;
+        }
+        return result.ToString().TrimEnd() + "...";
     }
 }
