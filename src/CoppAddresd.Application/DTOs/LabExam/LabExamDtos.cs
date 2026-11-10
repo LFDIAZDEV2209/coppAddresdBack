@@ -9,8 +9,10 @@ namespace CoppAddresd.Application.DTOs.LabExam;
 public record LabExamAiMetricDto(
     [property: JsonPropertyName("metric_name")] string MetricName,
     [property: JsonPropertyName("value")] decimal Value,
-    [property: JsonPropertyName("unit_symbol")] string UnitSymbol,
-    [property: JsonPropertyName("observed_at")] DateTime? ObservedAt = null);
+    [property: JsonPropertyName("unit_symbol")] string? UnitSymbol,
+    [property: JsonPropertyName("observed_at")] DateTime? ObservedAt = null,
+    [property: JsonPropertyName("source_text")] string? SourceText = null,
+    [property: JsonPropertyName("source_page")] int? SourcePage = null);
 
 /// <summary>
 /// Respuesta del AI Service para la extracción de exámenes de laboratorio.
@@ -21,9 +23,8 @@ public record LabExamAiResponse(
     [property: JsonPropertyName("readable")] bool Readable = true);
 
 /// <summary>
-/// Dirección de evolución de una métrica calculada en el backend (R2/R3).
-/// Se serializa en snake_case para el contrato del ai-service:
-/// <c>improved</c> | <c>stable</c> | <c>worsened</c> | <c>changed</c> | <c>first_record</c>.
+/// Compatibilidad del contrato de narración. Los miembros Improved/Worsened solo
+/// permiten leer contratos históricos; las comparaciones nuevas nunca los emiten.
 /// </summary>
 [JsonConverter(typeof(MetricDirectionJsonConverter))]
 public enum MetricDirection
@@ -58,9 +59,9 @@ public sealed class MetricDirectionJsonConverter : JsonConverter<MetricDirection
         Utf8JsonWriter writer, MetricDirection value, JsonSerializerOptions options)
         => writer.WriteStringValue(value switch
         {
-            MetricDirection.Improved => "improved",
+            MetricDirection.Improved => "changed",
             MetricDirection.Stable => "stable",
-            MetricDirection.Worsened => "worsened",
+            MetricDirection.Worsened => "changed",
             MetricDirection.Changed => "changed",
             MetricDirection.FirstRecord => "first_record",
             _ => throw new JsonException($"Unknown metric direction '{value}'.")
@@ -69,8 +70,9 @@ public sealed class MetricDirectionJsonConverter : JsonConverter<MetricDirection
 
 /// <summary>
 /// Evolución pre-computada de una métrica (delta y dirección calculados en C#).
-/// Los campos <c>previous_*</c> y <c>delta</c> solo llevan valor cuando existe una
-/// medición previa comparable (misma unidad); en <c>first_record</c> van en null.
+/// Los campos <c>previous_*</c> conservan la observación anterior incluso cuando
+/// no es comparable. <c>delta</c> solo se calcula con unidad explícita coincidente
+/// y fechas explícitas ordenadas; <c>change</c> no expresa beneficio clínico.
 /// </summary>
 public sealed record MetricEvolution(
     [property: JsonPropertyName("direction")] MetricDirection Direction,
@@ -79,7 +81,11 @@ public sealed record MetricEvolution(
     [property: JsonPropertyName("previous_date")] DateTime? PreviousDate = null,
     [property: JsonPropertyName("delta")] decimal? Delta = null,
     [property: JsonPropertyName("current_value")] decimal? CurrentValue = null,
-    [property: JsonPropertyName("current_unit")] string? CurrentUnit = null);
+    [property: JsonPropertyName("current_unit")] string? CurrentUnit = null,
+    [property: JsonPropertyName("change")] string? Change = null,
+    [property: JsonPropertyName("current_date")] DateTime? CurrentDate = null,
+    [property: JsonPropertyName("previous_source")] string? PreviousSource = null,
+    [property: JsonPropertyName("current_source")] string? CurrentSource = null);
 
 /// <summary>
 /// Valor puntual de una métrica (código canónico + unidad normalizada) usado como
@@ -90,7 +96,8 @@ public sealed record LabExamMetricSnapshot(
     string MetricCode,
     decimal Value,
     string? UnitSymbol,
-    DateTime ObservedAt);
+    DateTime? ObservedAt,
+    string? Source = null);
 
 /// <summary>
 /// Cuerpo del endpoint de narración empática (<c>POST /chat/lab-exam/narrate</c>).
@@ -104,11 +111,31 @@ public sealed record LabExamNarrateRequest(
     [property: JsonPropertyName("language"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Language = null);
 
 /// <summary>
-/// Resultado final del procesamiento y persistencia de un examen de laboratorio.
+/// Candidato extraído del archivo, sin verificación clínica ni persistencia como medición.
+/// La unidad/fecha faltante se conserva en null; nunca se sustituye por un supuesto.
+/// </summary>
+public sealed record LabExamExtractedMetricDto(
+    string MetricName,
+    string? MetricCode,
+    decimal Value,
+    string? UnitSymbol,
+    DateTime? ObservedAt,
+    string Source = "ocr_unverified",
+    string? SourceText = null,
+    int? SourcePage = null);
+
+/// <summary>
+/// Resultado compatible de la subida. MeasurementCount cuenta mediciones clínicas
+/// establecidas, no candidatos OCR. La extracción queda pendiente de verificación.
 /// </summary>
 public record LabExamUploadResult(
     Guid BatchId,
     string Summary,
     int MeasurementCount,
     IReadOnlyList<string> DetectedMetrics,
-    string? StorageKey = null);
+    string? StorageKey = null,
+    string? VerificationStatus = null,
+    Guid? DocumentId = null,
+    string? ExtractionStorageKey = null,
+    IReadOnlyList<LabExamExtractedMetricDto>? ExtractedMetrics = null,
+    IReadOnlyDictionary<string, MetricEvolution>? Comparisons = null);

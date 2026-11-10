@@ -13,6 +13,12 @@ Registrar mediciones clínicas de forma **genérica** (métrica + unidad + valor
 Modelo en tres capas: **catálogos** (qué se mide y en qué unidad) + **encounter canónico**
 (contenedor de la visita) + **mediciones** (el valor con su contexto temporal y de origen).
 
+La extracción OCR nueva de exámenes no establece mediciones clínicas: conserva el
+original y candidatos con procedencia `ocr_unverified`, sin inferir fecha/unidad ni
+completar controles. La comparación es aritmética y no clasifica mejoría/deterioro.
+Ver [contrato de exámenes de laboratorio](../lab-exams/README.md). Los registros
+manuales/profesionales y la historia existente mantienen su flujo y procedencia.
+
 ## Alcance (esta iteración)
 
 - ✅ Entidades + configuraciones EF + migración del core (schema `app`)

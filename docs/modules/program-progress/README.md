@@ -415,7 +415,7 @@ Series REALES de métricas clínicas para la **Home** del móvil (IMC, HbA1c, % 
 
 ### 2.14 Controles por hitos del programa (UC-001 v2)
 
-En los días 7/14/21/45/60/90 del programa (`program_enrollments.start_local_date`), el paciente recibe un **mensaje proactivo** (push FCM + inyección en el chat, costo LLM cero) que ahora además **abre un Control**: un ciclo de vida auditable en `app.program_controls` en el que el agente pregunta cómo se siente y —si el paciente responde— conduce una conversación guiada para que suba sus exámenes de laboratorio por el adjunto del chat (panel completo, la misma petición en todos los controles). El examen subido queda **asociado al control** (`exam_batch_id`, sin FK), base de futuras métricas de adherencia. El detalle funcional completo vive en `USE-CASES.md` (UC-001, monorepo).
+En los días 7/14/21/45/60/90 del programa (`program_enrollments.start_local_date`), el paciente recibe un **mensaje proactivo** (push FCM + inyección en el chat, costo LLM cero) que ahora además **abre un Control**: un ciclo de vida auditable en `app.program_controls` en el que el agente pregunta cómo se siente y —si el paciente responde— conduce una conversación guiada para que suba sus exámenes de laboratorio por el adjunto del chat (panel completo, la misma petición en todos los controles). La subida OCR nueva conserva el archivo y candidatos pendientes; **no asocia el lote ni completa el control**. Los vínculos históricos `exam_batch_id` se conservan. Ver [exámenes y verificación](../lab-exams/README.md). El detalle funcional histórico vive en `USE-CASES.md` (UC-001, monorepo).
 
 **Ciclo de vida** (estados de fase 2 sobre la columna `status`; `Sent` ya no es terminal):
 
@@ -428,7 +428,7 @@ Sent → FollowedUp → Missed
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | `Responded`         | El paciente escribió en el control abierto (cualquier mensaje; los hooks de chat `ProgramControlChatHooks` lo marcan)                 |
 | `FollowedUp`        | Silencio 48 h → **único** follow-up (plantilla `FollowupTemplate` con `{day}`, misma ventana 9–21 local del paciente)                 |
-| `Completed`         | Subió un examen de laboratorio con el control abierto (`UploadLabExamCommandHandler` asocia el batch, best-effort)                    |
+| `Completed`         | Estado y vínculo históricos conservados; una subida OCR pendiente ya no completa ni vincula el control. No se añadió un nuevo flujo de aprobación. |
 | `ClosedWithoutExam` | Negativa explícita (`closed_reason='declined'`) o sin subida tras `NoUploadCloseDays` (7 días desde `Responded`, `no_upload_timeout`) |
 | `Missed`            | Sin respuesta tras el follow-up (`MissedAfterFollowupHours`, 48 h)                                                                    |
 

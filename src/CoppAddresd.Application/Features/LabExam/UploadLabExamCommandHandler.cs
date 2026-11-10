@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text;
-using CoppAddresd.Application.Common;
+using System.Text.Json;
 using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Exceptions;
 using CoppAddresd.Application.Interfaces;
@@ -8,15 +8,14 @@ using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Exceptions;
 using MediatR;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Application.Features.LabExam;
 
 /// <summary>
 /// Orquestador de la subida y procesamiento de exámenes de laboratorio:
-/// validación → compresión → almacenamiento en S3 → extracción de métricas con IA
-/// → resolución contra catálogo → persistencia en lote.
-/// Ante cualquier fallo posterior al almacenamiento en S3, se ejecuta compensación (DeleteObjectAsync).
+/// Conserva el archivo original en el repositorio documental y la extracción OCR
+/// como candidatos pendientes. Una extracción automática nunca establece mediciones
+/// clínicas, completa controles ni entra como hecho confirmado al contexto del chat.
 /// </summary>
 public class UploadLabExamCommandHandler
     : IRequestHandler<UploadLabExamCommand, LabExamUploadResult>
@@ -128,8 +127,7 @@ public class UploadLabExamCommandHandler
     private readonly IAiServiceClient _aiServiceClient;
     private readonly IClinicalMeasurementRepository _measurementRepository;
     private readonly IPatientRepository _patientRepository;
-    private readonly IProgramControlRepository _programControlRepository;
-    private readonly IOptions<ProgramControlSettings> _settings;
+    private readonly IDocumentRepository _documentRepository;
     private readonly ILogger<UploadLabExamCommandHandler> _logger;
 
     public UploadLabExamCommandHandler(
@@ -138,8 +136,7 @@ public class UploadLabExamCommandHandler
         IAiServiceClient aiServiceClient,
         IClinicalMeasurementRepository measurementRepository,
         IPatientRepository patientRepository,
-        IProgramControlRepository programControlRepository,
-        IOptions<ProgramControlSettings> settings,
+        IDocumentRepository documentRepository,
         ILogger<UploadLabExamCommandHandler> logger
     )
     {
@@ -148,386 +145,132 @@ public class UploadLabExamCommandHandler
         _aiServiceClient = aiServiceClient;
         _measurementRepository = measurementRepository;
         _patientRepository = patientRepository;
-        _programControlRepository = programControlRepository;
-        _settings = settings;
+        _documentRepository = documentRepository;
         _logger = logger;
     }
 
-    public async Task<LabExamUploadResult> Handle(
-        UploadLabExamCommand request,
-        CancellationToken ct
-    )
+    public async Task<LabExamUploadResult> Handle(UploadLabExamCommand request, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         ValidateInput(request);
+        var patient = await _patientRepository.GetByUserIdAsync(request.UserId, ct)
+            ?? throw new NotFoundException("No existe un perfil de paciente para este archivo.");
 
-        // Resolve patient profile (request.PatientId could be PatientProfile.Id or auth.users.id from JWT)
-        var patientProfile =
-            await _patientRepository.GetByIdAsync(request.PatientId, ct)
-            ?? await _patientRepository.GetByUserIdAsync(request.PatientId, ct);
+        // El catálogo existente ofrece OTHER; no se inventa un subtipo de examen.
+        var originalExtension = Path.GetExtension(request.FileName).ToLowerInvariant();
+        var documentType = (await _documentRepository.ListTypesAsync(ct: ct))
+            .FirstOrDefault(type => type.Code == "OTHER" && type.IsActive
+                && (type.AllowedExtensions.Count == 0 || type.AllowedExtensions.Contains(originalExtension.TrimStart('.'))))
+            ?? throw new UnprocessableEntityException("No está disponible el tipo documental necesario para conservar el examen. Contacta a tu equipo de atención.");
 
-        if (patientProfile is null)
-        {
-            _logger.LogWarning(
-                "Patient profile not found for identifier '{Identifier}'",
-                request.PatientId
-            );
-            throw new NotFoundException(
-                $"Patient profile not found for identifier '{request.PatientId}'."
-            );
-        }
-
-        var patientId = patientProfile.Id;
-
-        // 1. Generate batchId
+        // La compresión solo prepara la entrada OCR. El documento conserva los bytes originales.
+        await using var original = new MemoryStream();
+        await request.FileStream.CopyToAsync(original, ct);
+        if (original.Length == 0) throw new UnprocessableEntityException("El archivo está vacío.");
+        if (original.Length > UploadLabExamCommandValidator.MaxRawSizeBytes) throw new LabExamRawFileTooLargeException();
+        original.Position = 0;
+        var (compressed, compressedContentType) = await _compressionService.CompressAsync(original, request.ContentType, ct);
+        await using var compressedLifetime = compressed;
         var batchId = Guid.NewGuid();
-
-        // 2. Compress file
-        var (compressedStream, finalContentType) = await _compressionService.CompressAsync(
-            request.FileStream,
-            request.ContentType,
-            ct
-        );
-
-        // 3. Construct S3 storage key: lab-exams/{patientId}/{batchId}{extension}
-        var extension = ResolveExtension(request.FileName, finalContentType);
-        var storageKey = $"lab-exams/{patientId}/{batchId}{extension}";
-
-        // 4. Upload to S3
-        if (compressedStream.CanSeek && compressedStream.Position != 0)
-        {
-            compressedStream.Position = 0;
-        }
-
-        await _storageService.PutObjectAsync(storageKey, compressedStream, finalContentType, ct);
-
-        // 5. Extracción + persistencia en try/catch (compensación S3 si falla)
-        LabExamAiResponse aiResponse;
-        var measurements = new List<ClinicalMeasurement>();
-        var detectedMetricNames = new List<string>();
-        var detectedMetricCodes = new List<string>();
-        var currentSnapshots = new List<LabExamMetricSnapshot>();
-
+        var storageKey = $"documents/{patient.Id}/{batchId}/original{originalExtension}";
+        var extractionKey = $"documents/{patient.Id}/{batchId}/extraction.json";
+        var attemptedKeys = new List<string>();
+        var documentSaved = false;
         try
         {
-            if (compressedStream.CanSeek && compressedStream.Position != 0)
+            original.Position = 0;
+            attemptedKeys.Add(storageKey);
+            await _storageService.PutDocumentArchiveObjectAsync(storageKey, original, request.ContentType.Split(';')[0].Trim(), ct);
+            if (compressed.CanSeek) compressed.Position = 0;
+            var response = await _aiServiceClient.ExtractLabMetricsAsync(patient.Id, batchId, compressed,
+                Path.GetFileNameWithoutExtension(request.FileName) + ResolveExtension(request.FileName, compressedContentType),
+                compressedContentType, request.ThreadId, ct);
+            ct.ThrowIfCancellationRequested();
+
+            var catalog = await _measurementRepository.GetActiveMetricsWithUnitsAsync(ct);
+            var candidates = response.Metrics.Select(metric => new LabExamExtractedMetricDto(
+                metric.MetricName, ResolveMetric(metric.MetricName, catalog)?.Code, metric.Value,
+                string.IsNullOrWhiteSpace(metric.UnitSymbol) ? null : metric.UnitSymbol.Trim(), metric.ObservedAt,
+                SourceText: metric.SourceText, SourcePage: metric.SourcePage)).ToArray();
+            var verificationStatus = !response.Readable ? "unreadable" : candidates.Length == 0 ? "no_metrics" : "pending_review";
+            var snapshots = candidates.Where(candidate => candidate.MetricCode is not null)
+                .Select(candidate => new LabExamMetricSnapshot(candidate.MetricCode!, candidate.Value, candidate.UnitSymbol,
+                    candidate.ObservedAt, candidate.Source)).ToArray();
+            var comparisons = await BuildComparisonsAsync(patient.Id, batchId, snapshots, ct);
+            var summary = PendingSummary(candidates.Length, verificationStatus, request.Language);
+
+            // Sidecar auditable por referencia documental; no es una cola de revisión ni un resultado clínico.
+            var metadata = JsonSerializer.SerializeToUtf8Bytes(new
             {
-                compressedStream.Position = 0;
-            }
-
-            var fileNameForAi = Path.GetFileNameWithoutExtension(request.FileName) + extension;
-
-            aiResponse = await _aiServiceClient.ExtractLabMetricsAsync(
-                patientId,
-                batchId,
-                compressedStream,
-                fileNameForAi,
-                finalContentType,
-                request.ThreadId,
-                ct
-            );
-
-            // b. If !response.Readable or zero metrics: return result with AI summary (no measurements saved)
-            if (!aiResponse.Readable || aiResponse.Metrics.Count == 0)
+                schemaVersion = 1, batchId, documentId = batchId, originalFileName = Path.GetFileName(request.FileName),
+                originalStorageKey = storageKey, uploadedAt = DateTime.UtcNow, verificationStatus,
+                extractedMetrics = candidates, comparisons,
+            }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            await using var extraction = new MemoryStream(metadata, writable: false);
+            attemptedKeys.Add(extractionKey);
+            await _storageService.PutDocumentArchiveObjectAsync(extractionKey, extraction, "application/json", ct);
+            var title = Path.GetFileName(request.FileName);
+            var document = new Document
             {
-                return new LabExamUploadResult(
-                    batchId,
-                    aiResponse.Summary,
-                    0,
-                    Array.Empty<string>(),
-                    storageKey
-                );
-            }
-
-            // c. Resolve metric codes/aliases against active MeasurementMetric catalog
-            var activeMetrics = await _measurementRepository.GetActiveMetricsWithUnitsAsync(ct);
-            var activeUnits = await _measurementRepository.GetActiveUnitsAsync(ct);
-
-            foreach (var aiMetric in aiResponse.Metrics)
-            {
-                var matchedMetric = ResolveMetric(aiMetric.MetricName, activeMetrics);
-                if (matchedMetric is null)
-                {
-                    _logger.LogWarning(
-                        "Lab exam metric '{MetricName}' could not be matched to catalog. Skipping.",
-                        aiMetric.MetricName
-                    );
-                    continue;
-                }
-
-                var unit =
-                    ResolveUnit(aiMetric.UnitSymbol, matchedMetric, activeUnits)
-                    ?? matchedMetric.DefaultUnit;
-                var observedAt = aiMetric.ObservedAt.HasValue
-                    ? aiMetric.ObservedAt.Value.ToUniversalTime()
-                    : DateTime.UtcNow;
-
-                measurements.Add(
-                    new ClinicalMeasurement
-                    {
-                        Id = Guid.NewGuid(),
-                        PatientId = patientId,
-                        MetricId = matchedMetric.Id,
-                        UnitId = unit?.Id ?? matchedMetric.DefaultUnitId,
-                        Value = aiMetric.Value,
-                        ObservedAt = observedAt,
-                        RecordedAt = DateTime.UtcNow,
-                        Source = "lab",
-                        BatchId = batchId,
-                        SourceKey = storageKey,
-                        CreatedBy = request.PatientId,
-                        CreatedAt = DateTime.UtcNow,
-                    }
-                );
-
-                detectedMetricNames.Add(matchedMetric.Name);
-                detectedMetricCodes.Add(matchedMetric.Code);
-                currentSnapshots.Add(
-                    new LabExamMetricSnapshot(
-                        matchedMetric.Code,
-                        aiMetric.Value,
-                        unit?.Symbol,
-                        observedAt
-                    )
-                );
-            }
-
-            if (measurements.Count > 0)
-            {
-                await _measurementRepository.AddBatchAsync(measurements, ct);
-            }
+                Id = batchId, PatientId = patient.Id, ClinicId = patient.ClinicId, DocumentTypeId = documentType.Id,
+                Title = title.Length <= 200 ? title : title[..200],
+                Description = "Archivo original recibido. Los posibles valores extraídos automáticamente requieren verificación contra el documento. No se añadieron mediciones clínicas ni se completó un control del programa.",
+                StorageKey = storageKey, ContentType = request.ContentType.Split(';')[0].Trim(), FileSizeBytes = original.Length,
+                Status = "Ready", UploadedBy = request.UserId, CreatedBy = request.UserId, CreatedAt = DateTime.UtcNow,
+            };
+            await _documentRepository.AddAsync(document, ct);
+            documentSaved = true;
+            return new LabExamUploadResult(batchId, summary, 0,
+                candidates.Where(candidate => candidate.MetricCode is not null)
+                    .Select(candidate => catalog.First(metric => metric.Code == candidate.MetricCode).Name).Distinct().ToArray(),
+                storageKey, verificationStatus, document.Id, extractionKey, candidates, comparisons);
         }
-        catch (Exception ex)
+        catch (Exception error)
         {
-            // 6. Compensation: Delete S3 object to guarantee atomicity
-            _logger.LogWarning(
-                ex,
-                "Failed to process lab exam for patient {PatientId}. Storage key {StorageKey} was deleted as compensation.",
-                patientId,
-                storageKey
-            );
-
-            try
+            // Antes del único SaveChanges documental se compensan los objetos; nunca se borra un documento confirmado.
+            if (!documentSaved)
             {
-                await _storageService.DeleteObjectAsync(storageKey, CancellationToken.None);
+                foreach (var key in attemptedKeys)
+                {
+                    try { await _storageService.DeleteDocumentArchiveObjectAsync(key, CancellationToken.None); }
+                    catch (Exception cleanupError)
+                    {
+                        _logger.LogError(cleanupError, "No se pudo compensar el objeto de examen {StorageKey}", key);
+                    }
+                }
             }
-            catch (Exception delEx)
-            {
-                _logger.LogError(
-                    delEx,
-                    "Failed to delete S3 object {StorageKey} during compensation for patient {PatientId}.",
-                    storageKey,
-                    request.PatientId
-                );
-            }
-
+            _logger.LogWarning(error, "No se pudo archivar la extracción pendiente del examen {BatchId}", batchId);
             throw;
         }
-
-        // 7. Narración empática: DESPUÉS de la persistencia y FUERA del try de
-        // compensación — un fallo de narración jamás alcanza DeleteObjectAsync (R12).
-        var summary = aiResponse.Summary;
-        if (measurements.Count > 0)
-        {
-            var empathetic = await BuildNarrationAsync(
-                patientId,
-                batchId,
-                aiResponse,
-                currentSnapshots,
-                detectedMetricCodes,
-                request.Language,
-                ct
-            );
-            if (!string.IsNullOrWhiteSpace(empathetic))
-            {
-                summary = empathetic;
-            }
-        }
-
-        // 7b. Contexto del lote en el thread del paciente (fix follow-up sin
-        // documento): inyecta un SystemMessage con el resumen del análisis al
-        // thread estable — invisible en el historial de la app pero presente
-        // en el contexto del LLM de los siguientes turnos. Best-effort: un
-        // fallo jamás rompe el upload (el HTTP 200 ya está ganado).
-        if (patientProfile.UserId is { } contextUserId && measurements.Count > 0)
-        {
-            await TryInjectLabContextAsync(
-                contextUserId,
-                batchId,
-                currentSnapshots,
-                summary,
-                request.Language,
-                ct
-            );
-        }
-
-        // 8. Link de control abierto (fase 2, controles conversacionales):
-        // DESPUÉS de la persistencia y de la narración, best-effort — misma
-        // filosofía de aislamiento que la narración: un fallo aquí NUNCA rompe
-        // el upload ni dispara la compensación S3 (el HTTP 200 ya está
-        // ganado). Con el killswitch apagado no hay ninguna llamada nueva.
-        if (_settings.Value.ControlsEnabled && patientProfile.UserId is { } authUserId)
-        {
-            await TryLinkOpenControlAsync(authUserId, request.ThreadId, batchId, ct);
-        }
-
-        return new LabExamUploadResult(
-            batchId,
-            summary,
-            measurements.Count,
-            detectedMetricNames,
-            storageKey
-        );
     }
 
-    /// <summary>
-    /// Inyecta el resumen del lote como SystemMessage al thread estable del
-    /// paciente (best-effort): los siguientes turnos del chat ven el documento
-    /// analizado sin mostrar un mensaje duplicado en el historial de la app.
-    /// </summary>
-    private async Task TryInjectLabContextAsync(
-        Guid authUserId,
-        Guid batchId,
-        IReadOnlyList<LabExamMetricSnapshot> snapshots,
-        string? summary,
-        string? language,
-        CancellationToken ct
-    )
+    private async Task<IReadOnlyDictionary<string, MetricEvolution>> BuildComparisonsAsync(
+        Guid patientId, Guid batchId, IReadOnlyList<LabExamMetricSnapshot> snapshots, CancellationToken ct)
     {
+        if (snapshots.Count == 0) return new Dictionary<string, MetricEvolution>();
         try
         {
-            var lines = snapshots
-                .Take(30)
-                .Select(s =>
-                    $"• {s.MetricCode}: {s.Value} {s.UnitSymbol} ({s.ObservedAt:yyyy-MM-dd})"
-                );
-            var digest = string.Join("\n", lines);
-            if (!string.IsNullOrWhiteSpace(summary) && summary.Length > 1200)
-            {
-                summary = summary[..1200] + "…";
-            }
-
-            var context =
-                $"[Contexto interno — análisis de laboratorio del paciente, lote {batchId}]\n"
-                + $"{digest}\n"
-                + $"Resumen: {summary}\n"
-                + "Responde sobre estos resultados cuando el paciente pregunte por su análisis.";
-
-            await _aiServiceClient.ProactiveMessageAsync(authUserId, context, "base", "system", ct);
-            _logger.LogInformation(
-                "Lab exam context injected to thread: batchId={BatchId} metrics={Count}",
-                batchId,
-                snapshots.Count
-            );
+            var previous = await _measurementRepository.GetLastPerMetricAsync(patientId,
+                snapshots.Select(snapshot => snapshot.MetricCode).Distinct().ToArray(), batchId, ct);
+            return LabExamEvolutionBuilder.Build(snapshots, previous);
         }
-        catch (Exception ex)
+        catch (Exception error) when (!ct.IsCancellationRequested)
         {
-            _logger.LogWarning(
-                ex,
-                "Lab exam context injection failed (best-effort). userId={UserId} batchId={BatchId}",
-                authUserId,
-                batchId
-            );
+            // Sin historia disponible no se afirma falsamente que se trata del primer registro.
+            _logger.LogWarning(error, "No se pudo consultar el historial para comparar el examen {BatchId}", batchId);
+            return new Dictionary<string, MetricEvolution>();
         }
     }
 
-    /// <summary>
-    /// Link best-effort del lote recién persistido al control de programa
-    /// abierto del paciente (fase 2): si existe un control no terminal
-    /// (Sent/Responded/FollowedUp) en el thread del upload, lo marca Completed
-    /// con <paramref name="batchId"/> (la transición guardada funciona incluso
-    /// desde Sent). Sin control abierto o con cualquier fallo: no-op silencioso
-    /// — el upload ya devolvió su resultado.
-    /// </summary>
-    private async Task TryLinkOpenControlAsync(
-        Guid authUserId,
-        string? threadId,
-        Guid batchId,
-        CancellationToken ct
-    )
+    private static string PendingSummary(int candidateCount, string status, string? language)
     {
-        try
-        {
-            var control = await _programControlRepository.FindOpenControlForUserAsync(
-                authUserId,
-                threadId,
-                ct
-            );
-            if (control is null)
-            {
-                return;
-            }
-
-            var claimed = await _programControlRepository.MarkCompletedAsync(
-                control.Id,
-                batchId,
-                DateTime.UtcNow,
-                ct
-            );
-            _logger.LogInformation(
-                "Program.ControlCompletedByUpload: controlId={ControlId} day={MilestoneDay} batchId={BatchId} claimed={Claimed}",
-                control.Id,
-                control.MilestoneDay,
-                batchId,
-                claimed
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "Program.Controls: fallo al vincular upload con control abierto (best-effort). userId={UserId} batchId={BatchId}",
-                authUserId,
-                batchId
-            );
-        }
-    }
-
-    /// <summary>
-    /// Narración best-effort (R7/R8/R11/R12): query de historia → deltas en C# →
-    /// llamada al ai-service. Cualquier fallo (incluida la query de contexto)
-    /// degrada a null y el upload continúa con el summary técnico; nunca se
-    /// persiste el mensaje empático (R9).
-    /// </summary>
-    private async Task<string?> BuildNarrationAsync(
-        Guid patientId,
-        Guid batchId,
-        LabExamAiResponse aiResponse,
-        IReadOnlyList<LabExamMetricSnapshot> currentSnapshots,
-        IReadOnlyList<string> detectedMetricCodes,
-        string? language,
-        CancellationToken ct
-    )
-    {
-        try
-        {
-            var previous = await _measurementRepository.GetLastPerMetricAsync(
-                patientId,
-                detectedMetricCodes,
-                batchId,
-                ct
-            );
-
-            var evolutions = LabExamEvolutionBuilder.Build(currentSnapshots, previous);
-
-            return await _aiServiceClient.NarrateLabExamAsync(
-                patientId,
-                batchId,
-                aiResponse.Metrics,
-                evolutions,
-                language,
-                ct
-            );
-        }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
-        {
-            _logger.LogWarning(
-                ex,
-                "Lab exam narration context failed for patient {PatientId} batch {BatchId}. Falling back to summary.",
-                patientId,
-                batchId
-            );
-            return null;
-        }
+        if (language == "en")
+            return status == "pending_review"
+                ? $"File received and available for review. OCR extracted {candidateCount} possible values that must be checked against the original document. No measurements were added to your clinical history and no program control was completed. Review the file with your care team."
+                : "File received and available for review. OCR could not extract readable values. No measurements were added to your clinical history and no program control was completed. Review the original file with your care team.";
+        return status == "pending_review"
+            ? $"Archivo recibido y disponible para revisión. La extracción OCR detectó {candidateCount} posibles valores que deben verificarse contra el documento original. No se añadieron mediciones a tu historia clínica ni se completó un control del programa. Revisa el archivo con tu equipo de atención."
+            : "Archivo recibido y disponible para revisión. La extracción OCR no obtuvo valores legibles. No se añadieron mediciones a tu historia clínica ni se completó un control del programa. Revisa el archivo original con tu equipo de atención.";
     }
 
     private static void ValidateInput(UploadLabExamCommand request)
@@ -645,44 +388,4 @@ public class UploadLabExamCommandHandler
         return sb.ToString().Replace(" ", "").Replace("_", "");
     }
 
-    private static UnitOfMeasure? ResolveUnit(
-        string? unitSymbol,
-        MeasurementMetric metric,
-        IReadOnlyList<UnitOfMeasure> activeUnits
-    )
-    {
-        if (string.IsNullOrWhiteSpace(unitSymbol))
-        {
-            return activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId)
-                ?? metric.DefaultUnit;
-        }
-
-        var trimmed = unitSymbol.Trim();
-        var normalizedSymbol = NormalizeUnitSymbol(trimmed);
-
-        var matched = activeUnits.FirstOrDefault(u =>
-            string.Equals(u.Symbol, normalizedSymbol, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(u.Symbol, trimmed, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(u.Code, trimmed, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(u.Name, trimmed, StringComparison.OrdinalIgnoreCase)
-        );
-
-        return matched
-            ?? activeUnits.FirstOrDefault(u => u.Id == metric.DefaultUnitId)
-            ?? metric.DefaultUnit;
-    }
-
-    private static string NormalizeUnitSymbol(string trimmedUnitSymbol) =>
-        trimmedUnitSymbol.ToLowerInvariant() switch
-        {
-            "%" or "pct" or "porcentaje" => "%",
-            "c" or "°c" or "celsius" or "grados celsius" => "°C",
-            "bpm" or "lpm" or "latidos/min" or "latidos por minuto" => "bpm",
-            "mg/dl" or "mg_dl" => "mg/dL",
-            "mmhg" => "mmHg",
-            "kg/m2" or "kg/m²" or "kg_m2" => "kg/m²",
-            "kg" or "kilos" or "kilogramos" => "kg",
-            "cm" or "centimetros" or "centímetros" => "cm",
-            _ => trimmedUnitSymbol,
-        };
 }

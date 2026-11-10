@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Common.Storage;
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
@@ -73,7 +74,26 @@ public sealed class S3ObjectStorageService : IObjectStorageService
 
     public bool IsCloudStorage => true;
 
-    public async Task<string> PutObjectAsync(
+    public Task<string> PutObjectAsync(string key, Stream content, string? contentType = null, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return PutObjectAsyncCore(key, content, contentType, ct); }
+    public Task<Stream> GetObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return GetObjectAsyncCore(key, ct); }
+    public Task DeleteObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return DeleteObjectAsyncCore(key, ct); }
+    public Task<string> GetPreSignedUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return GetPreSignedUrlAsyncCore(key, expiry, ct); }
+
+    public Task<string> PutDocumentArchiveObjectAsync(string key, Stream content, string? contentType = null, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return PutObjectAsyncCore(key, content, contentType, ct); }
+    public Task<Stream> GetDocumentArchiveObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return GetObjectAsyncCore(key, ct); }
+    public Task DeleteDocumentArchiveObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return DeleteObjectAsyncCore(key, ct); }
+    public Task<string> GetDocumentArchiveReadUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return GetPreSignedUrlAsyncCore(key, expiry, ct); }
+
+
+    private async Task<string> PutObjectAsyncCore(
         string key,
         Stream content,
         string? contentType = null,
@@ -91,7 +111,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
                 FileOptions.Asynchronous | FileOptions.DeleteOnClose);
             await content.CopyToAsync(buffered, ct);
             buffered.Position = 0;
-            return await PutObjectAsync(key, buffered, contentType, ct);
+            return await PutObjectAsyncCore(key, buffered, contentType, ct);
         }
 
         var response = await _client.PutObjectAsync(new PutObjectRequest
@@ -110,7 +130,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         return response.ETag ?? key;
     }
 
-    public async Task<Stream> GetObjectAsync(string key, CancellationToken ct = default)
+    private async Task<Stream> GetObjectAsyncCore(string key, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -128,6 +148,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
 
     public async Task<ObjectMetadata?> HeadObjectAsync(string key, CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(key);
         ct.ThrowIfCancellationRequested();
 
         try
@@ -153,6 +174,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         string? continuationToken = null,
         CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(prefix);
         ct.ThrowIfCancellationRequested();
 
         prefix ??= string.Empty;
@@ -165,6 +187,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         }, ct);
 
         var items = response.S3Objects
+            .Where(x => !DocumentArchiveStorageKeys.IsProtected(x.Key))
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .Select(x => new ObjectMetadata(
                 Key: x.Key,
@@ -177,7 +200,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         return new ListObjectsResult(items, response.NextContinuationToken);
     }
 
-    public async Task DeleteObjectAsync(string key, CancellationToken ct = default)
+    private async Task DeleteObjectAsyncCore(string key, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -195,6 +218,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         ct.ThrowIfCancellationRequested();
 
         var keysList = keys.Distinct().ToList();
+        foreach (var key in keysList) DocumentArchiveStorageKeys.RequireGenericKey(key);
         if (keysList.Count == 0)
             return;
 
@@ -217,6 +241,8 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         string destinationKey,
         CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(sourceKey);
+        DocumentArchiveStorageKeys.RequireGenericKey(destinationKey);
         ct.ThrowIfCancellationRequested();
 
         try
@@ -236,7 +262,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         }
     }
 
-    public Task<string> GetPreSignedUrlAsync(
+    private Task<string> GetPreSignedUrlAsyncCore(
         string key,
         TimeSpan expiry,
         CancellationToken ct = default)
@@ -261,6 +287,7 @@ public sealed class S3ObjectStorageService : IObjectStorageService
         string publicBaseUrl,
         CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(key);
         ct.ThrowIfCancellationRequested();
         _ = publicBaseUrl; // El proveedor S3 genera la URL directamente, sin proxy.
 

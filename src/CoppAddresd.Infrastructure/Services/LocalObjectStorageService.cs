@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Common.Storage;
 using System.Security.Cryptography;
 using System.Text;
 using CoppAddresd.Application.DTOs.Storage;
@@ -32,7 +33,26 @@ public sealed class LocalObjectStorageService : IObjectStorageService
 
     public bool IsCloudStorage => false;
 
-    public async Task<string> PutObjectAsync(
+    public Task<string> PutObjectAsync(string key, Stream content, string? contentType = null, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return PutObjectAsyncCore(key, content, contentType, ct); }
+    public Task<Stream> GetObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return GetObjectAsyncCore(key, ct); }
+    public Task DeleteObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return DeleteObjectAsyncCore(key, ct); }
+    public Task<string> GetPreSignedUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireGenericKey(key); return GetPreSignedUrlAsyncCore(key, expiry, ct); }
+
+    public Task<string> PutDocumentArchiveObjectAsync(string key, Stream content, string? contentType = null, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return PutObjectAsyncCore(key, content, contentType, ct); }
+    public Task<Stream> GetDocumentArchiveObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return GetObjectAsyncCore(key, ct); }
+    public Task DeleteDocumentArchiveObjectAsync(string key, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return DeleteObjectAsyncCore(key, ct); }
+    public Task<string> GetDocumentArchiveReadUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+    { DocumentArchiveStorageKeys.RequireArchiveKey(key); return GetPreSignedUrlAsyncCore(key, expiry, ct); }
+
+
+    private async Task<string> PutObjectAsyncCore(
         string key,
         Stream content,
         string? contentType = null,
@@ -82,7 +102,7 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         return fullPath;
     }
 
-    public Task<Stream> GetObjectAsync(string key, CancellationToken ct = default)
+    private Task<Stream> GetObjectAsyncCore(string key, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -97,6 +117,7 @@ public sealed class LocalObjectStorageService : IObjectStorageService
 
     public Task<ObjectMetadata?> HeadObjectAsync(string key, CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(key);
         ct.ThrowIfCancellationRequested();
 
         var fullPath = ResolvePath(key);
@@ -122,6 +143,7 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         string? continuationToken = null,
         CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(prefix);
         ct.ThrowIfCancellationRequested();
 
         prefix ??= string.Empty;
@@ -138,6 +160,7 @@ public sealed class LocalObjectStorageService : IObjectStorageService
             .Where(filePath => !HasReparsePointInPath(filePath))
             .Select(filePath => Path.GetRelativePath(_rootPath, filePath).Replace('\\', '/'))
             .Where(relative => relative.StartsWith(prefix, StringComparison.Ordinal))
+            .Where(relative => !DocumentArchiveStorageKeys.IsProtected(relative))
             .OrderBy(relative => relative, StringComparer.Ordinal)
             .ToList();
 
@@ -160,7 +183,7 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         return Task.FromResult(new ListObjectsResult(items, nextContinuationToken));
     }
 
-    public Task DeleteObjectAsync(string key, CancellationToken ct = default)
+    private Task DeleteObjectAsyncCore(string key, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -178,7 +201,9 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         ArgumentNullException.ThrowIfNull(keys);
         ct.ThrowIfCancellationRequested();
 
-        foreach (var key in keys)
+        var keysList = keys.ToArray();
+        foreach (var key in keysList) DocumentArchiveStorageKeys.RequireGenericKey(key);
+        foreach (var key in keysList)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -202,6 +227,8 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         string destinationKey,
         CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(sourceKey);
+        DocumentArchiveStorageKeys.RequireGenericKey(destinationKey);
         ct.ThrowIfCancellationRequested();
 
         var sourcePath = ResolvePath(sourceKey);
@@ -218,7 +245,7 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         return Task.CompletedTask;
     }
 
-    public Task<string> GetPreSignedUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+    private Task<string> GetPreSignedUrlAsyncCore(string key, TimeSpan expiry, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -237,6 +264,7 @@ public sealed class LocalObjectStorageService : IObjectStorageService
         string publicBaseUrl,
         CancellationToken ct = default)
     {
+        DocumentArchiveStorageKeys.RequireGenericKey(key);
         ct.ThrowIfCancellationRequested();
 
         // Con el proveedor Local la "URL firmada" es el proxy del backend

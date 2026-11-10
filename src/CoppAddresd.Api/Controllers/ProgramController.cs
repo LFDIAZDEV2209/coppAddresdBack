@@ -2062,6 +2062,10 @@ public sealed class ProgramController(
             return null;
         }
 
+        // El archivo clínico no es contenido multimedia del programa. Nunca
+        // emitir capacidades de lectura de laboratorio desde una referencia media.
+        if (CoppAddresd.Api.Security.ArchivedDocumentAccess.IsArchiveKey(key)) return null;
+
         // Ya es una URL absoluta (precedente: media ya resueltos por el repo).
         if (
             key.StartsWith("http://", StringComparison.OrdinalIgnoreCase)

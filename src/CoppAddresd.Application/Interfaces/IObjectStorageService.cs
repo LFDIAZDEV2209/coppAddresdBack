@@ -80,4 +80,15 @@ public interface IObjectStorageService
         TimeSpan expiry,
         string publicBaseUrl,
         CancellationToken ct = default);
+    // Métodos exclusivos del archivo nuevo: el llamador de lectura debe
+    // autorizar paciente/clínica; la escritura/limpieza pertenece al handler.
+    // Proveedores anteriores fallan cerrados hasta implementarlos explícitamente.
+    Task<string> PutDocumentArchiveObjectAsync(string key, Stream content, string? contentType = null, CancellationToken ct = default)
+        => Task.FromException<string>(new UnauthorizedAccessException("Archivo documental no habilitado en este proveedor."));
+    Task<Stream> GetDocumentArchiveObjectAsync(string key, CancellationToken ct = default)
+        => Task.FromException<Stream>(new UnauthorizedAccessException("Archivo documental no habilitado en este proveedor."));
+    Task<string> GetDocumentArchiveReadUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+        => Task.FromException<string>(new UnauthorizedAccessException("Archivo documental no habilitado en este proveedor."));
+    Task DeleteDocumentArchiveObjectAsync(string key, CancellationToken ct = default)
+        => Task.FromException(new UnauthorizedAccessException("Archivo documental no habilitado en este proveedor."));
 }

@@ -49,8 +49,10 @@ public sealed class AssessmentProfileAnalysis(HttpClient http, AppDbContext db,
             r.ResultType == HealthTestResultType.subscale ? null : r.Severity?.ToString(), r.CompletedAt)).ToArray();
         if (sources.Select(s => s.EvidenceCode).Distinct(StringComparer.Ordinal).Count() != sources.Length)
             throw new AssessmentAnalysisUnavailableException();
+        // Una política nueva no puede reutilizar narraciones producidas con el
+        // alcance anterior, aunque las respuestas del cuestionario no cambien.
         var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-            "guidance-v2:" + JsonSerializer.Serialize(new { results, pending }, Json)))).ToLowerInvariant();
+            "guidance-v3-patient-education:" + JsonSerializer.Serialize(new { results, pending }, Json)))).ToLowerInvariant();
         var saved = await db.AssessmentProfileInsights.AsNoTracking()
             .SingleOrDefaultAsync(x => x.PatientId == patientId && x.SourceRevision == revision && x.Language == language, ct);
         if (saved is not null) return Read(saved);

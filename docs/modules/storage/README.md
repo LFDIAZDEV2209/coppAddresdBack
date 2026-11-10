@@ -118,3 +118,46 @@ dotnet test tests/CoppAddresd.UnitTests --filter "FullyQualifiedName~LocalObject
 Cobertura local: put (crear + sobrescribir + fallo a mitad de copia conservando la versión previa), get (contenido + key inexistente), head (existe + no existe), list (prefijo + token + sin seguimiento de reparse points), delete (individual + lote con claves ausentes), copy (sobrescritura de destino existente + origen inexistente), pre-signed URL (ruta absoluta), guardia de path traversal (keys maliciosas), rechazo de nombres de dispositivo reservados/ADS (Windows) y rechazo de operaciones a través de reparse points. Cada prueba usa un directorio temporal fresco descartado al finalizar.
 
 El provider S3 no tiene tests unitarios de red: se valida en integración real contra el bucket (los contratos de error —404 → `FileNotFoundException`/`null`— se mantienen idénticos al proveedor local).
+## Archivo documental de laboratorio (namespace nuevo)
+
+Los originales y sidecars nuevos viven en
+`documents/{patientId}/{documentId}/original.ext` y `extraction.json`. No son
+contenido multimedia del programa ni objetos de uso genérico. La protección se
+aplica en **ambos proveedores**, no solo en el controlador: las operaciones
+genéricas de lectura, escritura, HEAD, firma GET/PUT, copia y borrado rechazan
+ese namespace y sus alias normalizados (URL, barras, puntos y mayúsculas). Los
+listados genéricos omiten esos objetos; los lotes mixtos se rechazan antes de
+borrar nada. Las claves planas de documentos ERP y los demás namespaces
+conservan su contrato anterior.
+
+El handler de laboratorio utiliza exclusivamente
+`PutDocumentArchiveObjectAsync` y `DeleteDocumentArchiveObjectAsync` para
+persistencia y compensación. Las lecturas usan `GetDocumentArchiveObjectAsync`
+y `GetDocumentArchiveReadUrlAsync` **después** de autorizar el documento. Los
+métodos explícitos fallan cerrados por defecto en proveedores que todavía no
+los implementen. No deben usarse para firmar una clave recibida sin autorización.
+
+`StorageController` autoriza al paciente dueño por usuario JWT (`aud=app`) o al
+ERP con `Documents.View` y la clínica/organización activa correcta. Solo admite
+el original registrado y su sidecar exacto; un PUT genérico no puede reemplazar
+el archivo aunque posea una firma GET. La descarga ERP valida también la clave
+real para impedir que otra fila de metadata preste su clínica a un archivo
+ajeno. El resolutor multimedia del programa no firma archivos de laboratorio.
+Los firmadores genéricos de Community y el lector genérico del indexador de
+agentes comparten la misma prohibición del proveedor.
+
+Historia del paciente consume rutas aditivas, sin permisos ERP:
+
+- `GET /api/v1/me/documents?page=1&pageSize=20`: resuelve el paciente por
+  `ICurrentContext.UserId`, devuelve `items,total,page,pageSize,totalPages` y
+  limita `pageSize` a 1–100. No acepta un paciente elegido por el cliente.
+- `GET /api/v1/me/documents/{id}/download`: solo el documento del paciente
+  autenticado; devuelve `url,expiresInSeconds` (900 segundos). La URL abre el
+  original; la metadata no declara verificados los valores extraídos.
+
+Una URL autorizada sigue siendo una capacidad temporal compartible, igual que
+un presign GET de S3. Esta medida no revoca enlaces S3 ya emitidos antes de su
+caducidad ni afirma resolver la autorización de todos los namespaces legacy.
+Las pruebas de proveedor usan filesystem temporal/SDK simulado y las pruebas
+HTTP usan MVC real con identidad/repositorios sintéticos; no acceden a S3 ni a
+bases de datos reales.

@@ -148,3 +148,13 @@ docker exec coppAddresd-valkey redis-cli -a CoppAddresdValkey2026 --no-auth-warn
 
 Además: re-ejecutar `seed_professionals_demo.py` **recrea** los profesionales con
 ids nuevos, así que hay que correr `seed_professional_schedules.py` después.
+
+## 2026-11-10 — Archivo de laboratorio separado del storage genérico
+
+Los originales/sidecars nuevos usan `documents/{patientId}/{documentId}/...`;
+no reutilizar firmadores/lectores/copias genéricas para ellos. Local y S3
+rechazan ese namespace y sus alias normalizados; el handler usa métodos
+explícitos de archivo y las lecturas autorizan dueño/clínica antes de emitir una
+capacidad temporal. Proteger solo StorageController deja otros firmadores de
+metadata (programa/ERP/Community) como posibles vías alternativas. Las claves
+planas legacy conservan su contrato y requieren una auditoría independiente.

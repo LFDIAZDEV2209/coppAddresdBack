@@ -22,7 +22,9 @@ public class DocumentsController(
     IMediator mediator,
     ICurrentContext context,
     StorageSignatureService signatureService,
-    IObjectStorageService objectStorage) : ControllerBase
+    IObjectStorageService objectStorage,
+    IDocumentRepository documents,
+    IPatientRepository patients) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PaginatedDocumentsResult>> List(
@@ -95,11 +97,19 @@ public class DocumentsController(
         if (document is null || IsOutsideActiveClinic(document))
             return NotFound(new { message = "Documento no encontrado" });
 
+        // Una referencia de metadata distinta no puede prestar su clínica para
+        // firmar el archivo de laboratorio de otro paciente/equipo.
+        if (ArchivedDocumentAccess.IsArchiveKey(document.StorageKey)
+            && await new ArchivedDocumentAccess(documents, patients, context)
+                .ResolveReadableAsync(document.StorageKey, User, false, ct) is null)
+            return NotFound(new { message = "Documento no encontrado" });
+
         var expiresInSeconds = 900;
         if (objectStorage.IsCloudStorage)
         {
-            var cloudUrl = await objectStorage.GetPreSignedUrlAsync(
-                document.StorageKey, TimeSpan.FromSeconds(expiresInSeconds), ct);
+            var cloudUrl = ArchivedDocumentAccess.IsArchiveKey(document.StorageKey)
+                ? await objectStorage.GetDocumentArchiveReadUrlAsync(document.StorageKey, TimeSpan.FromSeconds(expiresInSeconds), ct)
+                : await objectStorage.GetPreSignedUrlAsync(document.StorageKey, TimeSpan.FromSeconds(expiresInSeconds), ct);
             return Ok(new { url = cloudUrl, expiresInSeconds });
         }
 

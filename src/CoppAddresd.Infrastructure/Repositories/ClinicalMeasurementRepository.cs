@@ -183,6 +183,7 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext)
                 UnitSymbol = m.Unit!.Symbol,
                 m.ObservedAt,
                 m.RecordedAt,
+                m.Source,
             })
             .GroupBy(x => x.Code)
             .Select(g =>
@@ -192,7 +193,7 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext)
 
         return rows.ToDictionary(
             r => r.Code,
-            r => new LabExamMetricSnapshot(r.Code, r.Value, r.UnitSymbol, r.ObservedAt),
+            r => new LabExamMetricSnapshot(r.Code, r.Value, r.UnitSymbol, r.ObservedAt, r.Source),
             StringComparer.OrdinalIgnoreCase
         );
     }

@@ -12,9 +12,9 @@ public record UploadLabExamCommand(
     string FileName,
     string ContentType,
     long FileLength,
-    Guid PatientId,
+    Guid UserId,
     string? ThreadId = null,
-    /// <summary>Código de idioma del paciente (<c>"es"</c> | <c>"en"</c>); null ⇒ el ai-service usa <c>"es"</c>.</summary>
+    /// <summary>Código de idioma del resultado pendiente (<c>"es"</c> | <c>"en"</c>); null ⇒ español.</summary>
     string? Language = null) : IRequest<LabExamUploadResult>;
 
 /// <summary>
@@ -58,8 +58,8 @@ public class UploadLabExamCommandValidator : AbstractValidator<UploadLabExamComm
             .Must(ct => !string.IsNullOrWhiteSpace(ct) && AllowedContentTypes.Contains(ct.Split(';')[0].Trim()))
             .WithMessage("Unsupported file type. Please upload a JPEG, PNG, or PDF.");
 
-        RuleFor(x => x.PatientId)
+        RuleFor(x => x.UserId)
             .NotEmpty()
-            .WithMessage("Patient ID is required.");
+            .WithMessage("User ID is required.");
     }
 }

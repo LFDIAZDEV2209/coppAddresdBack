@@ -1,4 +1,5 @@
 using CoppAddresd.Api.Security;
+using CoppAddresd.Api.Context;
 using CoppAddresd.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -17,8 +18,12 @@ namespace CoppAddresd.Api.Controllers;
 [Authorize]
 public class StorageController(
     IObjectStorageService objectStorage,
-    StorageSignatureService signatureService) : ControllerBase
+    StorageSignatureService signatureService,
+    IDocumentRepository documents,
+    IPatientRepository patients,
+    ICurrentContext context) : ControllerBase
 {
+    private readonly ArchivedDocumentAccess archiveAccess = new(documents, patients, context);
     /// <summary>Almacena el body crudo bajo la clave indicada (semántica PUT de S3).
     /// Acepta el header Bearer (requests de la app/gateway) o una URL firmada vía <c>exp</c>+<c>sig</c>.</summary>
     [HttpPut("{**key}")]
@@ -27,6 +32,10 @@ public class StorageController(
     {
         if (string.IsNullOrWhiteSpace(key))
             return BadRequest(new { message = "La clave del objeto es requerida." });
+
+        // El archivo nuevo es inmutable desde este proxy, incluso con firma GET.
+        // Su escritura pertenece exclusivamente al flujo servidor de laboratorio.
+        if (ArchivedDocumentAccess.IsArchiveKey(key)) return Forbid();
 
         var exp = Request.Query["exp"].ToString();
         var sig = Request.Query["sig"].ToString();
@@ -60,10 +69,17 @@ public class StorageController(
         if (expiresInSeconds is <= 0 or > 86400)
             return BadRequest(new { message = "La expiración debe estar entre 1 y 86400 segundos." });
 
+        if (ArchivedDocumentAccess.IsArchiveKey(key))
+        {
+            if (await archiveAccess.ResolveReadableAsync(key, User, false, ct) is null) return NotFound();
+            Response.Headers.CacheControl = "private, no-store";
+        }
+
         if (objectStorage.IsCloudStorage)
         {
-            var cloudUrl = await objectStorage.GetPreSignedUrlAsync(
-                key, TimeSpan.FromSeconds(expiresInSeconds), ct);
+            var cloudUrl = ArchivedDocumentAccess.IsArchiveKey(key)
+                ? await objectStorage.GetDocumentArchiveReadUrlAsync(key, TimeSpan.FromSeconds(expiresInSeconds), ct)
+                : await objectStorage.GetPreSignedUrlAsync(key, TimeSpan.FromSeconds(expiresInSeconds), ct);
             return Ok(new { url = cloudUrl, expiresInSeconds });
         }
 
@@ -91,20 +107,40 @@ public class StorageController(
         var exp = Request.Query["exp"].ToString();
         var sig = Request.Query["sig"].ToString();
 
-        var isSigned = signatureService.Validate(key, sig, exp, DateTimeOffset.UtcNow);
+        var isSigned = ValidReadSignature(key, sig, exp);
         var hasBearer = User.Identity?.IsAuthenticated == true;
 
         if (!isSigned && !hasBearer)
             return Unauthorized(new { message = "Acceso denegado: se requiere una URL firmada o sesión." });
 
+        string contentType = "application/octet-stream";
+        if (ArchivedDocumentAccess.IsArchiveKey(key))
+        {
+            var document = await archiveAccess.ResolveReadableAsync(key, User, isSigned, ct);
+            if (document is null) return NotFound();
+            contentType = key.EndsWith("/extraction.json", StringComparison.Ordinal)
+                ? "application/json" : document.ContentType is "application/pdf" or "image/jpeg" or "image/png" or "image/webp"
+                    ? document.ContentType : "application/octet-stream";
+            Response.Headers.CacheControl = "private, no-store";
+            Response.Headers.XContentTypeOptions = "nosniff";
+        }
+
         try
         {
-            var stream = await objectStorage.GetObjectAsync(key, ct);
-            return File(stream, "application/octet-stream", enableRangeProcessing: true);
+            var stream = ArchivedDocumentAccess.IsArchiveKey(key)
+                ? await objectStorage.GetDocumentArchiveObjectAsync(key, ct)
+                : await objectStorage.GetObjectAsync(key, ct);
+            return File(stream, contentType, enableRangeProcessing: true);
         }
         catch (FileNotFoundException)
         {
             return NotFound(new { message = "El objeto no existe." });
         }
+    }
+
+    private bool ValidReadSignature(string key, string? signature, string? expiry)
+    {
+        try { return signatureService.Validate(key, signature, expiry, DateTimeOffset.UtcNow); }
+        catch (ArgumentOutOfRangeException) { return false; }
     }
 }
