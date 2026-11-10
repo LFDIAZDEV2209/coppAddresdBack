@@ -47,10 +47,12 @@ public sealed class ClubSeederTests(CommunityTestDatabase dbFixture) : IDisposab
         var db = await CreateSeededDbAsync();
         await using var _ = db;
 
-        // 5 clubes de sistema (antiguos PostDestination) + 9 demo.
-        Assert.Equal(14, await db.Clubs.CountAsync(CancellationToken.None));
-        Assert.Equal(5, await db.Clubs.CountAsync(c => c.IsSystem, CancellationToken.None));
-        Assert.Equal(9, await db.Clubs.CountAsync(c => !c.IsSystem, CancellationToken.None));
+        // 5 oficiales + 5 de los antiguos PostDestination + 9 demo. La colección
+        // comparte BD con clubes de usuario; solo contamos los creados por el sistema.
+        var seededClubs = db.Clubs.Where(c => c.CreatedByProfile!.IsSystem);
+        Assert.Equal(19, await seededClubs.CountAsync(CancellationToken.None));
+        Assert.Equal(10, await seededClubs.CountAsync(c => c.IsSystem, CancellationToken.None));
+        Assert.Equal(9, await seededClubs.CountAsync(c => !c.IsSystem, CancellationToken.None));
 
         // Catálogo de categorías completo.
         Assert.Equal(9, await db.ClubCategories.CountAsync(CancellationToken.None));
@@ -77,7 +79,7 @@ public sealed class ClubSeederTests(CommunityTestDatabase dbFixture) : IDisposab
         await ClubSeeder.SeedAsync(db, null, CancellationToken.None);
         await using var _ = db;
 
-        Assert.Equal(14, await db.Clubs.CountAsync(CancellationToken.None));
+        Assert.Equal(19, await db.Clubs.CountAsync(c => c.CreatedByProfile!.IsSystem, CancellationToken.None));
         Assert.Equal(9, await db.ClubCategories.CountAsync(CancellationToken.None));
     }
 

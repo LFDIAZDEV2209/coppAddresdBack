@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using CoppAddresd.Application.Services.Localization;
+using CoppAddresd.Domain.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Options;
@@ -26,8 +27,18 @@ public sealed class PatientContentLocalizationFilter(PatientContentLocalization 
                     var node = JsonSerializer.SerializeToNode(result.Value, result.Value.GetType(), json.Value.JsonSerializerOptions);
                     if (node is not null)
                     {
-                        result.Value = await localization.TranslateAsync(node, scope.Profile, language, context.HttpContext.RequestAborted);
-                        result.DeclaredType = typeof(JsonNode);
+                        try
+                        {
+                            result.Value = await localization.TranslateAsync(node, scope.Profile, language, context.HttpContext.RequestAborted);
+                            result.DeclaredType = typeof(JsonNode);
+                        }
+                        catch (AiConsentException ex) when (ex.Code is "CONSENT_REQUIRED"
+                            or "CONSENT_DOCUMENT_UNAVAILABLE" or "CONSENT_SUBJECT_REQUIRED")
+                        {
+                            // La lectura básica sigue disponible sin enviar texto a un proveedor.
+                            // Se conserva el DTO original y se declara su idioma de autoría.
+                            language = "es";
+                        }
                     }
                 }
                 context.HttpContext.RequestAborted.ThrowIfCancellationRequested();

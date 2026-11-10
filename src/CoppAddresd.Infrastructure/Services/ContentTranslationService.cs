@@ -15,7 +15,8 @@ public sealed class ContentTranslationService(HttpClient client, IOptions<AiServ
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public async Task<IReadOnlyDictionary<string, string>> TranslateAsync(
-        IReadOnlyCollection<string> sourceTexts, string language, CancellationToken ct)
+        IReadOnlyCollection<string> sourceTexts, string language, CancellationToken ct,
+        ContentTranslationSubject? subject = null)
     {
         ct.ThrowIfCancellationRequested();
         if (sourceTexts is null) throw new ContentTranslationUnavailableException();
@@ -27,20 +28,23 @@ public sealed class ContentTranslationService(HttpClient client, IOptions<AiServ
         foreach (var source in sources)
         {
             if (batch.Count == 64 || characters + source.Length > 32000)
-            { await SendAsync(batch, result, ct); batch.Clear(); characters = 0; }
+            { await SendAsync(batch, result, ct, subject); batch.Clear(); characters = 0; }
             batch.Add(new(batch.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), source));
             characters += source.Length;
         }
-        if (batch.Count > 0) await SendAsync(batch, result, ct);
+        if (batch.Count > 0) await SendAsync(batch, result, ct, subject);
         return result;
     }
 
-    private async Task SendAsync(List<Item> batch, Dictionary<string, string> result, CancellationToken ct)
+    private async Task SendAsync(List<Item> batch, Dictionary<string, string> result, CancellationToken ct,
+        ContentTranslationSubject? subject)
     {
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Post,
                 new Uri(new Uri(settings.Value.BaseUrl), "/internal/content/translate"));
+            if (subject is not null)
+                request.Options.Set(AiConsentSubject.Key, new(subject.Scope, UserId: subject.UserId, RequireRecipientConsent: true));
             request.Headers.Add("X-Internal-Key", settings.Value.InternalApiKey);
             request.Content = JsonContent.Create(new Request("en", batch.ToArray()), options: Json);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);

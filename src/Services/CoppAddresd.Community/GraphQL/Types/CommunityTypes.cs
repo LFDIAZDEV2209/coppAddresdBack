@@ -2,6 +2,9 @@ using CoppAddresd.Community.Entities;
 
 namespace CoppAddresd.Community.GraphQL.Types;
 
+/// <summary>Lista privada mínima; no expone navegaciones del perfil bloqueado.</summary>
+public sealed record BlockedProfile(Guid ProfileId, string DisplayName, string? AvatarUrl, DateTime CreatedAt);
+
 /// <summary>Alcance del feed de publicaciones.</summary>
 public enum FeedScope
 {

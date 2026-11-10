@@ -1,5 +1,6 @@
 using CoppAddresd.Community.Entities;
 using CoppAddresd.Community.GraphQL.Types;
+using System.Globalization;
 
 namespace CoppAddresd.Community.UnitTests;
 
@@ -219,13 +220,22 @@ public sealed class DashboardAggregatorTests
     [Fact]
     public void Compute_ActivitySeries_Has30Entries()
     {
-        var result = DashboardAggregator.Compute([], [], [], [], [], [], BaseNow);
-
-        Assert.Equal(30, result.ActivitySeries.Count);
-        // Todos los días deben estar presentes con etiqueta "MMM d" (ej. "sep 4").
-        foreach (var day in result.ActivitySeries)
+        var previousCulture = CultureInfo.CurrentCulture;
+        try
         {
-            Assert.Matches(@"^[A-Za-z]{3} \d{1,2}$", day.Dia);
+            // La expectativa fija abreviaturas inglesas; no depende de la cultura del host.
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
+            var result = DashboardAggregator.Compute([], [], [], [], [], [], BaseNow);
+
+            Assert.Equal(30, result.ActivitySeries.Count);
+            foreach (var day in result.ActivitySeries)
+            {
+                Assert.Matches(@"^[A-Za-z]{3} \d{1,2}$", day.Dia);
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
         }
     }
 

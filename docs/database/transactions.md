@@ -14,6 +14,15 @@ Reglas del proyecto (skill `transactions`). Toda operación con transacción exp
 
 ## Reglas permanentes
 
+`LegalConsentService` uses a short explicit transaction within Npgsql's execution
+strategy for acceptance/withdrawal. A per-user advisory transaction lock serializes
+idempotency and scope withdrawal; acceptance also takes a shared legal-document
+row lock against publication. It validates the current published UUID and approved
+disclosure, writes the receipt and trigger audit atomically, and commits. No HTTP
+or storage I/O occurs inside the transaction. Cancellation/failure rolls back;
+retries reload tracking and the idempotency key returns the original receipt.
+The explicit transaction also installs the JWT audit actor for one-row writes.
+
 - Una sola escritura atómica → **no** necesita transacción explícita.
 - 2+ escrituras todo-o-nada → `BeginTransactionAsync` + `CommitAsync`, `await using`, rollback en catch.
 - **Nunca** dentro de la transacción: HTTP externo, email, S3, SQS, I/O de usuario (locks retenidos).
@@ -93,3 +102,15 @@ del agregado con lock del paciente; reutiliza el ID de reserva al reejecutar.
 El commit de agregado precede la confirmación ready: tras un corte, el retry
 relee el plan existente, no agrega otra versión ni otro evento. Cancelación
 deja la lease recuperable; cinco intentos agotados quedan failed y visibles.
+
+## Community: member blocking
+
+`CommunityBlockPolicy` serializes directed block/unblock, follow and direct-message
+writes with a short Read Committed transaction and one PostgreSQL advisory lock
+for the sorted profile pair. After acquiring the lock it rechecks current block
+rows; blocking removes both follow directions atomically but preserves moderation
+and message history. Duplicate block/unblock converges. Cancellation/failure rolls
+back through asynchronous disposal. Events publish only after commit; no external
+HTTP or event publication runs while the database lock is held. The Community
+connection does not enable EF retry execution strategies. No load testing is
+claimed; functional tests use two concurrent synthetic requests.

@@ -9,6 +9,7 @@ using CoppAddresd.Community.Messages;
 using CoppAddresd.Community.Metrics;
 using CoppAddresd.Community.Persistence;
 using CoppAddresd.Community.Scheduling;
+using CoppAddresd.Community.Security;
 using CoppAddresd.Community.Seeders;
 using CoppAddresd.Community.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -175,6 +176,20 @@ app.UseCors("CommunityCors");
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseWebSockets();
+
+// Visibilidad personal solo en solicitudes GraphQL autenticadas de la app.
+// El visor vive en el HttpContext: también lo reciben los DbContext de resolvers anidados.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/v1/community")
+        && context.User.Identity?.IsAuthenticated == true)
+    {
+        var db = context.RequestServices.GetRequiredService<CommunityDbContext>();
+        var http = context.RequestServices.GetRequiredService<IHttpContextAccessor>();
+        await CommunityBlockPolicy.InitializeRequestAsync(db, http, context.RequestAborted);
+    }
+    await next(context);
+});
 
 app.MapGraphQL("/api/v1/community/graphql").WithOptions(o => o.Tool.Enable = false);
 app.MapHealthChecks("/health");

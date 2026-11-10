@@ -108,10 +108,12 @@ public static class ApplicationServiceExtensions
         services
             .AddHttpClient<IAiServiceClient, AiServiceClient>()
             .AddResiliencePolicy()
+            .AddHttpMessageHandler<AiConsentHttpHandler>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services
             .AddHttpClient<IFoodAiClient, FoodAiClient>()
+            .AddHttpMessageHandler<AiConsentHttpHandler>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
@@ -129,6 +131,7 @@ public static class ApplicationServiceExtensions
             client.BaseAddress = new Uri(settings.BaseUrl);
             client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
         }).AddPolicyHandler((sp, _) => sp.GetRequiredService<ProgramNarrativeResilience>().Policy)
+            .AddHttpMessageHandler<AiConsentHttpHandler>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.AddScoped<IImageStorage, LocalImageStorage>();

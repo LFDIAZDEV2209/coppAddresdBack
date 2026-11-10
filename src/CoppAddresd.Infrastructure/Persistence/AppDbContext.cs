@@ -78,6 +78,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<InventoryDailyMetric> InventoryDailyMetrics => Set<InventoryDailyMetric>();
     public DbSet<LegalDocument> LegalDocuments => Set<LegalDocument>();
     public DbSet<LegalDocumentVersion> LegalDocumentVersions => Set<LegalDocumentVersion>();
+    public DbSet<LegalDocumentAcceptance> LegalDocumentAcceptances => Set<LegalDocumentAcceptance>();
 
     // Wellness — Centro de Bienestar
     public DbSet<NutritionPlan> NutritionPlans => Set<NutritionPlan>();

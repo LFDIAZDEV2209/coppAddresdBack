@@ -14,7 +14,8 @@ public sealed class CommunityDbContextFactory : IDesignTimeDbContextFactory<Comm
     {
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.Development.json", optional: false)
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddEnvironmentVariables()
             .Build();
 
         var options = new DbContextOptionsBuilder<CommunityDbContext>()

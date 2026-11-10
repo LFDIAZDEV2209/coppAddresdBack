@@ -3952,6 +3952,70 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("legal_documents", "erp");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.LegalDocumentAcceptance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("AcceptedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<string>("DisclosureId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("disclosure_id");
+
+                    b.Property<string>("DisclosureSnapshot")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("disclosure_snapshot");
+
+                    b.Property<Guid>("IdempotencyKey")
+                        .HasColumnType("uuid")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<Guid>("LegalDocumentVersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("legal_document_version_id");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasMaxLength(2)
+                        .HasColumnType("character varying(2)")
+                        .HasColumnName("locale");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("scope");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTime?>("WithdrawnAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("withdrawn_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LegalDocumentVersionId");
+
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("uq_legal_acceptance_user_request");
+
+                    b.HasIndex("UserId", "Scope", "LegalDocumentVersionId")
+                        .HasDatabaseName("ix_legal_acceptance_user_scope_version");
+
+                    b.ToTable("legal_document_acceptances", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.LegalDocumentVersion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -10377,6 +10441,15 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasConstraintName("fk_knowledge_bases_agent_type");
 
                     b.Navigation("AgentType");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.LegalDocumentAcceptance", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.LegalDocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("LegalDocumentVersionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.LegalDocumentVersion", b =>

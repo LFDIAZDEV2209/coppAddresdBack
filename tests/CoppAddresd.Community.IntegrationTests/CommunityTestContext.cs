@@ -22,7 +22,8 @@ public sealed class CommunityTestContext
         var options = new DbContextOptionsBuilder<CommunityDbContext>()
             .UseNpgsql(_connectionString, n =>
             {
-                n.EnableRetryOnFailure(3, TimeSpan.FromSeconds(5), null);
+                // Program.cs usa transacciones explícitas sin estrategia de reintentos.
+                // El fixture replica esa configuración también para las escrituras por par.
                 n.MigrationsHistoryTable("__EFMigrationsHistory", "community");
             })
             .Options;

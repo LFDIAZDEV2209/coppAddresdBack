@@ -1367,6 +1367,43 @@ namespace CoppAddresd.Community.Migrations
                     b.ToTable("profiles", "community");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ProfileBlock", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id")
+                        .HasDefaultValueSql("gen_random_uuid()");
+
+                    b.Property<Guid>("BlockedProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("blocked_profile_id");
+
+                    b.Property<Guid>("BlockerProfileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("blocker_profile_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BlockedProfileId")
+                        .HasDatabaseName("ix_profile_blocks_blocked");
+
+                    b.HasIndex("BlockerProfileId", "BlockedProfileId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_profile_blocks_blocker_blocked");
+
+                    b.ToTable("profile_blocks", "community", t =>
+                        {
+                            t.HasCheckConstraint("ck_profile_blocks_not_self", "blocker_profile_id <> blocked_profile_id");
+                        });
+                });
+
             modelBuilder.Entity("CoppAddresd.Community.Entities.Recognition", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1890,6 +1927,21 @@ namespace CoppAddresd.Community.Migrations
                     b.Navigation("Post");
 
                     b.Navigation("ReportedBy");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Community.Entities.ProfileBlock", b =>
+                {
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", null)
+                        .WithMany()
+                        .HasForeignKey("BlockedProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("CoppAddresd.Community.Entities.Profile", null)
+                        .WithMany()
+                        .HasForeignKey("BlockerProfileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Community.Entities.Recognition", b =>

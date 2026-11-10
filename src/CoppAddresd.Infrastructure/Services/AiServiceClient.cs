@@ -106,6 +106,7 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
+        httpRequest.Options.Set(AiConsentSubject.Key, new("chat", UserId: Guid.TryParse(request.UserId, out var consentUserId) ? consentUserId : null));
         AddInternalKeyHeader(httpRequest);
 
         // JsonOpts (snake_case + case-insensitive + WhenWritingNull): el
@@ -149,6 +150,7 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
+        httpRequest.Options.Set(AiConsentSubject.Key, new("patient-ai", PatientId: context.SubjectPatientId));
         AddInternalKeyHeader(httpRequest);
 
         using var response = await _httpClient.SendAsync(httpRequest, ct);
@@ -212,6 +214,7 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
+        httpRequest.Options.Set(AiConsentSubject.Key, new("chat", UserId: Guid.TryParse(request.UserId, out var consentUserId) ? consentUserId : null));
         AddInternalKeyHeader(httpRequest);
 
         using var response = await _httpClient.SendAsync(
@@ -325,6 +328,7 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
+        httpRequest.Options.Set(AiConsentSubject.Key, new("chat", UserId: Guid.TryParse(userId, out var consentUserId) ? consentUserId : null));
         AddInternalKeyHeader(httpRequest);
 
         using var response = await _httpClient.SendAsync(httpRequest, ct);
@@ -393,6 +397,7 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
+        httpRequest.Options.Set(AiConsentSubject.Key, new("voice", UserId: Guid.TryParse(request.UserId, out var consentUserId) ? consentUserId : null));
         AddInternalKeyHeader(httpRequest);
 
         using var response = await _httpClient.SendAsync(httpRequest, ct);
@@ -504,6 +509,7 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = content,
         };
+        httpRequest.Options.Set(AiConsentSubject.Key, new("lab", PatientId: patientId));
         AddInternalKeyHeader(httpRequest);
 
         using var response = await _httpClient.SendAsync(httpRequest, ct);
@@ -555,6 +561,7 @@ public class AiServiceClient : IAiServiceClient
             {
                 Content = JsonContent.Create(payload, options: JsonOpts),
             };
+            httpRequest.Options.Set(AiConsentSubject.Key, new("lab", PatientId: patientId));
             AddInternalKeyHeader(httpRequest);
 
             using var response = await _httpClient.SendAsync(httpRequest, linkedCts.Token);

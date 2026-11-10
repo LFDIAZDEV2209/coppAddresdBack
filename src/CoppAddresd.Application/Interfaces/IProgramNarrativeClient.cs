@@ -13,7 +13,11 @@ public sealed record ProgramNarrativeRequest(
     [property: JsonPropertyName("profile_snapshot")] JsonElement ProfileSnapshot,
     [property: JsonPropertyName("proposal")] JsonElement Proposal,
     [property: JsonPropertyName("source_refs")] IReadOnlyList<string> SourceRefs,
-    [property: JsonPropertyName("language")] string Language = "es");
+    [property: JsonPropertyName("language")] string Language = "es")
+{
+    [JsonIgnore]
+    public Guid? SubjectPatientId { get; init; }
+}
 
 /// <summary>Resultado normalizado para persistencia; el contrato HTTP se adapta en Infrastructure.</summary>
 public sealed record ProgramNarrativeResponse(

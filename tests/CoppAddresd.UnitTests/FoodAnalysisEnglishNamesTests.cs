@@ -31,7 +31,7 @@ public sealed class FoodAnalysisEnglishNamesTests
         catalog.GetEnglishNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<string, string> { ["apple"] = "apple" });
         var translator = Substitute.For<IContentTranslationService>();
-        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>())
+        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(), Arg.Any<ContentTranslationSubject>())
             .Returns(new Dictionary<string, string> { ["Receta familiar de la abuela"] = "Grandmother's family recipe" });
         var controller = Controller(analysis, owner, catalog, translator);
         using var cancellation = new CancellationTokenSource();
@@ -46,7 +46,7 @@ public sealed class FoodAnalysisEnglishNamesTests
         Assert.Null(analysis.Items.ElementAt(1).NameEn);
         Assert.Null(analysis.Items.ElementAt(2).NameEn);
         Assert.Equal(270, analysis.Items.First().Calories);
-        await translator.Received(1).TranslateAsync(Arg.Is<IReadOnlyCollection<string>>(names => names.SequenceEqual(new[] { "Receta familiar de la abuela" })), "en", cancellation.Token);
+        await translator.Received(1).TranslateAsync(Arg.Is<IReadOnlyCollection<string>>(names => names.SequenceEqual(new[] { "Receta familiar de la abuela" })), "en", cancellation.Token, new ContentTranslationSubject("food", owner));
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class FoodAnalysisEnglishNamesTests
         var owner = Guid.NewGuid();
         var analysis = new FoodAnalysis { AnalysisId = Guid.NewGuid(), UserId = owner, Items = [new() { Name = "Receta familiar" }] };
         var translator = Substitute.For<IContentTranslationService>();
-        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>())
+        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(), Arg.Any<ContentTranslationSubject>())
             .Returns(new Dictionary<string, string>());
         var catalog = Substitute.For<IFoodNameCatalog>();
         catalog.GetEnglishNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
@@ -87,12 +87,13 @@ public sealed class FoodAnalysisEnglishNamesTests
     [Fact]
     public async Task FreshAnalysis_EnglishRequest_LocalizesOnlyTheMissingDisplayName()
     {
+        var owner = Guid.NewGuid();
         var food = new DetectedFoodDto("Receta familiar", .9, new(0, 0, 10, 10));
         var original = new AnalyzeFoodImageResult(Guid.NewGuid().ToString(), "completed", "qa", "qa", "qa", 1, [food]);
         var mediator = Substitute.For<IMediator>();
         mediator.Send(Arg.Any<AnalyzeFoodImageCommand>(), Arg.Any<CancellationToken>()).Returns(original);
         var translator = Substitute.For<IContentTranslationService>();
-        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>())
+        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(), Arg.Any<ContentTranslationSubject>())
             .Returns(new Dictionary<string, string> { ["Receta familiar"] = "Family recipe" });
         var catalog = Substitute.For<IFoodNameCatalog>();
         catalog.GetEnglishNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
@@ -100,7 +101,7 @@ public sealed class FoodAnalysisEnglishNamesTests
         var controller = new FoodAiController(Substitute.For<IFoodAiClient>(), Substitute.For<IFoodAnalysisRepository>(), mediator,
             NullLogger<FoodAiController>.Instance, translator, catalog)
         { ControllerContext = new() { HttpContext = new DefaultHttpContext
-            { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("aud", "app")], "test")) } } };
+            { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("aud", "app"), new Claim(ClaimTypes.NameIdentifier, owner.ToString())], "test")) } } };
         var image = new FormFile(new MemoryStream([1]), 0, 1, "image", "example.jpg") { Headers = new HeaderDictionary(), ContentType = "image/jpeg" };
         var response = await controller.Analyze(image, CancellationToken.None, "en");
         var payload = JsonSerializer.SerializeToElement(Assert.IsType<OkObjectResult>(response.Result).Value);
@@ -140,7 +141,7 @@ public sealed class FoodAnalysisEnglishNamesTests
         var owner = Guid.NewGuid();
         var analysis = new FoodAnalysis { AnalysisId = Guid.NewGuid(), UserId = owner, Items = [new() { Name = "Receta familiar", PortionSize = "medium", EstimatedGrams = 90, Calories = 120 }] };
         var translator = Substitute.For<IContentTranslationService>();
-        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>())
+        translator.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(), Arg.Any<ContentTranslationSubject>())
             .Returns(new Dictionary<string, string> { ["Receta familiar"] = "Family recipe" });
         var catalog = Substitute.For<IFoodNameCatalog>();
         catalog.GetEnglishNamesAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>()).Returns(new Dictionary<string, string>());
@@ -155,7 +156,7 @@ public sealed class FoodAnalysisEnglishNamesTests
         Assert.Equal("Receta familiar", food.GetProperty("name").GetString());
         Assert.Equal(90, food.GetProperty("portion").GetProperty("estimatedGrams").GetInt32());
         Assert.Null(Assert.Single(analysis.Items).NameEn);
-        if (translates) await translator.Received(1).TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>());
+        if (translates) await translator.Received(1).TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(), new ContentTranslationSubject("food", owner));
         else await translator.DidNotReceiveWithAnyArgs().TranslateAsync(default!, default!, default);
     }
 

@@ -197,7 +197,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             new("nutrition-engine-v1", profile.Fields.Where(x => x.Key != "birthDate").ToDictionary(x => x.Key,
                 x => new DraftMeasuredField(x.Value.Value, x.Value.Unit, x.Value.Source, x.Value.SourceCode, x.Value.ObservedAt)),
                 engine.AllFlags(p, targets, days).Select((a, i) => new DraftAppliedRule($"engine-{i + 1}", a.S, a.M, a.Tec)).ToArray(), missing));
-        var draft = await drafts.GenerateAsync(request, ct);
+        var draft = await drafts.GenerateAsync(request with { SubjectPatientId = patientId }, ct);
         var accepted = TryApplyDraft(draft, request, days, targets, engine);
         var snapshot = JsonSerializer.SerializeToNode(p, Json)!.AsObject();
         snapshot["measuredFields"] = JsonSerializer.SerializeToNode(profile.Fields, Json);

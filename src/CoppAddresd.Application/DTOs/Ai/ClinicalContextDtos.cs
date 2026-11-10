@@ -13,7 +13,11 @@ public record ClinicalContextDto(
     IReadOnlyList<string> Diagnoses,
     IReadOnlyList<string> Medications,
     ClinicalLifestyleDto Lifestyle,
-    IReadOnlyList<ClinicalAssessmentDto>? Assessments = null);
+    IReadOnlyList<ClinicalAssessmentDto>? Assessments = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid? SubjectPatientId { get; init; }
+}
 
 /// <summary>Resultados persistidos de baterías; sin identidad ni respuestas abiertas.</summary>
 public sealed record ClinicalAssessmentDto(string Code, string? Label, decimal? Value,

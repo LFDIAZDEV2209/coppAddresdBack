@@ -108,7 +108,8 @@ public sealed class SendTelemedicineNotificationCommandHandlerTests
         var translations = Substitute.For<IContentTranslationService>(); var f = Build(translations);
         var english = Token("english-token"); english.Language = "en";
         f.Tokens.GetByUserIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(new[] { Token("spanish-token"), english });
-        translations.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(
+        translations.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(),
+            Arg.Is<ContentTranslationSubject>(subject => subject.UserId == english.UserId && subject.Scope == "patient-ai")).Returns(
             valid ? new Dictionary<string,string> { ["Recordatorio de tu cita"] = "Appointment reminder", ["Tu consulta es mañana a las 10:00."] = "Your consultation is tomorrow at 10:00." } : new Dictionary<string,string>());
         var result = await f.Handler.Handle(Command(dedupeKey: "test-language"), CancellationToken.None);
         Assert.Equal(valid ? "sent" : "failed", result.Push);

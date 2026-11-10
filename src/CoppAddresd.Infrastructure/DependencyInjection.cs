@@ -48,8 +48,8 @@ public static class DependencyInjection
         services.AddHostedService<NutritionDraftGenerationWorker>();
         services.AddScoped<CoppAddresd.Application.Features.Nutrition.Cases.NutritionCases>();
         services.AddSingleton(TimeProvider.System);
-        services.AddHttpClient<INutritionDraftClient, NutritionDraftClient>();
-        services.AddHttpClient<IContentTranslationService, ContentTranslationService>();
+        services.AddHttpClient<INutritionDraftClient, NutritionDraftClient>().AddHttpMessageHandler<AiConsentHttpHandler>();
+        services.AddHttpClient<IContentTranslationService, ContentTranslationService>().AddHttpMessageHandler<AiConsentHttpHandler>();
         services.AddSingleton<IFoodNameCatalog, CuratedFoodNameCatalog>();
         services.AddScoped<CoppAddresd.Application.Services.Localization.PatientContentLocalization>();
         services.AddScoped<AuditTriggerInterceptor>();
@@ -78,6 +78,10 @@ public static class DependencyInjection
         services.AddScoped<IInventoryRepository, InventoryRepository>();
         services.AddScoped<IStoreRepository, StoreRepository>();
         services.AddScoped<ILegalDocumentRepository, LegalDocumentRepository>();
+        services.Configure<CoppAddresd.Application.Features.LegalDocuments.LegalConsentSettings>(
+            configuration.GetSection(CoppAddresd.Application.Features.LegalDocuments.LegalConsentSettings.SectionName));
+        services.AddScoped<ILegalConsentService, LegalConsentService>();
+        services.AddTransient<AiConsentHttpHandler>();
         services.AddScoped<IWellnessRepository, WellnessRepository>();
         services.AddScoped<IDeviceTokenRepository, DeviceTokenRepository>();
         services.AddScoped<IProgramRepository, ProgramRepository>();
@@ -86,7 +90,8 @@ public static class DependencyInjection
         services.AddScoped<IProgramAssignmentNoticeRepository, ProgramAssignmentNoticeRepository>();
         services.AddScoped<IHealthTestRepository, HealthTestRepository>();
         services.AddHttpClient<IAssessmentProfileAnalysis, AssessmentProfileAnalysis>(client =>
-        { client.Timeout = TimeSpan.FromSeconds(80); client.MaxResponseContentBufferSize = 131072; });
+        { client.Timeout = TimeSpan.FromSeconds(80); client.MaxResponseContentBufferSize = 131072; })
+            .AddHttpMessageHandler<AiConsentHttpHandler>();
         services.AddScoped<IHealthTestNotificationRepository, HealthTestNotificationRepository>();
         services.AddSingleton<IHealthTestTemplateRenderer, HealthTestTemplateRenderer>();
 

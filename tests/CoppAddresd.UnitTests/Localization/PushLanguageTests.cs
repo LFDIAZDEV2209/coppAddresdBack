@@ -16,8 +16,8 @@ namespace CoppAddresd.UnitTests.Localization;
 
 public sealed class PushLanguageTests
 {
-    private static DeviceToken Device(string language, string token = "token") => new()
-        { Id = Guid.NewGuid(), UserId = Guid.NewGuid(), Token = token, Platform = "ios", Language = language };
+    private static DeviceToken Device(string language, string token = "token", Guid? userId = null) => new()
+        { Id = Guid.NewGuid(), UserId = userId ?? Guid.NewGuid(), Token = token, Platform = "ios", Language = language };
 
     [Theory]
     [InlineData(" EN ", "en")]
@@ -130,9 +130,10 @@ public sealed class PushLanguageTests
         var repo = Substitute.For<IDeviceTokenRepository>(); var fcm = Substitute.For<IFcmClient>();
         var ai = Substitute.For<IAiServiceClient>(); var provider = Substitute.For<IContentTranslationService>();
         var userId = Guid.NewGuid();
-        repo.GetByUserIdAsync(userId, Arg.Any<CancellationToken>()).Returns(new[] { Device("es", "es-token"), Device("en", "en-token"), Device("en", "second-en") });
+        repo.GetByUserIdAsync(userId, Arg.Any<CancellationToken>()).Returns(new[] { Device("es", "es-token", userId), Device("en", "en-token", userId), Device("en", "second-en", userId) });
         var translated = false;
-        provider.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>()).Returns(call =>
+        provider.TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(),
+            Arg.Is<ContentTranslationSubject>(subject => subject.UserId == userId && subject.Scope == "patient-ai")).Returns(call =>
         {
             Assert.Equal(new[] { "Título propio", "Texto propio 5 mg" }, call.Arg<IReadOnlyCollection<string>>());
             Assert.Empty(fcm.ReceivedCalls()); translated = true;
@@ -145,7 +146,8 @@ public sealed class PushLanguageTests
         Assert.Equal(3, result.SentCount);
         await fcm.Received(1).SendAsync("es-token", "Título propio", "Texto propio 5 mg", Arg.Is<Dictionary<string,string>?>(d => d!["route"] == "/program"), Arg.Any<CancellationToken>());
         await fcm.Received(1).SendAsync("en-token", "Custom title", "Custom text 5 mg", Arg.Any<Dictionary<string,string>?>(), Arg.Any<CancellationToken>());
-        await provider.Received(1).TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>());
+        await provider.Received(1).TranslateAsync(Arg.Any<IReadOnlyCollection<string>>(), "en", Arg.Any<CancellationToken>(),
+            new ContentTranslationSubject("patient-ai", userId));
         await ai.Received(1).ProactiveMessageAsync(userId, "Texto propio 5 mg", "base", "bot", Arg.Any<CancellationToken>());
     }
 

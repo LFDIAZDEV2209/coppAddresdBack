@@ -3,6 +3,7 @@ using CoppAddresd.Api.Localization;
 using CoppAddresd.Application.Common;
 using CoppAddresd.Application.DTOs.FoodAi;
 using CoppAddresd.Application.Features.FoodAi;
+using CoppAddresd.Application.Features.LegalDocuments;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities.FoodAi;
 using CoppAddresd.Domain.Exceptions;
@@ -73,7 +74,8 @@ public class FoodAiController : ControllerBase
     /// Food AI Service. Respuesta síncrona: { analysisId, status }.
     /// </summary>
     [HttpPost("analyze")]
-    [AllowAnonymous]
+    [Authorize]
+    [CoppAddresd.Api.Authorization.RequireAiConsent("food")]
     public async Task<ActionResult<AnalyzeFoodImageResult>> Analyze(
         [FromForm] IFormFile image,
         CancellationToken ct,
@@ -168,6 +170,7 @@ public class FoodAiController : ControllerBase
                 )
             );
         }
+        catch (CoppAddresd.Domain.Exceptions.AiConsentException) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Fallo al analizar imagen de comida");
@@ -217,7 +220,7 @@ public class FoodAiController : ControllerBase
         }
 
         var analysis = await _analysisRepository.GetByAnalysisIdAsync(analysisId, ct);
-        if (analysis is null || (analysis.UserId is not null && analysis.UserId != userId))
+        if (analysis is null || analysis.UserId != userId)
         {
             // 404: no se revela existencia de análisis ajenos.
             return NotFound(ErrorResponse("ANALYSIS_NOT_FOUND", "Análisis no encontrado."));
@@ -266,7 +269,7 @@ public class FoodAiController : ControllerBase
         }
 
         var analysis = await _analysisRepository.GetByAnalysisIdAsync(analysisId, ct);
-        if (analysis is null || (analysis.UserId is not null && analysis.UserId != userId))
+        if (analysis is null || analysis.UserId != userId)
         {
             return NotFound(ErrorResponse("ANALYSIS_NOT_FOUND", "Análisis no encontrado."));
         }
@@ -338,9 +341,20 @@ public class FoodAiController : ControllerBase
         if (pending.Length > 0)
         {
             if (_translations is null) throw new ContentTranslationUnavailableException();
-            foreach (var pair in await _translations.TranslateAsync(pending, "en", ct)) names[pair.Key] = pair.Value;
-            if (pending.Any(name => !names.TryGetValue(name, out var text) || string.IsNullOrWhiteSpace(text)))
-                throw new ContentTranslationUnavailableException();
+            try
+            {
+                foreach (var pair in await _translations.TranslateAsync(pending, "en", ct,
+                    new ContentTranslationSubject(LegalConsentScopes.Food, TryGetUserId() ?? Guid.Empty)))
+                    names[pair.Key] = pair.Value;
+                if (pending.Any(name => !names.TryGetValue(name, out var text) || string.IsNullOrWhiteSpace(text)))
+                    throw new ContentTranslationUnavailableException();
+            }
+            catch (AiConsentException ex) when (ex.Code is "CONSENT_REQUIRED"
+                or "CONSENT_DOCUMENT_UNAVAILABLE" or "CONSENT_SUBJECT_REQUIRED")
+            {
+                // El historial sigue legible: name conserva la fuente y nameEn queda sin
+                // inventar cuando no hay traducción revisada ni consentimiento vigente.
+            }
         }
         return names;
     }

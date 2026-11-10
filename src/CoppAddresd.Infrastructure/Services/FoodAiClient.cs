@@ -86,6 +86,7 @@ public sealed class FoodAiClient : IFoodAiClient
             {
                 Content = form,
             };
+            httpRequest.Options.Set(AiConsentSubject.Key, new("food"));
 
             var response = await _httpClient.SendAsync(httpRequest, ct);
             if (!response.IsSuccessStatusCode)

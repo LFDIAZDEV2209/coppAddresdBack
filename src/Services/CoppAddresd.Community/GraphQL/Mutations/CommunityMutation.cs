@@ -17,6 +17,14 @@ namespace CoppAddresd.Community.GraphQL.Mutations;
 [Authorize]
 public sealed class CommunityMutation
 {
+    public Task<bool> BlockUser(Guid profileId, [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http, CancellationToken ct)
+        => CoppAddresd.Community.Security.CommunityBlockPolicy.BlockAsync(db, http, profileId, ct);
+
+    public Task<bool> UnblockUser(Guid profileId, [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http, CancellationToken ct)
+        => CoppAddresd.Community.Security.CommunityBlockPolicy.UnblockAsync(db, http, profileId, ct);
+
     // --- Perfiles ---
 
     public async Task<Profile> UpdateProfile(
@@ -392,6 +400,10 @@ public sealed class CommunityMutation
             .Include(o => o.Poll)
             .FirstOrDefaultAsync(o => o.Id == optionId, ct)
             ?? throw new GraphQLException("No se encontró la opción de la encuesta.");
+        var pollPostId = await db.Posts.IgnoreQueryFilters().AsNoTracking()
+            .Where(p => p.Poll != null && p.Poll.Id == option.PollId)
+            .Select(p => p.Id).SingleOrDefaultAsync(ct);
+        await CommunityBlockPolicy.RequirePostAsync(db, profile.Id, pollPostId, ct);
 
         // Un voto por perfil por encuesta (no por opción): cualquier voto previo
         // en otra opción de la misma encuesta bloquea el nuevo voto.
@@ -496,6 +508,7 @@ public sealed class CommunityMutation
         [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+        await CommunityBlockPolicy.RequirePostAsync(db, profile.Id, postId, ct);
         var exists = await db.Likes.AnyAsync(l => l.PostId == postId && l.ProfileId == profile.Id, ct);
         if (!exists)
         {
@@ -524,6 +537,7 @@ public sealed class CommunityMutation
         [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+        await CommunityBlockPolicy.RequirePostAsync(db, profile.Id, postId, ct);
         var like = await db.Likes.FirstOrDefaultAsync(l => l.PostId == postId && l.ProfileId == profile.Id, ct);
         if (like is not null)
         {
@@ -550,6 +564,7 @@ public sealed class CommunityMutation
         [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+        await CommunityBlockPolicy.RequireCommentAsync(db, profile.Id, commentId, ct);
 
         var comment = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.DeletedAt == null, ct)
             ?? throw new GraphQLException("No se encontró el comentario.");
@@ -584,6 +599,7 @@ public sealed class CommunityMutation
         [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+        await CommunityBlockPolicy.RequireCommentAsync(db, profile.Id, commentId, ct);
 
         var comment = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.DeletedAt == null, ct)
             ?? throw new GraphQLException("No se encontró el comentario.");
@@ -705,8 +721,10 @@ public sealed class CommunityMutation
             throw new GraphQLException("Los detalles del reporte no pueden superar los 500 caracteres.");
 
         // El comentario debe existir y no estar eliminado.
-        var comment = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.DeletedAt == null, ct)
-            ?? throw new GraphQLException("No se encontró el comentario.");
+        // Allow reporting an already-seen item after blocking, without loading
+        // its hidden contents into this request's tracked entity graph.
+        if (!await db.Comments.IgnoreQueryFilters().AnyAsync(c => c.Id == commentId && c.DeletedAt == null, ct))
+            throw new GraphQLException("No se encontró el comentario.");
 
         var report = new CommentReport
         {
@@ -771,8 +789,9 @@ public sealed class CommunityMutation
             throw new GraphQLException("Los detalles del reporte no pueden superar los 500 caracteres.");
 
         // La publicación debe existir y no estar eliminada.
-        var post = await db.Posts.FirstOrDefaultAsync(p => p.Id == postId && p.DeletedAt == null, ct)
-            ?? throw new GraphQLException("No se encontró la publicación.");
+        // Moderation evidence remains reportable after either member blocks.
+        if (!await db.Posts.IgnoreQueryFilters().AnyAsync(p => p.Id == postId && p.DeletedAt == null, ct))
+            throw new GraphQLException("No se encontró la publicación.");
 
         var report = new PostReport
         {
@@ -806,6 +825,7 @@ public sealed class CommunityMutation
         [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+        await CommunityBlockPolicy.RequirePostAsync(db, profile.Id, postId, ct);
         var comment = new Comment
         {
             Id = Guid.NewGuid(),
@@ -854,6 +874,7 @@ public sealed class CommunityMutation
         [Service] ICommunityMetricsQueue? metricsQueue = null)
     {
         var profile = await RequireProfileAsync(db, http, ct);
+        await CommunityBlockPolicy.RequireCommentAsync(db, profile.Id, commentId, ct);
         var parent = await db.Comments.FirstOrDefaultAsync(c => c.Id == commentId, ct)
             ?? throw new GraphQLException("No encontraste el comentario.");
         var reply = new Comment
@@ -1192,6 +1213,8 @@ public sealed class CommunityMutation
     {
         var profile = await RequireProfileAsync(db, http, ct);
         if (profileId == profile.Id) throw new GraphQLException("No puedes seguirte a ti mismo.");
+        await using var pairWrite = await CommunityBlockPolicy.BeginPairWriteAsync(db, profile.Id, profileId, ct);
+        await CommunityBlockPolicy.RequirePairAsync(db, profile.Id, profileId, ct);
         var target = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId, ct)
             ?? throw new GraphQLException("No se encontró el perfil.");
         if (target.Status != ProfileStatus.Active)
@@ -1207,6 +1230,7 @@ public sealed class CommunityMutation
             });
             await db.SaveChangesAsync(ct);
         }
+        if (pairWrite is not null) await pairWrite.CommitAsync(ct);
         return target;
     }
 
@@ -1238,6 +1262,7 @@ public sealed class CommunityMutation
     private static async Task AssertMutualFriendAsync(
         CommunityDbContext db, Guid myProfileId, Guid otherProfileId, CancellationToken ct)
     {
+        await CommunityBlockPolicy.RequirePairAsync(db, myProfileId, otherProfileId, ct);
         var iFollow = await db.Follows.AnyAsync(
             f => f.FollowerProfileId == myProfileId && f.FollowingProfileId == otherProfileId, ct);
         var followsMe = await db.Follows.AnyAsync(
@@ -1469,6 +1494,8 @@ public sealed class CommunityMutation
         body = body.Trim();
         if (body.Length == 0) throw new GraphQLException("Escribe un mensaje.");
         if (body.Length > 1000) throw new GraphQLException("El mensaje no puede superar los 1000 caracteres.");
+        await using var pairWrite = await CommunityBlockPolicy.BeginPairWriteAsync(db, profile.Id, recipientProfileId, ct);
+        await CommunityBlockPolicy.RequirePairAsync(db, profile.Id, recipientProfileId, ct);
         var recipient = await db.Profiles.FirstOrDefaultAsync(p => p.Id == recipientProfileId, ct)
             ?? throw new GraphQLException("No se encontró el destinatario.");
         if (recipient.Status != ProfileStatus.Active)
@@ -1490,6 +1517,8 @@ public sealed class CommunityMutation
         };
         db.Messages.Add(message);
         await db.SaveChangesAsync(ct);
+
+        if (pairWrite is not null) await pairWrite.CommitAsync(ct);
 
         var key = string.Join(':', new[] { profile.Id.ToString(), recipientProfileId.ToString() }
             .OrderBy(x => x, StringComparer.Ordinal));
@@ -1647,14 +1676,7 @@ public sealed class CommunityMutation
 
     private static async Task<Profile> RequireProfileAsync(
         CommunityDbContext db, IHttpContextAccessor http, CancellationToken ct)
-    {
-        var userId = CommunityQuery.CurrentUserId(http);
-        var profile = await db.Profiles.FirstOrDefaultAsync(p => p.UserId == userId, ct)
-            ?? throw new GraphQLException("Crea tu perfil de comunidad primero.");
-        if (profile.Status != ProfileStatus.Active)
-            throw new GraphQLException("Tu perfil está suspendido en la comunidad.");
-        return profile;
-    }
+        => await CommunityBlockPolicy.RequireActorAsync(db, http, ct);
 
     /// <summary>
     /// Recalcula la racha actual y la mejor racha del perfil a partir de sus

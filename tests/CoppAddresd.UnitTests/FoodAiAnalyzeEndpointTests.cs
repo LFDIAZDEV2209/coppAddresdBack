@@ -2,12 +2,20 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Security.Claims;
 using CoppAddresd.Application.DTOs.FoodAi;
 using CoppAddresd.Application.Features.FoodAi;
 using CoppAddresd.Application.Interfaces;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace CoppAddresd.UnitTests;
 
@@ -19,6 +27,27 @@ namespace CoppAddresd.UnitTests;
 public class FoodAiAnalyzeEndpointTests
     : IClassFixture<WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint>>
 {
+    private static readonly Guid SyntheticUser = Guid.Parse("11111111-1111-4111-8111-111111111111");
+    private sealed class TestAuthentication(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
+        : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    {
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            if (Request.Headers.Authorization != "Bearer synthetic-food-test")
+                return Task.FromResult(AuthenticateResult.NoResult());
+            var principal = new ClaimsPrincipal(new ClaimsIdentity([
+                new Claim(ClaimTypes.NameIdentifier, SyntheticUser.ToString()), new Claim("aud", "app")], Scheme.Name));
+            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
+        }
+    }
+
+    private static HttpClient AuthenticatedClient(WebApplicationFactory<CoppAddresd.Api.ApiEntryPoint> factory)
+    {
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new("Bearer", "synthetic-food-test");
+        return client;
+    }
+
     private sealed class StubFoodAiClient : IFoodAiClient
     {
         public FoodAiAnalyzeResult? LastSend { get; private set; }
@@ -104,6 +133,7 @@ public class FoodAiAnalyzeEndpointTests
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
+            builder.UseSetting("SkipDatabaseInitialization", "true");
             builder.UseSetting("Storage:SignatureKey", "test-signature-key-32-chars-long-for-ci");
             builder.UseSetting(
                 "ConnectionStrings:DefaultConnection",
@@ -113,6 +143,20 @@ public class FoodAiAnalyzeEndpointTests
             builder.UseSetting("Jwt:Issuer", "CoppAddresd.Auth");
             builder.ConfigureServices(services =>
             {
+                services.RemoveAll<IHostedService>();
+                services.AddAuthentication("FoodConsentTest")
+                    .AddScheme<AuthenticationSchemeOptions, TestAuthentication>("FoodConsentTest", _ => { });
+                services.Configure<AuthenticationOptions>(options =>
+                {
+                    options.DefaultAuthenticateScheme = "FoodConsentTest";
+                    options.DefaultChallengeScheme = "FoodConsentTest";
+                });
+                services.AddSingleton(Substitute.For<ILegalConsentService>());
+                var analyses = Substitute.For<IFoodAnalysisRepository>();
+                analyses.AddAsync(Arg.Any<CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis>(), Arg.Any<CancellationToken>())
+                    .Returns(call => call.Arg<CoppAddresd.Domain.Entities.FoodAi.FoodAnalysis>());
+                services.AddSingleton(analyses);
+                services.AddSingleton<INutritionProvider>(new StubNutritionProvider());
                 services.AddScoped<IFoodAiClient, StubFoodAiClient>();
                 services.AddScoped<IImageStorage, StubImageStorage>();
             });
@@ -122,7 +166,7 @@ public class FoodAiAnalyzeEndpointTests
     [Fact]
     public async Task Analyze_imagen_valida_responde_200_con_analysis_id_y_status_received()
     {
-        var client = _factory.CreateClient();
+        var client = AuthenticatedClient(_factory);
 
         using var form = new MultipartFormDataContent();
         var imageContent = new ByteArrayContent(Png1x1);
@@ -190,7 +234,7 @@ public class FoodAiAnalyzeEndpointTests
                     services.AddScoped<INutritionProvider>(_ => stubProvider)
                 );
             });
-            var client = factory.CreateClient();
+            var client = AuthenticatedClient(factory);
 
             using var form = new MultipartFormDataContent();
             var imageContent = new ByteArrayContent(Png1x1);
@@ -222,7 +266,7 @@ public class FoodAiAnalyzeEndpointTests
         StubFoodAiClient.TestPortion = new PortionDto("reference", 0, 0, 0, 0.1, "basic_reference");
         try
         {
-            var client = _factory.CreateClient();
+            var client = AuthenticatedClient(_factory);
 
             using var form = new MultipartFormDataContent();
             var imageContent = new ByteArrayContent(Png1x1);
@@ -249,7 +293,7 @@ public class FoodAiAnalyzeEndpointTests
     [Fact]
     public async Task Analyze_archivo_vacio_responde_400_EMPTY_FILE()
     {
-        var client = _factory.CreateClient();
+        var client = AuthenticatedClient(_factory);
 
         using var form = new MultipartFormDataContent();
         var imageContent = new ByteArrayContent([]);
@@ -265,7 +309,7 @@ public class FoodAiAnalyzeEndpointTests
     [Fact]
     public async Task Analyze_archivo_corrupto_responde_400_CORRUPT_FILE()
     {
-        var client = _factory.CreateClient();
+        var client = AuthenticatedClient(_factory);
 
         using var form = new MultipartFormDataContent();
         var imageContent = new ByteArrayContent(Encoding.UTF8.GetBytes("no soy una imagen"));
@@ -276,6 +320,36 @@ public class FoodAiAnalyzeEndpointTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Contains("CORRUPT_FILE", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Analyze_without_authentication_is_401_and_health_remains_public()
+    {
+        using var client = _factory.CreateClient();
+        using var form = new MultipartFormDataContent();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync("/api/v1/foodai/analyze", form)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/v1/foodai/health")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Analyze_without_consent_stops_before_validation_storage_and_provider()
+    {
+        var consents = Substitute.For<ILegalConsentService>();
+        consents.EnsureUserAsync(SyntheticUser, "food", Arg.Any<CancellationToken>()).Returns(
+            Task.FromException(new CoppAddresd.Domain.Exceptions.AiConsentException("CONSENT_REQUIRED", "food", 403)));
+        var storage = Substitute.For<IImageStorage>();
+        var food = Substitute.For<IFoodAiClient>();
+        using var factory = _factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.AddSingleton(consents); services.AddSingleton(storage); services.AddSingleton(food);
+        }));
+        using var client = AuthenticatedClient(factory);
+        using var form = new MultipartFormDataContent();
+        var response = await client.PostAsync("/api/v1/foodai/analyze", form);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Contains("CONSENT_REQUIRED", await response.Content.ReadAsStringAsync());
+        Assert.Empty(storage.ReceivedCalls());
+        Assert.Empty(food.ReceivedCalls());
     }
 
     [Fact]

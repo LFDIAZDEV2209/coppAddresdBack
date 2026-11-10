@@ -36,5 +36,9 @@ public sealed record DraftAppliedRule(string Code, string Severity, string Messa
 public sealed record DraftClinicalProfile(string EngineVersion, IReadOnlyDictionary<string, DraftMeasuredField> Fields,
     IReadOnlyList<DraftAppliedRule> AppliedRules, IReadOnlyList<string> MissingData);
 public sealed record NutritionDraftRequest(DraftTargets Targets, IReadOnlyList<string> CatalogIds, IReadOnlyList<DraftMenu> Menus,
-    DraftClinicalProfile? ClinicalProfile = null);
+    DraftClinicalProfile? ClinicalProfile = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid? SubjectPatientId { get; init; }
+}
 public sealed record NutritionDraftResponse(DraftText Narratives, DraftText Instructions, IReadOnlyList<DraftMenu> Menus, string Source);

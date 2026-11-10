@@ -50,7 +50,9 @@ public record PublishedLegalDocumentDto(
     string Title,
     string Content,
     string Version,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    Guid VersionId,
+    DateTime PublishedAt);
 
 public record SaveDraftRequest(string Title, string Content, string? CreatedBy);
 

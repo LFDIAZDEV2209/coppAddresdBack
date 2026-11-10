@@ -37,6 +37,7 @@ public class LabExamController(
     private const long MaxRawSizeBytes = 20 * 1024 * 1024; // 20 MB
 
     [HttpPost]
+    [CoppAddresd.Api.Authorization.RequireAiConsent("lab")]
     [Consumes("multipart/form-data")]
     public async Task<ActionResult<LabExamUploadResult>> Upload(
         [FromForm] IFormFile? file,
@@ -157,6 +158,7 @@ public class LabExamController(
                 }
             });
         }
+        catch (CoppAddresd.Domain.Exceptions.AiConsentException) { throw; }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error inesperado al procesar examen de laboratorio");

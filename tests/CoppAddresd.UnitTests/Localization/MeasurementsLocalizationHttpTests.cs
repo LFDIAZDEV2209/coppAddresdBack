@@ -29,7 +29,7 @@ public sealed class MeasurementsLocalizationHttpTests
     {
         public bool Unavailable { get; set; }
         public List<string[]> Calls { get; } = [];
-        public Task<IReadOnlyDictionary<string, string>> TranslateAsync(IReadOnlyCollection<string> sources, string language, CancellationToken ct)
+        public Task<IReadOnlyDictionary<string, string>> TranslateAsync(IReadOnlyCollection<string> sources, string language, CancellationToken ct, ContentTranslationSubject? subject = null)
         {
             ct.ThrowIfCancellationRequested(); Calls.Add(sources.ToArray());
             if (Unavailable) throw new ContentTranslationUnavailableException();

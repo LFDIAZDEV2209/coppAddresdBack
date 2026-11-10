@@ -30,7 +30,8 @@ public sealed class GeneratePlanCommandHandler(
             "Contexto consolidado para {PatientId}: {MeasurementCount} mediciones, {RestrictionCount} restricciones",
             request.PatientId, context.Measurements.Count, restrictions.Count);
 
-        var aiResult = await aiService.GeneratePlanAsync(request.Type, context, restrictions, ct);
+        var aiResult = await aiService.GeneratePlanAsync(request.Type,
+            context with { SubjectPatientId = request.PatientId }, restrictions, ct);
 
         return new GeneratePlanResponse(request.Type, DateTime.UtcNow, aiResult.Plan);
     }

@@ -183,3 +183,33 @@ latencia productiva medida; validar el plan con volumen operativo de reservas.
 | Index | Tabla | Columnas | Tipo | Motivo | Query que beneficia | Impacto esperado | Costo potencial |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `ux_sos_alerts_location_link_hash` | `app.sos_alerts` | `location_link_hash` | UNIQUE B-tree parcial (`IS NOT NULL`) | Resolver una capacidad privada sin escanear alertas ni cargar PII; unicidad de digest | `WHERE location_link_hash = @hash LIMIT 1`, proyección id/estado/fecha/GPS | Lookup de alta selectividad; creación concurrente; sin backfill | Una entrada SHA-256 hex por alerta nueva con GPS; filas antiguas/null no ocupan entrada |
+
+## Community: directed member blocking
+
+| Index | Table | Columns | Purpose / cost |
+| --- | --- | --- | --- |
+| `ix_profile_blocks_blocker_blocked` | `community.profile_blocks` | blocker_profile_id, blocked_profile_id | Unique B-tree; idempotent directed choices, own list and forward existence checks. One entry per choice. |
+| `ix_profile_blocks_blocked` | `community.profile_blocks` | blocked_profile_id | B-tree; reverse visibility checks and profile-delete FK cascade. One entry per choice. |
+
+Migration `20261110180222_AddCommunityProfileBlocks` creates the empty table,
+indexes and bounded recursive SQL visibility function together. No legacy-table
+index rebuild or data backfill. The function uses existing comment/post UUID PKs
+and both block directions; malformed/cyclic paths fail closed. Query filters run
+in PostgreSQL before pagination; raw DM/group summary SQL includes the same
+predicate before DISTINCT/LIMIT. Functional PostgreSQL tests cover translation
+and behavior, including pagination and nested content. Production-scale EXPLAIN,
+volume/load testing and latency claims are intentionally left for Diomedes.
+
+## Versioned consent receipts
+
+| Index | Table | Columns | Purpose / cost |
+| --- | --- | --- | --- |
+| `uq_legal_acceptance_user_request` | `app.legal_document_acceptances` | user_id, idempotency_key | Unique B-tree; exact retry identity per user, one entry per acceptance. |
+| `ix_legal_acceptance_user_scope_version` | same | user_id, scope, legal_document_version_id | B-tree; current-scope acceptance checks and own active receipt lookup, one entry per acceptance. |
+| `IX_legal_document_acceptances_legal_document_version_id` | same | legal_document_version_id | B-tree; restrictive FK checks preserving published evidence, one entry per acceptance. |
+
+These indexes are created on a new empty table by migration
+`20261110174324_AddLegalConsentReceipts`; existing clinical tables are untouched.
+Own scope results are bounded to the configured seven scopes. Isolated
+PostgreSQL tests check current/stale receipt queries, concurrent idempotency,
+withdrawal, immutability and migration up/down/up. No load claim is made.

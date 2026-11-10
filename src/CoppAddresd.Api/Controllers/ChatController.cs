@@ -30,6 +30,7 @@ public class ChatController : ControllerBase
     private string? AuthenticatedUserId => User.FindFirstValue(ClaimTypes.NameIdentifier);
 
     [HttpPost]
+    [CoppAddresd.Api.Authorization.RequireAiConsent("chat")]
     public async Task<ActionResult<ChatResult>> Chat(
         [FromBody] ChatRequestDto request,
         CancellationToken ct
@@ -58,6 +59,7 @@ public class ChatController : ControllerBase
             );
             return StatusCode(502, new { error = "No fue posible procesar la solicitud." });
         }
+        catch (CoppAddresd.Domain.Exceptions.AiConsentException) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Chat request failed");
@@ -66,6 +68,7 @@ public class ChatController : ControllerBase
     }
 
     [HttpPost("stream")]
+    [CoppAddresd.Api.Authorization.RequireAiConsent("chat")]
     public async Task Stream([FromBody] ChatRequestDto request, CancellationToken ct)
     {
         Response.ContentType = "text/event-stream";
@@ -107,6 +110,7 @@ public class ChatController : ControllerBase
             await Response.WriteAsync(errorPayload, ct);
             await Response.Body.FlushAsync(ct);
         }
+        catch (CoppAddresd.Domain.Exceptions.AiConsentException) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Stream failed");
@@ -125,6 +129,7 @@ public class ChatController : ControllerBase
     /// 502/503 con mensaje amigable, sin filtrar trazas internas.
     /// </summary>
     [HttpPost("voice/session")]
+    [CoppAddresd.Api.Authorization.RequireAiConsent("voice")]
     [ProducesResponseType(typeof(VoiceSessionResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
@@ -195,6 +200,7 @@ public class ChatController : ControllerBase
                 }
             );
         }
+        catch (CoppAddresd.Domain.Exceptions.AiConsentException) { throw; }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Voice session request failed");
@@ -210,6 +216,7 @@ public class ChatController : ControllerBase
     /// clínico amigable, sin filtrar trazas internas.
     /// </summary>
     [HttpPost("feedback")]
+    [CoppAddresd.Api.Authorization.RequireAiConsent("chat")]
     [ProducesResponseType(typeof(ChatFeedbackResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]

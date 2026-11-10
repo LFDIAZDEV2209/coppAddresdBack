@@ -60,6 +60,7 @@ public sealed class AssessmentProfileAnalysis(HttpClient http, AppDbContext db,
         {
             var request = new HttpRequestMessage(HttpMethod.Post, settings.Value.BaseUrl.TrimEnd('/') + "/internal/assessments/analyze");
             request.Headers.Add("X-Internal-Key", settings.Value.InternalApiKey);
+            request.Options.Set(AiConsentSubject.Key, new("patient-ai", PatientId: patientId));
             request.Content = JsonContent.Create(new { language, pending_assessments = pending, results = sources.Select(r => new {
                 code = r.EvidenceCode, label = r.Label, value = r.Value, instrument = r.TestName,
                 result_type = r.ResultType, completed_at = r.CompletedAt,
@@ -83,6 +84,7 @@ public sealed class AssessmentProfileAnalysis(HttpClient http, AppDbContext db,
                     ReadText(root.GetProperty("encouragement"), 10, 400), questions, DateTime.UtcNow, revision, sources, pending > 0);
             }
         }
+        catch (CoppAddresd.Domain.Exceptions.AiConsentException) { throw; }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             logger.LogWarning("Análisis de perfil no disponible: exceptionType={ExceptionType}.", ex.GetType().Name);

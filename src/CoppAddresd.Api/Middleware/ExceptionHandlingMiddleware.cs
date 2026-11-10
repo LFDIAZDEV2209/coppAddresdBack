@@ -64,6 +64,12 @@ public sealed class ExceptionHandlingMiddleware(
             await WriteProblemAsync(context, StatusCodes.Status503ServiceUnavailable,
                 "CONTENT_TRANSLATION_UNAVAILABLE", "English content could not be prepared. Please try again.");
         }
+        catch (AiConsentException ex)
+        {
+            context.Response.StatusCode = ex.StatusCode;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new { code = ex.Code, scope = ex.Scope }, context.RequestAborted);
+        }
         catch (NotFoundException ex)
         {
             logger.LogWarning(ex, "Recurso no encontrado en {Method} {Path}",

@@ -35,7 +35,7 @@ public sealed class SharedSpecialtiesLocalizationHttpTests
     private sealed class Translator : IContentTranslationService
     {
         public List<string[]> Calls { get; } = [];
-        public Task<IReadOnlyDictionary<string, string>> TranslateAsync(IReadOnlyCollection<string> sources, string language, CancellationToken ct)
+        public Task<IReadOnlyDictionary<string, string>> TranslateAsync(IReadOnlyCollection<string> sources, string language, CancellationToken ct, ContentTranslationSubject? subject = null)
         {
             ct.ThrowIfCancellationRequested(); Assert.Equal("en", language);
             Calls.Add(sources.ToArray());

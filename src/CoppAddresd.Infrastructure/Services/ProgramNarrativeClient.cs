@@ -18,6 +18,7 @@ public sealed class ProgramNarrativeClient(HttpClient http, IOptions<AiServiceSe
             Content = JsonContent.Create(payload),
         };
         request.Headers.Add("X-Internal-Key", settings.Value.InternalApiKey);
+        request.Options.Set(AiConsentSubject.Key, new("patient-ai", PatientId: payload.SubjectPatientId));
         using var response = await http.SendAsync(request, ct);
         // No registrar body ni perfil clínico cuando falla el proveedor.
         response.EnsureSuccessStatusCode();

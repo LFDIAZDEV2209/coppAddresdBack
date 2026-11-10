@@ -16,6 +16,7 @@ public sealed class NutritionDraftClient(HttpClient client, IOptions<AiServiceSe
         {
             using var call = new HttpRequestMessage(HttpMethod.Post, new Uri(new Uri(settings.Value.BaseUrl), "/internal/nutrition/plan-draft"));
             call.Headers.Add("X-Internal-Key", settings.Value.InternalApiKey);
+            call.Options.Set(AiConsentSubject.Key, new("patient-ai", PatientId: request.SubjectPatientId));
             call.Content = JsonContent.Create(request, options: Json);
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(TimeSpan.FromSeconds(50));
             using var response = await client.SendAsync(call, deadline.Token);

@@ -39,12 +39,15 @@ public sealed class LegalDocumentsController(IMediator mediator) : ControllerBas
             return NotFound(new { message = "Documento legal publicado no encontrado." });
 
         var current = result.Versions.FirstOrDefault(version => version.IsCurrent);
+        if (current is null || !current.IsPublished) return NotFound();
         return Ok(new PublishedLegalDocumentDto(
             result.Code,
             result.Title,
-            current?.Content ?? string.Empty,
+            current.Content,
             result.CurrentVersion,
-            result.UpdatedAt ?? DateTime.UtcNow));
+            result.UpdatedAt ?? current.CreatedAt,
+            current.Id,
+            current.CreatedAt));
     }
 
     [RequirePermission(PermissionCodes.LegalDocumentsView)]

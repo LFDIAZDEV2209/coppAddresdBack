@@ -160,7 +160,8 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
             var restrictions = await safety.EvaluateAsync(context, ct);
             using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
             attempt.CancelAfter(TimeSpan.FromMinutes(4));
-            var generated = await ai.GeneratePlanAsync("nutrition", context, restrictions, attempt.Token);
+            var generated = await ai.GeneratePlanAsync("nutrition",
+                context with { SubjectPatientId = patientId }, restrictions, attempt.Token);
             ApplyGeneratedPlan(plan, generated.Plan);
             // Las PK UUID ya tienen valor; marcar explícitamente Added evita
             // que EF interprete la nueva colección como filas existentes.

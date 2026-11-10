@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Application.Features.LegalDocuments;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Exceptions;
 
@@ -26,7 +27,14 @@ public static class PushContentLocalization
         if (missing.Length > 0)
         {
             if (translations is null) throw new ContentTranslationUnavailableException();
-            var translated = await translations.TranslateAsync(missing, "en", ct);
+            // El lote corresponde a un único destinatario. Nunca se usa el operador o
+            // el primer token de un lote de usuarios distintos como sujeto del consentimiento.
+            var recipients = devices.Where(device => Language(device) == "en")
+                .Select(device => device.UserId).Distinct().ToArray();
+            if (recipients.Length != 1 || recipients[0] == Guid.Empty)
+                throw new AiConsentException("CONSENT_SUBJECT_REQUIRED", LegalConsentScopes.PatientAi, 503);
+            var translated = await translations.TranslateAsync(missing, "en", ct,
+                new ContentTranslationSubject(LegalConsentScopes.PatientAi, recipients[0]));
             string Resolve(string source) => translated.TryGetValue(source, out var value) && !string.IsNullOrWhiteSpace(value)
                 ? value : throw new ContentTranslationUnavailableException();
             titleEn ??= Resolve(title);

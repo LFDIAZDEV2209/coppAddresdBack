@@ -1,6 +1,9 @@
 using CoppAddresd.Community.Entities;
 using CoppAddresd.Community.GraphQL.Types;
 using CoppAddresd.Community.Persistence;
+using CoppAddresd.Community.Security;
+using CoppAddresd.Community.Storage;
+using CoppAddresd.Application.Interfaces;
 using HotChocolate;
 using HotChocolate.Authorization;
 using HotChocolate.Types;
@@ -13,6 +16,37 @@ namespace CoppAddresd.Community.GraphQL.Queries;
 /// <summary>Consultas públicas y autenticadas de la comunidad.</summary>
 public sealed class CommunityQuery
 {
+    [Authorize]
+    public async Task<IReadOnlyList<BlockedProfile>> BlockedProfiles(
+        [Service] CommunityDbContext db,
+        [Service] IHttpContextAccessor http,
+        [Service] IObjectStorageService storage,
+        [Service] IConfiguration configuration,
+        [Service] StorageSignatureService signer,
+        CancellationToken ct,
+        int take = 50,
+        int skip = 0)
+    {
+        if (take is < 1 or > 100 || skip < 0)
+            throw new GraphQLException("Paginación inválida: take debe estar entre 1 y 100 y skip no puede ser negativo.");
+        var actor = await CommunityBlockPolicy.RequireActorAsync(db, http, ct);
+        var rows = await db.ProfileBlocks.AsNoTracking()
+            .Where(b => b.BlockerProfileId == actor.Id)
+            .Join(db.Profiles.IgnoreQueryFilters().AsNoTracking(), b => b.BlockedProfileId, p => p.Id,
+                (b, p) => new { p.Id, p.DisplayName, p.AvatarKey, b.CreatedAt, BlockId = b.Id })
+            .OrderByDescending(x => x.CreatedAt).ThenBy(x => x.BlockId)
+            .Skip(skip).Take(take).ToListAsync(ct);
+        var images = new ProfileImageUrlResolver();
+        var result = new List<BlockedProfile>(rows.Count);
+        foreach (var row in rows)
+        {
+            var avatar = await images.GetAvatarUrlAsync(
+                new Profile { Id = row.Id, AvatarKey = row.AvatarKey }, storage, configuration, signer, ct);
+            result.Add(new BlockedProfile(row.Id, row.DisplayName, avatar, row.CreatedAt));
+        }
+        return result;
+    }
+
     /// <summary>Perfil del usuario autenticado (se crea en estado Active la primera vez, sin revisión previa).</summary>
     [Authorize]
     public async Task<Profile?> Me(
@@ -112,17 +146,12 @@ var profile = await db.Profiles
         string? sortBy = null,
         CancellationToken ct = default)
     {
-        var query = db.Posts
+        var query = db.Posts.AsNoTracking().AsSplitQuery()
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Reposts)
             .Include(p => p.Poll!).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
-            .Include(p => p.Comments)
-            .Include(p => p.Comments).ThenInclude(c => c.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Likes)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
-.Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null))
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
@@ -173,18 +202,12 @@ var profile = await db.Profiles
         Guid id,
         [Service] CommunityDbContext db,
         CancellationToken ct)
-=> db.Posts
+        => db.Posts.AsNoTracking().AsSplitQuery()
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Reposts)
             .Include(p => p.Poll!).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
-            .Include(p => p.Comments)
-            .ThenInclude(c => c.Replies)
-            .Include(p => p.Comments).ThenInclude(c => c.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Likes)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
-.Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null))
             .ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null))
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
@@ -412,17 +435,12 @@ var profile = await db.Profiles
             .Select(f => f.FollowingProfileId)
             .ToListAsync(ct);
 
-        return await db.Posts
+        return await db.Posts.AsNoTracking().AsSplitQuery()
             .Include(p => p.Profile)
             .Include(p => p.Likes)
             .Include(p => p.Reposts)
             .Include(p => p.Poll!).ThenInclude(p => p.Options).ThenInclude(o => o.Votes)
-            .Include(p => p.Comments)
-            .Include(p => p.Comments).ThenInclude(c => c.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Likes)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Profile)
-            .Include(p => p.Comments).ThenInclude(c => c.Replies).ThenInclude(r => r.Likes)
-.Include(p => p.Comments.Where(c => c.DeletedAt == null))
+            .Include(p => p.Comments.Where(c => c.DeletedAt == null))
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Profile)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Likes)
             .Include(p => p.Comments.Where(c => c.DeletedAt == null)).ThenInclude(c => c.Replies.Where(r => r.DeletedAt == null)).ThenInclude(r => r.Profile)
@@ -847,13 +865,20 @@ var profile = await db.Profiles
                     FROM community.messages m
                     WHERE (m.sender_profile_id = {0} OR m.recipient_profile_id = {0})
                       AND m.conversation_id IS NULL
+                      AND (NOT {3} OR NOT EXISTS (
+                          SELECT 1 FROM community.profile_blocks b
+                          WHERE (b.blocker_profile_id = {0} AND b.blocked_profile_id =
+                              CASE WHEN m.sender_profile_id = {0} THEN m.recipient_profile_id ELSE m.sender_profile_id END)
+                             OR (b.blocked_profile_id = {0} AND b.blocker_profile_id =
+                              CASE WHEN m.sender_profile_id = {0} THEN m.recipient_profile_id ELSE m.sender_profile_id END)
+                      ))
                 ) x
                 ORDER BY x.peer_id, x.created_at DESC
             ) y
             ORDER BY y.created_at DESC
             LIMIT {1} OFFSET {2}
             """;
-        var latest = await db.Messages.FromSqlRaw(sql, profile.Id, take, skip).ToListAsync(ct);
+        var latest = await db.Messages.FromSqlRaw(sql, profile.Id, take, skip, db.BlockFilteringEnabled).ToListAsync(ct);
 
         // En Conversations solo aparecen mensajes 1:1 (conversation_id IS NULL), por
         // lo que recipient_profile_id siempre es no nulo; el ! es seguro aquí.
@@ -923,9 +948,14 @@ var profile = await db.Profiles
                    m.conversation_id, m.body, m.created_at, m.triggered_by_profile_id
             FROM community.messages m
             WHERE m.conversation_id = ANY({0})
+              AND (NOT {2} OR NOT EXISTS (
+                  SELECT 1 FROM community.profile_blocks b
+                  WHERE (b.blocker_profile_id = {1} AND b.blocked_profile_id = m.sender_profile_id)
+                     OR (b.blocked_profile_id = {1} AND b.blocker_profile_id = m.sender_profile_id)
+              ))
             ORDER BY m.conversation_id, m.created_at DESC
             """;
-        var lastMessages = await db.Messages.FromSqlRaw(lastSql, groupIds.ToArray()).ToListAsync(ct);
+        var lastMessages = await db.Messages.FromSqlRaw(lastSql, groupIds.ToArray(), profile.Id, db.BlockFilteringEnabled).ToListAsync(ct);
         var lastByGroup = lastMessages.ToDictionary(m => m.ConversationId!.Value, m => m);
 
         foreach (var g in groups)

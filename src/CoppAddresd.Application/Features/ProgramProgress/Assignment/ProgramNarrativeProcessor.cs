@@ -19,7 +19,8 @@ public sealed class ProgramNarrativeProcessor(IProgramAssignmentRepository repos
             if (recommendation is null) return true;
             var snapshot = JsonSerializer.Deserialize<JsonElement>(recommendation.ProfileSnapshot);
             var response = await client.GenerateAsync(new(snapshot,
-                JsonSerializer.Deserialize<JsonElement>(recommendation.Proposal), SourceRefs(snapshot)), ct);
+                JsonSerializer.Deserialize<JsonElement>(recommendation.Proposal), SourceRefs(snapshot))
+                { SubjectPatientId = recommendation.PatientId }, ct);
             await repository.SaveNarrativeAsync(id, response.NarrativeEs, response.NarrativeEn, response.ModelName, ct);
             return true;
         }
