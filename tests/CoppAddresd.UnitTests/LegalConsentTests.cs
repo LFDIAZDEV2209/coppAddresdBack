@@ -25,7 +25,7 @@ public sealed class LegalConsentTests : IDisposable
 {
     private readonly AppDbContext db = new(new DbContextOptionsBuilder<AppDbContext>()
         .UseInMemoryDatabase($"consent-{Guid.NewGuid()}").Options);
-    private readonly LegalConsentSettings configuration = new();
+    private readonly LegalConsentSettings configuration = new() { EnforcementEnabled = true };
     private readonly IOptionsMonitor<LegalConsentSettings> monitor = Substitute.For<IOptionsMonitor<LegalConsentSettings>>();
     private readonly Guid user = Guid.NewGuid();
     private static readonly DateTime Published = new(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -53,6 +53,31 @@ public sealed class LegalConsentTests : IDisposable
     {
         var status = (await Service().GetStatusAsync(user, locale, default)).Scopes.Single(s => s.Scope == "chat");
         return new("chat", status.Documents.Single().VersionId, locale, status.DisclosureId!, Guid.NewGuid());
+    }
+
+    [Fact]
+    public async Task Disabled_review_gate_allows_background_transport_without_document_configuration()
+    {
+        configuration.EnforcementEnabled = false;
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var transport = new CountTransport();
+        using var client = new HttpClient(new AiConsentHttpHandler(
+            services.GetRequiredService<IServiceScopeFactory>(), new HttpContextAccessor(), monitor)
+            { InnerHandler = transport });
+        using var response = await client.PostAsync("https://synthetic.invalid/internal/content/translate", new StringContent("synthetic"));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(1, transport.Count);
+    }
+
+    [Fact]
+    public async Task Disabled_review_gate_does_not_require_documents_or_create_receipts()
+    {
+        configuration.EnforcementEnabled = false;
+        await Service().EnsureUserAsync(user, "food", default);
+        await Service().EnsurePatientAsync(Guid.NewGuid(), "patient-ai", default);
+        Assert.Empty(await db.LegalDocumentAcceptances.ToListAsync());
+        Assert.All((await Service().GetStatusAsync(user, "es", default)).Scopes,
+            item => { Assert.False(item.Accepted); Assert.False(item.Available); });
     }
 
     [Fact]

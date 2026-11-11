@@ -16,6 +16,8 @@ public static class LegalConsentScopes
 public sealed class LegalConsentSettings
 {
     public const string SectionName = "LegalConsents";
+    // Activación separada de la disponibilidad de documentos; restauración de TestFlight.
+    public bool EnforcementEnabled { get; set; }
     public Dictionary<string, LegalConsentScopeSettings> Scopes { get; set; } = [];
 }
 

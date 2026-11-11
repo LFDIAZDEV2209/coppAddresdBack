@@ -23,7 +23,7 @@ public sealed class LegalConsentPersistenceTests : IAsyncLifetime
     private string connection = "";
     private string server = "";
     private readonly Guid user = Guid.NewGuid();
-    private readonly LegalConsentSettings config = new();
+    private readonly LegalConsentSettings config = new() { EnforcementEnabled = true };
     private readonly IOptionsMonitor<LegalConsentSettings> settings = Substitute.For<IOptionsMonitor<LegalConsentSettings>>();
 
     public async Task InitializeAsync()

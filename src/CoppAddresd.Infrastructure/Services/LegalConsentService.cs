@@ -137,6 +137,7 @@ public sealed class LegalConsentService(AppDbContext db, IOptionsMonitor<LegalCo
 
     public async Task EnsureUserAsync(Guid userId, string scope, CancellationToken ct)
     {
+        if (!settings.CurrentValue.EnforcementEnabled) return;
         var config = Config(scope);
         var available = false;
         foreach (var locale in config.Documents.Keys.Where(x => x is "es" or "en"))
@@ -157,6 +158,7 @@ public sealed class LegalConsentService(AppDbContext db, IOptionsMonitor<LegalCo
 
     public async Task EnsurePatientAsync(Guid patientId, string scope, CancellationToken ct)
     {
+        if (!settings.CurrentValue.EnforcementEnabled) return;
         var userId = await db.PatientProfiles.AsNoTracking().Where(x => x.Id == patientId)
             .Select(x => x.UserId).SingleOrDefaultAsync(ct);
         await EnsureUserAsync(userId ?? Guid.Empty, scope, ct);

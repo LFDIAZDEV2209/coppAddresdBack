@@ -4,6 +4,7 @@ using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Exceptions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace CoppAddresd.Infrastructure.Services;
 
@@ -18,10 +19,14 @@ public sealed record AiConsentSubject(string Scope, Guid? PatientId = null, Guid
 /// Defense at the outgoing HTTP boundary, including background jobs. Factory handlers own a different
 /// lifetime than requests, so resolve a fresh scoped DbContext for every check; never retain one here.
 /// </summary>
-public sealed class AiConsentHttpHandler(IServiceScopeFactory scopes, IHttpContextAccessor http) : DelegatingHandler
+public sealed class AiConsentHttpHandler(IServiceScopeFactory scopes, IHttpContextAccessor http,
+    IOptionsMonitor<LegalConsentSettings>? policy = null) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
+        if (policy?.CurrentValue.EnforcementEnabled == false)
+            return await base.SendAsync(request, ct);
+
         // These internal reads/configuration operations do not invoke an external AI processor.
         var path = request.RequestUri?.AbsolutePath ?? "";
         if (request.Method == HttpMethod.Get || path.EndsWith("/proactive-message", StringComparison.Ordinal))

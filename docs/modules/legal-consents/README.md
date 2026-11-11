@@ -1,3 +1,9 @@
+> Actualización de TestFlight: el propietario pidió restaurar las funciones mientras
+> continúa la preparación legal. `LegalConsents:EnforcementEnabled` es `false`
+> por defecto. Los filtros mantienen autenticación y propiedad, pero no exigen
+> documentos para iniciar funciones. No se crean aceptaciones ficticias. Para
+> retomar revisión, configurar explícitamente `true` junto con documentos reales.
+
 # Versioned consent receipts
 
 Patient AI requests require a server receipt for the current published legal
