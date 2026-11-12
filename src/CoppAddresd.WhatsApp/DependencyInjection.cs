@@ -19,6 +19,8 @@ public static class DependencyInjection
         if (migrationsOnly) return services;
         services.AddSingleton(options);
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<Webhook.WhatsAppQueue>();
+        services.AddScoped<Webhook.WhatsAppWebhook>();
         services.AddHttpClient<CoppAddresd.Application.WhatsApp.Messaging.IWhatsAppMessageSender,
             Messaging.MetaCloudWhatsAppSender>().RemoveAllLoggers();
         return services;

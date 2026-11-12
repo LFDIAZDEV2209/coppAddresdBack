@@ -51,6 +51,7 @@ builder.Host.UseSerilog(
 
 builder
     .Services.AddControllers(options => options.Filters.Add<CoppAddresd.Api.Localization.PatientContentLocalizationFilter>())
+    .AddApplicationPart(typeof(CoppAddresd.WhatsApp.Webhook.WhatsAppWebhookController).Assembly)
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter())
     );

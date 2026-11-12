@@ -37,3 +37,14 @@ solo contienen teléfono enmascarado y códigos de error numéricos/internos.
 
 Contrato contrastado con [texto de Meta](https://whatsapp.github.io/WhatsApp-Nodejs-SDK/api-reference/messages/text/)
 y Orbit (payload de plantillas). La verificación local no envía mensajes reales.
+
+## Webhook
+
+`GET /api/v1/whatsapp/webhook`: handshake subscribe y verify token válido → texto
+del challenge, 200; cualquier otro caso → 403. Flag apagado → 404.
+`POST`: HMAC-SHA256 sobre bytes originales, comparación de tiempo constante;
+401 sin persistencia ante firma ausente/inválida. Máximo 1 MiB por request.
+El endpoint persiste cada mensaje antes del 200 (índice único wamid), cuenta
+duplicados y emite una señal de cola en proceso. No ejecuta el agente en HTTP.
+Solo acepta el phone_number_id configurado. Recibos de estado no abren ventana.
+El payload completo es información sensible: no se imprime en logs.
