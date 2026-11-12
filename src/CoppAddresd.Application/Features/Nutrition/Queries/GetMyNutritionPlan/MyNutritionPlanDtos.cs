@@ -26,7 +26,8 @@ public sealed record MyNutritionPlanDto(
     DateOnly? StartDate = null,
     DateOnly? EndDate = null,
     int? CurrentDay = null,
-    int? Revision = null
+    int? Revision = null,
+    string Disclaimer = NutritionRecommendationNotice.Text
 );
 
 /// <summary>

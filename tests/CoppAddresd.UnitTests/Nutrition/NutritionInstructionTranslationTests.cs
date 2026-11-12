@@ -123,7 +123,7 @@ public sealed class NutritionInstructionTranslationTests
         var plan = Assert.IsType<NutritionPrescription>(generated);
         Assert.Equal(NutritionInstructionTranslation.SourceHash(plan.Instructions), plan.InstructionsEnSourceHash);
         Assert.Equal(plan.InstructionsEn, NutritionInstructionTranslation.VerifiedEnglish(plan));
-        Assert.Equal(validDraft ? "Narrativa nueva\nIndicaciones nuevas" : "Propuesta determinista: revisa porciones y alertas antes de aprobar.", plan.Instructions);
+        Assert.Equal(validDraft ? "Narrativa nueva\nIndicaciones nuevas" : "Plan generado automáticamente con reglas del programa.", plan.Instructions);
     }
 
     [Theory]
@@ -141,7 +141,8 @@ public sealed class NutritionInstructionTranslationTests
         reservations.ClaimAsync(Arg.Any<DateTime>(), Arg.Any<CancellationToken>()).Returns(reservation);
         NutritionPrescription? generated = null;
         fixture.Repository.When(repository => repository.AddAsync(Arg.Any<NutritionPrescription>(), Arg.Any<CancellationToken>()))
-            .Do(call => generated = call.Arg<NutritionPrescription>());
+            .Do(call => { generated = call.Arg<NutritionPrescription>();
+                fixture.Repository.GetByIdAsync(generated.Id, Arg.Any<CancellationToken>()).Returns(generated); });
         var workflow = new NutritionDraftWorkflow(reservations, fixture.Assessments, fixture.Cases,
             NullLogger<NutritionDraftWorkflow>.Instance, TimeProvider.System);
         using var cancellation = new CancellationTokenSource();
@@ -151,8 +152,9 @@ public sealed class NutritionInstructionTranslationTests
         var plan = Assert.IsType<NutritionPrescription>(generated);
         Assert.Equal(reservation.Id, plan.Id);
         Assert.Equal(NutritionSystemActor.Id, plan.CreatedBy);
-        Assert.Equal("borrador_ia", plan.State);
-        Assert.False(plan.IsPublished);
+        Assert.Equal("aprobado", plan.State);
+        Assert.True(plan.IsPublished);
+        Assert.Equal(NutritionSystemActor.Id, plan.ApprovedBy);
         Assert.Equal(NutritionInstructionTranslation.SourceHash(plan.Instructions), plan.InstructionsEnSourceHash);
         Assert.Equal(plan.InstructionsEn, NutritionInstructionTranslation.VerifiedEnglish(plan));
         using var snapshot = JsonDocument.Parse(plan.ClinicalProfileJson);

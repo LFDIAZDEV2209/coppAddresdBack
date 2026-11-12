@@ -12,6 +12,7 @@ public interface INutritionDraftWorkflow
 
 public interface INutritionDraftReservationStore
 {
+    Task<int> QueueUnpublishedReadyAsync(CancellationToken ct) => Task.FromResult(0);
     Task<NutritionDraftReservation> RequestAsync(Guid patientId, Guid batteryAssignmentId, DateTime now, CancellationToken ct);
     Task<NutritionDraftReservation> ReserveAsync(Guid patientId, Guid batteryAssignmentId, CancellationToken ct);
     Task<NutritionDraftReservation?> ClaimAsync(DateTime now, CancellationToken ct);

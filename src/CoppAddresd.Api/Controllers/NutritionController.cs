@@ -35,7 +35,7 @@ public sealed class NutritionController(IMediator mediator, ICurrentContext cont
     {
         var operation = verb switch { "save" => NutritionOperation.Save, "apply-day" => NutritionOperation.ApplyDay,
             "create-version" => NutritionOperation.CreateVersion, "submit" => NutritionOperation.Submit,
-            "approve" => NutritionOperation.Approve, "return" => NutritionOperation.Return,
+            "publish" => NutritionOperation.Publish, "approve" => NutritionOperation.Approve, "return" => NutritionOperation.Return,
             "regenerate" => NutritionOperation.Regenerate, _ => throw new NotFoundException("Acción no encontrada.") };
         return Ok(await mediator.Send(new NutritionCaseCommand(operation, patientId, id, input.Revision,
             await ActorAsync(ct), input.Generate, input.Edit, input.Comment, input.CriticalConfirmed, input.StartDate), ct));

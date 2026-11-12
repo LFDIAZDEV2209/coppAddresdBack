@@ -1,5 +1,14 @@
 # Módulo: Nutrición — generación, revisión clínica y lectura del paciente
 
+## Cambio vigente: publicación automática (KAN-61, 2026-11-12)
+
+Este requisito sustituye la aprobación profesional obligatoria descrita en las olas históricas de este documento. Al completar la batería inicial configurada, el worker genera y valida el mes, publica con el actor técnico `system:nutrition` y después marca la reserva como lista. No solicita `Nutrition.Approve` ni simula una revisión clínica. Conserva validaciones estructurales, versiones, vigencia de 30 días, exclusión de solapamientos y auditoría. El estado persistido `aprobado` significa publicado por compatibilidad del contrato; el nuevo evento es `publish`, con `AutoApproved=true` para el actor técnico y sin `CriticalConfirmed`.
+
+`POST /prescriptions/{id}/publish` permite publicar un borrador válido con `Nutrition.Manage`, alcance y revisión vigente. Los endpoints de revisión anteriores se conservan para compatibilidad. La reconciliación recupera reservas técnicas listas con planes no publicados y generaciones legacy completas pendientes de revisión; un plan incompleto o una generación fallida no se presenta como disponible. El aviso íntegro reside en `NutritionRecommendationNotice.Text`; se incluye en la lectura móvil, contexto de agentes y snapshot de auditoría. App y ERP muestran el texto exacto. El contexto del agente incluye además fecha inicial/final y día actual; entregar el aviso en WhatsApp requiere que su integración consuma ese contexto.
+
+Verificación local: Playwright usa APIs sintéticas para las pantallas, sin datos clínicos reales. Las pruebas de `NutritionPlanWorkflowTests` usan PostgreSQL aislado y sustituyen el proveedor IA. No acredita una prueba del canal WhatsApp ni publicación en producción.
+
+
 ### Horario individual de comidas en la app
 
 La lectura `GET /api/v1/me/nutrition-plan` añade el campo opcional

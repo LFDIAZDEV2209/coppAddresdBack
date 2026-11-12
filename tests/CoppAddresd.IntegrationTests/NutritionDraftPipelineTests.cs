@@ -76,16 +76,21 @@ public sealed partial class NutritionPlanWorkflowTests
         var reservation = await db.NutritionDraftReservations.AsNoTracking().SingleAsync();
         Assert.Equal("ready", reservation.State); Assert.True(reservation.Fallback);
         var plan = await db.NutritionPrescriptions.AsNoTracking().SingleAsync();
-        Assert.Equal(first.Id, plan.Id); Assert.Equal("borrador_ia", plan.State); Assert.False(plan.IsPublished);
+        Assert.Equal(first.Id, plan.Id); Assert.Equal("aprobado", plan.State); Assert.True(plan.IsPublished);
+        Assert.Equal(NutritionSystemActor.Id, plan.ApprovedBy);
+        Assert.Equal(29, plan.EndDate!.Value.DayNumber - plan.StartDate!.Value.DayNumber);
         Assert.Equal(NutritionSystemActor.Id, plan.CreatedBy);
-        var history = await db.NutritionPrescriptionEvents.AsNoTracking().SingleAsync();
-        Assert.Equal("system:nutrition", history.Comment); Assert.False(history.AutoApproved);
+        var history = await db.NutritionPrescriptionEvents.AsNoTracking().OrderBy(x => x.OccurredAt).ToListAsync();
+        Assert.Equal(2, history.Count);
+        Assert.All(history, e => Assert.Equal("system:nutrition", e.Comment));
+        Assert.True(history.Single(e => e.Action == "publish").AutoApproved);
+        Assert.Contains("IMPORTANT DISCLAIMER", history.Single(e => e.Action == "publish").SnapshotJson);
         // Reinicio entre commit del plan y confirmación de la reserva: la correlación fija reutiliza el plan.
         await db.NutritionDraftReservations.ExecuteUpdateAsync(s => s.SetProperty(x => x.State, "pending"));
         await using var restarted = Context();
         Assert.True(await DraftPipeline(restarted).ProcessNextAsync(CancellationToken.None));
         Assert.Equal(1, await restarted.NutritionPrescriptions.CountAsync());
-        Assert.Equal(1, await restarted.NutritionPrescriptionEvents.CountAsync());
+        Assert.Equal(2, await restarted.NutritionPrescriptionEvents.CountAsync());
         Assert.Equal(120, await restarted.NutritionPrescriptionMeals.CountAsync());
     }
 
@@ -132,6 +137,21 @@ public sealed partial class NutritionPlanWorkflowTests
     public async Task DraftPipeline_ReconcilesLostEvents_AndSuppressesLegacyProducer()
     {
         await using var db = Context(); var ids = await ReadyDraftPatientAsync(db);
+        var health = new HealthTestRepository(db);
+        var baseline = await health.ListAssignmentsByPatientAsync(ids.PatientId, CancellationToken.None);
+        for (var i=0; i<12; i++) db.HealthTestAssignments.Add(new HealthTestAssignment
+        {
+            Id=Guid.NewGuid(), PatientId=ids.PatientId, VersionId=baseline[i%baseline.Count].VersionId,
+            Status=HealthTestAssignmentStatus.pending,
+        });
+        await db.SaveChangesAsync();
+        // La elegibilidad de publicación depende del catálogo requerido, no de seguimientos ajenos.
+        var configured = await db.HealthTestBatteries.SingleAsync(x => x.Code == "bateria-inicial");
+        var optional = await db.HealthTestBatteryItems.FirstAsync(x => x.BatteryId == configured.Id);
+        optional.IsRequired = false;
+        var optionalAssignment = await db.HealthTestAssignments.SingleAsync(x => x.BatteryAssignmentId == ids.BatteryId && x.Version!.InstrumentId == optional.InstrumentId);
+        optionalAssignment.Status = HealthTestAssignmentStatus.pending;
+        await db.SaveChangesAsync();
         // Incluso si el worker legacy corre antes del evento, no debe reservar otro plan.
         await Workflow(db).QueueIfReadyAsync(ids.PatientId, CancellationToken.None);
         await Workflow(db).ReconcileAsync(CancellationToken.None);

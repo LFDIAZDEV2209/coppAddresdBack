@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Features.Nutrition.Cases;
 using System.Text.Json;
 using CoppAddresd.Application.DTOs.Ai;
 using CoppAddresd.Application.Features.Wellness;
@@ -83,6 +84,33 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
 
     public async Task ReconcileAsync(CancellationToken ct)
     {
+        // Publica generaciones legacy completas que quedaron esperando revisión.
+        // Un borrador inválido se difiere para que no bloquee los siguientes lotes.
+        var now = DateTime.UtcNow;
+        var ready = await db.NutritionPlans.AsNoTracking()
+            .Where(p => !p.IsTemplate && p.PatientId != null && p.GenerationStatus == "completed"
+                && p.ReviewStatus == "pending_review" && p.Status != NutritionPlanStatus.Archived
+                && (p.GenerationNextAttemptAt == null || p.GenerationNextAttemptAt <= now))
+            .OrderBy(p => p.GenerationNextAttemptAt ?? p.CreatedAt)
+            .ThenBy(p => p.Id).Select(p => new { p.Id, p.Revision }).Take(25).ToListAsync(ct);
+        foreach (var item in ready)
+        {
+            using var actorScope = NutritionSystemActor.Begin();
+            try
+            {
+                await ApproveAsync([new(item.Id, item.Revision, "Publicación automática del programa; sin aprobación clínica previa.")],
+                    new(NutritionSystemActor.Id, null, true), ct);
+            }
+            catch (Exception ex) when (ex is UnprocessableEntityException or BusinessRuleViolationException)
+            {
+                var retryAt = now.AddMinutes(15);
+                await db.NutritionPlans.Where(p => p.Id == item.Id && p.Revision == item.Revision
+                    && p.GenerationStatus == "completed" && p.ReviewStatus == "pending_review")
+                    .ExecuteUpdateAsync(s => s.SetProperty(p => p.GenerationNextAttemptAt, retryAt), ct);
+                logger.LogWarning("Nutrition.AutoPublicationDeferred PlanId={PlanId} FailureType={FailureType}", item.Id, ex.GetType().Name);
+            }
+        }
+
         // Recupera el hook perdido por un reinicio y renueva ciclos vencidos.
         // El índice patient_id de las asignaciones y el de planes mantienen el batch acotado.
         var ids = await db.HealthTestBatteryAssignments.AsNoTracking()
@@ -174,6 +202,8 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
             plan.Revision++;
             db.NutritionPlanReviewEvents.Add(Event(plan, "generated", null));
             await db.SaveChangesAsync(ct);
+            using var actorScope = NutritionSystemActor.Begin();
+            await ApproveAsync([new(plan.Id,plan.Revision,"Publicación automática del programa; sin aprobación clínica previa.")],new(NutritionSystemActor.Id,null,true),ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (DbUpdateConcurrencyException)
@@ -209,6 +239,15 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
         timezone ??= await db.ProgramEnrollments.AsNoTracking().Where(e => e.PatientId == patient)
             .OrderByDescending(e => e.CreatedAt).Select(e => e.Timezone).FirstOrDefaultAsync(ct);
         var today = LocalToday(timezone);
+        var current = await db.NutritionPrescriptions.AsNoTracking().Where(p=>p.PatientId==patient && p.State=="aprobado" && p.IsPublished
+            && p.StartDate<=today && p.EndDate>=today).OrderByDescending(p=>p.StartDate).ThenByDescending(p=>p.Version)
+            .Select(p=>new {p.Id,p.StartDate,p.EndDate,p.Revision}).FirstOrDefaultAsync(ct);
+        if(current is not null)return new("active",30,current.StartDate,current.EndDate,today.DayNumber-current.StartDate!.Value.DayNumber+1,today,current.Id,current.Revision);
+        var generation=await db.NutritionDraftReservations.AsNoTracking().Where(r=>r.PatientId==patient)
+            .OrderByDescending(r=>r.CreatedAt).ThenByDescending(r=>r.Id).Select(r=>new {r.State}).FirstOrDefaultAsync(ct);
+        // Una reserva lista de un ciclo vencido no significa que siga generándose.
+        // Tampoco debe ocultar una asignación legacy vigente.
+
         var active = await db.NutritionPlanAssignments.AsNoTracking()
             .Where(a => a.PatientId == patient && a.Status == AssignmentStatus.Active
                 && a.Plan.PatientId == patient && !a.Plan.IsTemplate
@@ -224,6 +263,10 @@ public sealed class NutritionPlanWorkflow(AppDbContext db, IClinicalContextServi
             var start = DateOnly.FromDateTime(active.StartDate);
             return new("active", 30, start, DateOnly.FromDateTime(active.EndDate!.Value), today.DayNumber - start.DayNumber + 1, today, active.PlanId, active.Revision);
         }
+        if (generation is not null && generation.State != "ready")
+            return new(generation.State == "failed" ? "generation_failed" : "generating", TodayLocalDate: today);
+        if (generation?.State == "ready")
+            return new("expired", TodayLocalDate: today);
         var plan = await db.NutritionPlans.AsNoTracking().Where(p => p.PatientId == patient && !p.IsTemplate)
             .OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync(ct);
         if (plan is not null && plan.Status != NutritionPlanStatus.Archived)

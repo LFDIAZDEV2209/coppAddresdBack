@@ -8,6 +8,15 @@ namespace CoppAddresd.Infrastructure.Repositories;
 /// <summary>Reserva y lease con escrituras cortas; ninguna transacción permanece abierta durante la IA.</summary>
 public sealed class NutritionDraftReservationStore(AppDbContext db) : INutritionDraftReservationStore
 {
+    // Recupera borradores técnicos ya generados antes de habilitar la publicación automática.
+    public Task<int> QueueUnpublishedReadyAsync(CancellationToken ct) => db.Database.ExecuteSqlRawAsync("""
+        UPDATE app.nutrition_draft_reservations SET state='pending', attempts=0, next_attempt_at=now(), updated_at=now()
+        WHERE id IN (SELECT r.id FROM app.nutrition_draft_reservations r
+        JOIN app.nutrition_prescriptions p ON p.id=r.prescription_id
+        WHERE r.state='ready' AND NOT p.is_published AND p.state IN ('borrador_ia','en_aprobacion')
+        ORDER BY r.updated_at, r.id LIMIT 25 FOR UPDATE OF r SKIP LOCKED)
+        """, ct);
+
     public Task<NutritionDraftReservation> ReserveAsync(Guid patientId, Guid batteryAssignmentId, CancellationToken ct)
         => WriteAsync(() => ReserveCoreAsync(patientId, batteryAssignmentId, ct), ct);
 
