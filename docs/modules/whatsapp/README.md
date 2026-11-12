@@ -62,3 +62,29 @@ El vínculo conserva user_id para reutilizar la identidad y consentimiento del c
 Un teléfono desconocido recibe guía de registro sin crear conversación de agente.
 `ON CONFLICT` y unicidad evitan vínculos/hilos duplicados en primeras entradas
 concurrentes. No hay FK desde `whatsapp` a `app` ni a `auth`.
+
+## Conversación y recuperación
+
+El worker sondea la BD cada segundo además de drenar señales de cola. Reclama un
+evento con `FOR UPDATE SKIP LOCKED` y lease de cinco minutos en una sola sentencia,
+libera el lock y procesa con límite de dos minutos. Ordena por recepción por número;
+un turno anterior pendiente impide que otro worker adelante el mismo hilo.
+Invoca `ChatCommand` por MediatR (el mismo handler de ChatController), agente `base`
+por defecto, user_id real cuando existe y patient_id; sin control_context en v1.
+Los campos nuevos son opcionales: clientes existentes conservan su comportamiento.
+El cliente de IA mantiene su validación de consentimiento, también en background.
+
+Idioma inicial es; cambia a en solo con señal clara y se conserva entre turnos.
+SALIR/STOP e INICIAR/START son insensibles a caso y acentos; confirman y cambian
+opt_out sin consultar al agente. Opt-out no bloquea conversaciones iniciadas por
+el paciente. Si la IA falla (límite 90 s), se guarda la causa técnica tipada y se
+envía un texto seguro. No se guardan excepciones ni cuerpos del proveedor en logs.
+
+La respuesta se persiste antes del envío, y cada fragmento aceptado avanza un
+cursor durable. Un fallo transitorio del sender reintenta el fragmento pendiente
+con backoff de 5–60 s (máximo cinco intentos), sin repetir el LLM. Permanente o
+ventana cerrada termina el evento con código de error. Un reinicio recupera leases
+vencidos. Existe una ventana inevitable si el proceso muere después de que Meta
+acepte y antes del commit del cursor: Cloud API no ofrece una clave idempotente
+del cliente para garantizar exactly-once en ese punto. El dedupe de webhooks y el
+cursor evitan duplicados ordinarios; no se promete atomicidad entre Meta y la BD.

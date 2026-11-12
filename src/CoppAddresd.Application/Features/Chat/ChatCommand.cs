@@ -9,7 +9,9 @@ public record ChatCommand(
     string? ThreadId = null,
     string? AgentTypeId = null,
     string? UserId = null,
-    string? Language = null)
+    string? Language = null,
+    bool IncludeControlContext = true,
+    string? PatientId = null)
     : IRequest<ChatResult>;
 
 /// <summary>

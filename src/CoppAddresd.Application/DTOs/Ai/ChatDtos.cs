@@ -14,7 +14,8 @@ public record ChatRequest(
     string? AgentTypeId = null,
     string? UserId = null,
     object? ControlContext = null,
-    string? Language = null);
+    string? Language = null,
+    string? PatientId = null);
 
 /// <summary>
 /// Contexto de control de programa abierto adjunto al request de chat (fase 2,

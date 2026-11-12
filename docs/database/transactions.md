@@ -114,3 +114,11 @@ back through asynchronous disposal. Events publish only after commit; no externa
 HTTP or event publication runs while the database lock is held. The Community
 connection does not enable EF retry execution strategies. No load testing is
 claimed; functional tests use two concurrent synthetic requests.
+# WhatsApp — claims de eventos (2026-11-12)
+
+`UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING *` reclama
+un evento en una sentencia atómica, Read Committed, lease de cinco minutos.
+El lock termina antes de llamar al agente o a Meta. No hay HTTP dentro de
+transacciones de BD. El cursor de fragmentos se guarda después de cada aceptación.
+Cancelación deja el lease recuperable; reenvíos concurrentes usan `ON CONFLICT`.
+
