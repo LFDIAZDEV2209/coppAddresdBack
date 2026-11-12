@@ -56,6 +56,7 @@ public sealed class InboundFlowTests(PostgresFixture fixture) : IClassFixture<Po
     }
 
     [Theory]
+    [InlineData("SALIR", true, "es")]
     [InlineData("SÁLIR", true, "es")]
     [InlineData("sToP", true, "en")]
     [InlineData("INÍCIAR", false, "es")]
@@ -71,6 +72,16 @@ public sealed class InboundFlowTests(PostgresFixture fixture) : IClassFixture<Po
         var link = await db.PatientLinks.SingleAsync();
         Assert.Equal(optOut, link.OptOut);
         Assert.Equal(language, link.Language);
+    }
+
+    [Fact]
+    public async Task ConcurrentInboundWorkers_RespondOnlyOnce()
+    {
+        await using var harness = await CreateAsync();
+        await harness.EnqueueAsync(Guid.NewGuid().ToString(), "Hola");
+        await Task.WhenAll(harness.ProcessAsync(), harness.ProcessAsync());
+        Assert.Single(harness.Requests);
+        Assert.Single(harness.Sent);
     }
 
     [Fact]

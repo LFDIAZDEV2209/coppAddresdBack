@@ -1,5 +1,8 @@
 # Canal WhatsApp
 
+Operación preparada, pendiente de aprobación: [OPERACION.md](OPERACION.md).
+Informe y evidencia local: [INFORME.md](INFORME.md).
+
 Módulo del monolito (`CoppAddresd.WhatsApp`), con contratos en Application y entidades
 en Domain. No incorpora otro servicio desplegable. OpenSpec:
 `openspec/changes/canal-whatsapp` en la raíz del workspace (decisiones D1–D9).

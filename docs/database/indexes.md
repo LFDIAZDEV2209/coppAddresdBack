@@ -228,4 +228,3 @@ withdrawal, immutability and migration up/down/up. No load claim is made.
 | IX_reminders_assignment_id | whatsapp.reminders | assignment_id no nulo | Parcial | Hook de evaluación completada | Cancelación puntual | Solo evaluaciones |
 | IX_reminder_deliveries_reminder_id_attempt | whatsapp.reminder_deliveries | reminder_id, attempt | Único B-tree | Auditar intentos, cubre FK del mismo schema | No duplica número de intento | Una entrada por intento |
 | IX_reminder_deliveries_patient_id_kind_accepted_at | whatsapp.reminder_deliveries | patient_id, kind, accepted_at no nulo | Parcial | Separación mínima 24 h por tipo | Max temporal indexable | Solo aceptados |
-

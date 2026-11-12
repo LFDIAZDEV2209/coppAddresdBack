@@ -128,4 +128,3 @@ commit antes de llamar a Meta. Updates finales condicionados a Pending y lease
 evitan deshacer una cancelación concurrente. El webhook actualiza actividad y
 cancelaciones antes del ACK. Los hooks clínicos corren después del commit del
 módulo propietario; si fallan, polling revalida y cancela antes de otro envío.
-
