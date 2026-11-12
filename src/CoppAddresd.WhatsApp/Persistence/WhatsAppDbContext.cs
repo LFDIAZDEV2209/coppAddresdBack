@@ -10,10 +10,21 @@ public sealed class WhatsAppDbContext(DbContextOptions<WhatsAppDbContext> option
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<Reminder> Reminders => Set<Reminder>();
     public DbSet<ReminderDelivery> ReminderDeliveries => Set<ReminderDelivery>();
+    public DbSet<BindingSession> BindingSessions => Set<BindingSession>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.HasDefaultSchema("whatsapp");
+        var binding = model.Entity<BindingSession>();
+        binding.ToTable("binding_sessions", t => t.HasCheckConstraint("ck_binding_limits",
+            "attempts BETWEEN 0 AND 3 AND otp_sends BETWEEN 0 AND 2 AND cardinality(otp_sent_at) <= 2"));
+        binding.HasKey(x => x.Id);
+        binding.Property(x => x.WaId).HasMaxLength(16);
+        binding.Property(x => x.ContactId).HasMaxLength(20);
+        binding.Property(x => x.State).HasConversion<string>().HasMaxLength(30);
+        binding.Property(x => x.LastReply).HasMaxLength(1000);
+        binding.Ignore(x => x.IsActive);
+        binding.HasIndex(x => x.WaId).IsUnique();
         var raw = model.Entity<WhatsAppRawEvent>();
         raw.ToTable("raw_events");
         raw.HasKey(x => x.Id);

@@ -10,7 +10,8 @@ namespace CoppAddresd.WhatsApp.Messaging;
 
 public sealed class WhatsAppInboundProcessor(WhatsAppDbContext db, WhatsAppPatientResolver resolver,
     ISender mediator, IWhatsAppMessageSender sender, TimeProvider clock, ILogger<WhatsAppInboundProcessor> logger,
-    CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks? reminders = null)
+    CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks? reminders = null,
+    CoppAddresd.WhatsApp.Binding.WhatsAppBindingFlow? binding = null)
 {
     public async Task<bool> ProcessNextAsync(CancellationToken ct)
     {
@@ -67,7 +68,8 @@ public sealed class WhatsAppInboundProcessor(WhatsAppDbContext db, WhatsAppPatie
         var link = await resolver.ResolveAsync(input.WaId, input.MessageAt, ct);
         if (link is null)
         {
-            input.Reply = "Para conversar con tu asistente, regístrate en la app ANTARES con este número de teléfono.";
+            if (binding is not null) await binding.HandleAsync(input, ct);
+            else input.Reply = Binding.WhatsAppBindingFlow.Guide;
         }
         else
         {

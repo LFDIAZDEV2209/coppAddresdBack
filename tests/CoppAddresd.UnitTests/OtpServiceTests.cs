@@ -16,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 namespace CoppAddresd.UnitTests;
 
@@ -31,6 +32,49 @@ public sealed class OtpServiceTests
     private const string Document = "100200300";
     private const string AppCode = "app";
     private const string TestIp = "203.0.113.10";
+
+    [Fact]
+    public async Task VerifyOtp_ExplicitPhone_CannotConsumeAnEmailCode()
+    {
+        using var harness = new OtpTestHarness(Patient(phoneCountryCode: "57", phoneNumber: "3001234567"));
+        await harness.SeedEmailOtpAsync("paciente@test.com", "123456", "salt");
+        var result = await harness.Otp.VerifyOtpAsync(new VerifyOtpRequest
+        { DocumentNumber = Document, Otp = "123456", Application = AppCode, ContactId = "phone" });
+        Assert.Null(result);
+        Assert.Equal(0, harness.Twilio.CheckCount);
+        Assert.Equal(0, harness.Tokens.AccessTokenCalls);
+        Assert.Null((await harness.Db.OtpCodes.SingleAsync()).UsedAt);
+    }
+
+    [Fact]
+    public async Task OtpLogs_DoNotContainDocumentPhoneOrCodeInClear()
+    {
+        using var harness = new OtpTestHarness(Patient(phoneCountryCode: "57", phoneNumber: "3001234567"));
+        harness.Twilio.OnCheck = (_, _, _) => Task.FromResult(new TwilioCheckOtpResult(false, "pending"));
+        await harness.Otp.SendOtpAsync(new SendOtpRequest { DocumentNumber = Document, ContactId = "phone" });
+        await harness.Otp.VerifyOtpAsync(new VerifyOtpRequest
+        { DocumentNumber = Document, Otp = "654321", Application = AppCode, ContactId = "phone" });
+        Assert.NotEmpty(harness.Logs.Messages);
+        Assert.All(harness.Logs.Messages, message =>
+        {
+            Assert.DoesNotContain(Document, message);
+            Assert.DoesNotContain("3001234567", message);
+            Assert.DoesNotContain("654321", message);
+        });
+    }
+
+    private sealed class OtpLogCapture : ILoggerProvider
+    {
+        public List<string> Messages { get; } = [];
+        public ILogger CreateLogger(string categoryName) => new Collector(Messages);
+        public void Dispose() { }
+        private sealed class Collector(List<string> messages) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel level) => true;
+            public void Log<TState>(LogLevel level, EventId id, TState state, Exception? ex, Func<TState, Exception?, string> formatter) => messages.Add(formatter(state, ex));
+        }
+    }
 
     // =====================================================================
     // SEND PHONE
@@ -843,6 +887,7 @@ public sealed class OtpServiceTests
 
     private sealed class OtpTestHarness : IDisposable
     {
+        public OtpLogCapture Logs { get; } = new();
         private readonly SqliteConnection _connection;
         private readonly ServiceProvider _provider;
         private readonly IServiceScope _scope;
@@ -856,7 +901,7 @@ public sealed class OtpServiceTests
             _connection.Open();
 
             var services = new ServiceCollection();
-            services.AddLogging();
+            services.AddLogging(builder => builder.AddProvider(Logs));
             services.AddDataProtection();
             services.AddSingleton<IHostEnvironment>(new TestEnvironment { EnvironmentName = "Development" });
             services.AddDbContext<AuthDbContext>(options => options.UseSqlite(_connection));

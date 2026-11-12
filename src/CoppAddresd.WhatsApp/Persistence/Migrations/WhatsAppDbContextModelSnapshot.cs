@@ -23,6 +23,79 @@ namespace CoppAddresd.WhatsApp.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.WhatsApp.BindingSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("ContactId")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("contact_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("LastEventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_event_id");
+
+                    b.Property<string>("LastReply")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("last_reply");
+
+                    b.Property<Guid?>("LeaseOwner")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lease_owner");
+
+                    b.Property<DateTimeOffset?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_until");
+
+                    b.Property<int>("OtpSends")
+                        .HasColumnType("integer")
+                        .HasColumnName("otp_sends");
+
+                    b.PrimitiveCollection<DateTimeOffset[]>("OtpSentAt")
+                        .IsRequired()
+                        .HasColumnType("timestamp with time zone[]")
+                        .HasColumnName("otp_sent_at");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("WaId")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("wa_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WaId")
+                        .IsUnique();
+
+                    b.ToTable("binding_sessions", "whatsapp", t =>
+                        {
+                            t.HasCheckConstraint("ck_binding_limits", "attempts BETWEEN 0 AND 3 AND otp_sends BETWEEN 0 AND 2 AND cardinality(otp_sent_at) <= 2");
+                        });
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.WhatsApp.Conversation", b =>
                 {
                     b.Property<Guid>("Id")

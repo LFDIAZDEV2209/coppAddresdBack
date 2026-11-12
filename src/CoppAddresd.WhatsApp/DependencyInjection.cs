@@ -23,6 +23,15 @@ public static class DependencyInjection
         services.AddScoped<Webhook.WhatsAppWebhook>();
         services.AddScoped<Messaging.WhatsAppPatientResolver>();
         services.AddScoped<Messaging.WhatsAppInboundProcessor>();
+        var auth = configuration.GetSection("WhatsApp:Auth").Get<Binding.WhatsAppAuthOptions>() ?? new();
+        var authBase = auth.GetBaseUri();
+        services.AddScoped<Binding.WhatsAppBindingFlow>();
+        services.AddHttpClient<CoppAddresd.Application.WhatsApp.Binding.IWhatsAppOtpClient, Binding.AuthOtpClient>(client =>
+        {
+            client.BaseAddress = authBase;
+            client.Timeout = TimeSpan.FromSeconds(10);
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false })
+            .RemoveAllLoggers();
         services.AddHostedService<Webhook.WhatsAppInboundWorker>();
         var reminders = configuration.GetSection("WhatsApp:Reminders").Get<Reminders.ReminderSettings>() ?? new();
         reminders.Validate();

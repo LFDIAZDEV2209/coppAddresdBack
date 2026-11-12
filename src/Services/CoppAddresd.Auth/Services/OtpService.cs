@@ -127,7 +127,7 @@ public class OtpService : IOtpService
             _logger.LogWarning(
                 "OTP send: contact {ContactId} not available for document {Document}",
                 request.ContactId,
-                patient.DocumentNumber
+                MaskDocument(patient.DocumentNumber)
             );
             return (false, "Ese método de contacto no está disponible", null);
         }
@@ -174,7 +174,7 @@ public class OtpService : IOtpService
 
             _logger.LogInformation(
                 "OTP phone verification requested for document {Document}",
-                patient.DocumentNumber
+                MaskDocument(patient.DocumentNumber)
             );
 
             return (true, null, new SendOtpResponse(OtpLifetimeSeconds));
@@ -226,7 +226,7 @@ public class OtpService : IOtpService
             _logger.LogError(
                 ex,
                 "OTP email send failed for document {Document}",
-                patient.DocumentNumber
+                MaskDocument(patient.DocumentNumber)
             );
             await _dbContext
                 .OtpCodes.Where(o =>
@@ -245,7 +245,7 @@ public class OtpService : IOtpService
 
         _logger.LogInformation(
             "OTP issued for document {Document} via {Channel} (expires in {Seconds}s)",
-            patient.DocumentNumber,
+            MaskDocument(patient.DocumentNumber),
             channel,
             OtpLifetimeSeconds
         );
@@ -278,6 +278,11 @@ public class OtpService : IOtpService
             .FirstOrDefaultAsync(ct);
 
         string? verifiedPhone = null;
+        // Un consumidor PHONE no puede aprobar accidentalmente un OTP EMAIL emitido
+        // mientras esperaba el SMS. Omitir ContactId conserva el flujo existente.
+        if (request.ContactId == ContactPhone && otp is not null
+            || request.ContactId == ContactEmail && otp is null)
+            return null;
         if (otp is not null)
         {
             // Flujo EMAIL local sin cambios: expiración, intentos y hash local.
@@ -285,7 +290,7 @@ public class OtpService : IOtpService
             {
                 _logger.LogWarning(
                     "OTP verify: code expired for document {Document}",
-                    patient.DocumentNumber
+                    MaskDocument(patient.DocumentNumber)
                 );
                 return null;
             }
@@ -294,7 +299,7 @@ public class OtpService : IOtpService
             {
                 _logger.LogWarning(
                     "OTP verify: too many attempts for document {Document}",
-                    patient.DocumentNumber
+                    MaskDocument(patient.DocumentNumber)
                 );
                 return null;
             }
@@ -306,7 +311,7 @@ public class OtpService : IOtpService
                 await _dbContext.SaveChangesAsync(ct);
                 _logger.LogWarning(
                     "OTP verify: invalid code for document {Document} (attempt {Attempts})",
-                    patient.DocumentNumber,
+                    MaskDocument(patient.DocumentNumber),
                     otp.Attempts
                 );
                 return null;
@@ -326,7 +331,7 @@ public class OtpService : IOtpService
             {
                 _logger.LogWarning(
                     "OTP verify: phone not available for document {Document}",
-                    patient.DocumentNumber
+                    MaskDocument(patient.DocumentNumber)
                 );
                 return null;
             }
@@ -360,7 +365,7 @@ public class OtpService : IOtpService
                 _otpProtection.RegisterVerifyFailed(clientIp, phone.Target);
                 _logger.LogWarning(
                     "OTP phone verification rejected for document {Document}",
-                    patient.DocumentNumber
+                    MaskDocument(patient.DocumentNumber)
                 );
                 return null;
             }
@@ -369,7 +374,7 @@ public class OtpService : IOtpService
             _otpProtection.RegisterVerifySucceeded(clientIp, phone.Target);
             _logger.LogInformation(
                 "OTP phone verification approved for document {Document}",
-                patient.DocumentNumber
+                MaskDocument(patient.DocumentNumber)
             );
         }
 
