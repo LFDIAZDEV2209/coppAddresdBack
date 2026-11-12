@@ -39,8 +39,10 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
         // Hook de controles (fase 2, best-effort): control abierto → Responded
         // + control_context en el payload hacia el ai-service. Con el
         // killswitch apagado no hay ninguna llamada nueva.
-        var openControl = await ProgramControlChatHooks.TryPrepareAsync(
-            _programControls, _settings.Value, request.UserId, request.ThreadId, _logger, ct);
+        var openControl = request.IncludeControlContext
+            ? await ProgramControlChatHooks.TryPrepareAsync(
+                _programControls, _settings.Value, request.UserId, request.ThreadId, _logger, ct)
+            : null;
 
         var dto = new DTOs.Ai.ChatRequest(
             request.Message,
@@ -52,7 +54,8 @@ public class ChatCommandHandler : IRequestHandler<ChatCommand, ChatResult>
             // Idioma de la app del paciente ('es' | 'en'): señal explícita por
             // turno para el AI Service (permite cambiar de idioma a mitad de
             // conversación). Null ⇒ el AI Service mantiene su espejo.
-            request.Language);
+            request.Language,
+            request.PatientId);
 
         try
         {

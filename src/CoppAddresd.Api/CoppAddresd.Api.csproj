@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\CoppAddresd.Application\CoppAddresd.Application.csproj" />
     <ProjectReference Include="..\CoppAddresd.Infrastructure\CoppAddresd.Infrastructure.csproj" />
+    <ProjectReference Include="..\CoppAddresd.WhatsApp\CoppAddresd.WhatsApp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

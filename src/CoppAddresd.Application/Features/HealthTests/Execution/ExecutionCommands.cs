@@ -92,7 +92,8 @@ public sealed class SubmitEvaluationCommandHandler(
     IProgramAssignmentRepository? assignmentRepository = null,
     IOptionsMonitor<ProgramAssignmentSettings>? assignmentSettings = null,
     ILogger<SubmitEvaluationCommandHandler>? logger = null,
-    INutritionDraftWorkflow? nutritionDraftWorkflow = null
+    INutritionDraftWorkflow? nutritionDraftWorkflow = null,
+    CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks? whatsappReminders = null
 ) : IRequestHandler<SubmitEvaluationCommand, HealthTestEvaluationDto>
 {
     public async Task<HealthTestEvaluationDto> Handle(
@@ -344,6 +345,14 @@ public sealed class SubmitEvaluationCommandHandler(
             },
             ct
         );
+
+        // El commit clínico ya terminó; el canal no participa en su transacción.
+        if (whatsappReminders is not null)
+        {
+            try { await whatsappReminders.CancelForAssignmentAsync(result.AssignmentId, ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { logger?.LogWarning("WhatsApp: el reconciliador cancelará recordatorios; causa={Cause}", ex.GetType().Name); }
+        }
 
         // La señal clínica de Nutrition es independiente del gate y de la inscripción legacy.
         if (publisher is not null && assignmentRepository is not null)

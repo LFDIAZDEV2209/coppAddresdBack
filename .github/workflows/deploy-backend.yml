@@ -59,7 +59,7 @@ jobs:
           if echo "$CHANGED" | grep -q "tests/CoppAddresd.Community.UnitTests"; then
             SERVICES="$SERVICES community"
           fi
-          if echo "$CHANGED" | grep -q "src/CoppAddresd.Api"; then
+          if echo "$CHANGED" | grep -q -E "src/CoppAddresd\.(Api|WhatsApp)|tests/CoppAddresd\.WhatsApp\.Tests"; then
             SERVICES="$SERVICES api"
           fi
           if echo "$CHANGED" | grep -q "src/Services/CoppAddresd.Telemedicine"; then
@@ -106,6 +106,9 @@ jobs:
             if echo "$SERVICES" | grep -q -E "(^| )community( |$)"; then
               TESTS="$TESTS tests/CoppAddresd.Community.UnitTests"
             fi
+            if echo "$SERVICES" | grep -q -E "(^| )api( |$)"; then
+              TESTS="$TESTS tests/CoppAddresd.WhatsApp.Tests"
+            fi
             TESTS_JSON=$(echo "$TESTS" | xargs | tr ' ' '\n' | sort -u | jq -R . | jq -s -c .)
             echo "test_projects=$TESTS_JSON" >> "$GITHUB_OUTPUT"
 
@@ -115,6 +118,16 @@ jobs:
     needs: detect
     if: needs.detect.outputs.services != '' && needs.detect.outputs.services != '[]'
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     strategy:
       fail-fast: false
       matrix:
@@ -125,9 +138,16 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Test unitarios (${{ matrix.project }}, CI-safe, sin RDS)
+      - name: Pruebas locales (${{ matrix.project }}, sin RDS)
+        env:
+          COP_TEST_DB_CONNECTION: ${{ matrix.project == 'tests/CoppAddresd.WhatsApp.Tests' && 'Host=127.0.0.1;Port=5432;Username=postgres;Database=postgres' || '' }}
         run: |
           dotnet test ${{ matrix.project }} -c Release --nologo
+
+      - name: Validar scripts WhatsApp sin red
+        if: matrix.project == 'tests/CoppAddresd.WhatsApp.Tests'
+        shell: pwsh
+        run: ./tests/scripts/Test-WhatsAppOperations.ps1
 
       - name: Validar el gate de migraciones ECS
         if: matrix.project == 'tests/CoppAddresd.UnitTests'
@@ -182,7 +202,7 @@ jobs:
               echo "dockerfile=src/CoppAddresd.Api/Dockerfile" >> "$GITHUB_OUTPUT"
               echo "ecr=cooppadresd-api" >> "$GITHUB_OUTPUT"
               # SOS real: Twilio para SMS y llamada de voz (mismas credenciales del proveedor).
-              echo "extra_env=[{\"name\":\"SosGeocoding__Enabled\",\"value\":\"true\"},{\"name\":\"SosGeocoding__Region\",\"value\":\"us-east-2\"},{\"name\":\"SosLocationLinks__PublicBaseUrl\",\"value\":\"https://erp.coppadresd.com\"},{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__UserName\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromAddress\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"},{\"name\":\"Sms__Provider\",\"value\":\"Twilio\"},{\"name\":\"Sms__IsEnabled\",\"value\":\"true\"},{\"name\":\"Sms__AccountSid\",\"value\":\"${{ secrets.TWILIO_ACCOUNT_SID }}\"},{\"name\":\"Sms__AuthToken\",\"value\":\"${{ secrets.TWILIO_AUTH_TOKEN }}\"},{\"name\":\"Sms__FromNumber\",\"value\":\"+18654207919\"},{\"name\":\"Sms__MessagingServiceSid\",\"value\":\"\"},{\"name\":\"Voice__Provider\",\"value\":\"Twilio\"},{\"name\":\"Voice__IsEnabled\",\"value\":\"true\"},{\"name\":\"Voice__AccountSid\",\"value\":\"${{ secrets.TWILIO_ACCOUNT_SID }}\"},{\"name\":\"Voice__AuthToken\",\"value\":\"${{ secrets.TWILIO_AUTH_TOKEN }}\"},{\"name\":\"Voice__FromNumber\",\"value\":\"+18654207919\"}]" >> "$GITHUB_OUTPUT"
+              echo "extra_env=[{\"name\":\"SosGeocoding__Enabled\",\"value\":\"true\"},{\"name\":\"WhatsApp__Auth__BaseUrl\",\"value\":\"https://erp.coppadresd.com\"},{\"name\":\"SosGeocoding__Region\",\"value\":\"us-east-2\"},{\"name\":\"SosLocationLinks__PublicBaseUrl\",\"value\":\"https://erp.coppadresd.com\"},{\"name\":\"Jwt__Issuer\",\"value\":\"CoppAddresd.Auth\"},{\"name\":\"Storage__Provider\",\"value\":\"S3\"},{\"name\":\"Storage__S3__Region\",\"value\":\"us-east-2\"},{\"name\":\"Storage__S3__Bucket\",\"value\":\"cooppadresd-storage-prod\"},{\"name\":\"Email__Provider\",\"value\":\"Smtp\"},{\"name\":\"Email__SmtpHost\",\"value\":\"smtp.office365.com\"},{\"name\":\"Email__SmtpPort\",\"value\":\"587\"},{\"name\":\"Email__UserName\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromAddress\",\"value\":\"info@coppadresd.com\"},{\"name\":\"Email__FromName\",\"value\":\"CoppAddresd\"},{\"name\":\"Sms__Provider\",\"value\":\"Twilio\"},{\"name\":\"Sms__IsEnabled\",\"value\":\"true\"},{\"name\":\"Sms__AccountSid\",\"value\":\"${{ secrets.TWILIO_ACCOUNT_SID }}\"},{\"name\":\"Sms__AuthToken\",\"value\":\"${{ secrets.TWILIO_AUTH_TOKEN }}\"},{\"name\":\"Sms__FromNumber\",\"value\":\"+18654207919\"},{\"name\":\"Sms__MessagingServiceSid\",\"value\":\"\"},{\"name\":\"Voice__Provider\",\"value\":\"Twilio\"},{\"name\":\"Voice__IsEnabled\",\"value\":\"true\"},{\"name\":\"Voice__AccountSid\",\"value\":\"${{ secrets.TWILIO_ACCOUNT_SID }}\"},{\"name\":\"Voice__AuthToken\",\"value\":\"${{ secrets.TWILIO_AUTH_TOKEN }}\"},{\"name\":\"Voice__FromNumber\",\"value\":\"+18654207919\"}]" >> "$GITHUB_OUTPUT"
               echo "extra_secrets=[{\"name\":\"Storage__SignatureKey\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/storage-IdKS1X\"},{\"name\":\"Email__Password\",\"valueFrom\":\"arn:aws:secretsmanager:us-east-2:933629770820:secret:cooppadresd/smtp-password-XjggyI\"}]" >> "$GITHUB_OUTPUT"
               # La API usa el SDK (storage S3): task role declarativo, no heredado
               # de la task def previa (incidente I0002: community nació sin él).
@@ -243,6 +263,21 @@ jobs:
           TD_NAME="cooppadresd-${{ matrix.service }}"
           TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition "$TD_NAME" --region "${{ env.AWS_REGION }}" --query "taskDefinition" --output json)
           NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ steps.svc.outputs.ecr }}:${{ github.sha }}"
+          EXTRA_ENV='${{ steps.svc.outputs.extra_env }}'
+          EXTRA_SECRETS='${{ steps.svc.outputs.extra_secrets }}'
+          if [ "${{ matrix.service }}" = "api" ]; then
+            # Referencias al secret; nunca leer valores en el runner ni en sus logs.
+            WA_ENABLED="${{ vars.WHATSAPP_ENABLED_DEV || '0' }}"
+            WA_REMINDERS="${{ vars.WHATSAPP_REMINDERS_ENABLED_DEV || 'false' }}"
+            EXTRA_ENV=$(echo "$EXTRA_ENV" | jq --arg enabled "$WA_ENABLED" --arg reminders "$WA_REMINDERS" \
+              '. + [{name:"WHATSAPP_ENABLED",value:$enabled},{name:"WhatsApp__Reminders__Enabled",value:$reminders}]')
+            if [ "$WA_ENABLED" = "1" ] || [ "$WA_ENABLED" = "true" ]; then
+              WA_SECRET_ARN="${{ vars.WHATSAPP_SECRET_ARN_DEV }}"
+              test -n "$WA_SECRET_ARN" || { echo "Falta WHATSAPP_SECRET_ARN_DEV"; exit 1; }
+              EXTRA_SECRETS=$(echo "$EXTRA_SECRETS" | jq --arg arn "$WA_SECRET_ARN" \
+                '. + (["WHATSAPP_ACCESS_TOKEN","WHATSAPP_PHONE_NUMBER_ID","WHATSAPP_APP_ID","WHATSAPP_APP_SECRET","WHATSAPP_WEBHOOK_VERIFY_TOKEN"] | map(. as $key | {name:$key,valueFrom:($arn + ":" + $key + "::")}))')
+            fi
+          fi
           # taskRoleArn declarativo: clonar la task def anterior hereda el valor de
           # la task def original; community nació sin role y el clone-forward lo
           # arrastraba → Storage S3 sin credenciales → HC0044 en prod (incidente I0002
@@ -251,8 +286,8 @@ jobs:
           # Sin comments dentro del programa jq (portabilidad de versiones).
           NEW_TASK_DEF_JSON=$(echo "$TASK_DEF_JSON" | jq --arg img "$NEW_IMAGE" \
             --arg role "${{ steps.svc.outputs.task_role }}" \
-            --argjson envs '${{ steps.svc.outputs.extra_env }}' \
-            --argjson secs '${{ steps.svc.outputs.extra_secrets }}' '
+            --argjson envs "$EXTRA_ENV" \
+            --argjson secs "$EXTRA_SECRETS" '
             .containerDefinitions[0].image = $img |
             del(.status, .compatibilities, .taskDefinitionArn, .revision, .registeredAt, .registeredBy, .requiresAttributes) |
             (if $role != "" then .taskRoleArn = $role else . end) |

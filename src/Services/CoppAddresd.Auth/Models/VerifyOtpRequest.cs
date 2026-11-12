@@ -10,6 +10,10 @@ namespace CoppAddresd.Auth.Models;
 /// </summary>
 public record VerifyOtpRequest
 {
+    /// <summary>Restricción opcional de canal para consumidores que exigen prueba por SMS.</summary>
+    [RegularExpression("^(phone|email)$")]
+    public string? ContactId { get; init; }
+
     [Required(ErrorMessage = "El número de identificación es requerido")]
     [StringLength(50, ErrorMessage = "Número de identificación inválido")]
     public string DocumentNumber { get; init; } = string.Empty;

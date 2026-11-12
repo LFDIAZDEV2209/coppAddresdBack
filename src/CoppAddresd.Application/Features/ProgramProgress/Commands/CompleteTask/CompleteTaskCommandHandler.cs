@@ -24,7 +24,8 @@ public sealed class CompleteTaskCommandHandler(
     IProgramRepository repository,
     IProgramMetricsQueue? metricsQueue,
     IBiometriaMetricsQueue? biometriaQueue,
-    ILogger<CompleteTaskCommandHandler> logger) : IRequestHandler<CompleteTaskCommand, CompleteTaskResponseDto>
+    ILogger<CompleteTaskCommandHandler> logger,
+    CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks? whatsappReminders = null) : IRequestHandler<CompleteTaskCommand, CompleteTaskResponseDto>
 {
     public CompleteTaskCommandHandler(
         IProgramRepository repository,
@@ -121,6 +122,14 @@ public sealed class CompleteTaskCommandHandler(
             "outcome={Outcome} puntos={Points} balance={Balance}",
             request.EnrollmentId, request.LocalDate, request.TaskCode,
             result.Outcome, result.PointsAwarded, result.XpBalanceAfter);
+
+        // CompleteTaskAsync ya confirmó su transacción: resolver racha/podcast con las fuentes actuales.
+        if (whatsappReminders is not null)
+        {
+            try { await whatsappReminders.RefreshEnrollmentAsync(request.EnrollmentId, ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { logger.LogWarning("WhatsApp: reconciliación de tareas diferida; causa={Cause}", ex.GetType().Name); }
+        }
 
         return CompleteTaskResponseDto.FromResult(result);
     }

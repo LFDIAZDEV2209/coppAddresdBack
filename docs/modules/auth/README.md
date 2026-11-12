@@ -2,6 +2,17 @@
 
 Sistema completo de autenticación JWT con autorización basada en permisos granulares, implementado como servicio web standalone.
 
+## OTP restringido a PHONE para vinculación WhatsApp
+
+`POST /api/auth/verify-otp` admite `contactId` opcional (`phone` o `email`). Con
+`phone` no consume un OTP EMAIL pendiente; tras aprobación devuelve los campos
+habituales de LoginResponse y `verifiedContactId=phone`. Los clientes que omiten
+el campo conservan el comportamiento previo. El consumidor WhatsApp descarta
+tokens/cookies y coteja el sujeto con el perfil activo; no realiza login por contraseña.
+Se mantienen OtpSecurity, rate limit y Twilio Verify. Los logs OTP enmascaran los
+documentos además de los teléfonos, sin registrar códigos. Detalle y límites
+del canal: [WhatsApp](../whatsapp/README.md).
+
 ## Arquitectura
 
 ```

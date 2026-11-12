@@ -117,7 +117,9 @@ public record AssignBatteryCommand(
 
 public sealed class AssignBatteryCommandHandler(
     IHealthTestRepository repository,
-    IHealthTestMetricsQueue? metricsQueue = null
+    IHealthTestMetricsQueue? metricsQueue = null,
+    CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks? whatsappReminders = null,
+    Microsoft.Extensions.Logging.ILogger<AssignBatteryCommandHandler>? logger = null
 ) : IRequestHandler<AssignBatteryCommand, IReadOnlyList<HealthTestAssignmentDto>>
 {
     public async Task<IReadOnlyList<HealthTestAssignmentDto>> Handle(
@@ -191,6 +193,13 @@ public sealed class AssignBatteryCommandHandler(
             }
         }
 
+        if (whatsappReminders is not null)
+        {
+            try { await whatsappReminders.RefreshPatientsAsync(request.PatientIds.Distinct().ToArray(), ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { if (logger is not null) Microsoft.Extensions.Logging.LoggerExtensions.LogWarning(logger,
+                "WhatsApp: evaluación inicial pendiente de reconciliar; causa={Cause}", ex.GetType().Name); }
+        }
         return assignments.Select(HealthTestAssignmentDto.FromEntity).ToList();
     }
 
