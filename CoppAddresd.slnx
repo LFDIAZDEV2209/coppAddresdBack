@@ -4,6 +4,7 @@
     <Project Path="src/CoppAddresd.Application/CoppAddresd.Application.csproj" />
     <Project Path="src/CoppAddresd.Domain/CoppAddresd.Domain.csproj" />
     <Project Path="src/CoppAddresd.Infrastructure/CoppAddresd.Infrastructure.csproj" />
+    <Project Path="src/CoppAddresd.WhatsApp/CoppAddresd.WhatsApp.csproj" />
   </Folder>
   <Folder Name="/src/Services/">
     <Project Path="src/Services/CoppAddresd.Auth/CoppAddresd.Auth.csproj" />
@@ -17,5 +18,6 @@
     <Project Path="tests/CoppAddresd.Telemedicine.IntegrationTests/CoppAddresd.Telemedicine.IntegrationTests.csproj" />
     <Project Path="tests/CoppAddresd.Telemedicine.UnitTests/CoppAddresd.Telemedicine.UnitTests.csproj" />
     <Project Path="tests/CoppAddresd.UnitTests/CoppAddresd.UnitTests.csproj" />
+    <Project Path="tests/CoppAddresd.WhatsApp.Tests/CoppAddresd.WhatsApp.Tests.csproj" />
   </Folder>
 </Solution>

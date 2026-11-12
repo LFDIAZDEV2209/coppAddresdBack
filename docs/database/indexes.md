@@ -213,3 +213,10 @@ These indexes are created on a new empty table by migration
 Own scope results are bounded to the configured seven scopes. Isolated
 PostgreSQL tests check current/stale receipt queries, concurrent idempotency,
 withdrawal, immutability and migration up/down/up. No load claim is made.
+# WhatsApp — canal (2026-11-12)
+
+| Índice | Tabla | Columnas | Tipo | Motivo / consulta | Impacto | Costo |
+|---|---|---|---|---|---|---|
+| IX_raw_events_wamid | whatsapp.raw_events | wamid | Único B-tree | Dedupe atómico de reenvíos Meta | Búsqueda puntual | Una entrada por mensaje |
+| IX_raw_events_next_attempt_at | whatsapp.raw_events | next_attempt_at, filtro processed_at IS NULL | B-tree parcial | Replay de eventos pendientes vencidos | Polling limitado | Solo pendientes |
+

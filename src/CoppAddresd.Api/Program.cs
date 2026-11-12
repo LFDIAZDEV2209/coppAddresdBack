@@ -9,6 +9,8 @@ using CoppAddresd.Api.Seeders;
 using CoppAddresd.Infrastructure;
 using CoppAddresd.Infrastructure.HealthChecks;
 using CoppAddresd.Infrastructure.Persistence;
+using CoppAddresd.WhatsApp;
+using CoppAddresd.WhatsApp.Persistence;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
@@ -72,6 +74,7 @@ if (!args.Contains("--migrate"))
 builder.Services.AddProgramAssignmentSettings(builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddWhatsApp(builder.Configuration, migrationsOnly: args.Contains("--migrate"));
 builder.Services.ConfigureCors(builder.Configuration);
 builder.Services.ConfigureJwtAuthentication(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
@@ -225,6 +228,8 @@ if (args.Contains("--migrate"))
     using var migrationScope = migrationHost.Services.CreateScope();
     var migrationDb = migrationScope.ServiceProvider.GetRequiredService<AppDbContext>();
     await migrationDb.Database.MigrateAsync();
+    var whatsappDb = migrationScope.ServiceProvider.GetRequiredService<WhatsAppDbContext>();
+    await whatsappDb.Database.MigrateAsync();
     Console.WriteLine("Migraciones del backend aplicadas correctamente");
     // Flush pendiente antes de terminar el proceso: con un file sink
     // configurado (Serilog:WriteTo) los logs de la migración no se pierden
