@@ -251,7 +251,7 @@ public static class SosSmsTemplate
         // Se priorizan los signos completos y el mapa íntegro: hasta dos
         // partes GSM como objetivo; Unicode puede requerir hasta cuatro.
         var budget = gsm ? 306 : readings.Count > 0 ? 268 : 201;
-        var header = "Alerta SOS: " + Clip(name, gsm ? 48 : 24, gsm) + " necesita tu ayuda.\nCopp Adresd · " + SosMessageFormatting.FormatAlertTime(alert.CreatedAt) + " COL";
+        var header = "Alerta SOS: " + Clip(name, gsm ? 48 : 24, gsm) + " necesita tu ayuda.\nCopp Adresd - " + SosMessageFormatting.FormatAlertTime(alert.CreatedAt) + " COL";
         var contact = phone is null ? "" : "\nLlamar: " + phone;
         if (maps is null) return header + "\n" + vitals + "\nUbicacion no compartida." + contact;
         var prefix = address is null ? "" : "Direccion: ";

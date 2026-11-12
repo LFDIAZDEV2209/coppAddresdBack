@@ -33,7 +33,7 @@ public sealed class SosMessageTemplatesTests
         var alert = Alert();
         var sms = SosSmsTemplate.Build(alert);
 
-        Assert.StartsWith("Alerta SOS: Sofia Vega necesita tu ayuda.\nCopp Adresd · ", sms);
+        Assert.StartsWith("Alerta SOS: Sofia Vega necesita tu ayuda.\nCopp Adresd - ", sms);
         Assert.Contains("03/11/2026 13:25 COL", sms);
         Assert.Contains("Llamar: +573053924819", sms);
         Assert.DoesNotContain(alert.Patient!.DocumentNumber!, sms);
@@ -53,6 +53,25 @@ public sealed class SosMessageTemplatesTests
         Assert.DoesNotContain("4.711", sms);
         Assert.DoesNotContain("-74.0721", sms);
         Assert.DoesNotContain("maps.google.com", sms);
+    }
+
+    [Fact]
+    public void Sms_LatinNameAddressAndReadingTime_StayInPlainTextEncoding()
+    {
+        var alert = Alert();
+        alert.LocationDescription = "Calle 114, Barranquilla, Colombia";
+        alert.HeartRate = 72;
+        alert.VitalsSnapshotJson = CoppAddresd.Application.Features.Sos.SosVitalsSnapshot.Serialize(
+            [new("HR", 72, "lpm", alert.CreatedAt.AddHours(-1), "device")]);
+        const string map = "https://erp.example.test/s/opaque-token";
+
+        var sms = SosSmsTemplate.Build(alert, map);
+
+        Assert.All(sms, character => Assert.InRange((int)character, 0, 127));
+        Assert.Contains("Pulso 72 lpm", sms);
+        Assert.Contains("03/11/2026 12:25 COL", sms);
+        Assert.Contains("Direccion: ", sms);
+        Assert.Contains(map, sms);
     }
 
     [Fact]
