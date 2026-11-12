@@ -9,14 +9,32 @@ public sealed class PostgresFixture : IAsyncLifetime
 {
     private readonly string name = "copp_whatsapp_test_" + Guid.NewGuid().ToString("N");
     private string adminConnection = "";
+    private bool appSchemaCreated;
     public string ConnectionString { get; private set; } = "";
     public WhatsAppDbContext CreateDb() => new(new DbContextOptionsBuilder<WhatsAppDbContext>()
         .UseNpgsql(ConnectionString, pg => pg.MigrationsHistoryTable("__ef_migrations_history", "whatsapp")).Options);
+    public CoppAddresd.Infrastructure.Persistence.AppDbContext CreateAppDb() => new(
+        new DbContextOptionsBuilder<CoppAddresd.Infrastructure.Persistence.AppDbContext>().UseNpgsql(ConnectionString).Options);
+
+    public async Task CreateAppSchemaAsync(CancellationToken ct)
+    {
+        if (appSchemaCreated) return;
+        await using var app = CreateAppDb();
+        await app.Database.OpenConnectionAsync(ct);
+        await using var command = app.Database.GetDbConnection().CreateCommand();
+        command.CommandText = app.Database.GenerateCreateScript();
+        await command.ExecuteNonQueryAsync(ct);
+        appSchemaCreated = true;
+    }
 
     public async Task InitializeAsync()
     {
-        using var designDb = new WhatsAppDbContextFactory().CreateDbContext([]);
-        var configured = Environment.GetEnvironmentVariable("COP_TEST_DB_CONNECTION") ?? designDb.Database.GetConnectionString()!;
+        var configured = Environment.GetEnvironmentVariable("COP_TEST_DB_CONNECTION");
+        if (string.IsNullOrWhiteSpace(configured))
+        {
+            using var designDb = new WhatsAppDbContextFactory().CreateDbContext([]);
+            configured = designDb.Database.GetConnectionString()!;
+        }
         var connection = new NpgsqlConnectionStringBuilder(configured);
         if (connection.Host is not ("localhost" or "127.0.0.1" or "::1"))
             throw new InvalidOperationException("Los tests WhatsApp solo crean bases desechables en PostgreSQL local.");

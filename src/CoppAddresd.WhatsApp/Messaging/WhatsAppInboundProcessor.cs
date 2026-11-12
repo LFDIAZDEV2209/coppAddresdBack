@@ -9,7 +9,8 @@ using Microsoft.Extensions.Logging;
 namespace CoppAddresd.WhatsApp.Messaging;
 
 public sealed class WhatsAppInboundProcessor(WhatsAppDbContext db, WhatsAppPatientResolver resolver,
-    ISender mediator, IWhatsAppMessageSender sender, TimeProvider clock, ILogger<WhatsAppInboundProcessor> logger)
+    ISender mediator, IWhatsAppMessageSender sender, TimeProvider clock, ILogger<WhatsAppInboundProcessor> logger,
+    CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks? reminders = null)
 {
     public async Task<bool> ProcessNextAsync(CancellationToken ct)
     {
@@ -70,6 +71,7 @@ public sealed class WhatsAppInboundProcessor(WhatsAppDbContext db, WhatsAppPatie
         }
         else
         {
+            if (reminders is not null) await reminders.CancelForPatientAsync(link.PatientId, ct);
             var conversation = await db.Conversations.SingleAsync(x => x.PatientId == link.PatientId, ct);
             var language = TurnLanguage.Detect(input.Text, conversation.Language);
             conversation.Language = link.Language = language;

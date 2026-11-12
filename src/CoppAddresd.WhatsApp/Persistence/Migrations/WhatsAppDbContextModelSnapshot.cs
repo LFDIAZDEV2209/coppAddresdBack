@@ -114,6 +114,159 @@ namespace CoppAddresd.WhatsApp.Persistence.Migrations
                     b.ToTable("patient_links", "whatsapp");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.WhatsApp.Reminder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assignment_id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("CancellationReason")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("cancellation_reason");
+
+                    b.Property<string>("Detail")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("detail");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_until");
+
+                    b.Property<int>("MaxAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_attempts");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<int>("RepeatEveryMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("repeat_every_minutes");
+
+                    b.Property<DateTimeOffset>("ScheduledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_at");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("source_key");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("state");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignmentId")
+                        .HasFilter("assignment_id IS NOT NULL");
+
+                    b.HasIndex("NextAttemptAt")
+                        .HasFilter("state = 'Pending'");
+
+                    b.HasIndex("SourceKey")
+                        .IsUnique();
+
+                    b.HasIndex("PatientId", "Kind")
+                        .IsUnique()
+                        .HasFilter("state = 'Pending'");
+
+                    b.ToTable("reminders", "whatsapp", t =>
+                        {
+                            t.HasCheckConstraint("ck_reminders_attempts", "attempts >= 0 AND max_attempts BETWEEN 1 AND 5 AND attempts <= max_attempts AND repeat_every_minutes >= 120");
+                        });
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.WhatsApp.ReminderDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("accepted_at");
+
+                    b.Property<int>("Attempt")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt");
+
+                    b.Property<DateTimeOffset>("AttemptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("attempted_at");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<Guid>("ReminderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reminder_id");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("state");
+
+                    b.Property<string>("Wamid")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("wamid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReminderId", "Attempt")
+                        .IsUnique();
+
+                    b.HasIndex("PatientId", "Kind", "AcceptedAt")
+                        .HasFilter("accepted_at IS NOT NULL");
+
+                    b.ToTable("reminder_deliveries", "whatsapp");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.WhatsApp.WhatsAppRawEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -193,6 +346,15 @@ namespace CoppAddresd.WhatsApp.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("raw_events", "whatsapp");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.WhatsApp.ReminderDelivery", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.WhatsApp.Reminder", null)
+                        .WithMany()
+                        .HasForeignKey("ReminderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }

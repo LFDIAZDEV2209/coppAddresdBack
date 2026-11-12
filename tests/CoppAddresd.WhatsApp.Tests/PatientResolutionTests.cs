@@ -71,7 +71,7 @@ public sealed class PatientResolutionTests(PostgresFixture fixture) : IClassFixt
     }
 
     // Solo el contrato de lectura de pacientes en una BD desechable; no migra otros módulos.
-    public static Task CreatePatientTableAsync(CoppAddresd.WhatsApp.Persistence.WhatsAppDbContext db) => db.Database.ExecuteSqlRawAsync("""
+    private static Task CreatePatientTableAsync(CoppAddresd.WhatsApp.Persistence.WhatsAppDbContext db) => db.Database.ExecuteSqlRawAsync("""
         CREATE SCHEMA IF NOT EXISTS app;
         CREATE TABLE IF NOT EXISTS app.patient_profiles (
             id uuid PRIMARY KEY, user_id uuid, first_name text NOT NULL,

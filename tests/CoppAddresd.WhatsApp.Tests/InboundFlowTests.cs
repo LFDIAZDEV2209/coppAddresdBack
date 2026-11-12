@@ -6,11 +6,14 @@ using CoppAddresd.Application.Features.Chat;
 using CoppAddresd.Application.Features.Patients;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Application.WhatsApp.Messaging;
+using CoppAddresd.Application.WhatsApp;
+using CoppAddresd.Application.Features.ProgramProgress.Queries;
 using CoppAddresd.Domain.Entities.WhatsApp;
 using CoppAddresd.Infrastructure.Services;
 using CoppAddresd.WhatsApp.Messaging;
 using CoppAddresd.WhatsApp.Persistence;
 using CoppAddresd.WhatsApp.Webhook;
+using CoppAddresd.WhatsApp.Reminders;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -84,6 +87,21 @@ public sealed class InboundFlowTests(PostgresFixture fixture) : IClassFixture<Po
     }
 
     [Fact]
+    public async Task PatientReply_CancelsPendingReminderBeforeAck_AndContinuesAgent()
+    {
+        await using var harness = await CreateAsync();
+        await using var db = fixture.CreateDb();
+        db.Reminders.Add(new Reminder { PatientId = harness.PatientId, SourceKey = "interaction-test",
+            Kind = ReminderKind.checkin, ScheduledAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            NextAttemptAt = DateTimeOffset.UtcNow.AddMinutes(120) });
+        await db.SaveChangesAsync();
+        await harness.EnqueueAsync(Guid.NewGuid().ToString(), "Hola, me siento bien");
+        Assert.Equal(ReminderState.Cancelled, (await db.Reminders.AsNoTracking().SingleAsync()).State);
+        await harness.ProcessAsync();
+        Assert.Single(harness.Requests);
+    }
+
+    [Fact]
     public async Task TransientSendFailure_ReplaysSavedReply_WithoutAnotherAgentCall()
     {
         await using var harness = await CreateAsync();
@@ -106,8 +124,8 @@ public sealed class InboundFlowTests(PostgresFixture fixture) : IClassFixture<Po
     private async Task<Harness> CreateAsync(bool failAgent = false)
     {
         await using var db = fixture.CreateDb();
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM whatsapp.raw_events; DELETE FROM whatsapp.conversations; DELETE FROM whatsapp.patient_links;", CancellationToken.None);
-        var harness = new Harness(fixture);
+        await db.Database.ExecuteSqlRawAsync("DELETE FROM whatsapp.reminder_deliveries; DELETE FROM whatsapp.reminders; DELETE FROM whatsapp.raw_events; DELETE FROM whatsapp.conversations; DELETE FROM whatsapp.patient_links;", CancellationToken.None);
+        var harness = new Harness();
         db.PatientLinks.Add(new PatientLink { PatientId = harness.PatientId, UserId = harness.UserId,
             WaId = "+573053924819", FirstName = "Ana", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow });
         await db.SaveChangesAsync();
@@ -145,11 +163,15 @@ public sealed class InboundFlowTests(PostgresFixture fixture) : IClassFixture<Po
         services.AddScoped<WhatsAppPatientResolver>();
         services.AddScoped<WhatsAppWebhook>();
         services.AddScoped<WhatsAppInboundProcessor>();
+        services.AddSingleton(new ReminderSettings());
+        services.AddSingleton(Substitute.For<IProgramAccompanimentQuery>());
+        services.AddScoped<WhatsAppReminderScheduler>();
+        services.AddScoped<IWhatsAppReminderHooks, WhatsAppReminderHooks>();
         harness.Services = services.BuildServiceProvider();
         return harness;
     }
 
-    private sealed class Harness(PostgresFixture fixture) : IAsyncDisposable
+    private sealed class Harness : IAsyncDisposable
     {
         public Guid PatientId { get; } = Guid.NewGuid();
         public Guid UserId { get; } = Guid.NewGuid();

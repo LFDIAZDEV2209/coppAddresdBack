@@ -24,6 +24,13 @@ public static class DependencyInjection
         services.AddScoped<Messaging.WhatsAppPatientResolver>();
         services.AddScoped<Messaging.WhatsAppInboundProcessor>();
         services.AddHostedService<Webhook.WhatsAppInboundWorker>();
+        var reminders = configuration.GetSection("WhatsApp:Reminders").Get<Reminders.ReminderSettings>() ?? new();
+        reminders.Validate();
+        services.AddSingleton(reminders);
+        services.AddScoped<CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks, Reminders.WhatsAppReminderHooks>();
+        services.AddScoped<Reminders.WhatsAppReminderScheduler>();
+        services.AddScoped<Reminders.WhatsAppReminderProcessor>();
+        if (reminders.Enabled) services.AddHostedService<Reminders.WhatsAppReminderWorker>();
         services.AddHttpClient<CoppAddresd.Application.WhatsApp.Messaging.IWhatsAppMessageSender,
             Messaging.MetaCloudWhatsAppSender>().RemoveAllLoggers();
         return services;

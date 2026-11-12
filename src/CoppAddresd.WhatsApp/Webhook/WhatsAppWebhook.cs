@@ -40,6 +40,7 @@ public sealed class WhatsAppWebhook(WhatsAppDbContext db, WhatsAppOptions option
             if (!json.RootElement.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array) return 200;
             var payload = Encoding.UTF8.GetString(body);
             var now = clock.GetUtcNow();
+            List<Guid> inserted = [];
             foreach (var entry in entries.EnumerateArray())
             {
                 if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array) continue;
@@ -69,9 +70,26 @@ public sealed class WhatsAppWebhook(WhatsAppDbContext db, WhatsAppOptions option
                             ON CONFLICT (wamid) DO UPDATE SET duplicate_count = whatsapp.raw_events.duplicate_count + 1
                             """, ct);
                         queue.Enqueue(id);
+                        inserted.Add(id);
                         logger.LogInformation("Evento WhatsApp persistido para {Phone}", MessagePolicy.MaskPhone(waId));
                     }
                 }
+            }
+            if (inserted.Count > 0)
+            {
+                var ids = inserted.ToArray();
+                // La interacción se hace visible antes del ACK, sin esperar al LLM.
+                // IDs generados que no se insertaron por dedupe no participan en la cancelación.
+                await db.Database.ExecuteSqlInterpolatedAsync($"""
+                    UPDATE whatsapp.conversations c SET last_inbound_at = GREATEST(c.last_inbound_at, incoming.at)
+                    FROM (SELECT l.patient_id, MAX(e.message_at) AS at FROM whatsapp.raw_events e
+                        JOIN whatsapp.patient_links l ON l.wa_id = e.wa_id WHERE e.id = ANY({ids}) GROUP BY l.patient_id) incoming
+                    WHERE c.patient_id = incoming.patient_id;
+                    UPDATE whatsapp.reminders r SET state = 'Cancelled', cancellation_reason = 'patient_interaction', lease_until = NULL
+                    WHERE r.state = 'Pending' AND EXISTS (SELECT 1 FROM whatsapp.raw_events e
+                        JOIN whatsapp.patient_links l ON l.wa_id = e.wa_id
+                        WHERE e.id = ANY({ids}) AND l.patient_id = r.patient_id AND e.message_at >= r.scheduled_at)
+                    """, ct);
             }
         }
         return 200;

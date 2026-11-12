@@ -88,3 +88,59 @@ vencidos. Existe una ventana inevitable si el proceso muere después de que Meta
 acepte y antes del commit del cursor: Cloud API no ofrece una clave idempotente
 del cliente para garantizar exactly-once en ese punto. El dedupe de webhooks y el
 cursor evitan duplicados ordinarios; no se promete atomicidad entre Meta y la BD.
+
+## Acompañamiento (D9 actualizado por Luis)
+
+No hay funciones ni plantillas de citas. El nutricionista responde por el agente
+dentro de la conversación y su ventana de 24 h; no tiene plantilla proactiva.
+
+| Tipo | Fuente canónica en el backend | Motivo resuelto |
+|---|---|---|
+| Bienestar | Paciente activo + inscripción `Active` | Interacción, baja o programa inactivo |
+| Racha | `streak_states`: CurrentStreak > 0 y LastActiveDate = ayer en Bogotá | Día calificado hoy o racha ya no vigente |
+| Podcast | `program_weeks.tasks_snapshot` del día, fallback `weekly_day_templates.media_id`, medio Podcast publicado y no demo | `task_completions` podcast en la fecha local o contenido desasignado/no publicado |
+| Evaluación inicial | Asignaciones pending/in_progress de `bateria-inicial`, activa y AutoAssignOnPatientCreate; sin evaluación completada | Evaluación entregada, asignación cancelada/vencida o batería deshabilitada |
+
+Racha en riesgo significa racha vigente ayer que aún no calificó hoy, la misma
+vigencia que `ProgramRepository.EffectiveCurrentStreak`; no se altera el contador
+ni el inventario de congelamientos. Se reutiliza `WeekSnapshotJson.Parse` para el
+podcast y la prioridad snapshot → plantilla del snapshot móvil. La evaluación
+inicial es elegible aunque todavía no exista inscripción activa; los otros tres
+tipos requieren programa activo. No se recuerdan baterías clínicas ajenas al
+onboarding. Las claves incluyen inscripción/fecha/medio o asignación real.
+
+`ProgramAccompanimentQuery` lee por lotes de hasta 100 vínculos, sin consultas por
+paciente en loops. El scheduler crea los motivos con un INSERT por lote y
+ON CONFLICT. Los flujos de asignar batería, asignar podcast a inscripción y
+completar tarea invocan hooks opcionales; SubmitEvaluation cancela después del
+commit clínico. El polling reconcilia también cambios de plantilla, alta automática
+y fallos del hook. Cada envío revalida el motivo contra su fuente actual.
+
+`WhatsApp__Reminders__Enabled=false` por defecto: habilitar solo tras aprobación
+de las ocho plantillas en Meta. Configuración no secreta: StartHour=9, EndHour=18
+(fin exclusivo), DailyHour=10 y ActiveConversationMinutes=120. Zona America/Bogota,
+lunes a viernes. Fuera de franja se difiere al siguiente día hábil. Una aceptación
+impone 24 h sin otro toque del mismo tipo; el diferimiento no consume intento.
+
+Estados de Reminder: Pending, Completed, Cancelled, Exhausted. Cada intento tiene
+fila ReminderDelivery (paciente, tipo, número, fecha, wamid, estado y error).
+Accepted significa aceptación por Meta, no confirmación de lectura/entrega final.
+Un lease vencido marca el intento anterior Dispatching como Unknown. Los errores
+transitorios esperan 120, 240, 480 y 960 minutos (ajustados a franja), máximo cinco
+intentos; los permanentes cancelan. El índice parcial admite un pendiente por tipo
+y paciente. El claim usa SKIP LOCKED; reserva intento+entrega en transacción corta,
+confirma y después llama a Meta. Los updates finales no reabren cancelaciones.
+
+El webhook hace visible la interacción antes de su ACK y cancela reintentos ya
+programados; el procesador cancela todos los pendientes del paciente antes del
+agente. Un envío ya aceptado/en curso en Meta no se puede revocar.
+
+## Pruebas locales
+
+El proyecto `tests/CoppAddresd.WhatsApp.Tests` separa traits Category=Unit e
+Integration. Integra PostgreSQL real en bases desechables `copp_whatsapp_test_*`;
+solo admite host local. Usa COP_TEST_DB_CONNECTION si existe o configuración local
+del API sin imprimirla. Las pruebas de recordatorios crean el modelo EF completo
+en esa BD temporal y usan los repositorios/handlers clínicos reales. No migran
+schemas de otros módulos en la BD de desarrollo. El AI Service se simula por HTTP
+con TestServer y el cliente/handler de chat reales. Meta usa fakes controlados.
