@@ -24,33 +24,31 @@ public sealed class NutritionCaseStore(AppDbContext db) : INutritionCaseStore
             .SingleOrDefaultAsync(ct);
         if (patient is null)
             return null;
-        var assignments = await db
-            .HealthTestAssignments.AsNoTracking()
-            .Where(a =>
-                a.PatientId == patientId
-                && a.Status != HealthTestAssignmentStatus.cancelled
-                && (
-                    a.BatteryAssignment == null
-                    || a.BatteryAssignment.Status != HealthTestAssignmentStatus.cancelled
-                )
-            )
-            .OrderByDescending(a => a.AssignedAt)
-            .ThenByDescending(a => a.Id)
+        var initial = await db.HealthTestBatteryAssignments.AsNoTracking()
+            .Where(b=>b.PatientId==patientId && b.Battery!.Code=="bateria-inicial" && b.Battery.IsActive && b.Battery.AutoAssignOnPatientCreate
+                && b.Status!=HealthTestAssignmentStatus.cancelled && b.Status!=HealthTestAssignmentStatus.expired)
+            .OrderByDescending(b=>b.AssignedAt).ThenByDescending(b=>b.Id)
+            .Select(b=>new {b.Id,b.BatteryId}).FirstOrDefaultAsync(ct);
+        var assignments = await db.HealthTestAssignments.AsNoTracking()
+            .Where(a => a.PatientId == patientId && (initial == null || a.BatteryAssignmentId == initial.Id)
+                && a.Status != HealthTestAssignmentStatus.cancelled && a.Status != HealthTestAssignmentStatus.expired
+                && (a.BatteryAssignment == null || a.BatteryAssignment.Status != HealthTestAssignmentStatus.cancelled))
+            .OrderByDescending(a => a.AssignedAt).ThenByDescending(a => a.Id)
             .Select(a => new
             {
-                a.BatteryAssignmentId,
-                InstrumentId = a.Version!.InstrumentId,
-                a.Status,
-                a.AssignedAt,
-                Completed = a.Evaluations.Any(e =>
-                    e.Status == HealthTestEvaluationStatus.completed
-                ),
-            })
-            .ToListAsync(ct);
+                a.BatteryAssignmentId, a.VersionId, InstrumentId = a.Version!.InstrumentId, a.Status, a.AssignedAt,
+                Completed = a.Evaluations.Any(e => e.Status == HealthTestEvaluationStatus.completed
+                    && e.PatientId == patientId && e.VersionId == a.VersionId),
+            }).ToListAsync(ct);
+        var required = initial is null ? [] : await db.HealthTestBatteryItems.AsNoTracking()
+            .Where(i => i.BatteryId == initial.BatteryId && i.IsRequired)
+            .Select(i => new { i.InstrumentId, i.VersionId }).ToArrayAsync(ct);
         var latest = assignments.GroupBy(x => x.InstrumentId).Select(g => g.First()).ToArray();
-        var testsComplete =
-            latest.Length >= 9
-            && latest.All(x => x.Status == HealthTestAssignmentStatus.completed && x.Completed);
+        var testsComplete = initial is not null
+            ? required.Length > 0 && required.All(item => assignments.Any(x => x.InstrumentId == item.InstrumentId
+                && (item.VersionId == null || item.VersionId == x.VersionId)
+                && x.Status == HealthTestAssignmentStatus.completed && x.Completed))
+            : latest.Length >= 9 && latest.All(x => x.Status == HealthTestAssignmentStatus.completed && x.Completed);
         // El perfil medido proviene de la batería completa más reciente: un re-test
         // puntual posterior no debe ensombrecer el baseline de 9 instrumentos.
         var batteryPointer = assignments
@@ -66,13 +64,13 @@ public sealed class NutritionCaseStore(AppDbContext db) : INutritionCaseStore
                 ),
             })
             .ToList();
-        var complete = batteryPointer
+        var complete = initial?.Id ?? (batteryPointer
             .Where(x => x.Total >= 9 && x.Completed >= x.Total)
             .OrderByDescending(x => x.AssignedAt)
             .FirstOrDefault()
             is { } full
             ? full.BatteryId
-            : batteryPointer.OrderByDescending(x => x.AssignedAt).FirstOrDefault()?.BatteryId;
+            : batteryPointer.OrderByDescending(x => x.AssignedAt).FirstOrDefault()?.BatteryId);
         return new(
             patient.DateOfBirth is { } dob ? DateOnly.FromDateTime(dob) : null,
             patient.Gender,

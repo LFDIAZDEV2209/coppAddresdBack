@@ -70,6 +70,7 @@ public sealed class GetPatientAiContextQueryHandlerTests
         Assert.Equal("E11", result.PrimaryDiagnosis!.Code);
         Assert.Equal(2000, Assert.Single(result.DeviceMetrics).Value);
         Assert.Equal(1800, result.NutritionPlan!.Kcal);
+        Assert.Contains("IMPORTANT DISCLAIMER", result.NutritionPlan.Disclaimer);
         Assert.Equal(90, result.NutritionPlan.ProteinG);
         Assert.Equal(200, result.NutritionPlan.CarbsG);
         Assert.Equal(30, result.NutritionPlan.FiberG);
@@ -147,6 +148,7 @@ public sealed class GetPatientAiContextQueryHandlerTests
         var result = Assert.IsType<PatientAiContextDto>(await Read());
         Assert.True(JsonSerializer.SerializeToUtf8Bytes(result, new JsonSerializerOptions(JsonSerializerDefaults.Web)).Length < 8000);
         Assert.Equal(1800, result.NutritionPlan!.Kcal);
+        Assert.Contains("IMPORTANT DISCLAIMER", result.NutritionPlan.Disclaimer);
         Assert.Equal("E11", result.PrimaryDiagnosis!.Code);
     }
 

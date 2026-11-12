@@ -33,10 +33,12 @@ public static class SosEmailTemplate
             readingsContent.Append("<p style=\"margin:0;color:#53657f;font-size:13px\">Sin lecturas compartidas.</p>");
         else
         {
-            readingsContent.Append("<h2 style=\"margin:0 0 6px;color:#142855;font-size:14px\">Lecturas compartidas</h2><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;table-layout:fixed\">");
+            readingsContent.Append("<h2 style=\"margin:0 0 6px;color:#142855;font-size:14px\">Últimas lecturas registradas</h2><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;table-layout:fixed\">");
             foreach (var reading in readings)
-                readingsContent.Append($"<tr><td style=\"padding:7px 4px 7px 0;border-bottom:1px solid #edf1f5;color:#53657f;font-size:13px\">{Encode(reading.Label)}</td><td align=\"right\" style=\"padding:7px 0;border-bottom:1px solid #edf1f5;color:#142855;font-size:14px;font-weight:700;overflow-wrap:anywhere\">{Encode(reading.Value)}</td></tr>");
+                readingsContent.Append($"<tr><td style=\"padding:7px 4px 7px 0;border-bottom:1px solid #edf1f5;color:#53657f;font-size:13px\">{Encode(reading.Label)}<br><span style=\"font-size:10px;line-height:1.6\">{Encode(SosMessageFormatting.VitalProvenance(alert, reading.Label))}</span></td><td align=\"right\" style=\"padding:7px 0;border-bottom:1px solid #edf1f5;color:#142855;font-size:14px;font-weight:700;overflow-wrap:anywhere\">{Encode(reading.Value)}</td></tr>");
             readingsContent.Append("</table>");
+            var missing = SosMessageFormatting.MissingVitals(alert);
+            if (missing.Length > 0) readingsContent.Append("<p style=\"margin:8px 0 0;color:#53657f;font-size:11px\">No disponibles: " + Encode(string.Join(", ", missing)) + ".</p>");
         }
         var mapNote = location is null ? "" : "Ubicación de la alerta, sin seguimiento en tiempo real. "
             + (location == locationUrl ? "Enlace privado: 24 horas o hasta cancelar la alerta." : "Confirma la dirección al comunicarte.");
@@ -91,8 +93,10 @@ public static class SosEmailTemplate
             if (!string.IsNullOrWhiteSpace(alert.LocationDescription)) text.Append("\nDirección: Amazon Location · https://docs.aws.amazon.com/location/latest/developerguide/data-attribution.html");
         }
         var readings = SosMessageFormatting.ReportedVitals(alert);
-        text.Append(readings.Count == 0 ? "\nSin lecturas compartidas." : "\nLecturas compartidas:");
-        foreach (var reading in readings) text.Append('\n').Append(reading.Label).Append(": ").Append(reading.Value);
+        text.Append(readings.Count == 0 ? "\nSin lecturas compartidas." : "\nÚltimas lecturas registradas:");
+        foreach (var reading in readings) text.Append('\n').Append(reading.Label).Append(": ").Append(reading.Value).Append(" · ").Append(SosMessageFormatting.VitalProvenance(alert, reading.Label));
+        if (readings.Count > 0 && SosMessageFormatting.MissingVitals(alert) is { Length: > 0 } missing)
+            text.Append("\nNo disponibles: ").Append(string.Join(", ", missing)).Append('.');
         return text.Append("\nRecibes este aviso porque eres su contacto de emergencia.").ToString();
     }
 

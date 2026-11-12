@@ -32,7 +32,8 @@ public record SosAlertDto(
     string? VoiceAnsweredBy = null,
     int? VoiceDurationSeconds = null,
     string? EmailChannelStatus = null,
-    IReadOnlyList<SosRecipientDto>? Recipients = null
+    IReadOnlyList<SosRecipientDto>? Recipients = null,
+    SosSharedVitalsDto? Vitals = null
 )
 {
     public static SosAlertDto FromEntity(SosAlert alert)
@@ -64,7 +65,8 @@ public record SosAlertDto(
             Recipients: alert.Recipients.OrderBy(r => r.ContactOrder).Select(r => new SosRecipientDto(
                 r.Id, r.ContactOrder, r.PhoneE164 is null ? null : MaskPhone(r.PhoneE164),
                 r.SmsChannelStatus.ToString(), r.VoiceChannelStatus.ToString(), r.EmailChannelStatus,
-                r.SmsDeliveryStatus, r.VoiceCallStatus)).ToArray()
+                r.SmsDeliveryStatus, r.VoiceCallStatus)).ToArray(),
+            Vitals: alert.HeartRate is null && alert.Spo2 is null && alert.BloodPressure is null ? null : new(alert.HeartRate,alert.Spo2,alert.BloodPressure,SosVitalsSnapshot.Read(alert.VitalsSnapshotJson))
         );
     }
 
@@ -91,14 +93,17 @@ public sealed record SosRecipientDto(Guid Id, int ContactOrder, string? MaskedPh
 
 /// <summary>
 /// Signos vitales reportados por la app al activar el SOS. Opcionales:
-/// la app envía valores demo por ahora; el backend los persiste y los usa
-/// en los mensajes al contacto de emergencia (SMS y voz).
+/// el backend combina el reporte con las últimas mediciones reales guardadas
+/// y conserva la fecha y procedencia de cada lectura compartida.
 /// </summary>
 public record SosVitalsDto(
     int? HeartRate = null,
     int? Spo2 = null,
-    string? BloodPressure = null
+    string? BloodPressure = null,
+    DateTime? HeartRateObservedAt = null, DateTime? Spo2ObservedAt = null, DateTime? BloodPressureObservedAt = null
 );
+
+public sealed record SosSharedVitalsDto(int? HeartRate,int? Spo2,string? BloodPressure,IReadOnlyList<SosVitalReading> Readings);
 
 /// <summary>Cuerpo de <c>POST /api/v1/sos/alerts</c>. El número de destino y el texto del SMS NUNCA viajan en el body (D3).</summary>
 public record ActivateSosAlertRequest(

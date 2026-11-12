@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CoppAddresd.Application.DTOs.LabExam;
 using CoppAddresd.Application.Features.Measurements.Queries.GetMyMeasurements;
+using CoppAddresd.Application.Features.Nutrition;
 using CoppAddresd.Application.Features.Nutrition.Queries.GetMyNutritionPlan;
 using CoppAddresd.Application.Interfaces;
 using MediatR;
@@ -13,7 +14,8 @@ public sealed record PatientAiContextDto(Guid PatientId,
     IReadOnlyList<LabExamMetricSnapshot> Measurements, PatientAiNutritionDto? NutritionPlan,
     IReadOnlyList<PatientAiDeviceMetricDto> DeviceMetrics, PatientAiDiagnosisDto? PrimaryDiagnosis);
 public sealed record PatientAiNutritionDto(string Name, int? Kcal, decimal? ProteinG,
-    decimal? CarbsG, decimal? FiberG, IReadOnlyList<PatientAiMealDto> Meals);
+    decimal? CarbsG, decimal? FiberG, IReadOnlyList<PatientAiMealDto> Meals,
+    string Disclaimer = NutritionRecommendationNotice.Text, DateOnly? StartDate = null, DateOnly? EndDate = null, int? CurrentDay = null);
 public sealed record PatientAiMealDto(string Type, string? Description, int? Kcal);
 public sealed record PatientAiDeviceMetricDto(string Code, DateOnly Date, decimal Value, string Unit);
 public sealed record PatientAiDiagnosisDto(string Code, string? Description);
@@ -54,7 +56,8 @@ public sealed class GetPatientAiContextQueryHandler(
         var meals = plan?.Days.FirstOrDefault(d => d.DayNumber == menuDay)?.Meals
             .Take(6).Select(m => new PatientAiMealDto(Clip(m.MealType, 24)!, Clip(m.Description, 100), m.Calories)).ToList() ?? [];
         var nutrition = plan is null ? null : new PatientAiNutritionDto(Clip(plan.Name, 80)!,
-            plan.DailyCalorieTarget, plan.DailyProteinTarget, plan.DailyCarbsTarget, plan.DailyFiberTarget, meals);
+            plan.DailyCalorieTarget, plan.DailyProteinTarget, plan.DailyCarbsTarget, plan.DailyFiberTarget, meals,
+            plan.Disclaimer, plan.StartDate, plan.EndDate, plan.CurrentDay);
         var devices = rows.GroupBy(m => (m.MetricCode, DateOnly.FromDateTime(m.ObservedAt.UtcDateTime)))
             .Select(g => g.OrderByDescending(m => m.ObservedAt).ThenByDescending(m => m.Id).First())
             .OrderBy(m => m.ObservedAt).ThenBy(m => m.MetricCode, StringComparer.Ordinal)

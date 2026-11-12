@@ -57,7 +57,7 @@ public sealed class ActivateSosAlertValidator : AbstractValidator<ActivateSosAle
             .When(x => x.AccuracyMeters.HasValue)
             .WithMessage("La precisión de la ubicación es inválida.");
 
-        // Signos vitales opcionales (demo): rangos fisiológicos razonables.
+        // Signos vitales opcionales: rangos fisiológicos razonables.
         RuleFor(x => x.Vitals!.HeartRate)
             .InclusiveBetween(20, 300)
             .When(x => x.Vitals?.HeartRate.HasValue == true)
@@ -85,7 +85,8 @@ public sealed class ActivateSosAlertHandler(
     ISosRateLimiter rateLimiter,
     ISosDispatchQueue dispatchQueue,
     ILogger<ActivateSosAlertHandler> logger,
-    ISosLocationLinkService? locationLinks = null
+    ISosLocationLinkService? locationLinks = null,
+    IClinicalMeasurementRepository? clinicalMeasurements = null, TimeProvider? clock = null
 ) : IRequestHandler<ActivateSosAlertCommand, ActivateSosAlertResult>
 {
     public async Task<ActivateSosAlertResult> Handle(
@@ -173,6 +174,16 @@ public sealed class ActivateSosAlertHandler(
         }
 
         // --- 5) Creación atómica (alerta + outbox de dedupe) en UNA transacción ---
+        var now=(clock??TimeProvider.System).GetUtcNow().UtcDateTime;
+        IReadOnlyList<SosVitalReading> readings;
+        try {readings=await SosVitalsSnapshot.ResolveAsync(request.PatientId,request.Vitals,clinicalMeasurements,now,ct);}
+        catch(Exception ex) when(ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Sos.VitalsLookupFailed FailureType={FailureType}",ex.GetType().Name);
+            readings=await SosVitalsSnapshot.ResolveAsync(request.PatientId,request.Vitals,null,now,ct);
+        }
+        var pulse=readings.FirstOrDefault(x=>x.MetricCode=="HR");var oxygen=readings.FirstOrDefault(x=>x.MetricCode=="SPO2");
+        var systolic=readings.FirstOrDefault(x=>x.MetricCode=="SBP");var diastolic=readings.FirstOrDefault(x=>x.MetricCode=="DBP");
         var alert = new SosAlert
         {
             Id = Guid.NewGuid(),
@@ -188,9 +199,10 @@ public sealed class ActivateSosAlertHandler(
             LocationCapturedAt = request.LocationCapturedAt is null
                 ? null
                 : DateTime.SpecifyKind(request.LocationCapturedAt.Value, DateTimeKind.Utc),
-            HeartRate = request.Vitals?.HeartRate,
-            Spo2 = request.Vitals?.Spo2,
-            BloodPressure = request.Vitals?.BloodPressure,
+            HeartRate = pulse is null ? null : (int)Math.Round(pulse.Value),
+            Spo2 = oxygen is null ? null : (int)Math.Round(oxygen.Value),
+            BloodPressure = systolic is not null && diastolic is not null ? $"{systolic.Value:0}/{diastolic.Value:0}" : null,
+            VitalsSnapshotJson = SosVitalsSnapshot.Serialize(readings),
             DestinationPhoneE164 = e164,
             DestinationEmail = destinationEmail,
             Recipients = SosSupport.SnapshotRecipients(profile.EmergencyContact),

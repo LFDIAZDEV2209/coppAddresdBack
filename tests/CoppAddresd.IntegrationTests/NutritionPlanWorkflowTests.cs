@@ -131,21 +131,25 @@ public sealed partial class NutritionPlanWorkflowTests : IAsyncLifetime
     }
 
     [NutritionPostgresFact]
-    public async Task RealGenerationReceivesResults_AndDraftNeverAppearsToPatient()
+    public async Task RealGenerationReceivesResults_AndPublishesAutomaticallyWithDisclaimer()
     {
         await using var db = Context(); var patient = await PatientAsync(db); await BatteryAsync(db, patient.Id, true);
         var workflow = Workflow(db); await workflow.QueueIfReadyAsync(patient.Id, CancellationToken.None);
         Assert.True(await workflow.ProcessNextAsync(CancellationToken.None));
         var plan = await db.NutritionPlans.AsNoTracking().Include(p => p.Days).SingleAsync();
-        Assert.Equal("completed", plan.GenerationStatus); Assert.Equal("pending_review", plan.ReviewStatus);
-        Assert.Equal(28, plan.Days.Count); Assert.Null(plan.ApprovedAt);
-        Assert.Empty(await db.NutritionPlanAssignments.ToListAsync());
+        Assert.Equal("completed", plan.GenerationStatus); Assert.Equal("approved", plan.ReviewStatus);
+        Assert.Equal(28, plan.Days.Count); Assert.NotNull(plan.ApprovedAt);
+        Assert.Equal(CoppAddresd.Application.Features.Nutrition.Cases.NutritionSystemActor.Id, plan.ApprovedBy);
+        var assignment = Assert.Single(await db.NutritionPlanAssignments.ToListAsync());
+        Assert.Equal(29, (assignment.EndDate!.Value-assignment.StartDate).Days);
         await ai.Received(1).GeneratePlanAsync("nutrition", Arg.Is<ClinicalContextDto>(c => c.Assessments != null && c.Assessments.Any(a => a.Code == "nutrition_habits" && a.Value == 42)), Arg.Any<IReadOnlyList<RestrictionDto>>(), Arg.Any<CancellationToken>());
-        Assert.Equal("pending_review", (await workflow.GetStatusAsync(patient.UserId!.Value, "America/Bogota", CancellationToken.None)).Status);
+        Assert.Equal("active", (await workflow.GetStatusAsync(patient.UserId!.Value, "America/Bogota", CancellationToken.None)).Status);
         var patients = Substitute.For<IPatientRepository>(); patients.GetByUserIdAsync(patient.UserId.Value, Arg.Any<CancellationToken>()).Returns(patient);
         var query = new GetMyNutritionPlanQueryHandler(patients, new WellnessRepository(db), NullLogger<GetMyNutritionPlanQueryHandler>.Instance,
             new NutritionPrescriptionRepository(db), TimeProvider.System);
-        Assert.Null(await query.Handle(new(patient.UserId.Value), CancellationToken.None));
+        var visible = await query.Handle(new(patient.UserId.Value), CancellationToken.None);
+        Assert.NotNull(visible);
+        Assert.Contains("IMPORTANT DISCLAIMER", visible.Disclaimer);
     }
 
     [NutritionPostgresFact]

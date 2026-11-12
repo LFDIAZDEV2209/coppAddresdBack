@@ -61,6 +61,7 @@ public sealed class SosAlertConfiguration : IEntityTypeConfiguration<SosAlert>
             .HasFilter("location_link_hash IS NOT NULL");
         builder.Property(x => x.LocationLookupCompletedAt).HasColumnName("location_lookup_completed_at").HasColumnType("timestamptz");
 
+        builder.Property(x=>x.VitalsSnapshotJson).HasColumnName("vitals_snapshot").HasColumnType("jsonb");
         builder.Property(x => x.HeartRate).HasColumnName("heart_rate");
 
         builder.Property(x => x.Spo2).HasColumnName("spo2");

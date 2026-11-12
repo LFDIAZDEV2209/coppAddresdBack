@@ -1,4 +1,5 @@
 using CoppAddresd.Application.DTOs.Ai;
+using CoppAddresd.Application.Features.HealthTests;
 using CoppAddresd.Application.Features.Nutrition.Cases;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
@@ -76,16 +77,21 @@ public sealed partial class NutritionPlanWorkflowTests
         var reservation = await db.NutritionDraftReservations.AsNoTracking().SingleAsync();
         Assert.Equal("ready", reservation.State); Assert.True(reservation.Fallback);
         var plan = await db.NutritionPrescriptions.AsNoTracking().SingleAsync();
-        Assert.Equal(first.Id, plan.Id); Assert.Equal("borrador_ia", plan.State); Assert.False(plan.IsPublished);
+        Assert.Equal(first.Id, plan.Id); Assert.Equal("aprobado", plan.State); Assert.True(plan.IsPublished);
+        Assert.Equal(NutritionSystemActor.Id, plan.ApprovedBy);
+        Assert.Equal(29, plan.EndDate!.Value.DayNumber - plan.StartDate!.Value.DayNumber);
         Assert.Equal(NutritionSystemActor.Id, plan.CreatedBy);
-        var history = await db.NutritionPrescriptionEvents.AsNoTracking().SingleAsync();
-        Assert.Equal("system:nutrition", history.Comment); Assert.False(history.AutoApproved);
+        var history = await db.NutritionPrescriptionEvents.AsNoTracking().OrderBy(x => x.OccurredAt).ToListAsync();
+        Assert.Equal(2, history.Count);
+        Assert.All(history, e => Assert.Equal("system:nutrition", e.Comment));
+        Assert.True(history.Single(e => e.Action == "publish").AutoApproved);
+        Assert.Contains("IMPORTANT DISCLAIMER", history.Single(e => e.Action == "publish").SnapshotJson);
         // Reinicio entre commit del plan y confirmación de la reserva: la correlación fija reutiliza el plan.
         await db.NutritionDraftReservations.ExecuteUpdateAsync(s => s.SetProperty(x => x.State, "pending"));
         await using var restarted = Context();
         Assert.True(await DraftPipeline(restarted).ProcessNextAsync(CancellationToken.None));
         Assert.Equal(1, await restarted.NutritionPrescriptions.CountAsync());
-        Assert.Equal(1, await restarted.NutritionPrescriptionEvents.CountAsync());
+        Assert.Equal(2, await restarted.NutritionPrescriptionEvents.CountAsync());
         Assert.Equal(120, await restarted.NutritionPrescriptionMeals.CountAsync());
     }
 
@@ -132,6 +138,38 @@ public sealed partial class NutritionPlanWorkflowTests
     public async Task DraftPipeline_ReconcilesLostEvents_AndSuppressesLegacyProducer()
     {
         await using var db = Context(); var ids = await ReadyDraftPatientAsync(db);
+        var health = new HealthTestRepository(db);
+        var baseline = await health.ListAssignmentsByPatientAsync(ids.PatientId, CancellationToken.None);
+        for (var i=0; i<12; i++) db.HealthTestAssignments.Add(new HealthTestAssignment
+        {
+            Id=Guid.NewGuid(), PatientId=ids.PatientId, VersionId=baseline[i%baseline.Count].VersionId,
+            Status=HealthTestAssignmentStatus.pending,
+        });
+        await db.SaveChangesAsync();
+        var all = await health.ListAssignmentsByPatientAsync(ids.PatientId, CancellationToken.None);
+        Assert.Equal(21, all.Count);
+        var initial = InitialAssessmentSelection.Select(await health.GetAutoAssignBatteryAsync(CancellationToken.None),
+            await health.ListBatteryAssignmentsByPatientAsync(ids.PatientId, CancellationToken.None), all);
+        Assert.Equal(9, initial.Count);
+        Assert.All(initial, row => Assert.Equal(ids.BatteryId, row.BatteryAssignmentId));
+        var actor = Substitute.For<CoppAddresd.Api.Context.IProgramActorContext>();
+        actor.ResolvePatientProfileIdAsync(Arg.Any<CancellationToken>()).Returns((Guid?)ids.PatientId);
+        var controller = new CoppAddresd.Api.Controllers.HealthTestsMeController(Substitute.For<MediatR.IMediator>(), actor, health);
+        var response = await controller.GetMyAssignments(CancellationToken.None, "initial");
+        var dto = Assert.IsAssignableFrom<IReadOnlyList<HealthTestAssignmentDto>>(
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(response.Result).Value);
+        Assert.All(dto, row => { Assert.True(row.IsRequired); Assert.Equal(9, row.BatteryRequiredCount); });
+        var configured = await health.GetAutoAssignBatteryAsync(CancellationToken.None);
+        var optional = await db.HealthTestBatteryItems.FirstAsync(x => x.BatteryId == configured!.Id);
+        optional.IsRequired = false;
+        var optionalAssignment = await db.HealthTestAssignments.SingleAsync(x => x.BatteryAssignmentId == ids.BatteryId && x.Version!.InstrumentId == optional.InstrumentId);
+        optionalAssignment.Status = HealthTestAssignmentStatus.pending;
+        await db.SaveChangesAsync();
+        response = await controller.GetMyAssignments(CancellationToken.None, "initial");
+        dto = Assert.IsAssignableFrom<IReadOnlyList<HealthTestAssignmentDto>>(
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(response.Result).Value);
+        Assert.All(dto, row => Assert.Equal(8, row.BatteryRequiredCount));
+        Assert.False(dto.Single(x => x.Id == optionalAssignment.Id).IsRequired);
         // Incluso si el worker legacy corre antes del evento, no debe reservar otro plan.
         await Workflow(db).QueueIfReadyAsync(ids.PatientId, CancellationToken.None);
         await Workflow(db).ReconcileAsync(CancellationToken.None);

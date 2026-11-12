@@ -6,7 +6,7 @@ namespace CoppAddresd.Application.Features.Nutrition.Cases;
 
 public sealed record NutritionActor(Guid UserId, Guid? ProfessionalId, bool ViewAll, bool CanManage, bool CanApprove);
 public sealed record NutritionCaseContext(DateOnly? BirthDate, string? Sex, string Timezone, bool TestsComplete, Guid? BatteryId);
-public enum NutritionOperation { Generate, Save, ApplyDay, CreateVersion, Submit, Approve, Return, Regenerate }
+public enum NutritionOperation { Generate, Save, ApplyDay, CreateVersion, Submit, Approve, Return, Regenerate, Publish }
 public sealed record NutritionGenerateInput(NutritionPatient? Manual = null, DateOnly? BirthDate = null, bool PreserveConfirmedEdits = true);
 public sealed record NutritionItemEdit(string FoodItemId, double Grams, string? Notes = null);
 public sealed record NutritionMealEdit(int DayNumber, string MealType, string? MenuName, IReadOnlyList<NutritionItemEdit> Items,
@@ -25,7 +25,7 @@ public sealed record NutritionView(Guid Id, Guid PatientId, Guid CycleId, int Ve
     DateOnly? StartDate, DateOnly? EndDate, NutritionTargets Targets,
     string? Instructions, string? InstructionsEn, string NarrativeSource, IReadOnlyList<string> MissingData,
     IReadOnlyList<NutritionAlert> Alerts, IReadOnlyList<NutritionMealEdit> Meals, bool CanRegenerate,
-    Guid CreatedBy, Guid? ApprovedBy, DateTime? ApprovedAt);
+    Guid CreatedBy, Guid? ApprovedBy, DateTime? ApprovedAt, string Disclaimer = NutritionRecommendationNotice.Text);
 
 public sealed record DraftText(string Es, string En);
 public sealed record DraftFood(string FoodId, double Grams);

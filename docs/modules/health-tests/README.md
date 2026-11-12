@@ -1,5 +1,14 @@
 # Módulo: Tests de Salud (Health Tests)
 
+## Batería inicial del paciente (KAN-62, 2026-11-12)
+
+La app consulta `GET /api/v1/health-tests/me/assignments?scope=initial`. El servidor selecciona la batería activa de autoasignación (priorizando `bateria-inicial`), su cohorte vigente más reciente y un registro visible por ítem/version configurado. El catálogo actual contiene nueve instrumentos; el algoritmo no impone un límite de nueve. Las asignaciones de seguimiento y cohortes históricas quedan fuera del contador inicial, conservando respuestas, resultados y la consulta sin `scope` para historial/otros consumidores. Si falta una cohorte inicial se crea mediante la autoasignación existente.
+
+La app descarta registros que el servidor ya no incluye; conserva una finalización confirmada para el mismo identificador incluso al cambiar idioma, usando el título de la respuesta nueva. La disponibilidad nutricional comprueba todos los ítems requeridos de esa cohorte, incluidas versiones fijadas y evaluaciones completas, en lugar de sumar asignaciones ajenas. Listado, progreso y recordatorios móviles comparten la consulta filtrada.
+
+Cada fila de `scope=initial` incluye `isRequired` y `batteryRequiredCount`, derivados del catálogo y no del número de filas visibles. Así, la app puede esperar todos los requeridos antes de presentar la bienvenida, detectar un requerido faltante/cancelado y permitir opcionales pendientes. La consulta sin `scope` conserva estos campos nulos. Una prueba de integración PostgreSQL verifica nueve requeridos y luego ocho más un opcional pendiente, sin bloquear la generación nutricional ni habilitar el productor legacy.
+
+
 Skill: `documentation`. Módulo del ERP para la evaluación de pacientes con **instrumentos
 psicométricos/clínicos versionados** (tests), baterías configurables, asignaciones,
 evaluaciones, resultados, indicadores derivados y alertas clínicas. Lo consumen el **ERP**

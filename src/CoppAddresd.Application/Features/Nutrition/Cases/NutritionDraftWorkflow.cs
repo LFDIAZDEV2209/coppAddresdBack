@@ -19,6 +19,7 @@ public sealed class NutritionDraftWorkflow(INutritionDraftReservationStore reser
         // Lote máximo de 25 baterías; no se carga contenido clínico ni menús por fila.
         // MissingAsync ya verifica completitud por conjuntos; no reconsulta el perfil por cada fila.
         using var actor = NutritionSystemActor.Begin();
+        await reservations.QueueUnpublishedReadyAsync(ct);
         foreach (var row in await reservations.MissingAsync(ct)) await reservations.ReserveAsync(row.PatientId, row.BatteryId, ct);
     }
 
@@ -31,6 +32,7 @@ public sealed class NutritionDraftWorkflow(INutritionDraftReservationStore reser
         {
             var plan = await cases.ExecuteAsync(new(NutritionOperation.Generate, r.PatientId, null, null,
                 NutritionSystemActor.Actor, CorrelationId: r.Id, BatteryAssignmentId: r.BatteryAssignmentId), ct);
+            if(!plan.IsPublished) plan = await cases.ExecuteAsync(new(NutritionOperation.Publish, r.PatientId, plan.Id, plan.Revision, NutritionSystemActor.Actor), ct);
             await reservations.CompleteAsync(r, plan.Id, plan.NarrativeSource == "deterministic_fallback", ct);
             logger.LogInformation("Nutrition.DraftReady ReservationId={ReservationId} Source={Source}", r.Id, plan.NarrativeSource);
         }

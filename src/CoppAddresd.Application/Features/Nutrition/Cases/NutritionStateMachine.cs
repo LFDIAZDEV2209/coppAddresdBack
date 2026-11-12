@@ -10,6 +10,7 @@ public static class NutritionStateMachine
     {
         var allowed = operation switch
         {
+            NutritionOperation.Publish => state is "borrador_ia" or "en_aprobacion" or "devuelto",
             NutritionOperation.CreateVersion => state == "aprobado",
             NutritionOperation.Save or NutritionOperation.ApplyDay or NutritionOperation.Regenerate or NutritionOperation.Submit
                 => state is "borrador_ia" or "devuelto",

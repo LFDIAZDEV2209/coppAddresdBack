@@ -1,5 +1,14 @@
 # Avisos SOS al contacto de emergencia
 
+## Lecturas congeladas al activar (KAN-65, 2026-11-12)
+
+El SOS combina las últimas tomas reales disponibles en el teléfono con mediciones clínicas guardadas del mismo paciente. El teléfono admite tomas en vivo conservadas de hasta 24 horas aunque el reloj ya esté desconectado; excluye diagnósticos/debug, volcados históricos sin garantía temporal, fechas futuras y datos fuera de rango. El backend selecciona por métrica las lecturas fechadas más recientes de hasta 24 horas, con origen `device`, `patient`, `professional` o `lab`; prefiere una toma nueva reportada cuando corresponde. Un cliente anterior sin fecha se identifica como auto-reporte con hora desconocida. La presión solo combina sistólica/diastólica de la misma fecha y origen. No inventa datos ni completa faltantes con cero.
+
+La migración aditiva `AddSosVitalsSnapshot` añade `app.sos_alerts.vitals_snapshot` (jsonb nullable). Preserva valor, unidad, fecha y procedencia: los reintentos e idempotencia conservan el mismo snapshot. La respuesta del SOS devuelve el snapshot compartido; la app no afirma haber compartido lecturas basándose únicamente en lo que intentó enviar. Correo HTML/texto muestra fecha UTC, procedencia y antigüedad respecto a la activación; SMS conserva valores/unidades, hora de activación y fechas de toma con zona COL explícita y antigüedad. Los datos ausentes se identifican por métrica cuando hay lecturas parciales. No se acortan signos ni se corta la URL para limitar segmentos. La llamada identifica los valores como últimas lecturas registradas.
+
+Pruebas locales usan PostgreSQL aislado y APIs sintéticas, sin enviar SMS, correo ni llamadas reales. El canal SOS WhatsApp todavía no existe en este módulo: su entrega y prueba pertenecen a la integración WhatsApp solicitada; debe reutilizar este snapshot y las reglas de ausencia/fecha.
+
+
 Los avisos se construyen únicamente en el servidor. El paciente autenticado
 activa la alerta; su contacto configurado es quien recibe llamada, SMS y correo.
 La selección manual de ambulancia, policía o bomberos en el teléfono es una

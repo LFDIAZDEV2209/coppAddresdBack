@@ -9380,6 +9380,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("status");
 
+                    b.Property<string>("VitalsSnapshotJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("vitals_snapshot");
+
                     b.Property<string>("VoiceAnsweredBy")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")

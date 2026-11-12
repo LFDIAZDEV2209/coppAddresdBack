@@ -70,7 +70,7 @@ public class HealthTestsMeController(
     [LocalizePatientContent(PatientContentProfile.AssessmentAssignments)]
     [HttpGet("assignments")]
     public async Task<ActionResult<IReadOnlyList<HealthTestAssignmentDto>>> GetMyAssignments(
-        CancellationToken ct
+        CancellationToken ct, [FromQuery] string? scope = null
     )
     {
         var patientId = await ResolvePatientOr404Async(ct);
@@ -79,6 +79,24 @@ public class HealthTestsMeController(
             return NotFound(new { message = "Paciente no encontrado" });
         }
 
+        if (string.Equals(scope, "initial", StringComparison.OrdinalIgnoreCase))
+        {
+            var battery = await repository.GetAutoAssignBatteryAsync(ct);
+            var cohorts = await repository.ListBatteryAssignmentsByPatientAsync(patientId.Value, ct);
+            if (battery is not null && !cohorts.Any(x => x.BatteryId == battery.Id
+                && x.Status is not (HealthTestAssignmentStatus.cancelled or HealthTestAssignmentStatus.expired)))
+            {
+                await mediator.Send(new AutoAssignInitialBatteryCommand(patientId.Value), ct);
+                cohorts = await repository.ListBatteryAssignmentsByPatientAsync(patientId.Value, ct);
+            }
+            var all = await repository.ListAssignmentsByPatientAsync(patientId.Value, ct);
+            return Ok(InitialAssessmentSelection.Select(battery, cohorts, all)
+                .Select(assignment => HealthTestAssignmentDto.FromEntity(assignment) with
+                {
+                    IsRequired = battery!.Items.Single(item => item.InstrumentId == assignment.Version!.InstrumentId).IsRequired,
+                    BatteryRequiredCount = battery.Items.Count(item => item.IsRequired),
+                }).ToArray());
+        }
         var assignments = await repository.ListAssignmentsByPatientAsync(patientId.Value, ct);
         var visible = assignments
             .Where(a =>

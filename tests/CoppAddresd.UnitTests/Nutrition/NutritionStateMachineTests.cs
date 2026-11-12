@@ -11,7 +11,8 @@ public sealed class NutritionStateMachineTests
         foreach (var state in new[] { "borrador_ia", "en_aprobacion", "devuelto", "aprobado" })
         foreach (var operation in Enum.GetValues<NutritionOperation>().Where(x => x != NutritionOperation.Generate))
         {
-            var allowed = operation switch { NutritionOperation.CreateVersion => state == "aprobado",
+            var allowed = operation switch { NutritionOperation.Publish => state is "borrador_ia" or "en_aprobacion" or "devuelto",
+                NutritionOperation.CreateVersion => state == "aprobado",
                 NutritionOperation.Approve or NutritionOperation.Return => state == "en_aprobacion",
                 _ => state is "borrador_ia" or "devuelto" };
             yield return [state, operation, allowed];

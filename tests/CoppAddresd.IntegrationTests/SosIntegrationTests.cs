@@ -373,6 +373,19 @@ public sealed class SosIntegrationTests : IAsyncLifetime
         var staffUserId = Guid.NewGuid();
         var alert = NewAlert(patientId, Guid.NewGuid().ToString(), "+573053924819");
 
+        var observed = DateTime.UtcNow.AddMinutes(-40);
+        observed = observed.AddTicks(-(observed.Ticks % 10)); // PostgreSQL conserva microsegundos.
+        foreach (var (code, value) in new[] { ("heart_rate", 82m), ("o2_saturation", 97m), ("systolic_bp", 122m), ("diastolic_bp", 79m) })
+        {
+            var metric = await _db.MeasurementMetrics.SingleAsync(x => x.Code == code);
+            _db.ClinicalMeasurements.Add(new ClinicalMeasurement { Id=Guid.NewGuid(), PatientId=patientId,
+                MetricId=metric.Id, UnitId=metric.DefaultUnitId, Value=value, ObservedAt=observed, Source="device" });
+        }
+        await _db.SaveChangesAsync();
+        var readings = await SosVitalsSnapshot.ResolveAsync(patientId, null, new ClinicalMeasurementRepository(_db), DateTime.UtcNow, CancellationToken.None);
+        Assert.Equal(4, readings.Count);
+        alert.HeartRate=82; alert.Spo2=97; alert.BloodPressure="122/79";
+        alert.VitalsSnapshotJson=SosVitalsSnapshot.Serialize(readings);
         await repository.AddWithOutboxAsync(
             alert,
             [
@@ -393,6 +406,12 @@ public sealed class SosIntegrationTests : IAsyncLifetime
             k.DedupeKey == $"sos:push:{alert.Id}:{staffUserId}"
         );
 
+        var frozen = await _db.SosAlerts.AsNoTracking().SingleAsync(x => x.Id == alert.Id);
+        Assert.All(SosVitalsSnapshot.Read(frozen.VitalsSnapshotJson), r => Assert.Equal(observed, r.ObservedAt));
+        var email = CoppAddresd.Infrastructure.Services.SosEmailTemplate.BuildText(frozen);
+        var sms = CoppAddresd.Infrastructure.Services.SosSmsTemplate.Build(frozen);
+        Assert.Contains("82 lpm", email); Assert.Contains("97%", email); Assert.Contains("122/79 mmHg", email);
+        Assert.Contains("Dispositivo", email); Assert.Contains("UTC", email); Assert.Contains("COL", sms);
         Assert.Equal(SosChannelStatus.Pendiente.ToString().ToLowerInvariant(), smsRow.SmsStatus);
         Assert.Equal(SosChannelStatus.Pendiente.ToString().ToLowerInvariant(), voiceRow.VoiceStatus);
         Assert.Equal(SosChannelStatus.Pendiente.ToString().ToLowerInvariant(), pushRow.PushStatus);

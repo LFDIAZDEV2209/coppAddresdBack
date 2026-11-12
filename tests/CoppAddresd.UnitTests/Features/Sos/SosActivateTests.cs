@@ -435,7 +435,19 @@ public sealed class SosActivateTests
             )
             .Returns(new SosCreateOutcome(SosCreateResult.Created, null));
 
-        var result = await _handler.Handle(
+        var capturedAt = DateTime.UtcNow.AddHours(-1);
+        var measurements = Substitute.For<IClinicalMeasurementRepository>();
+        measurements.GetLastPerMetricAsync(patientId, Arg.Any<IEnumerable<string>>(), Guid.Empty, Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, CoppAddresd.Application.DTOs.LabExam.LabExamMetricSnapshot>
+            {
+                ["heart_rate"] = new("heart_rate", 82, "bpm", capturedAt, "device"),
+                ["o2_saturation"] = new("o2_saturation", 97, "%", capturedAt, "device"),
+                ["systolic_bp"] = new("systolic_bp", 122, "mmHg", capturedAt, "device"),
+                ["diastolic_bp"] = new("diastolic_bp", 79, "mmHg", capturedAt, "device"),
+            });
+        var handler = new ActivateSosAlertHandler(_repository, _rateLimiter, _queue,
+            NullLogger<ActivateSosAlertHandler>.Instance, clinicalMeasurements: measurements);
+        var result = await handler.Handle(
             new ActivateSosAlertCommand(patientId, key, Latitude: 4.7110, Longitude: -74.0721),
             CancellationToken.None
         );
@@ -447,6 +459,12 @@ public sealed class SosActivateTests
         Assert.Equal("+573053924819", persisted.DestinationPhoneE164); // normalizado server-side
         Assert.Equal("ana@test.local", persisted.DestinationEmail); // snapshot del correo
         Assert.Equal(4.7110, persisted.Latitude);
+
+        Assert.Equal(82, result.Alert!.Vitals!.HeartRate);
+        Assert.Equal(97, persisted.Spo2);
+        Assert.Equal("122/79", persisted.BloodPressure);
+        Assert.Equal(4, result.Alert.Vitals.Readings.Count);
+        Assert.All(result.Alert.Vitals.Readings, reading => { Assert.Equal(capturedAt, reading.ObservedAt); Assert.Equal("device", reading.Source); });
 
         // Outbox: 1 fila SMS + 1 voz + 1 correo + 2 push (uno por profesional asignado).
         Assert.NotNull(outboxKeys);

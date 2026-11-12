@@ -1,4 +1,5 @@
 using System.Globalization;
+using CoppAddresd.Application.Features.Sos;
 using CoppAddresd.Domain.Entities;
 
 namespace CoppAddresd.Infrastructure.Services;
@@ -148,6 +149,40 @@ internal static class SosMessageFormatting
         return parts;
     }
 
+    public static string[] MissingVitals(SosAlert alert) =>
+        new[] { alert.HeartRate is null ? "Pulso" : null, alert.Spo2 is null ? "Oxígeno" : null,
+            string.IsNullOrWhiteSpace(alert.BloodPressure) ? "Presión" : null }.OfType<string>().ToArray();
+
+    public static string VitalProvenance(SosAlert alert, string label)
+    {
+        var code = label switch { "Pulso" => "HR", "Oxígeno" => "SPO2", _ => "SBP" };
+        var reading = SosVitalsSnapshot.Read(alert.VitalsSnapshotJson).FirstOrDefault(x => x.MetricCode == code);
+        var origin = reading?.Source switch { "device" => "Dispositivo", "professional" => "Profesional",
+            "patient" => "Registro del paciente", "lab" => "Laboratorio", _ => "Reportado por la app" };
+        return origin + " · " + (reading?.ObservedAt is { } time ? FormatMessageTime(time) + " · " + ReadingAge(time, alert.CreatedAt) : "Hora de medición no disponible");
+    }
+
+    /// <summary>Fecha compacta por toma, sin insinuar que el dato se midió durante la alerta.</summary>
+    public static string SmsReadingTimes(SosAlert alert)
+    {
+        var readings = SosVitalsSnapshot.Read(alert.VitalsSnapshotJson);
+        if (readings.Count == 0) return "Hora de medicion no disponible.";
+        return string.Join("; ", readings.GroupBy(x => x.ObservedAt).Select(g =>
+        {
+            var labels = string.Join("/", g.Where(x => x.MetricCode != "DBP").Select(x => x.MetricCode switch
+                { "HR" => "Pulso", "SPO2" => "O2", _ => "PA" }));
+            return labels + " " + (g.Key is { } time ? FormatAlertTime(time) + " COL (" + ReadingAge(time, alert.CreatedAt).Replace(" de la alerta", "") + ")" : "sin hora");
+        }));
+    }
+
+    private static string ReadingAge(DateTime observedAt, DateTime activatedAt)
+    {
+        var elapsed = activatedAt - observedAt;
+        if (elapsed < TimeSpan.Zero) return "antigüedad no disponible";
+        if (elapsed.TotalMinutes < 1) return "menos de 1 min antes de la alerta";
+        return Math.Floor(elapsed.TotalMinutes).ToString("0", CultureInfo.InvariantCulture) + " min antes de la alerta";
+    }
+
     public static string? SmsVitals(SosAlert alert)
     {
         var readings = ReportedVitals(alert);
@@ -178,6 +213,6 @@ internal static class SosMessageFormatting
             parts.Add($"presión arterial {alert.BloodPressure.Trim().Replace("/", " sobre ")}");
         }
 
-        return parts.Count == 0 ? null : string.Join(", ", parts) + ".";
+        return parts.Count == 0 ? null : "Últimas lecturas registradas: " + string.Join(", ", parts) + ".";
     }
 }

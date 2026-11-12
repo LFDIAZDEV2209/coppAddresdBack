@@ -240,12 +240,18 @@ public static class SosSmsTemplate
         var readings = SosMessageFormatting.ReportedVitals(alert);
         var vitals = readings.Count == 0 ? "Signos no compartidos."
             : "Signos: " + string.Join("; ", readings.Select(r => GsmFriendly($"{r.Label} {r.Value}")));
+        if (readings.Count > 0)
+        {
+            vitals += "\n" + SosMessageFormatting.SmsReadingTimes(alert);
+            var missing = SosMessageFormatting.MissingVitals(alert);
+            if (missing.Length > 0) vitals += "\nSin dato: " + GsmFriendly(string.Join("/", missing)) + ".";
+        }
         var phone = SosMessageFormatting.PatientPhone(alert.Patient);
         var gsm = IsGsm(name + address + maps + vitals);
         // Se priorizan los signos completos y el mapa íntegro: hasta dos
         // partes GSM como objetivo; Unicode puede requerir hasta cuatro.
         var budget = gsm ? 306 : readings.Count > 0 ? 268 : 201;
-        var header = "Alerta SOS: " + Clip(name, gsm ? 48 : 24, gsm) + " necesita tu ayuda.\nCopp Adresd";
+        var header = "Alerta SOS: " + Clip(name, gsm ? 48 : 24, gsm) + " necesita tu ayuda.\nCopp Adresd · " + SosMessageFormatting.FormatAlertTime(alert.CreatedAt) + " COL";
         var contact = phone is null ? "" : "\nLlamar: " + phone;
         if (maps is null) return header + "\n" + vitals + "\nUbicacion no compartida." + contact;
         var prefix = address is null ? "" : "Direccion: ";

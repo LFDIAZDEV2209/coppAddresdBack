@@ -161,7 +161,8 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext)
     {
         var names = metricNames
             .Where(n => !string.IsNullOrWhiteSpace(n))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(n => n.ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
             .ToArray();
 
         if (names.Length == 0)
@@ -174,7 +175,7 @@ public sealed class ClinicalMeasurementRepository(AppDbContext dbContext)
             .Where(m =>
                 m.PatientId == patientId
                 && (m.BatchId == null || m.BatchId != excludeBatchId)
-                && names.Contains(m.Metric!.Code)
+                && names.Contains(m.Metric!.Code.ToUpper())
             )
             .Select(m => new
             {

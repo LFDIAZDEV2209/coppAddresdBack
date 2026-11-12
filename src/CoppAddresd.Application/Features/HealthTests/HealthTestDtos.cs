@@ -238,7 +238,9 @@ public record HealthTestAssignmentDto(
     DateTime? CompletedAt,
     DateTime? ExpiresAt,
     DateTime? DueDate,
-    string? Notes
+    string? Notes,
+    bool? IsRequired = null,
+    int? BatteryRequiredCount = null
 )
 {
     public static HealthTestAssignmentDto FromEntity(HealthTestAssignment a) =>

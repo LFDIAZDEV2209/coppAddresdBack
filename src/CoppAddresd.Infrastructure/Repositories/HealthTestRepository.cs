@@ -264,6 +264,7 @@ public sealed class HealthTestRepository(AppDbContext dbContext) : IHealthTestRe
             .HealthTestBatteries.AsNoTracking()
             .Include(x => x.Items)
             .Where(x => x.IsActive && x.AutoAssignOnPatientCreate)
+            .OrderByDescending(x => x.Code == "bateria-inicial").ThenBy(x=>x.CreatedAt).ThenBy(x=>x.Id)
             .FirstOrDefaultAsync(ct);
 
     public async Task<(IReadOnlyList<HealthTestBattery> Items, int Total)> ListBatteriesAsync(

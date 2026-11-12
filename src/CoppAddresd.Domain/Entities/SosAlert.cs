@@ -59,15 +59,17 @@ public sealed class SosAlert
     /// <summary>Snapshot completado (también sin dirección); evita repetir llamadas de geocodificación.</summary>
     public DateTime? LocationLookupCompletedAt { get; set; }
 
-    // --- Signos vitales (opcional, demo) ---
+    // --- Snapshot de signos reales compartidos al activar ---
 
-    /// <summary>Frecuencia cardíaca en lpm reportada al activar (demo por ahora).</summary>
+    public string? VitalsSnapshotJson { get; set; }
+
+    /// <summary>Frecuencia cardíaca en lpm reportada al activar (si está disponible).</summary>
     public int? HeartRate { get; set; }
 
-    /// <summary>Saturación de oxígeno en porcentaje reportada al activar (demo por ahora).</summary>
+    /// <summary>Saturación de oxígeno en porcentaje reportada al activar (si está disponible).</summary>
     public int? Spo2 { get; set; }
 
-    /// <summary>Presión arterial reportada al activar, formato "160/110" (demo por ahora).</summary>
+    /// <summary>Presión arterial reportada al activar, formato "160/110" (si está disponible).</summary>
     public string? BloodPressure { get; set; }
 
     // --- Canal SMS (principal: contacto de emergencia) ---

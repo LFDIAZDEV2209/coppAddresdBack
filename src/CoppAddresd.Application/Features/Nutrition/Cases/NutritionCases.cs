@@ -146,11 +146,13 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
                             if (string.IsNullOrWhiteSpace(command.Comment)) Invalid("La devolución exige comentario.");
                             plan.ReturnComment = command.Comment!.Trim(); plan.State = "devuelto";
                             break;
+                        case NutritionOperation.Publish:
                         case NutritionOperation.Approve:
+                            if(command.Operation == NutritionOperation.Publish && !currentContext.TestsComplete) Invalid("Completa las evaluaciones iniciales requeridas antes de publicar el plan.");
                             if (plan.MenusOutdated) Conflict("Regenera o confirma los menús ajustados a las metas.");
                             ValidateMeals(plan, engine);
                             var alerts = Flags(plan, engine);
-                            if (!NutritionEngine.CanApprove(alerts, command.CriticalConfirmed)) Invalid("Confirma que revisaste personalmente las alertas críticas.");
+                            if (command.Operation == NutritionOperation.Approve && !NutritionEngine.CanApprove(alerts, command.CriticalConfirmed)) Invalid("Confirma que revisaste personalmente las alertas críticas.");
                             var published = await store.PublishedAsync(plan.PatientId, txCt);
                             var previous = published.SingleOrDefault(x => x.CycleId == plan.CycleId);
                             var dates = NutritionStateMachine.Dates(Today(currentContext), command.StartDate, previous);
@@ -204,8 +206,8 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
         snapshot["assessmentResults"] = JsonSerializer.SerializeToNode(profile.Results, Json);
         var plan = new NutritionPrescription { PatientId = patientId, Provisional = missing.Length != 0,
             ClinicalProfileJson = snapshot.ToJsonString(Json), MissingDataJson = Write(missing), NarrativeSource = accepted ? draft.Source : "deterministic_fallback",
-            Instructions = accepted ? draft.Narratives.Es + "\n" + draft.Instructions.Es : "Propuesta determinista: revisa porciones y alertas antes de aprobar.",
-            InstructionsEn = accepted ? draft.Narratives.En + "\n" + draft.Instructions.En : "Deterministic proposal: review portions and alerts before approval." };
+            Instructions = accepted ? draft.Narratives.Es + "\n" + draft.Instructions.Es : "Plan generado automáticamente con reglas del programa.",
+            InstructionsEn = accepted ? draft.Narratives.En + "\n" + draft.Instructions.En : "Plan automatically generated using program rules." };
         plan.InstructionsEnSourceHash = NutritionInstructionTranslation.PairedSourceHash(plan.Instructions, plan.InstructionsEn);
         SetTargets(plan, targets);
         plan.Meals = days.SelectMany(d => NutritionEngine.MealOrder.Select(m => ToMeal(new(d.D, m,
@@ -340,8 +342,8 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
             OccurredAt = clock.GetUtcNow().UtcDateTime, Action = action ?? command.Operation.ToString().ToLowerInvariant(), Revision = plan.Revision,
             Comment = command.Actor.UserId == NutritionSystemActor.Id ? NutritionSystemActor.Name : command.Comment,
             CriticalCount = flags.Count(f => f.S == "crit"), CriticalConfirmed = command.CriticalConfirmed,
-            AutoApproved = action is null && command.Operation == NutritionOperation.Approve && plan.CreatedBy == command.Actor.UserId,
-            SnapshotJson = Write(new { plan.Id, plan.PatientId, plan.CycleId, plan.Version, plan.Revision, plan.State, plan.Provisional,
+            AutoApproved = action is null && (command.Operation == NutritionOperation.Publish && command.Actor.UserId == NutritionSystemActor.Id || command.Operation == NutritionOperation.Approve && plan.CreatedBy == command.Actor.UserId),
+            SnapshotJson = Write(new { Disclaimer = NutritionRecommendationNotice.Text, plan.Id, plan.PatientId, plan.CycleId, plan.Version, plan.Revision, plan.State, plan.Provisional,
                 plan.IsPublished, plan.StartDate, plan.EndDate, plan.ManualEditsConfirmed, plan.ClinicalProfileJson, plan.TargetsJson,
                 plan.MissingDataJson, plan.Instructions, plan.InstructionsEn, plan.InstructionsEnSourceHash, meals = plan.Meals.Select(EditOf).ToArray(), flags }) }, ct);
     }
