@@ -55,6 +55,7 @@ public class AiServiceClient : IAiServiceClient
             thread_id = request.ThreadId,
             agent_type_id = request.AgentTypeId,
             user_id = request.UserId,
+            patient_id = request.PatientId,
             // Contexto de control abierto (fase 2): JsonOpts omite el campo cuando
             // es null (contrato = hoy); un ai-service anterior ignora el campo.
             control_context = request.ControlContext,
@@ -106,7 +107,9 @@ public class AiServiceClient : IAiServiceClient
         {
             Content = JsonContent.Create(payload, options: JsonOpts),
         };
-        httpRequest.Options.Set(AiConsentSubject.Key, new("chat", UserId: Guid.TryParse(request.UserId, out var consentUserId) ? consentUserId : null));
+        httpRequest.Options.Set(AiConsentSubject.Key, new("chat",
+            PatientId: Guid.TryParse(request.PatientId, out var consentPatientId) ? consentPatientId : null,
+            UserId: Guid.TryParse(request.UserId, out var consentUserId) ? consentUserId : null));
         AddInternalKeyHeader(httpRequest);
 
         // JsonOpts (snake_case + case-insensitive + WhenWritingNull): el

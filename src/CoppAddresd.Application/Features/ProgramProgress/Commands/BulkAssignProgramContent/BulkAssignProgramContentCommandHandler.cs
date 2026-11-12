@@ -113,7 +113,8 @@ public static class WeekSnapshotJson
 public sealed class BulkAssignProgramContentCommandHandler(
     IMediaItemRepository mediaRepository,
     IProgramRepository programRepository,
-    ILogger<BulkAssignProgramContentCommandHandler> logger
+    ILogger<BulkAssignProgramContentCommandHandler> logger,
+    CoppAddresd.Application.WhatsApp.IWhatsAppReminderHooks? whatsappReminders = null
 ) : IRequestHandler<BulkAssignProgramContentCommand, BulkAssignProgramContentResult>
 {
     /// <summary>El media_id del snapshot/regla solo aplica a tareas podcast.</summary>
@@ -160,7 +161,14 @@ public sealed class BulkAssignProgramContentCommandHandler(
             return await AssignToTemplateAsync(request, weekdays, media, totalWeeksTargeted, ct);
         }
 
-        return await AssignToEnrollmentAsync(request, weekdays, media, totalWeeksTargeted, ct);
+        var result = await AssignToEnrollmentAsync(request, weekdays, media, totalWeeksTargeted, ct);
+        if (whatsappReminders is not null)
+        {
+            try { await whatsappReminders.RefreshEnrollmentAsync(request.TargetId, ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) { logger.LogWarning("WhatsApp: podcast pendiente de reconciliar; causa={Cause}", ex.GetType().Name); }
+        }
+        return result;
     }
 
     private async Task<BulkAssignProgramContentResult> AssignToTemplateAsync(
