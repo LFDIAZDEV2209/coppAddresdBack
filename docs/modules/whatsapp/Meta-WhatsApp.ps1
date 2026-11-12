@@ -21,8 +21,8 @@ $baseUrl = 'https://graph.facebook.com/v23.0'
 $templates = @(
     @{ name='checkin_bienestar'; language='es'; body='Hola {{1}}, tu check-in de bienestar del programa ANTARES está disponible: {{2}} Revisa tu programa en la app.' },
     @{ name='wellness_checkin'; language='en'; body='Hello {{1}}, your ANTARES program wellness check-in is available: {{2}} Review your program in the app.' },
-    @{ name='recordatorio_racha'; language='es'; body='Hola {{1}}, actualización de tu racha del programa ANTARES: {{2}} Revisa las actividades en la app.' },
-    @{ name='streak_reminder'; language='en'; body='Hello {{1}}, an update on your ANTARES program streak: {{2}} Review your activities in the app.' },
+    @{ name='racha_programa'; language='es'; body='Hola {{1}}, actualización de tu cuenta del programa ANTARES: tu racha actual es {{2}}. Si aún no registraste la actividad de hoy, hazlo en la app.' },
+    @{ name='program_streak'; language='en'; body='Hello {{1}}, an update on your ANTARES account: your current streak is {{2}}. If you have not logged today''s activity yet, please do so in the app.' },
     @{ name='recordatorio_podcast'; language='es'; body='Hola {{1}}, actualización del podcast asignado en tu programa ANTARES: {{2}} Revisa la lección en la app.' },
     @{ name='podcast_reminder'; language='en'; body='Hello {{1}}, an update on the podcast assigned in your ANTARES program: {{2}} Review the lesson in the app.' },
     @{ name='recordatorio_evaluacion'; language='es'; body='Hola {{1}}, actualización de tu evaluación inicial del programa ANTARES: {{2}} Revisa tu evaluación en la app.' },
