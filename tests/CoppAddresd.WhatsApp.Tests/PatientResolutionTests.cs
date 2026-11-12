@@ -52,7 +52,7 @@ public sealed class PatientResolutionTests(PostgresFixture fixture) : IClassFixt
         var resolver = scope.ServiceProvider.GetRequiredService<WhatsAppPatientResolver>();
         Assert.Null(await resolver.ResolveAsync("+573000000000", DateTimeOffset.UtcNow, CancellationToken.None));
         Assert.True((await resolver.GuideUnknownAsync("+573000000000", DateTimeOffset.UtcNow, CancellationToken.None)).Succeeded);
-        await sender.Received(1).SendTextAsync("+573000000000", Arg.Is<string>(text => text.Contains("regístrate")), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await sender.Received(1).SendTextAsync("+573000000000", Arg.Is<string>(text => text.Contains("VINCULAR") && text.Contains("app ANTARES")), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         Assert.False(await db.PatientLinks.AnyAsync(x => x.WaId == "+573000000000"));
     }
 

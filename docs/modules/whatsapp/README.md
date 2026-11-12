@@ -2,6 +2,7 @@
 
 Operación preparada, pendiente de aprobación: [OPERACION.md](OPERACION.md).
 Informe y evidencia local: [INFORME.md](INFORME.md).
+Vinculación por OTP (fase 10): [INFORME-OTP.md](INFORME-OTP.md).
 
 Módulo del monolito (`CoppAddresd.WhatsApp`), con contratos en Application y entidades
 en Domain. No incorpora otro servicio desplegable. OpenSpec:
@@ -15,6 +16,52 @@ Solo variables de entorno: `WHATSAPP_ENABLED` (`0` por defecto),
 al habilitar el módulo. Con el flag apagado no registra servicios del canal.
 
 ## Persistencia
+
+### Vinculación por SMS (fase 10)
+
+Para un número desconocido: `VINCULAR` → documento → SMS al teléfono registrado →
+código de seis dígitos → confirmación. También se admite el documento directamente.
+`REENVIAR` solicita otro código; `CANCELAR` termina. Nunca se pide ni se usa una
+contraseña. Hasta aprobar el código no hay vínculo ni llamada al agente; el siguiente
+mensaje usa el chat existente. Un número ya resuelto por teléfono conserva su flujo.
+
+`FindActivePatientForBindingQuery` consulta Patients: exactamente un perfil con
+status Activo y sin soft delete, por documento (comparación sin distinción de caso).
+Documento ausente, inactivo, eliminado o ambiguo recibe la misma guía. Antes y después
+de verificar se revalida ese perfil; el sujeto emitido por Auth debe corresponder al
+user_id del paciente. No se reasignan vínculos existentes a otro número/paciente.
+
+Cliente HTTP: `WhatsApp:Auth:BaseUrl` (env `WhatsApp__Auth__BaseUrl`), por defecto
+`http://localhost:5123`. Configurar el origen/prefijo del Auth accesible desde la API;
+el cliente añade `api/auth/id-lookup`, `send-otp` y `verify-otp`. No contiene secretos.
+Solo canal PHONE, application app; sin reintentos automáticos, redirects, cookies
+compartidas ni logging de HttpClient. Timeout 10 s por petición, CancellationToken.
+Tokens/Set-Cookie/devCode nunca salen por WhatsApp ni se guardan en la sesión.
+
+Auth acepta el campo opcional `contactId=phone` en verify-otp y confirma con
+`verifiedContactId=phone` solo tras verificar PHONE; un OTP EMAIL pendiente no sirve
+para este consumidor. Los clientes que omiten contactId conservan su contrato.
+El canal falla cerrado si Auth aún no soporta la confirmación: desplegar Auth con
+este cambio antes de habilitar la nueva vinculación. No se ejecutó ese despliegue.
+Se siguen respetando OtpSecurity/rate limit/Twilio y el HTTP 429 de Auth, sin fabricar
+IP por paciente ni reintentar para eludirlos.
+
+`whatsapp.binding_sessions`: una fila única por wa_id, estado, paciente/contacto,
+intentos y las dos reservas SMS más recientes. Expiración absoluta de 10 min desde
+el inicio, tres intentos y dos reservas por hora móvil. Reiniciar/cancelar conserva
+la cuota; reenviar no reinicia intentos ni expiración. Ante envío fallido/timeout la
+reserva se conserva por prudencia: evita superar dos SMS ante aceptación incierta.
+Puede agotarse antes por las protecciones de Auth. Tras finalizar/expirar se comienza
+de nuevo con VINCULAR. Nunca se guarda documento, código ni tokens en BindingSession.
+
+Lease persistido de dos minutos serializa el flujo. Se reserva el intento/envío
+antes de HTTP, sin transacciones abiertas durante Auth. Estado Sending/Verifying
+recuperado tras caída termina sin repetir un SMS/verificación a ciegas. La creación
+de patient_links y confirmación es atómica, con comprobación de lease y unicidad.
+Se devuelve solo teléfono enmascarado; los eventos crudos de vinculación se limpian
+al guardar su respuesta (payload `{}`, texto `[vinculación]`). Auth enmascara también
+el documento en sus logs OTP. Los códigos pueden expirar antes por el motor Auth;
+los 10 minutos son el máximo de la sesión del canal.
 
 Schema exclusivo `whatsapp`, historial `whatsapp.__ef_migrations_history`.
 El modo `--migrate` aplica este contexto incluso con el canal apagado; no necesita

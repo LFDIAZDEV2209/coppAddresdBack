@@ -116,6 +116,14 @@ connection does not enable EF retry execution strategies. No load testing is
 claimed; functional tests use two concurrent synthetic requests.
 # WhatsApp — claims de eventos y recordatorios (2026-11-12)
 
+Fase 10: upsert de BindingSession y claim condicional de lease por wa_id en
+sentencias cortas; reserva durable de cuota/intento antes de llamar a Auth.
+La confirmación abre una transacción Read Committed, bloquea únicamente la sesión
+con lease propio vigente, inserta patient_links con ON CONFLICT y guarda el estado,
+respuesta y limpieza del evento. No hay HTTP dentro de esa transacción. Un lease
+perdido no puede crear un vínculo; un estado de llamada incierta se cierra sin
+repetir SMS/check automáticamente. La unicidad previa por paciente/número se conserva.
+
 `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING *` reclama
 un evento en una sentencia atómica, Read Committed, lease de cinco minutos.
 El lock termina antes de llamar al agente o a Meta. No hay HTTP dentro de

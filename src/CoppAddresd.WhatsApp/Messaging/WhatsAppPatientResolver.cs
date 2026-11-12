@@ -41,5 +41,5 @@ public sealed class WhatsAppPatientResolver(WhatsAppDbContext db, ISender mediat
     }
 
     public Task<WhatsAppSendResult> GuideUnknownAsync(string waId, DateTimeOffset inboundAt, CancellationToken ct) =>
-        sender.SendTextAsync(waId, "Para conversar con tu asistente, regístrate en la app ANTARES con este número de teléfono.", inboundAt, ct);
+        sender.SendTextAsync(waId, Binding.WhatsAppBindingFlow.Guide, inboundAt, ct);
 }

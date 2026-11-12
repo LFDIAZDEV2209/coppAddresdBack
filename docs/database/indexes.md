@@ -215,6 +215,13 @@ PostgreSQL tests check current/stale receipt queries, concurrent idempotency,
 withdrawal, immutability and migration up/down/up. No load claim is made.
 # WhatsApp — canal (2026-11-12)
 
+Fase 10: `IX_binding_sessions_wa_id`, único B-tree en
+`whatsapp.binding_sessions(wa_id)`, permite lookup/claim por número y una sola cuota
+persistida entre sesiones/reinicios. Costo: una entrada por número, sin índices de
+documento/código ni cambios de índices en otros módulos. La consulta inicial de
+documento pertenece a Patients y proyecta como máximo dos identidades; no crea DDL
+en app. La nueva tabla comienza vacía; el índice se crea junto con la tabla.
+
 | Índice | Tabla | Columnas | Tipo | Motivo / consulta | Impacto | Costo |
 |---|---|---|---|---|---|---|
 | IX_raw_events_wamid | whatsapp.raw_events | wamid | Único B-tree | Dedupe atómico de reenvíos Meta | Búsqueda puntual | Una entrada por mensaje |

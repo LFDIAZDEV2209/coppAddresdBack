@@ -128,6 +128,11 @@ public class AuthController : ControllerBase
 
         SetRefreshTokenCookie(result.RefreshToken, request.RememberMe, request.Application);
 
+        // Prueba explícita para consumidores que exigen PHONE. Un backend nuevo
+        // falla cerrado mientras una versión antigua de Auth todavía no la emite.
+        if (request.ContactId == "phone")
+            return Ok(new { result.AccessToken, result.TokenType, result.ExpiresIn, VerifiedContactId = "phone" });
+
         return Ok(new LoginResponse(
             AccessToken: result.AccessToken,
             TokenType: result.TokenType,

@@ -16,7 +16,7 @@ public sealed class MigrationTests(PostgresFixture fixture) : IClassFixture<Post
         await migrator.MigrateAsync("0", CancellationToken.None);
         Assert.Empty(await db.Database.GetAppliedMigrationsAsync(CancellationToken.None));
         await migrator.MigrateAsync(null, CancellationToken.None);
-        Assert.Equal(4, (await db.Database.GetAppliedMigrationsAsync(CancellationToken.None)).Count());
+        Assert.Equal(5, (await db.Database.GetAppliedMigrationsAsync(CancellationToken.None)).Count());
         Assert.Empty(await db.Reminders.ToListAsync(CancellationToken.None));
     }
 

@@ -80,6 +80,8 @@ if (WhatsAppOptions.FromEnvironment().Enabled)
 {
     builder.Services.AddScoped<CoppAddresd.Application.Features.Patients.IPatientChannelQuery,
         CoppAddresd.Infrastructure.Repositories.PatientChannelQuery>();
+    builder.Services.AddScoped<CoppAddresd.Application.Features.Patients.IPatientBindingQuery,
+        CoppAddresd.Infrastructure.Repositories.PatientBindingQuery>();
     builder.Services.AddScoped<CoppAddresd.Application.Features.ProgramProgress.Queries.IProgramAccompanimentQuery,
         CoppAddresd.Infrastructure.Repositories.ProgramAccompanimentQuery>();
 }
