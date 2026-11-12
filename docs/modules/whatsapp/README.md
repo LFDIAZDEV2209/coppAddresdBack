@@ -48,3 +48,17 @@ El endpoint persiste cada mensaje antes del 200 (índice único wamid), cuenta
 duplicados y emite una señal de cola en proceso. No ejecuta el agente en HTTP.
 Solo acepta el phone_number_id configurado. Recibos de estado no abren ventana.
 El payload completo es información sensible: no se imprime en logs.
+
+## Identidad y conversación
+
+`FindActivePatientByPhoneQuery` pertenece a Patients; su adaptador consulta solo
+identidad y teléfono del perfil activo, sin datos clínicos. Normaliza prefijo,
+espacios y puntuación (nacional colombiano sin prefijo → 57). Ante varios perfiles
+activos con el mismo número responde como desconocido: no elige arbitrariamente.
+La primera búsqueda normalizada recorre perfiles; ocurre una vez por vínculo y
+no añade índices ni funciones en schemas ajenos. Luego `patient_links.wa_id`
+es la fuente del canal (D3). V1 admite un número por paciente y una conversación.
+El vínculo conserva user_id para reutilizar la identidad y consentimiento del chat.
+Un teléfono desconocido recibe guía de registro sin crear conversación de agente.
+`ON CONFLICT` y unicidad evitan vínculos/hilos duplicados en primeras entradas
+concurrentes. No hay FK desde `whatsapp` a `app` ni a `auth`.

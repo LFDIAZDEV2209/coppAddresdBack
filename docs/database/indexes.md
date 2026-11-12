@@ -219,4 +219,7 @@ withdrawal, immutability and migration up/down/up. No load claim is made.
 |---|---|---|---|---|---|---|
 | IX_raw_events_wamid | whatsapp.raw_events | wamid | Único B-tree | Dedupe atómico de reenvíos Meta | Búsqueda puntual | Una entrada por mensaje |
 | IX_raw_events_next_attempt_at | whatsapp.raw_events | next_attempt_at, filtro processed_at IS NULL | B-tree parcial | Replay de eventos pendientes vencidos | Polling limitado | Solo pendientes |
+| IX_patient_links_wa_id | whatsapp.patient_links | wa_id | Único B-tree | Resolver canal sin consultar perfiles | Lookup puntual | Una entrada por vínculo |
+| IX_patient_links_patient_id | whatsapp.patient_links | patient_id | Único B-tree | Un número por paciente en v1 | Evita identidad ambigua | Una entrada por vínculo |
+| IX_conversations_patient_id | whatsapp.conversations | patient_id | Único B-tree | Hilo estable por paciente | Upsert y consulta puntual | Una entrada por conversación |
 

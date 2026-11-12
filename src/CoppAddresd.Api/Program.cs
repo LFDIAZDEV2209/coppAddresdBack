@@ -76,6 +76,9 @@ builder.Services.AddProgramAssignmentSettings(builder.Configuration, builder.Env
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddWhatsApp(builder.Configuration, migrationsOnly: args.Contains("--migrate"));
+if (WhatsAppOptions.FromEnvironment().Enabled)
+    builder.Services.AddScoped<CoppAddresd.Application.Features.Patients.IPatientChannelQuery,
+        CoppAddresd.Infrastructure.Repositories.PatientChannelQuery>();
 builder.Services.ConfigureCors(builder.Configuration);
 builder.Services.ConfigureJwtAuthentication(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
