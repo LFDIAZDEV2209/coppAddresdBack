@@ -273,6 +273,7 @@ public static class ApplicationServiceExtensions
             .AddResiliencePolicy();
 
         services.AddScoped<ICurrentContext, CurrentContext>();
+        services.AddScoped<IPatientScopeActor, PatientScopeActor>();
 
         // Resolución del actor del módulo SOS (change sos-panic-real): el
         // paciente se deriva SIEMPRE del JWT (claim patient_id o lookup por

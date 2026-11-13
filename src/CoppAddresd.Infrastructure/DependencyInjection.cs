@@ -38,6 +38,8 @@ public static class DependencyInjection
                 "ConnectionStrings:DefaultConnection no configurada."
             );
 
+        services.AddScoped<IPatientScopeStore, PatientScopeStore>();
+        services.AddScoped<IPatientScopeGuard, PatientScopeGuard>();
         services.AddScoped<IAppointmentReferenceSearchRepository, AppointmentReferenceSearchRepository>();
         services.AddScoped<INutritionPrescriptionRepository, NutritionPrescriptionRepository>();
         services.AddScoped<INutritionInboxRepository, NutritionInboxRepository>();

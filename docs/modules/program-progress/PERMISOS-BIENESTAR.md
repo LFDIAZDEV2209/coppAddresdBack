@@ -22,3 +22,11 @@ no certifican que esas funcionalidades futuras estén implementadas.
 No se concede `Wellness.Manage` al nutricionista porque incluye edición de rutinas.
 Las operaciones nutricionales antiguas deberán exigir `Nutrition.Manage` en 0.11d.
 Las políticas y el alcance se aplican en 0.11b–0.11d; el seed por sí solo no los sustituye.
+
+`IPatientScopeGuard` vive en Application. `EnsureAsync(patientId, ct)` exige lectura
+de Perfil 360; la sobrecarga con código exige la capacidad concreta. `EnsureResourceAsync`
+resuelve inscripción, semana, ciclo, prescripción, registro, análisis, documento o
+asignación a su paciente y devuelve el mismo 404 genérico si falta o es ajeno.
+`FilterAsync` compone una subconsulta de pacientes visibles sobre un `IQueryable`, antes
+de materializar, contar o paginar. Un actor sin profesional obtiene cero pacientes;
+Admin omite únicamente la condición de asignación y sigue necesitando el permiso.
