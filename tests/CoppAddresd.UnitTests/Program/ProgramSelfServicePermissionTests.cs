@@ -88,9 +88,9 @@ public sealed class ProgramSelfServicePermissionTests
             .GetMethods()
             .Single(m => m.Name == name);
 
-    private static RequirePermissionAttribute? FindRequirePermission(
+    private static object? FindRequirePermission(
         System.Reflection.MethodInfo method
-    ) => method.GetCustomAttributes(true).OfType<RequirePermissionAttribute>().FirstOrDefault();
+    ) => method.GetCustomAttributes(true).FirstOrDefault(a => a is RequirePermissionAttribute or RequireContextPermissionAttribute);
 
     // ===================== Regresión de pipeline HTTP =====================
 

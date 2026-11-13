@@ -19,7 +19,8 @@ public sealed class PatientScopeRouteTests
 {
     public static IEnumerable<object[]> Routes()
     {
-        foreach (var type in new[] { typeof(ProgramController), typeof(WellnessController), typeof(ProgramControlsController) })
+        foreach (var type in new[] { typeof(ProgramController), typeof(WellnessController), typeof(ProgramControlsController),
+            typeof(NutritionController), typeof(NutritionReadController), typeof(NutritionPlanReviewController) })
             foreach (var method in type.GetMethods())
                 foreach (var attribute in method.GetCustomAttributes<PatientScopeAttribute>())
                     foreach (var scenario in new[] { "asignado", "ajeno", "Admin", "sin_permiso" })
@@ -45,7 +46,8 @@ public sealed class PatientScopeRouteTests
         store.VisiblePatients(Arg.Any<Guid?>(), Arg.Any<bool>()).Returns(visible);
         store.ContainsAsync(visible, patient, Arg.Any<CancellationToken>()).Returns(visible.Contains(patient));
         store.OwnerAsync(Arg.Any<PatientResource>(), patient, Arg.Any<CancellationToken>()).Returns(patient);
-        using var services = new ServiceCollection().AddSingleton<IPatientScopeGuard>(new PatientScopeGuard(actor, store)).BuildServiceProvider();
+        using var services = new ServiceCollection().AddSingleton(store)
+            .AddSingleton<IPatientScopeGuard>(new PatientScopeGuard(actor, store)).BuildServiceProvider();
         var http = new DefaultHttpContext { RequestServices = services };
         var action = new ActionContext(http, new RouteData(), new ActionDescriptor(), new ModelStateDictionary());
         var args = new Dictionary<string, object?> { [path[0]] = path.Length == 1 ? patient : new Input(patient) };
@@ -73,6 +75,9 @@ public sealed class PatientScopeRouteTests
     {
         public Guid TargetId => PatientId;
         public Guid EnrollmentId => PatientId;
+        public Guid PlanId => PatientId;
+        public Guid SourcePlanId => PatientId;
+        public Guid NutritionPlanId => PatientId;
         public string TargetType => "Enrollment";
     }
 }

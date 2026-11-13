@@ -89,9 +89,11 @@ public sealed class MediaPermissionTests
     private static string? FindRequirePermission(System.Reflection.MethodInfo method) =>
         method
             .GetCustomAttributes(true)
-            .OfType<RequirePermissionAttribute>()
-            .FirstOrDefault()
-            ?.PermissionCode;
+            .Select(attribute => attribute switch {
+                RequirePermissionAttribute claim => claim.PermissionCode,
+                RequireContextPermissionAttribute effective => effective.PermissionCode,
+                _ => null })
+            .FirstOrDefault(code => code is not null);
 
     [Fact]
     public void List_ExigeMediaView() =>

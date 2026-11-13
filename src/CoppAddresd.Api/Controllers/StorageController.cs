@@ -21,7 +21,8 @@ public class StorageController(
     StorageSignatureService signatureService,
     IDocumentRepository documents,
     IPatientRepository patients,
-    ICurrentContext context) : ControllerBase
+    ICurrentContext context,
+    FoodPhotoAccess? foodPhotos = null) : ControllerBase
 {
     private readonly ArchivedDocumentAccess archiveAccess = new(documents, patients, context);
     /// <summary>Almacena el body crudo bajo la clave indicada (semántica PUT de S3).
@@ -35,7 +36,7 @@ public class StorageController(
 
         // El archivo nuevo es inmutable desde este proxy, incluso con firma GET.
         // Su escritura pertenece exclusivamente al flujo servidor de laboratorio.
-        if (ArchivedDocumentAccess.IsArchiveKey(key)) return Forbid();
+        if (ArchivedDocumentAccess.IsArchiveKey(key) || FoodPhotoAccess.IsPhotoKey(key)) return Forbid();
 
         var exp = Request.Query["exp"].ToString();
         var sig = Request.Query["sig"].ToString();
@@ -69,6 +70,13 @@ public class StorageController(
         if (expiresInSeconds is <= 0 or > 86400)
             return BadRequest(new { message = "La expiración debe estar entre 1 y 86400 segundos." });
 
+        if (FoodPhotoAccess.IsPhotoKey(key))
+        {
+            await (foodPhotos ?? HttpContext.RequestServices.GetRequiredService<FoodPhotoAccess>()).EnsureReadableAsync(key, false, ct);
+            expiresInSeconds = Math.Min(expiresInSeconds, 300);
+            Response.Headers.CacheControl = "private, no-store";
+        }
+
         if (ArchivedDocumentAccess.IsArchiveKey(key))
         {
             if (await archiveAccess.ResolveReadableAsync(key, User, false, ct) is null) return NotFound();
@@ -79,12 +87,15 @@ public class StorageController(
         {
             var cloudUrl = ArchivedDocumentAccess.IsArchiveKey(key)
                 ? await objectStorage.GetDocumentArchiveReadUrlAsync(key, TimeSpan.FromSeconds(expiresInSeconds), ct)
-                : await objectStorage.GetPreSignedUrlAsync(key, TimeSpan.FromSeconds(expiresInSeconds), ct);
+                : FoodPhotoAccess.IsPhotoKey(key)
+                    ? await objectStorage.GetFoodPhotoReadUrlAsync(key, TimeSpan.FromSeconds(expiresInSeconds), ct)
+                    : await objectStorage.GetPreSignedUrlAsync(key, TimeSpan.FromSeconds(expiresInSeconds), ct);
             return Ok(new { url = cloudUrl, expiresInSeconds });
         }
 
         var expiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
-        var signature = signatureService.Sign(key, expiresAt);
+        var signature = FoodPhotoAccess.IsPhotoKey(key)
+            ? signatureService.SignFoodPhoto(key, expiresAt) : signatureService.Sign(key, expiresAt);
 
         var url = $"{Request.Scheme}://{Request.Host}/api/v1/storage/{key}" +
                   $"?exp={expiresAt.ToUnixTimeSeconds()}&sig={signature}";
@@ -114,6 +125,11 @@ public class StorageController(
             return Unauthorized(new { message = "Acceso denegado: se requiere una URL firmada o sesión." });
 
         string contentType = "application/octet-stream";
+        if (FoodPhotoAccess.IsPhotoKey(key))
+        {
+            await (foodPhotos ?? HttpContext.RequestServices.GetRequiredService<FoodPhotoAccess>()).EnsureReadableAsync(key, isSigned, ct);
+            Response.Headers.CacheControl = "private, no-store";
+        }
         if (ArchivedDocumentAccess.IsArchiveKey(key))
         {
             var document = await archiveAccess.ResolveReadableAsync(key, User, isSigned, ct);
@@ -129,7 +145,8 @@ public class StorageController(
         {
             var stream = ArchivedDocumentAccess.IsArchiveKey(key)
                 ? await objectStorage.GetDocumentArchiveObjectAsync(key, ct)
-                : await objectStorage.GetObjectAsync(key, ct);
+                : FoodPhotoAccess.IsPhotoKey(key)
+                    ? await objectStorage.GetFoodPhotoObjectAsync(key, ct) : await objectStorage.GetObjectAsync(key, ct);
             return File(stream, contentType, enableRangeProcessing: true);
         }
         catch (FileNotFoundException)

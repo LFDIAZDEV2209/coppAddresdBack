@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CoppAddresd.Infrastructure.Repositories;
 
-public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessRepository
+public sealed class WellnessRepository(AppDbContext dbContext, IPatientScopeGuard? patientScope = null) : IWellnessRepository
 {
     public async Task<string?> GetPatientTimezoneAsync(Guid patientId, CancellationToken ct = default)
         => await dbContext.ProgramEnrollments.AsNoTracking().Where(e => e.PatientId == patientId)
@@ -28,6 +28,13 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
             .AsNoTracking()
             .Include(x => x.Patient)
             .AsQueryable();
+        if (patientScope is not null)
+        {
+            var patients = await patientScope.FilterAsync(dbContext.PatientProfiles.AsNoTracking(),
+                p => p.Id, "Nutrition.View", ct);
+            query = query.Where(p => p.IsTemplate && p.PatientId == null || patients.Any(a => a.Id == p.PatientId));
+        }
+
 
         if (professionalId is { } professional)
             query = query.Where(p => p.IsTemplate && p.PatientId == null || !p.IsTemplate && p.PatientId != null && dbContext.PatientProfessionalAssignments.Any(a =>
@@ -278,6 +285,7 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
             .Include(x => x.Patient)
             .Include(x => x.Routine)
             .AsQueryable();
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.PatientId, "Wellness.View", ct);
 
         if (professionalId is { } professional)
             query = query.Where(x => dbContext.PatientProfessionalAssignments.Any(a =>
@@ -348,6 +356,7 @@ public sealed class WellnessRepository(AppDbContext dbContext) : IWellnessReposi
             .Include(x => x.Patient)
             .Include(x => x.Plan)
             .AsQueryable();
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.PatientId, "Nutrition.View", ct);
 
         if (professionalId is { } professional)
             query = query.Where(p => dbContext.PatientProfessionalAssignments.Any(a =>

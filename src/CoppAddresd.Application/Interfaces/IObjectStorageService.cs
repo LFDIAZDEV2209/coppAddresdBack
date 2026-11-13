@@ -91,4 +91,10 @@ public interface IObjectStorageService
         => Task.FromException<string>(new UnauthorizedAccessException("Archivo documental no habilitado en este proveedor."));
     Task DeleteDocumentArchiveObjectAsync(string key, CancellationToken ct = default)
         => Task.FromException(new UnauthorizedAccessException("Archivo documental no habilitado en este proveedor."));
+
+    // Exclusivos de fotos: el llamador comprueba permiso y paciente ANTES de usarlos.
+    Task<Stream> GetFoodPhotoObjectAsync(string key, CancellationToken ct = default)
+        => Task.FromException<Stream>(new UnauthorizedAccessException("Lectura de foto no habilitada en este proveedor."));
+    Task<string> GetFoodPhotoReadUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+        => Task.FromException<string>(new UnauthorizedAccessException("Firma de foto no habilitada en este proveedor."));
 }

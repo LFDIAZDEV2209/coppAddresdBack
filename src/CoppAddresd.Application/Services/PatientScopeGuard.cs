@@ -7,6 +7,14 @@ namespace CoppAddresd.Application.Services;
 /// <summary>Política común para accesos directos, recursos indirectos y consultas de listas.</summary>
 public sealed class PatientScopeGuard(IPatientScopeActor actor, IPatientScopeStore store) : IPatientScopeGuard
 {
+    public async Task EnsureNutritionPlansAsync(IEnumerable<Guid> ids, CancellationToken ct)
+    {
+        var requested = ids.Distinct().ToArray();
+        if (requested.Length == 0) return;
+        var visible = await VisibleAsync("Nutrition.View", ct);
+        if (await store.CountVisibleNutritionPlansAsync(requested, visible, ct) != requested.Length) throw Missing();
+    }
+
     public Task EnsureAsync(Guid patientId, CancellationToken ct)
         => EnsureAsync(patientId, "Program.Profile360View", ct);
 
@@ -34,13 +42,19 @@ public sealed class PatientScopeGuard(IPatientScopeActor actor, IPatientScopeSto
         return query.Where(Expression.Lambda<Func<T, bool>>(contains, patientId.Parameters));
     }
 
-    private async Task<IQueryable<Guid>> VisibleAsync(string permission, CancellationToken ct)
+    public async Task<PatientScopeFilter> GetFilterAsync(string permission, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (actor.UserId is null || string.IsNullOrWhiteSpace(permission)
             || !await actor.HasPermissionAsync(permission, ct))
             throw new ForbiddenException("Se requiere permiso para esta operación.");
-        return store.VisiblePatients(actor.IsAdmin ? null : await actor.ProfessionalIdAsync(ct), actor.IsAdmin);
+        return new(actor.IsAdmin, actor.IsAdmin ? null : await actor.ProfessionalIdAsync(ct));
+    }
+
+    private async Task<IQueryable<Guid>> VisibleAsync(string permission, CancellationToken ct)
+    {
+        var filter = await GetFilterAsync(permission, ct);
+        return store.VisiblePatients(filter.ProfessionalId, filter.IsAdmin);
     }
 
     private static NotFoundException Missing() => new("Recurso no encontrado.");

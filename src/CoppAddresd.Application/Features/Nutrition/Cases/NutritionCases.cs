@@ -20,7 +20,7 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
 
     private async Task<NutritionCaseContext> AccessAsync(Guid patientId, NutritionActor actor, CancellationToken ct)
     {
-        if (actor.UserId == Guid.Empty || !actor.CanManage && !actor.CanApprove) throw new ForbiddenException("Se requiere permiso de Nutrición.");
+        if (actor.UserId == Guid.Empty || !actor.CanView && !actor.CanManage && !actor.CanApprove) throw new ForbiddenException("Se requiere permiso de Nutrición.");
         if (!await store.CanAccessAsync(patientId, actor, ct)) throw new NotFoundException("Paciente no encontrado.");
         return await store.GetContextAsync(patientId, ct) ?? throw new NotFoundException("Paciente no encontrado.");
     }
@@ -44,7 +44,14 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
     public async Task<IReadOnlyList<NutritionPrescriptionEvent>> HistoryAsync(NutritionHistoryQuery query, CancellationToken ct)
     {
         await AccessAsync(query.PatientId, query.Actor, ct); await PlanAsync(query.PatientId, query.Id, ct);
-        return await store.HistoryAsync(query.Id, ct);
+        var rows = await store.HistoryAsync(query.Id, ct);
+        return query.Actor.CanViewNotes ? rows : rows.Select(e => new NutritionPrescriptionEvent
+        {
+            Id = e.Id, PrescriptionId = e.PrescriptionId, ActorUserId = e.ActorUserId,
+            OccurredAt = e.OccurredAt, Action = e.Action, Revision = e.Revision,
+            CriticalCount = e.CriticalCount, CriticalConfirmed = e.CriticalConfirmed,
+            AutoApproved = e.AutoApproved, Comment = null, SnapshotJson = "{}",
+        }).ToArray();
     }
     private async Task<NutritionEngine> FoodsAsync(CancellationToken ct) => new((await repository.ListFoodsAsync(ct)).ToDictionary(x => x.Id));
 
@@ -74,7 +81,11 @@ public sealed class NutritionCases(INutritionPrescriptionRepository repository, 
                 return existing.PatientId == command.PatientId ? View(existing, context, await FoodsAsync(ct))
                     : throw new ForbiddenException("Correlación inválida.");
         }
-        if (command.Operation is NutritionOperation.Approve or NutritionOperation.Return ? !command.Actor.CanApprove : !command.Actor.CanManage)
+        // El worker conserva su publicación inicial técnica dentro de su ámbito reservado.
+        var technicalPublish = command.Operation == NutritionOperation.Publish
+            && command.Actor.UserId == NutritionSystemActor.Id && NutritionSystemActor.IsActive;
+        if (!technicalPublish && (command.Operation is NutritionOperation.Approve or NutritionOperation.Return or NutritionOperation.Publish
+            ? !command.Actor.CanApprove : !command.Actor.CanManage))
             throw new ForbiddenException("El actor no tiene permiso para esta acción.");
         if (command.Comment?.Length > 4000) Invalid("Comentario demasiado largo.");
         var engine = await FoodsAsync(ct);

@@ -17,6 +17,8 @@ public sealed class PatientScopeGuardTests
             => Task.FromResult(patientIds.Contains(patientId));
         public Task<Guid?> OwnerAsync(PatientResource resource, Guid id, CancellationToken ct)
             => Task.FromResult<Guid?>(id == Own ? Own : id == Foreign ? Foreign : null);
+        public Task<int> CountVisibleNutritionPlansAsync(Guid[] ids, IQueryable<Guid> patients, CancellationToken ct)
+            => Task.FromResult(ids.Count(patients.Contains));
     }
 
     private static PatientScopeGuard Guard(bool permission = true, bool admin = false, bool professional = true)
@@ -68,6 +70,12 @@ public sealed class PatientScopeGuardTests
     {
         using var cts = new CancellationTokenSource(); cts.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Guard().EnsureAsync(Own, cts.Token));
+    }
+    [Fact] public async Task WeeklyNutritionReferences_MixedForeignPlan_DeniedAsOneBatch()
+    {
+        await Guard().EnsureNutritionPlansAsync([Own], CancellationToken.None);
+        await Assert.ThrowsAsync<NotFoundException>(() => Guard().EnsureNutritionPlansAsync([Own, Foreign], CancellationToken.None));
+        await Guard(admin: true).EnsureNutritionPlansAsync([Own, Foreign], CancellationToken.None);
     }
     private sealed record Row(Guid PatientId);
 }

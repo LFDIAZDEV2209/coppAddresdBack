@@ -36,11 +36,16 @@ public sealed class LocalObjectStorageService : IObjectStorageService
     public Task<string> PutObjectAsync(string key, Stream content, string? contentType = null, CancellationToken ct = default)
     { DocumentArchiveStorageKeys.RequireGenericKey(key); return PutObjectAsyncCore(key, content, contentType, ct); }
     public Task<Stream> GetObjectAsync(string key, CancellationToken ct = default)
-    { DocumentArchiveStorageKeys.RequireGenericKey(key); return GetObjectAsyncCore(key, ct); }
+    { FoodPhotoStorageKeys.RequireGenericKey(key); DocumentArchiveStorageKeys.RequireGenericKey(key); return GetObjectAsyncCore(key, ct); }
     public Task DeleteObjectAsync(string key, CancellationToken ct = default)
     { DocumentArchiveStorageKeys.RequireGenericKey(key); return DeleteObjectAsyncCore(key, ct); }
     public Task<string> GetPreSignedUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
-    { DocumentArchiveStorageKeys.RequireGenericKey(key); return GetPreSignedUrlAsyncCore(key, expiry, ct); }
+    { FoodPhotoStorageKeys.RequireGenericKey(key); DocumentArchiveStorageKeys.RequireGenericKey(key); return GetPreSignedUrlAsyncCore(key, expiry, ct); }
+
+    public Task<Stream> GetFoodPhotoObjectAsync(string key, CancellationToken ct = default)
+    { FoodPhotoStorageKeys.RequirePhotoKey(key); return GetObjectAsyncCore(key, ct); }
+    public Task<string> GetFoodPhotoReadUrlAsync(string key, TimeSpan expiry, CancellationToken ct = default)
+    { FoodPhotoStorageKeys.RequirePhotoKey(key); return GetPreSignedUrlAsyncCore(key, expiry, ct); }
 
     public Task<string> PutDocumentArchiveObjectAsync(string key, Stream content, string? contentType = null, CancellationToken ct = default)
     { DocumentArchiveStorageKeys.RequireArchiveKey(key); return PutObjectAsyncCore(key, content, contentType, ct); }

@@ -21,7 +21,7 @@ public sealed class NutritionWorkspaceQueryHandler(INutritionCaseStore access, I
 {
     public async Task<NutritionWorkspaceView> Handle(NutritionWorkspaceQuery request, CancellationToken ct)
     {
-        if (request.Actor.UserId == Guid.Empty || !request.Actor.CanManage && !request.Actor.CanApprove) throw new ForbiddenException("Se requiere permiso de Nutrición.");
+        if (request.Actor.UserId == Guid.Empty || !request.Actor.CanView && !request.Actor.CanManage && !request.Actor.CanApprove) throw new ForbiddenException("Se requiere permiso de Nutrición.");
         if (!await access.CanAccessAsync(request.PatientId, request.Actor, ct)) throw new NotFoundException("Paciente no encontrado.");
         if (request.HistoryPage < 1 || request.HistoryPageSize is < 1 or > 100 || (long)(request.HistoryPage - 1) * request.HistoryPageSize > int.MaxValue)
             throw new ValidationException("Paginación de historial inválida.");
@@ -36,8 +36,10 @@ public sealed class NutritionWorkspaceQueryHandler(INutritionCaseStore access, I
         NutritionView? reviewView = review is null ? null : await cases.ReadViewAsync(review, context, ct);
         var currentView = current is null ? null : current.Id == review?.Id ? reviewView : await cases.ReadViewAsync(current, context, ct);
         var generation = await workspace.GenerationAsync(request.PatientId, ct);
+        var history = await workspace.HistoryAsync(request.PatientId, request.HistoryPage, request.HistoryPageSize, ct);
+        if (!request.Actor.CanViewNotes) history = history with { Items = history.Items.Select(e => e with { Comment = null }).ToArray() };
         return new(request.PatientId, identity.PatientName, identity.Document, identity.Timezone, today, profile, profile.MissingData,
-            Status(generation), reviewView, currentView, await workspace.HistoryAsync(request.PatientId, request.HistoryPage, request.HistoryPageSize, ct));
+            Status(generation), reviewView, currentView, history);
     }
 
     public static NutritionGenerationStatus? Status(NutritionDraftReservation? r) => r is null ? null

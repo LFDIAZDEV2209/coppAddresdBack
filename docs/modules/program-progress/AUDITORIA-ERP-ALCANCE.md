@@ -153,11 +153,11 @@ Fichero: `src/CoppAddresd.Api/Controllers/NutritionController.cs`.
 
 | Ruta | Acción / handler | Estado |
 | --- | --- | --- |
-| `GET /api/v1/nutrition/patients/{patientId:guid}/prescriptions` | `NutritionController.List` (17) → `ListNutritionCasesQuery` | pendiente 0.11d |
-| `GET /api/v1/nutrition/patients/{patientId:guid}/prescriptions/{id:guid}` | `NutritionController.Get` (20) → `GetNutritionCaseQuery` | pendiente 0.11d |
-| `GET /api/v1/nutrition/patients/{patientId:guid}/prescriptions/{id:guid}/history` | `NutritionController.History` (23) → `NutritionHistoryQuery` | pendiente 0.11d |
-| `POST /api/v1/nutrition/patients/{patientId:guid}/prescriptions` | `NutritionController.Generate` (26) → `NutritionCaseCommand` | pendiente 0.11d |
-| `POST /api/v1/nutrition/patients/{patientId:guid}/prescriptions/{id:guid}/{verb}` | `NutritionController.Act` (33) → `NutritionCaseCommand` | pendiente 0.11d |
+| `GET /api/v1/nutrition/patients/{patientId:guid}/prescriptions` | `NutritionController.List` (17) → `ListNutritionCasesQuery` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `GET /api/v1/nutrition/patients/{patientId:guid}/prescriptions/{id:guid}` | `NutritionController.Get` (20) → `GetNutritionCaseQuery` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `GET /api/v1/nutrition/patients/{patientId:guid}/prescriptions/{id:guid}/history` | `NutritionController.History` (23) → `NutritionHistoryQuery` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `POST /api/v1/nutrition/patients/{patientId:guid}/prescriptions` | `NutritionController.Generate` (26) → `NutritionCaseCommand` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `POST /api/v1/nutrition/patients/{patientId:guid}/prescriptions/{id:guid}/{verb}` | `NutritionController.Act` (33) → `NutritionCaseCommand` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
 
 
 ### Nutrición / listas e IA
@@ -168,10 +168,10 @@ Fichero: `src/CoppAddresd.Api/Controllers/NutritionReadController.cs`.
 
 | Ruta | Acción / handler | Estado |
 | --- | --- | --- |
-| `GET /api/v1/nutrition/inbox` | `NutritionReadController.Inbox` (18) → `NutritionInboxQuery` | pendiente 0.11d |
+| `GET /api/v1/nutrition/inbox` | `NutritionReadController.Inbox` (18) → `NutritionInboxQuery` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
 | `GET /api/v1/nutrition/foods` | `NutritionReadController.Foods` (25) → `NutritionFoodCatalogQuery` | hecho: catálogo global; requiere permiso lectura nutrición |
-| `POST /api/v1/nutrition/patients/{patientId:guid}/draft-generation` | `NutritionReadController.DraftGeneration` (31) → `NutritionDraftGenerationCommand` | pendiente 0.11d |
-| `GET /api/v1/nutrition/patients/{patientId:guid}/workspace` | `NutritionReadController.Workspace` (46) → `NutritionWorkspaceQuery` | pendiente 0.11d |
+| `POST /api/v1/nutrition/patients/{patientId:guid}/draft-generation` | `NutritionReadController.DraftGeneration` (31) → `NutritionDraftGenerationCommand` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `GET /api/v1/nutrition/patients/{patientId:guid}/workspace` | `NutritionReadController.Workspace` (46) → `NutritionWorkspaceQuery` | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
 
 
 ### Nutrición / revisión antigua
@@ -183,9 +183,9 @@ Fichero: `src/CoppAddresd.Api/Controllers/NutritionPlanReviewController.cs`.
 | Ruta | Acción / handler | Estado |
 | --- | --- | --- |
 | `GET /api/v1/me/nutrition-plan/status` | `NutritionPlanReviewController.Status` (15) | hecho: identidad JWT (self-service) |
-| `POST /api/v1/wellness/nutrition-plans/{id:guid}/approve` | `NutritionPlanReviewController.Approve` (22) | pendiente 0.11d |
-| `POST /api/v1/wellness/nutrition-plans/approve` | `NutritionPlanReviewController.ApproveBatch` (27) | pendiente 0.11d |
-| `GET /api/v1/wellness/nutrition-plans/{id:guid}/history` | `NutritionPlanReviewController.History` (32) | pendiente 0.11d |
+| `POST /api/v1/wellness/nutrition-plans/{id:guid}/approve` | `NutritionPlanReviewController.Approve` (22) | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `POST /api/v1/wellness/nutrition-plans/approve` | `NutritionPlanReviewController.ApproveBatch` (27) | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `GET /api/v1/wellness/nutrition-plans/{id:guid}/history` | `NutritionPlanReviewController.History` (32) | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
 
 
 ### Análisis de alimentos
@@ -199,7 +199,7 @@ Fichero: `src/CoppAddresd.Api/Controllers/FoodAiController.cs`.
 | `GET /api/v1/foodai/health` | `FoodAiController.Health` (57) | hecho: ingesta propia/catálogo/probe, sin lectura clínica ajena |
 | `POST /api/v1/foodai/analyze` | `FoodAiController.Analyze` (76) → `AnalyzeFoodImageCommand` | hecho: ingesta propia/catálogo/probe, sin lectura clínica ajena |
 | `GET /api/v1/foodai/nutrition/{foodKey}` | `FoodAiController.Nutrition` (189) → `GetFoodNutritionQuery` | hecho: ingesta propia/catálogo/probe, sin lectura clínica ajena |
-| `GET /api/v1/foodai/analyses/{analysisId:guid}` | `FoodAiController.GetAnalysis` (212) | pendiente 0.11d |
+| `GET /api/v1/foodai/analyses/{analysisId:guid}` | `FoodAiController.GetAnalysis` (212) | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
 | `POST /api/v1/foodai/analyses/{analysisId:guid}/feedback` | `FoodAiController.PostFeedback` (240) | hecho: ownership JWT |
 
 
@@ -211,9 +211,9 @@ Fichero: `src/CoppAddresd.Api/Controllers/StorageController.cs`.
 
 | Ruta | Acción / handler | Estado |
 | --- | --- | --- |
-| `PUT /api/v1/storage/{**key}` | `StorageController.Put` (29) | pendiente 0.11d |
-| `GET /api/v1/storage/sign` | `StorageController.Sign` (60) | pendiente 0.11d |
-| `GET /api/v1/storage/{**key}` | `StorageController.Get` (103) | pendiente 0.11d |
+| `PUT /api/v1/storage/{**key}` | `StorageController.Put` (29) | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `GET /api/v1/storage/sign` | `StorageController.Sign` (60) | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
+| `GET /api/v1/storage/{**key}` | `StorageController.Get` (103) | hecho 0.11d: guard, alcance autenticado y/o proyección sensible |
 
 
 ### Controles / inscripciones
@@ -370,3 +370,18 @@ con pruebas verdes; este inventario no certifica que el backend base sea seguro.
 y controles componen el guard antes de contar/paginar. Las comprobaciones antiguas de Bienestar
 ya no convierten `Patients.View` en excepción de alcance. Los jobs globales de controles
 (run/reset) quedan reservados a Admin. La generación de planes por IA comprueba el paciente.
+
+### Evidencia 0.11d
+
+`NutritionAuthorizationTests`: JWT/audiencia, lectura separada, scope ajeno, permiso global
+sin Admin denegado. `NutritionSensitiveAccessTests`: fotos antes de firmar, TTL 300 s,
+claves de imagen/máscara ocultas a coordinación, notas y snapshots internos redactados.
+`WellbeingGuard_RealSqlFiltersInboxCountsLegacyListsAndEnrollments_AndResolvesForeignResources`:
+PostgreSQL real, total/página de bandeja, listas antiguas e inscripciones, ciclo y análisis
+ajenos, Admin. El alcance del guard prevalece sobre ViewAll heredado de un actor anterior.
+La publicación automática técnica existente permanece dentro del ámbito interno reservado.
+Las rutas futuras de adjuntos siguen pendientes de sus fases de implementación.
+
+| Vía indirecta inventariada al verificar 0.11d | Resolución | Estado |
+| --- | --- | --- |
+| `DocumentsController.Download`, `MyDocumentsController.Download`, contenido/medios del programa con clave de foto prestada | La firma local y lectura/presign genéricos Local/S3 rechazan `foodai/` y sus alias antes de acceder al proveedor | Hecho: `FoodPhotoStorageProviderTests` |

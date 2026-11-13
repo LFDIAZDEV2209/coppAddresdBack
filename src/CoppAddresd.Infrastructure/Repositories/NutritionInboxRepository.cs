@@ -9,7 +9,7 @@ using NpgsqlTypes;
 namespace CoppAddresd.Infrastructure.Repositories;
 
 /// <summary>Bandeja por paciente: alcance antes de filtros, conteo y página, sin cargar agregados ni hacer N+1.</summary>
-public sealed class NutritionInboxRepository(AppDbContext db) : INutritionInboxRepository
+public sealed class NutritionInboxRepository(AppDbContext db, IPatientScopeGuard? patientScope = null) : INutritionInboxRepository
 {
     private const string Source = """
         WITH visible AS (
@@ -72,9 +72,11 @@ public sealed class NutritionInboxRepository(AppDbContext db) : INutritionInboxR
         ct.ThrowIfCancellationRequested();
         // Los comodines del usuario son texto literal, nunca fragmentos SQL ni patrones abiertos.
         var pattern = search is null ? null : "%" + search.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        var scope = patientScope is null ? new PatientScopeFilter(actor.ViewAll, actor.ProfessionalId)
+            : await patientScope.GetFilterAsync("Nutrition.View", ct);
         NpgsqlParameter[] Parameters() => [
-            new("global", actor.ViewAll),
-            new("professional", NpgsqlDbType.Uuid) { Value = (object?)actor.ProfessionalId ?? DBNull.Value },
+            new("global", scope.IsAdmin),
+            new("professional", NpgsqlDbType.Uuid) { Value = (object?)scope.ProfessionalId ?? DBNull.Value },
             new("state", NpgsqlDbType.Text) { Value = (object?)state ?? DBNull.Value },
             new("search", NpgsqlDbType.Text) { Value = (object?)pattern ?? DBNull.Value },
             new("now", utcNow)];

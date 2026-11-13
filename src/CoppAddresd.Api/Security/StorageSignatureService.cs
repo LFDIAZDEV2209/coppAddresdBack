@@ -21,6 +21,19 @@ public sealed class StorageSignatureService
     /// <summary>Firma la clave de storage con expiración. Devuelve sig (hex).</summary>
     public string Sign(string storageKey, DateTimeOffset expiresAt)
     {
+        CoppAddresd.Application.Common.Storage.FoodPhotoStorageKeys.RequireGenericKey(storageKey);
+        return SignCore(storageKey, expiresAt);
+    }
+
+    /// <summary>Exclusiva del flujo de fotos que ya verificó permiso y paciente.</summary>
+    public string SignFoodPhoto(string storageKey, DateTimeOffset expiresAt)
+    {
+        CoppAddresd.Application.Common.Storage.FoodPhotoStorageKeys.RequirePhotoKey(storageKey);
+        return SignCore(storageKey, expiresAt);
+    }
+
+    private string SignCore(string storageKey, DateTimeOffset expiresAt)
+    {
         var payload = $"{storageKey}|{expiresAt.ToUnixTimeSeconds()}";
         using var hmac = new HMACSHA256(_key);
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
@@ -37,7 +50,7 @@ public sealed class StorageSignatureService
         if (now > expiresAt)
             return false;
 
-        var expected = Sign(storageKey, expiresAt);
+        var expected = SignCore(storageKey, expiresAt);
         return FixedTimeEquals(expected, signature);
     }
 

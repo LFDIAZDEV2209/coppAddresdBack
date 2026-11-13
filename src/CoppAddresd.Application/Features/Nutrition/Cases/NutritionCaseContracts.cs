@@ -4,7 +4,8 @@ using MediatR;
 
 namespace CoppAddresd.Application.Features.Nutrition.Cases;
 
-public sealed record NutritionActor(Guid UserId, Guid? ProfessionalId, bool ViewAll, bool CanManage, bool CanApprove);
+public sealed record NutritionActor(Guid UserId, Guid? ProfessionalId, bool ViewAll, bool CanManage, bool CanApprove,
+    bool CanView = false, bool CanViewNotes = false, bool CanViewPhotos = false);
 public sealed record NutritionCaseContext(DateOnly? BirthDate, string? Sex, string Timezone, bool TestsComplete, Guid? BatteryId);
 public enum NutritionOperation { Generate, Save, ApplyDay, CreateVersion, Submit, Approve, Return, Regenerate, Publish }
 public sealed record NutritionGenerateInput(NutritionPatient? Manual = null, DateOnly? BirthDate = null, bool PreserveConfirmedEdits = true);

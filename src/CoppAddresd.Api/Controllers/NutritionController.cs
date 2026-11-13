@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Constants;
 using CoppAddresd.Api.Context;
@@ -15,15 +16,19 @@ namespace CoppAddresd.Api.Controllers;
 public sealed class NutritionController(IMediator mediator, ICurrentContext context) : ControllerBase
 {
     [HttpGet]
+    [PatientScope("patientId", "Nutrition.View")]
     public async Task<IActionResult> List(Guid patientId, [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
         => Ok(await mediator.Send(new ListNutritionCasesQuery(patientId, await ActorAsync(ct), page, pageSize), ct));
     [HttpGet("{id:guid}")]
+    [PatientScope("patientId", "Nutrition.View")]
     public async Task<IActionResult> Get(Guid patientId, Guid id, CancellationToken ct)
         => Ok(await mediator.Send(new GetNutritionCaseQuery(patientId, id, await ActorAsync(ct)), ct));
     [HttpGet("{id:guid}/history")]
+    [PatientScope("patientId", "Nutrition.View")]
     public async Task<IActionResult> History(Guid patientId, Guid id, CancellationToken ct)
         => Ok(await mediator.Send(new NutritionHistoryQuery(patientId, id, await ActorAsync(ct)), ct));
     [HttpPost]
+    [PatientScope("patientId", "Nutrition.Manage")]
     public async Task<IActionResult> Generate(Guid patientId, [FromBody] NutritionGenerateInput input, CancellationToken ct)
     {
         var plan = await mediator.Send(new NutritionCaseCommand(NutritionOperation.Generate, patientId, null, null,
@@ -31,6 +36,7 @@ public sealed class NutritionController(IMediator mediator, ICurrentContext cont
         return CreatedAtAction(nameof(Get), new { patientId, id = plan.Id }, plan);
     }
     [HttpPost("{id:guid}/{verb}")]
+    [PatientScope("patientId", "Nutrition.View")]
     public async Task<IActionResult> Act(Guid patientId, Guid id, string verb, [FromBody] NutritionActionRequest input, CancellationToken ct)
     {
         var operation = verb switch { "save" => NutritionOperation.Save, "apply-day" => NutritionOperation.ApplyDay,
@@ -42,8 +48,11 @@ public sealed class NutritionController(IMediator mediator, ICurrentContext cont
     }
     private async Task<NutritionActor> ActorAsync(CancellationToken ct) => new(
         context.UserId ?? throw new UnauthorizedAccessException(), await context.GetProfessionalIdAsync(ct),
-        User.HasClaim(PermissionClaimTypes.Permission, PermissionCodes.PatientsView),
-        await context.HasPermissionAsync(PermissionCodes.NutritionManage, ct), await context.HasPermissionAsync(PermissionCodes.NutritionApprove, ct));
+        User.IsInRole("Admin"),
+        await context.HasPermissionAsync(PermissionCodes.NutritionManage, ct), await context.HasPermissionAsync(PermissionCodes.NutritionApprove, ct),
+        await context.HasPermissionAsync(PermissionCodes.NutritionView, ct),
+        await context.HasPermissionAsync(PermissionCodes.NutritionNotesView, ct),
+        await context.HasPermissionAsync(PermissionCodes.NutritionPhotosView, ct));
 }
 public sealed record NutritionActionRequest(int Revision, NutritionEdit? Edit = null,
     NutritionGenerateInput? Generate = null, string? Comment = null, bool CriticalConfirmed = false, DateOnly? StartDate = null);

@@ -39,7 +39,9 @@ public class FoodAiController : ControllerBase
         IMediator mediator,
         ILogger<FoodAiController> logger,
         IContentTranslationService? translations = null,
-        IFoodNameCatalog? foodNames = null
+        IFoodNameCatalog? foodNames = null,
+        IPatientScopeGuard? patientScope = null,
+        CoppAddresd.Api.Context.ICurrentContext? currentContext = null
     )
     {
         _foodAiClient = foodAiClient;
@@ -48,7 +50,12 @@ public class FoodAiController : ControllerBase
         _logger = logger;
         _translations = translations;
         _foodNames = foodNames;
+        _patientScope = patientScope;
+        _currentContext = currentContext;
     }
+
+    private readonly IPatientScopeGuard? _patientScope;
+    private readonly CoppAddresd.Api.Context.ICurrentContext? _currentContext;
 
     /// <summary>
     /// Prueba de comunicación backend → Food AI Service. Health público:
@@ -219,8 +226,11 @@ public class FoodAiController : ControllerBase
             return Unauthorized();
         }
 
+        var erp = User.HasClaim("aud", "erp");
+        if (erp) await (_patientScope ?? HttpContext.RequestServices.GetRequiredService<IPatientScopeGuard>())
+            .EnsureResourceAsync(PatientResource.FoodAnalysis, analysisId, "Nutrition.RecordsView", ct);
         var analysis = await _analysisRepository.GetByAnalysisIdAsync(analysisId, ct);
-        if (analysis is null || analysis.UserId != userId)
+        if (analysis is null || !erp && analysis.UserId != userId)
         {
             // 404: no se revela existencia de análisis ajenos.
             return NotFound(ErrorResponse("ANALYSIS_NOT_FOUND", "Análisis no encontrado."));
@@ -230,7 +240,8 @@ public class FoodAiController : ControllerBase
         var englishNames = PatientContentLocalizationFilter.ResolvePatientLanguage(HttpContext, language) == "en"
             ? await ResolveEnglishNamesAsync(analysis.Items.Select(item => (item.Name, item.NameEn)), ct)
             : new Dictionary<string, string>();
-        return Ok(MapAnalysis(analysis, englishNames));
+        var photos = !erp || _currentContext is not null && await _currentContext.HasPermissionAsync("Nutrition.PhotosView", ct);
+        return Ok(MapAnalysis(analysis, englishNames, photos));
     }
 
     /// <summary>
@@ -359,13 +370,13 @@ public class FoodAiController : ControllerBase
         return names;
     }
 
-    private static object MapAnalysis(FoodAnalysis analysis, IReadOnlyDictionary<string, string> englishNames) =>
+    private static object MapAnalysis(FoodAnalysis analysis, IReadOnlyDictionary<string, string> englishNames, bool includePhotos = true) =>
         new
         {
             analysisId = analysis.AnalysisId,
             status = analysis.Status,
             createdAt = analysis.CreatedAt,
-            imageKey = analysis.ImageKey,
+            imageKey = includePhotos ? analysis.ImageKey : null,
             modelVersions = new
             {
                 detector = analysis.DetectorVersion,
@@ -390,7 +401,7 @@ public class FoodAiController : ControllerBase
                         width = i.BboxWidth,
                         height = i.BboxHeight,
                     },
-                    maskKey = i.MaskKey,
+                    maskKey = includePhotos ? i.MaskKey : null,
                     maskAreaPixels = i.MaskAreaPixels,
                     portion = i.PortionSize is null
                         ? null

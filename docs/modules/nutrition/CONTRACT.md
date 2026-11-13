@@ -26,7 +26,7 @@ contratos propios; no se renombran como aliases de las nuevas prescripciones.
 
 Abreviaturas solo en la columna de permisos: **M** = `Nutrition.Manage`,
 **A** = `Nutrition.Approve`. Todas las rutas ERP requieren JWT válido, audiencia
-`erp` y usuario GUID no vacío (`NutritionErpStaff`). Lecturas permiten M **o** A;
+`erp` y usuario GUID no vacío (`NutritionErpStaff`). Desde Fase 0, lecturas requieren `Nutrition.View` y paciente asignado;
 las mutaciones exigen la capacidad indicada. No se exige un nombre de rol.
 
 `patientId` es UUID del perfil de paciente; `id` es UUID de prescripción.
@@ -36,11 +36,11 @@ habilita alcance global, pero no reemplaza M/A. Fuera de alcance: 404.
 
 | Método | Path exacto                                                                | Permiso                      | Query/body                                    | Éxito y forma                                                 |
 | ------ | -------------------------------------------------------------------------- | ---------------------------- | --------------------------------------------- | ------------------------------------------------------------- |
-| GET    | `/api/v1/nutrition/inbox`                                                  | M o A                        | `page=1&pageSize=20&state?&search?`; sin body | 200, `{items: NutritionInboxItem[], total, page, pageSize}`   |
-| GET    | `/api/v1/nutrition/foods`                                                  | M o A                        | Sin query ni body, sin paginación             | 200, `NutritionFoodDto[]`                                     |
-| GET    | `/api/v1/nutrition/patients/{patientId}/prescriptions`                     | M o A                        | `page=1&pageSize=20`; sin body                | 200, `NutritionView[]`, sin envelope; `meals:[]`, `alerts:[]` |
-| GET    | `/api/v1/nutrition/patients/{patientId}/prescriptions/{id}`                | M o A                        | Sin query ni body                             | 200, `NutritionView` con comidas/alertas                      |
-| GET    | `/api/v1/nutrition/patients/{patientId}/prescriptions/{id}/history`        | M o A                        | Sin query ni body                             | 200, `NutritionPrescriptionEvent[]`                           |
+| GET    | `/api/v1/nutrition/inbox`                                                  | `Nutrition.View`                        | `page=1&pageSize=20&state?&search?`; sin body | 200, `{items: NutritionInboxItem[], total, page, pageSize}`   |
+| GET    | `/api/v1/nutrition/foods`                                                  | `Nutrition.View`                        | Sin query ni body, sin paginación             | 200, `NutritionFoodDto[]`                                     |
+| GET    | `/api/v1/nutrition/patients/{patientId}/prescriptions`                     | `Nutrition.View`                        | `page=1&pageSize=20`; sin body                | 200, `NutritionView[]`, sin envelope; `meals:[]`, `alerts:[]` |
+| GET    | `/api/v1/nutrition/patients/{patientId}/prescriptions/{id}`                | `Nutrition.View`                        | Sin query ni body                             | 200, `NutritionView` con comidas/alertas                      |
+| GET    | `/api/v1/nutrition/patients/{patientId}/prescriptions/{id}/history`        | `Nutrition.View`                        | Sin query ni body                             | 200, `NutritionPrescriptionEvent[]`                           |
 | POST   | `/api/v1/nutrition/patients/{patientId}/prescriptions`                     | M                            | `NutritionGenerateInput`                      | 201, `NutritionView` + header Location de la ficha            |
 | POST   | `/api/v1/nutrition/patients/{patientId}/prescriptions/{id}/save`           | M                            | `{revision,edit}`                             | 200, `NutritionView`                                          |
 | POST   | `/api/v1/nutrition/patients/{patientId}/prescriptions/{id}/apply-day`      | M                            | `{revision,edit:{sourceDay}}`                 | 200, `NutritionView`                                          |
@@ -1104,3 +1104,45 @@ mandó un plan wellness. Los logs de ingesta también conservan esas FKs null.
 FK_task_completions_nutrition_plans_nutrition_plan_id y CHECK BETWEEN 1 AND 7
 permanecen intactos: no hay migración. Sin prescripción conserva el camino
 wellness. El DTO de registro y GET /api/v1/me/nutrition-plan (§14) no cambian.
+
+
+## Alcance y datos sensibles — Fase 0 (2026-11-13)
+
+Matriz canónica: change `organizar-experiencia-bienestar`, ARQUITECTURA §10.1.
+Acceso ERP = capacidad de la operación **Y** asignación activa en `patient_professionals`.
+Solo el rol global Admin exceptúa la asignación; `Patients.View` no la exceptúa.
+El guard devuelve 404 para recursos ajenos o inexistentes. `Nutrition.View` habilita
+workspace, lista, ficha, historial y catálogo; las escrituras siguen exigiendo Manage.
+La publicación manual ahora exige `Nutrition.Approve`. La publicación inicial automática
+mantiene exclusivamente el ámbito interno reservado `NutritionSystemActor.Begin()`.
+
+La bandeja conserva el envelope y filtra antes de conteos/paginación. Su consulta SQL recibe
+el alcance autenticado del guard, nunca `viewAll` o `professionalId` del cliente. Las listas
+antiguas también filtran con subconsultas antes del total. Los roles del Perfil 360 conservan
+asignación en el selector de pacientes, incluso si tienen `Patients.View`.
+
+Sin `Nutrition.NotesView`, los historiales y el workspace ocultan comentarios internos y
+el snapshot crudo de los eventos; el historial antiguo oculta `Notes`. Los análisis ERP
+exigen `Nutrition.RecordsView` y alcance; sin `Nutrition.PhotosView` no devuelven `imageKey`
+ni `maskKey`. Los pacientes conservan su lectura por identidad propia en la app.
+La firma y la descarga Bearer de `foodai/` verifican dueño y permiso; URL de foto máximo
+300 segundos, `private, no-store`. El proxy genérico ya no admite escritura de esas claves.
+Las rutas de adjuntos del ciclo todavía no existen: no se declaran implementadas en Fase 0.
+
+La aprobación antigua por lote preserva el array de respuesta: procesa los autorizados y
+reporta solamente los ids enviados omitidos en `X-Omitted-Without-Scope` y su conteo en
+`X-Omitted-Without-Scope-Count`. Ningún nombre o dato del paciente ajeno sale en ese reporte.
+
+Solapamiento remoto detectado por fetch: `392439a` (integrado en origin/dev `671349c`)
+cambia el ORDER BY de la bandeja a publicados primero. Esta rama conserva la base acordada
+`a105ba7` y no integra ni rebasa ese cambio; resolverlo al integrar con coordinación.
+
+Las firmas y lecturas genéricas Local/S3 y la firma local rechazan el espacio `foodai/`
+incluso a través de referencias prestadas por documentos o medios, con alias de ruta,
+mayúsculas o codificación URL. El único flujo lector usa `GetFoodPhotoObjectAsync`,
+`GetFoodPhotoReadUrlAsync` o `SignFoodPhoto` después de `FoodPhotoAccess`.
+
+Las acciones del change usan `RequireContextPermission` para evaluar tanto permisos globales
+como scoped de clínica/organización a través de `ICurrentContext`. Esto no convierte el
+scope organizacional en alcance sobre el paciente: el guard sigue exigiendo su asignación.
+El selector reconoce también `Program.Profile360View` scoped, sin depender de un rol global.

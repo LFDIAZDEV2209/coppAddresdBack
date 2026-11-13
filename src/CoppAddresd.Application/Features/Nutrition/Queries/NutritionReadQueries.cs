@@ -23,7 +23,7 @@ internal static class NutritionReadAccess
     public static void Ensure(NutritionActor actor, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (actor.UserId == Guid.Empty || !actor.CanManage && !actor.CanApprove)
+        if (actor.UserId == Guid.Empty || !actor.CanView && !actor.CanManage && !actor.CanApprove)
             throw new ForbiddenException("Se requiere permiso de Nutrición.");
     }
 }

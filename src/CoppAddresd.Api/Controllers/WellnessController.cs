@@ -22,7 +22,7 @@ public class WellnessController(
     // ===================== NUTRITION PLANS =====================
 
     [HttpGet("nutrition-plans")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.NutritionView)]
     public async Task<ActionResult<PaginatedNutritionPlanResult>> ListNutritionPlans(
         [FromQuery] bool? isTemplate = null,
         [FromQuery] string? search = null,
@@ -40,7 +40,8 @@ public class WellnessController(
     }
 
     [HttpGet("nutrition-plans/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.NutritionView)]
+    [PatientScope(PatientResource.NutritionPlan, "id", "Nutrition.View", AllowUnowned = true)]
     public async Task<ActionResult<NutritionPlanDto>> GetNutritionPlan(Guid id, CancellationToken ct)
     {
         var result = await mediator.Send(new GetNutritionPlanQuery(id), ct);
@@ -49,7 +50,9 @@ public class WellnessController(
     }
 
     [HttpPost("nutrition-plans")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.NutritionManage)]
+    [PatientScope("request.PatientId", "Nutrition.Manage", Optional = true)]
+    [PatientScope(PatientResource.NutritionPlan, "request.SourcePlanId", "Nutrition.Manage", Optional = true, AllowUnowned = true)]
     public async Task<ActionResult<NutritionPlanDto>> CreateNutritionPlan(
         [FromBody] CreateNutritionPlanRequest request, CancellationToken ct)
     {
@@ -60,7 +63,8 @@ public class WellnessController(
     }
 
     [HttpPut("nutrition-plans/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.NutritionManage)]
+    [PatientScope(PatientResource.NutritionPlan, "id", "Nutrition.Manage", AllowUnowned = true)]
     public async Task<ActionResult<NutritionPlanDto>> UpdateNutritionPlan(
         Guid id, [FromBody] UpdateNutritionPlanRequest request, CancellationToken ct)
     {
@@ -72,7 +76,8 @@ public class WellnessController(
     }
 
     [HttpDelete("nutrition-plans/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.NutritionManage)]
+    [PatientScope(PatientResource.NutritionPlan, "id", "Nutrition.Manage", AllowUnowned = true)]
     public async Task<IActionResult> DeleteNutritionPlan(Guid id, CancellationToken ct)
     {
         var existing = await mediator.Send(new GetNutritionPlanQuery(id), ct);
@@ -83,7 +88,9 @@ public class WellnessController(
     }
 
     [HttpPost("nutrition-plans/{sourcePlanId:guid}/clone")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.NutritionManage)]
+    [PatientScope(PatientResource.NutritionPlan, "sourcePlanId", "Nutrition.Manage", AllowUnowned = true)]
+    [PatientScope("patientId", "Nutrition.Manage", Optional = true)]
     public async Task<ActionResult<NutritionPlanDto>> CloneNutritionPlan(
         Guid sourcePlanId, [FromQuery] Guid? patientId, CancellationToken ct)
     {
@@ -100,7 +107,7 @@ public class WellnessController(
     // ===================== EXERCISE ROUTINES =====================
 
     [HttpGet("exercise-routines")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.WellnessView)]
     public async Task<ActionResult<PaginatedExerciseRoutineResult>> ListExerciseRoutines(
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
@@ -111,7 +118,7 @@ public class WellnessController(
         => Ok(await mediator.Send(new ListExerciseRoutinesQuery(search, status, category, page, pageSize), ct));
 
     [HttpGet("exercise-routines/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.WellnessView)]
     public async Task<ActionResult<ExerciseRoutineDto>> GetExerciseRoutine(Guid id, CancellationToken ct)
     {
         var result = await mediator.Send(new GetExerciseRoutineQuery(id), ct);
@@ -119,7 +126,7 @@ public class WellnessController(
     }
 
     [HttpPost("exercise-routines")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.WellnessManage)]
     [PatientScope("request.PatientId", "Wellness.Manage", Optional = true)]
     public async Task<ActionResult<ExerciseRoutineDto>> CreateExerciseRoutine(
         [FromBody] CreateExerciseRoutineRequest request, CancellationToken ct)
@@ -130,7 +137,7 @@ public class WellnessController(
     }
 
     [HttpPut("exercise-routines/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.WellnessManage)]
     public async Task<ActionResult<ExerciseRoutineDto>> UpdateExerciseRoutine(
         Guid id, [FromBody] UpdateExerciseRoutineRequest request, CancellationToken ct)
     {
@@ -139,7 +146,7 @@ public class WellnessController(
     }
 
     [HttpDelete("exercise-routines/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.WellnessManage)]
     public async Task<IActionResult> DeleteExerciseRoutine(Guid id, CancellationToken ct)
     {
         var deleted = await mediator.Send(new DeleteExerciseRoutineCommand(id), ct);
@@ -149,7 +156,7 @@ public class WellnessController(
     // ===================== ROUTINE ASSIGNMENTS =====================
 
     [HttpGet("routine-assignments")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.WellnessView)]
     public async Task<ActionResult<PaginatedRoutineAssignmentResult>> ListRoutineAssignments(
         [FromQuery] Guid? patientId = null,
         [FromQuery] Guid? routineId = null,
@@ -166,7 +173,7 @@ public class WellnessController(
     }
 
     [HttpGet("routine-assignments/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.WellnessView)]
     [PatientScope(PatientResource.RoutineAssignment, "id", "Wellness.View")]
     public async Task<ActionResult<RoutineAssignmentDto>> GetRoutineAssignment(Guid id, CancellationToken ct)
     {
@@ -176,7 +183,7 @@ public class WellnessController(
     }
 
     [HttpGet("patients/{patientId:guid}/routine-assignments")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.WellnessView)]
     [PatientScope("patientId", "Wellness.View")]
     public async Task<ActionResult<IReadOnlyList<RoutineAssignmentDto>>> ListAssignmentsByPatient(
         Guid patientId, CancellationToken ct)
@@ -186,7 +193,7 @@ public class WellnessController(
     }
 
     [HttpPost("routine-assignments")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.WellnessManage)]
     [PatientScope("request.PatientId", "Wellness.Manage")]
     public async Task<ActionResult<RoutineAssignmentDto>> CreateRoutineAssignment(
         [FromBody] CreateRoutineAssignmentRequest request, CancellationToken ct)
@@ -197,7 +204,7 @@ public class WellnessController(
     }
 
     [HttpPut("routine-assignments/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.WellnessManage)]
     [PatientScope(PatientResource.RoutineAssignment, "id", "Wellness.Manage")]
     public async Task<ActionResult<RoutineAssignmentDto>> UpdateRoutineAssignment(
         Guid id, [FromBody] UpdateRoutineAssignmentRequest request, CancellationToken ct)
@@ -209,7 +216,7 @@ public class WellnessController(
     }
 
     [HttpDelete("routine-assignments/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.WellnessManage)]
     [PatientScope(PatientResource.RoutineAssignment, "id", "Wellness.Manage")]
     public async Task<IActionResult> DeleteRoutineAssignment(Guid id, CancellationToken ct)
     {
@@ -222,7 +229,7 @@ public class WellnessController(
     // ===================== NUTRITION PLAN ASSIGNMENTS =====================
 
     [HttpGet("nutrition-plan-assignments")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.NutritionView)]
     public async Task<ActionResult<PaginatedNutritionPlanAssignmentResult>> ListNutritionPlanAssignments(
         [FromQuery] Guid? patientId = null,
         [FromQuery] Guid? planId = null,
@@ -245,7 +252,7 @@ public class WellnessController(
     }
 
     [HttpGet("nutrition-plan-assignments/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.NutritionView)]
     [PatientScope(PatientResource.NutritionAssignment, "id", "Nutrition.View")]
     public async Task<ActionResult<NutritionPlanAssignmentDto>> GetNutritionPlanAssignment(Guid id, CancellationToken ct)
     {
@@ -255,7 +262,7 @@ public class WellnessController(
     }
 
     [HttpGet("patients/{patientId:guid}/nutrition-plan-assignments")]
-    [RequirePermission(PermissionCodes.WellnessView)]
+    [RequireContextPermission(PermissionCodes.NutritionView)]
     [PatientScope("patientId", "Nutrition.View")]
     public async Task<ActionResult<IReadOnlyList<NutritionPlanAssignmentDto>>> ListPlanAssignmentsByPatient(
         Guid patientId, CancellationToken ct)
@@ -265,8 +272,9 @@ public class WellnessController(
     }
 
     [HttpPost("nutrition-plan-assignments")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.NutritionManage)]
     [PatientScope("request.PatientId", "Nutrition.Manage")]
+    [PatientScope(PatientResource.NutritionPlan, "request.PlanId", "Nutrition.Manage", AllowUnowned = true)]
     public async Task<ActionResult<NutritionPlanAssignmentDto>> CreateNutritionPlanAssignment(
         [FromBody] CreateNutritionPlanAssignmentRequest request, CancellationToken ct)
     {
@@ -276,7 +284,7 @@ public class WellnessController(
     }
 
     [HttpPut("nutrition-plan-assignments/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.NutritionManage)]
     [PatientScope(PatientResource.NutritionAssignment, "id", "Nutrition.Manage")]
     public async Task<ActionResult<NutritionPlanAssignmentDto>> UpdateNutritionPlanAssignment(
         Guid id, [FromBody] UpdateNutritionPlanAssignmentRequest request, CancellationToken ct)
@@ -288,7 +296,7 @@ public class WellnessController(
     }
 
     [HttpDelete("nutrition-plan-assignments/{id:guid}")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
+    [RequireContextPermission(PermissionCodes.NutritionManage)]
     [PatientScope(PatientResource.NutritionAssignment, "id", "Nutrition.Manage")]
     public async Task<IActionResult> DeleteNutritionPlanAssignment(Guid id, CancellationToken ct)
     {
@@ -306,8 +314,7 @@ public class WellnessController(
     /// activas. El plan devuelto llega listo para el formulario del frontend.
     /// </summary>
     [HttpPost("plans/generate")]
-    [RequirePermission(PermissionCodes.WellnessManage)]
-    [PatientScope("request.PatientId", "Wellness.Manage")]
+    [PatientScope("request.PatientId", "Wellness.Manage", NutritionGeneration = true)]
     public async Task<ActionResult<GeneratePlanResponse>> GeneratePlan(
         [FromBody] GeneratePlanRequest request,
         CancellationToken ct)

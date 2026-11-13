@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Services;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -63,8 +64,10 @@ public sealed class NutritionAuthorizationTests
             var claims = new List<Claim> { new(ClaimTypes.NameIdentifier, mode == "invalid-id" ? "inválido" : Owner.ToString()) };
             if (mode == "reviewer") claims.Add(new(PermissionClaimTypes.Permission, PermissionCodes.NutritionApprove));
             else if (mode.StartsWith("scoped")) claims.Add(new("test_scoped_permission", PermissionCodes.NutritionManage));
-            else if (mode != "none") claims.Add(new(PermissionClaimTypes.Permission, PermissionCodes.NutritionManage));
-            if (mode == "global") claims.Add(new(PermissionClaimTypes.Permission, PermissionCodes.PatientsView));
+            else if (mode != "none" && mode != "read-only") claims.Add(new(PermissionClaimTypes.Permission, PermissionCodes.NutritionManage));
+            if (mode != "none") claims.Add(new(mode.StartsWith("scoped") ? "test_scoped_permission" : PermissionClaimTypes.Permission, PermissionCodes.NutritionView));
+            if (mode == "global") claims.Add(new(ClaimTypes.Role, "Admin"));
+            if (mode is "global" or "global-permission") claims.Add(new(PermissionClaimTypes.Permission, PermissionCodes.PatientsView));
             var jwt = new JwtSecurityToken(audience: mode == "app" ? "app" : "erp", claims: claims,
                 expires: DateTime.UtcNow.AddMinutes(5), signingCredentials: new(key, SecurityAlgorithms.HmacSha256));
             Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", new JwtSecurityTokenHandler().WriteToken(jwt));
@@ -111,10 +114,22 @@ public sealed class NutritionAuthorizationTests
         var host = await new HostBuilder().ConfigureWebHost(web => web.UseTestServer().ConfigureServices(s =>
         {
             s.AddHttpContextAccessor(); s.AddScoped<ICurrentContext, ClaimsContext>();
+            s.AddScoped<IPatientScopeActor, PatientScopeActor>(); s.AddScoped<IPatientScopeGuard, PatientScopeGuard>();
+            var scopeStore = Substitute.For<IPatientScopeStore>();
+            scopeStore.VisiblePatients(Arg.Any<Guid?>(), Arg.Any<bool>()).Returns(c =>
+                (c.Arg<bool>() ? new[] { OwnPatient, ForeignPatient } : c.Arg<Guid?>() == Professional ? new[] { OwnPatient } : Array.Empty<Guid>()).AsQueryable());
+            scopeStore.ContainsAsync(Arg.Any<IQueryable<Guid>>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+                .Returns(c => c.Arg<IQueryable<Guid>>().Contains(c.Arg<Guid>()));
+            s.AddSingleton(scopeStore);
             s.AddControllers().AddApplicationPart(typeof(NutritionController).Assembly);
             s.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o => o.TokenValidationParameters = new()
             { ValidateIssuer = false, ValidateAudience = false, ValidateLifetime = true, IssuerSigningKey = key });
-            s.AddAuthorization(o => o.AddPolicy(NutritionPolicies.Staff, NutritionPolicies.Configure));
+            s.AddAuthorization(o => {
+                o.AddPolicy(NutritionPolicies.Staff, NutritionPolicies.Configure);
+                o.AddPolicy(PermissionCodes.NutritionView, policy => policy.RequireAuthenticatedUser()
+                    .RequireAssertion(c => c.User.HasClaim(PermissionClaimTypes.Permission, PermissionCodes.NutritionView)
+                        || c.User.HasClaim("test_scoped_permission", PermissionCodes.NutritionView)));
+            });
             s.AddMediatR(c => c.RegisterServicesFromAssemblyContaining<NutritionCaseCommand>());
             s.AddScoped<NutritionCases>(); s.AddSingleton(repository); s.AddSingleton(store); s.AddSingleton(clinical);
             var assessments=Substitute.For<IProgramAssignmentRepository>();
@@ -145,7 +160,7 @@ public sealed class NutritionAuthorizationTests
     }
 
     [Theory]
-    [InlineData("own",202)] [InlineData("global",202)] [InlineData("reviewer",403)]
+    [InlineData("own",202)] [InlineData("global",202)] [InlineData("reviewer",403)] [InlineData("read-only",403)]
     [InlineData("absent",401)] [InlineData("none",403)] [InlineData("app",403)]
     public async Task HttpDraftGeneration_RequiresManageAndReturnsOnlyReservation(string mode,int status)
     {
@@ -166,12 +181,12 @@ public sealed class NutritionAuthorizationTests
     [Theory]
     [InlineData("absent", 401)] [InlineData("none", 403)] [InlineData("own", 200)]
     [InlineData("reviewer", 200)] [InlineData("foreign", 404)] [InlineData("scoped", 200)]
-    [InlineData("global", 200)]
+    [InlineData("global", 200)] [InlineData("read-only", 200)] [InlineData("global-permission", 404)]
     [InlineData("scoped-foreign", 404)] [InlineData("app", 403)] [InlineData("invalid-id", 403)]
     public async Task HttpRead_EnforcesJwtAudiencePermissionsAndOwnScope(string mode, int expected)
     {
         using var h = await StartAsync(); h.Authenticate(mode);
-        var foreign = mode.Contains("foreign") || mode == "global";
+        var foreign = mode.Contains("foreign") || mode is "global" or "global-permission";
         var patient = foreign ? ForeignPatient : OwnPatient; var id = foreign ? ForeignPlanId : PlanId;
         var response = await h.Client.GetAsync($"/api/v1/nutrition/patients/{patient}/prescriptions/{id}");
         Assert.Equal(expected, (int)response.StatusCode);

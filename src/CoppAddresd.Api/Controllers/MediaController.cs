@@ -14,7 +14,7 @@ namespace CoppAddresd.Api.Controllers;
 /// <summary>
 /// Biblioteca de medios (podcasts del programa de 83 días) administrada desde
 /// el ERP. [Authorize] a nivel de controlador; cada acción declara su permiso
-/// con <c>[RequirePermission("Media.X")]</c> (matriz de autorización del change
+/// con <c>[RequireContextPermission("Media.X")]</c> (matriz de autorización del change
 /// erp-program-content-admin: ver medios → Media.View, crear/subir →
 /// Media.Create, editar/reordenar → Media.Edit, publicar → Media.Publish,
 /// archivar → Media.Archive, eliminar → Media.Delete).
@@ -36,7 +36,7 @@ public class MediaController(
     /// <c>usageCount</c> por fila.
     /// </summary>
     [HttpGet]
-    [RequirePermission(PermissionCodes.MediaView)]
+    [RequireContextPermission(PermissionCodes.MediaView)]
     public async Task<ActionResult<PagedMediaItemsResult>> List(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -68,7 +68,7 @@ public class MediaController(
     }
 
     [HttpGet("{id:guid}")]
-    [RequirePermission(PermissionCodes.MediaView)]
+    [RequireContextPermission(PermissionCodes.MediaView)]
     public async Task<ActionResult<MediaItemDto>> GetById(Guid id, CancellationToken ct)
     {
         var item = await mediator.Send(new GetMediaItemQuery(id), ct);
@@ -79,7 +79,7 @@ public class MediaController(
     }
 
     [HttpPost]
-    [RequirePermission(PermissionCodes.MediaCreate)]
+    [RequireContextPermission(PermissionCodes.MediaCreate)]
     public async Task<ActionResult<MediaItemDto>> Create(
         [FromBody] CreateMediaItemRequest request,
         CancellationToken ct
@@ -118,7 +118,7 @@ public class MediaController(
     /// audio/video.
     /// </summary>
     [HttpPost("upload-intent")]
-    [RequirePermission(PermissionCodes.MediaCreate)]
+    [RequireContextPermission(PermissionCodes.MediaCreate)]
     public async Task<ActionResult<UploadIntentResponse>> CreateUploadIntent(
         [FromBody] CreateUploadIntentRequest request,
         CancellationToken ct
@@ -180,7 +180,7 @@ public class MediaController(
     }
 
     [HttpPut("{id:guid}")]
-    [RequirePermission(PermissionCodes.MediaEdit)]
+    [RequireContextPermission(PermissionCodes.MediaEdit)]
     public async Task<IActionResult> Update(
         Guid id,
         [FromBody] UpdateMediaItemRequest request,
@@ -216,7 +216,7 @@ public class MediaController(
     }
 
     [HttpDelete("{id:guid}")]
-    [RequirePermission(PermissionCodes.MediaDelete)]
+    [RequireContextPermission(PermissionCodes.MediaDelete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken ct)
     {
         var result = await mediator.Send(new DeleteMediaItemCommand(id), ct);
@@ -250,7 +250,7 @@ public class MediaController(
     /// tamaño y duración. Inconsistencia → 422 con ProblemDetails detallado.
     /// </summary>
     [HttpPost("{id:guid}/publish")]
-    [RequirePermission(PermissionCodes.MediaPublish)]
+    [RequireContextPermission(PermissionCodes.MediaPublish)]
     public async Task<ActionResult<PublishMediaItemResult>> Publish(
         Guid id,
         CancellationToken ct
@@ -261,7 +261,7 @@ public class MediaController(
     /// Un medio Archived no se puede despublicar (422).
     /// </summary>
     [HttpPost("{id:guid}/unpublish")]
-    [RequirePermission(PermissionCodes.MediaPublish)]
+    [RequireContextPermission(PermissionCodes.MediaPublish)]
     public async Task<ActionResult<MediaItemDto>> Unpublish(Guid id, CancellationToken ct) =>
         Ok(await mediator.Send(new UnpublishMediaItemCommand(id), ct));
 
@@ -270,7 +270,7 @@ public class MediaController(
     /// de nuevas asignaciones pero conserva su reproducción histórica.
     /// </summary>
     [HttpPost("{id:guid}/archive")]
-    [RequirePermission(PermissionCodes.MediaArchive)]
+    [RequireContextPermission(PermissionCodes.MediaArchive)]
     public async Task<ActionResult<MediaItemDto>> Archive(Guid id, CancellationToken ct) =>
         Ok(await mediator.Send(new ArchiveMediaItemCommand(id), ct));
 
@@ -279,7 +279,7 @@ public class MediaController(
     /// escritura atómica. Body: <c>{ items: [{ id, sortOrder }] }</c>.
     /// </summary>
     [HttpPost("reorder")]
-    [RequirePermission(PermissionCodes.MediaEdit)]
+    [RequireContextPermission(PermissionCodes.MediaEdit)]
     public async Task<ActionResult<ReorderMediaItemsResult>> Reorder(
         [FromBody] ReorderMediaItemsCommand command,
         CancellationToken ct
@@ -293,7 +293,7 @@ public class MediaController(
     /// manejo del 409 al eliminar.
     /// </summary>
     [HttpGet("{id:guid}/references")]
-    [RequirePermission(PermissionCodes.MediaView)]
+    [RequireContextPermission(PermissionCodes.MediaView)]
     public async Task<ActionResult<MediaReferencesDto>> GetReferences(Guid id, CancellationToken ct)
     {
         var references = await mediator.Send(new GetMediaReferencesQuery(id), ct);
@@ -310,7 +310,7 @@ public class MediaController(
     /// retención. Solo administradores (<c>System.AdminSettings</c>).
     /// </summary>
     [HttpPost("maintenance/cleanup-orphaned-blobs")]
-    [RequirePermission(PermissionCodes.SystemAdminSettings)]
+    [RequireContextPermission(PermissionCodes.SystemAdminSettings)]
     public async Task<ActionResult<CleanupOrphanedBlobsResult>> CleanupOrphanedBlobs(
         [FromBody] CleanupOrphanedBlobsCommand command,
         CancellationToken ct

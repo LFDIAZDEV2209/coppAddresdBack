@@ -51,7 +51,7 @@ public interface IProgramActorContext
 
     /// <summary>
     /// Scoping clínico del actor sobre una inscripción (T-81, SPEC §6.14):
-    /// TRUE si el actor es Admin/OrganizationAdmin/ClinicAdmin (alcance
+    /// TRUE si el actor es Admin (alcance
     /// org/clinic), el paciente dueño de la inscripción, o un profesional con
     /// asignación activa en <c>app.patient_professionals</c>. Cualquier otro
     /// caso → FALSE (el endpoint responde 404, nunca 403).
@@ -60,7 +60,7 @@ public interface IProgramActorContext
 
     /// <summary>
     /// Ids de paciente visibles por el actor (T-81): <c>null</c> = sin filtro
-    /// (bypass para roles Admin/OrganizationAdmin/ClinicAdmin); lista con ids =
+    /// (bypass para roles Admin); lista con ids =
     /// filtro IN (paciente: la propia; clínico: los asignados activos); lista
     /// VACÍA = denegar (sin identidad conocida o clínico sin asignaciones).
     /// </summary>

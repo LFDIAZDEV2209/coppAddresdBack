@@ -274,6 +274,7 @@ public static class ApplicationServiceExtensions
 
         services.AddScoped<ICurrentContext, CurrentContext>();
         services.AddScoped<IPatientScopeActor, PatientScopeActor>();
+        services.AddScoped<CoppAddresd.Api.Security.FoodPhotoAccess>();
 
         // Resolución del actor del módulo SOS (change sos-panic-real): el
         // paciente se deriva SIEMPRE del JWT (claim patient_id o lookup por

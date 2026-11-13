@@ -15,6 +15,10 @@ public sealed class PatientScopeStore(AppDbContext db) : IPatientScopeStore
     public Task<bool> ContainsAsync(IQueryable<Guid> patientIds, Guid patientId, CancellationToken ct)
         => patientIds.AnyAsync(p => p == patientId, ct);
 
+    public Task<int> CountVisibleNutritionPlansAsync(Guid[] ids, IQueryable<Guid> patients, CancellationToken ct)
+        => db.NutritionPlans.AsNoTracking().CountAsync(p => ids.Contains(p.Id)
+            && (p.IsTemplate && p.PatientId == null || p.PatientId != null && patients.Contains(p.PatientId.Value)), ct);
+
     public Task<Guid?> OwnerAsync(PatientResource resource, Guid id, CancellationToken ct)
         => (resource switch
         {

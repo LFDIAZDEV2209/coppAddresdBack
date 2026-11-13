@@ -164,7 +164,8 @@ public sealed class FoodAnalysisEnglishNamesTests
     {
         var repository = Substitute.For<IFoodAnalysisRepository>();
         repository.GetByAnalysisIdAsync(analysis.AnalysisId, Arg.Any<CancellationToken>()).Returns(analysis);
-        return new(Substitute.For<IFoodAiClient>(), repository, Substitute.For<IMediator>(), NullLogger<FoodAiController>.Instance, translator, catalog)
+        return new(Substitute.For<IFoodAiClient>(), repository, Substitute.For<IMediator>(), NullLogger<FoodAiController>.Instance,
+            translator, catalog, Substitute.For<IPatientScopeGuard>(), Substitute.For<CoppAddresd.Api.Context.ICurrentContext>())
         {
             ControllerContext = new() { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, owner.ToString()), new Claim("aud", "app")], "test")) } },
         };
