@@ -20,6 +20,7 @@ public sealed class WeeklyDayTemplateConfiguration : IEntityTypeConfiguration<We
                     "ck_weekly_day_templates_weekday_range",
                     "\"weekday\" BETWEEN 1 AND 7"
                 );
+                t.HasCheckConstraint("ck_weekly_day_templates_week_number", "week_number IS NULL OR week_number >= 1");
                 t.HasCheckConstraint(
                     "ck_weekly_day_templates_points_non_negative",
                     "\"points\" >= 0"
@@ -31,6 +32,8 @@ public sealed class WeeklyDayTemplateConfiguration : IEntityTypeConfiguration<We
         builder.Property(x => x.Id).HasColumnName("id").HasDefaultValueSql("gen_random_uuid()");
 
         builder.Property(x => x.TemplateId).HasColumnName("template_id");
+
+        builder.Property(x => x.WeekNumber).HasColumnName("week_number");
 
         builder.Property(x => x.Weekday).HasColumnName("weekday");
 
@@ -69,15 +72,8 @@ public sealed class WeeklyDayTemplateConfiguration : IEntityTypeConfiguration<We
         // Indexes
         builder.HasIndex(x => x.TemplateId).HasDatabaseName("ix_weekly_day_templates_template_id");
 
-        builder
-            .HasIndex(x => new
-            {
-                x.TemplateId,
-                x.Weekday,
-                x.TaskCode,
-            })
-            .HasDatabaseName("uq_weekly_day_templates_template_weekday_task")
-            .IsUnique();
+        // El índice único por expresión COALESCE(week_number, 0) se administra
+        // mediante SQL en AddWeeklyTemplateWeekNumber; EF no representa expresiones.
 
         builder.HasIndex(x => x.MediaId).HasDatabaseName("ix_weekly_day_templates_media_id");
 

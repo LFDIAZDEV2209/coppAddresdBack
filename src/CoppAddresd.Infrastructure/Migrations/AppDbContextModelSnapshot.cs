@@ -8858,6 +8858,10 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("template_id");
 
+                    b.Property<int?>("WeekNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("week_number");
+
                     b.Property<short>("Weekday")
                         .HasColumnType("smallint")
                         .HasColumnName("weekday");
@@ -8870,13 +8874,11 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.HasIndex("TemplateId")
                         .HasDatabaseName("ix_weekly_day_templates_template_id");
 
-                    b.HasIndex("TemplateId", "Weekday", "TaskCode")
-                        .IsUnique()
-                        .HasDatabaseName("uq_weekly_day_templates_template_weekday_task");
-
                     b.ToTable("weekly_day_templates", "app", t =>
                         {
                             t.HasCheckConstraint("ck_weekly_day_templates_points_non_negative", "\"points\" >= 0");
+
+                            t.HasCheckConstraint("ck_weekly_day_templates_week_number", "week_number IS NULL OR week_number >= 1");
 
                             t.HasCheckConstraint("ck_weekly_day_templates_weekday_range", "\"weekday\" BETWEEN 1 AND 7");
                         });

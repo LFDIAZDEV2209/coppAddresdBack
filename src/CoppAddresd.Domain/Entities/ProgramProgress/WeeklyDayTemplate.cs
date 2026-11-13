@@ -13,6 +13,9 @@ public sealed class WeeklyDayTemplate
 
     public Guid TemplateId { get; set; }
 
+    /// <summary>Semana específica; null conserva la fila genérica de todas las semanas.</summary>
+    public int? WeekNumber { get; set; }
+
     /// <summary>Día de la semana: 1 = lunes … 7 = domingo (mismo índice que NutritionPlanDay).</summary>
     public short Weekday { get; set; }
 

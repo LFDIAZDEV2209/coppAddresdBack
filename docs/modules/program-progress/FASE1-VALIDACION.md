@@ -19,3 +19,13 @@ Las dos regresiones fallaron con 1.1 (2 fallos) y pasan tras conservar snapshots
 no vacíos en ambas activaciones. Las semanas vacías mantienen la copia de plantilla.
 La combinación por origen y actualización del resto de días corresponde a 1.5.
 Validación: build Release y pruebas de activación PostgreSQL.
+
+## 1.3 — Plantillas por semana (esquema)
+
+Migración aditiva `AddWeeklyTemplateWeekNumber`: columna nullable, índice único
+por expresión COALESCE y rango positivo. Nombres físicos: `weekday`, `task_code`.
+Índices concurrentes; rollback comentado y protegido contra pérdida de específicas.
+PostgreSQL: genérica + específica coexisten, duplicadas en ambos ámbitos fallan
+con 23505; reversa con específicas aborta; Up/Down/Up preservan 10.001 filas.
+Volumen local leído: 84 filas. No se migró la BD local; prueba en BD efímera.
+Validación: build Release, integración 1/1; ProgramProgress 566 pasan, 97 omitidas.

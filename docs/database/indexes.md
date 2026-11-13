@@ -235,3 +235,17 @@ en app. La nueva tabla comienza vacía; el índice se crea junto con la tabla.
 | IX_reminders_assignment_id | whatsapp.reminders | assignment_id no nulo | Parcial | Hook de evaluación completada | Cancelación puntual | Solo evaluaciones |
 | IX_reminder_deliveries_reminder_id_attempt | whatsapp.reminder_deliveries | reminder_id, attempt | Único B-tree | Auditar intentos, cubre FK del mismo schema | No duplica número de intento | Una entrada por intento |
 | IX_reminder_deliveries_patient_id_kind_accepted_at | whatsapp.reminder_deliveries | patient_id, kind, accepted_at no nulo | Parcial | Separación mínima 24 h por tipo | Max temporal indexable | Solo aceptados |
+
+## Plantilla por semana — Fase 1.3
+
+`uq_weekly_day_templates_template_week_day_task`: UNIQUE B-tree sobre
+`(template_id, COALESCE(week_number,0), weekday, task_code)`. Conserva una única
+fila genérica por día/tarea y permite una por semana específica. Los nombres
+físicos `weekday` y `task_code` corresponden a `day_of_week` y `task_type` del contrato.
+Reemplaza `uq_weekly_day_templates_template_weekday_task`; se crea antes de retirar
+el anterior, ambos CONCURRENTLY y fuera de transacción. Coste: un índice por escritura.
+No se usa otro índice equivalente en el modelo EF (no representa expresiones).
+Volumen local: 84 filas; validación PostgreSQL con 10.000 filas adicionales.
+Reversa protegida: exportar/retirar las específicas; nunca se descartan automáticamente.
+Un CONCURRENTLY interrumpido puede dejar índice inválido: comprobar `pg_index.indisvalid`,
+retirar solo el inválido y reintentar durante la ventana de mantenimiento.
