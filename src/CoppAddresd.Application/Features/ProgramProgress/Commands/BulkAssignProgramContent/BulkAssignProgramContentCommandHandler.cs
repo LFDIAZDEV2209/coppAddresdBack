@@ -21,7 +21,12 @@ public sealed record WeekSnapshotTaskRow(
     int SortOrder,
     Guid? RoutineId = null,
     Guid? NutritionPlanId = null,
-    Guid? MediaId = null
+    Guid? MediaId = null,
+    string? Origin = null,
+    bool? Rest = null,
+    Guid? EditedBy = null,
+    DateTimeOffset? EditedAt = null,
+    int? BackfillVersion = null
 );
 
 /// <summary>Semana de una inscripción para la propagación de contenido.</summary>
@@ -77,7 +82,12 @@ public static class WeekSnapshotJson
                     item.GetProperty("sort_order").GetInt32(),
                     ParseGuid("routine_id"),
                     ParseGuid("nutrition_plan_id"),
-                    ParseGuid("media_id")
+                    ParseGuid("media_id"),
+                    item.TryGetProperty("origin", out var origin) && origin.ValueKind == JsonValueKind.String ? origin.GetString() : null,
+                    item.TryGetProperty("rest", out var rest) && rest.ValueKind is JsonValueKind.True or JsonValueKind.False ? rest.GetBoolean() : null,
+                    ParseGuid("edited_by"),
+                    item.TryGetProperty("edited_at", out var editedAt) && editedAt.ValueKind == JsonValueKind.String && editedAt.TryGetDateTimeOffset(out var parsedAt) ? parsedAt : null,
+                    item.TryGetProperty("backfill_version", out var version) && version.ValueKind == JsonValueKind.Number && version.TryGetInt32(out var parsedVersion) ? parsedVersion : null
                 )
             );
         }
@@ -96,6 +106,11 @@ public static class WeekSnapshotJson
                 routine_id = row.RoutineId,
                 nutrition_plan_id = row.NutritionPlanId,
                 media_id = row.MediaId,
+                origin = row.Origin,
+                rest = row.Rest,
+                edited_by = row.EditedBy,
+                edited_at = row.EditedAt,
+                backfill_version = row.BackfillVersion,
             }),
             Options
         );

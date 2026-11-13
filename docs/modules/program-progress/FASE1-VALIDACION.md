@@ -29,3 +29,13 @@ PostgreSQL: genérica + específica coexisten, duplicadas en ambos ámbitos fall
 con 23505; reversa con específicas aborta; Up/Down/Up preservan 10.001 filas.
 Volumen local leído: 84 filas. No se migró la BD local; prueba en BD efímera.
 Validación: build Release, integración 1/1; ProgramProgress 566 pasan, 97 omitidas.
+
+## 1.4 — Snapshot tolerante
+
+Un único serializador compartido preserva `origin`, `rest`, `edited_by`,
+`edited_at` y `backfill_version` (entero). Campos ausentes/nulos o metadatos inválidos
+se leen como null; contenido antiguo conserva sus referencias/puntos/orden.
+Las copias nuevas nacen `program`; las preediciones ERP nacen `individual`, con
+actor y fecha. No se cambia aún la resolución de descansos (tarea 1.9).
+Validación: ida/vuelta antiguo/nuevo, descanso true/false, auditoría y edición selectiva;
+build Release correcto; ProgramProgress 570 pasan, 97 omitidas; activación PostgreSQL 2/2.

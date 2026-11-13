@@ -2942,7 +2942,7 @@ public sealed partial class ProgramRepository(
                 }
 
                 var now = DateTime.UtcNow;
-                week.TasksSnapshot = BuildSnapshot(tasks);
+                week.TasksSnapshot = BuildSnapshot(tasks, "individual", actorId);
                 week.UpdatedAt = now;
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
@@ -3422,7 +3422,7 @@ public sealed partial class ProgramRepository(
     /// NO se persiste deliberadamente por ahora (persistirlo exigiría una
     /// migración que este cambio no contempla).
     /// </summary>
-    private static int ComputeDayPointsMax(IEnumerable<SnapshotTask> dayTasks, int bonusAmount) =>
+    private static int ComputeDayPointsMax(IEnumerable<WeekSnapshotTaskRow> dayTasks, int bonusAmount) =>
         dayTasks.Sum(t => t.Points) + bonusAmount;
 
     // ---------------------------------------------------------------- Catálogo de reglas XP (SPEC §14)
@@ -4009,19 +4009,12 @@ public sealed partial class ProgramRepository(
     }
 
     /// <summary>Serialize el snapshot con el shape de la SPEC §3.4 (jsonb).</summary>
-    private static JsonElement BuildSnapshot(IEnumerable<WeeklyDayTemplate> days) =>
-        JsonSerializer.SerializeToElement(
-            days.Select(d => new
-            {
-                weekday = (int)d.Weekday,
-                task_code = d.TaskCode.ToString(),
-                points = d.Points,
-                sort_order = d.SortOrder,
-                routine_id = d.RoutineId,
-                nutrition_plan_id = d.NutritionPlanId,
-                media_id = d.MediaId,
-            })
-        );
+    private static JsonElement BuildSnapshot(IEnumerable<WeeklyDayTemplate> days,
+        string origin = "program", Guid? actorId = null) =>
+        WeekSnapshotJson.Serialize(days.Select(d => new WeekSnapshotTaskRow(
+            d.Weekday, d.TaskCode.ToString(), d.Points, d.SortOrder,
+            d.RoutineId, d.NutritionPlanId, d.MediaId, origin,
+            EditedBy: actorId, EditedAt: origin == "individual" ? DateTimeOffset.UtcNow : null)).ToList());
 
     private static JsonElement EmptySnapshot() =>
         JsonSerializer.SerializeToElement(Array.Empty<object>());
@@ -4036,50 +4029,8 @@ public sealed partial class ProgramRepository(
         return code ?? string.Empty;
     }
 
-    private static IReadOnlyList<SnapshotTask> ParseSnapshot(JsonElement snapshot)
-    {
-        var result = new List<SnapshotTask>();
-        if (snapshot.ValueKind != JsonValueKind.Array)
-        {
-            return result;
-        }
-
-        foreach (var item in snapshot.EnumerateArray())
-        {
-            Guid? routineId =
-                item.TryGetProperty("routine_id", out var rProp)
-                && rProp.ValueKind == JsonValueKind.String
-                && Guid.TryParse(rProp.GetString(), out var rGuid)
-                    ? rGuid
-                    : null;
-            Guid? nutPlanId =
-                item.TryGetProperty("nutrition_plan_id", out var nProp)
-                && nProp.ValueKind == JsonValueKind.String
-                && Guid.TryParse(nProp.GetString(), out var nGuid)
-                    ? nGuid
-                    : null;
-            Guid? mediaId =
-                item.TryGetProperty("media_id", out var mProp)
-                && mProp.ValueKind == JsonValueKind.String
-                && Guid.TryParse(mProp.GetString(), out var mGuid)
-                    ? mGuid
-                    : null;
-
-            result.Add(
-                new SnapshotTask(
-                    (short)item.GetProperty("weekday").GetInt32(),
-                    NormalizeTaskCode(item.GetProperty("task_code").GetString()),
-                    item.GetProperty("points").GetInt32(),
-                    item.GetProperty("sort_order").GetInt32(),
-                    routineId,
-                    nutPlanId,
-                    mediaId
-                )
-            );
-        }
-
-        return result;
-    }
+    private static IReadOnlyList<WeekSnapshotTaskRow> ParseSnapshot(JsonElement snapshot) =>
+        WeekSnapshotJson.Parse(snapshot).Select(row => row with { TaskCode = NormalizeTaskCode(row.TaskCode) }).ToList();
 
     private async Task<IReadOnlyList<CalendarDayDto>> BuildCalendarDaysAsync(
         Guid enrollmentId,
@@ -8011,7 +7962,7 @@ public sealed partial class ProgramRepository(
                 .ThenBy(d => d.SortOrder)
                 .ToListAsync(ct);
             snapshotTasks = templateDays
-                .Select(d => new SnapshotTask(
+                .Select(d => new WeekSnapshotTaskRow(
                     d.Weekday,
                     d.TaskCode.ToString(),
                     d.Points,
@@ -8339,16 +8290,6 @@ public sealed partial class ProgramRepository(
 
     private static bool IsUniqueViolation(DbUpdateException ex) =>
         ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
-
-    private sealed record SnapshotTask(
-        short Weekday,
-        string TaskCode,
-        int Points,
-        int SortOrder,
-        Guid? RoutineId = null,
-        Guid? NutritionPlanId = null,
-        Guid? MediaId = null
-    );
 
     // ===================== ERP Gamificación (SPEC §23) =====================
 
@@ -9630,7 +9571,7 @@ public sealed partial class ProgramRepository(
         var today = PatientLocalToday(enrollment.Timezone);
 
         // Tasks today from snapshot
-        IReadOnlyList<SnapshotTask> snapshotTasks = [];
+        IReadOnlyList<WeekSnapshotTaskRow> snapshotTasks = [];
         var week = await dbContext
             .ProgramWeeks.AsNoTracking()
             .Where(w =>
