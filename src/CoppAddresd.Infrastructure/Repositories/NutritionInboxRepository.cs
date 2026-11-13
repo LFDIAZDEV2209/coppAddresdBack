@@ -89,7 +89,7 @@ public sealed class NutritionInboxRepository(AppDbContext db) : INutritionInboxR
                     "GenerationState", "GenerationFallback", "GenerationReason", "GenerationUpdatedAt",
                     "HasPublishedToday", "PublishedCycleStart", "PublishedCycleEnd", "LatestDraftState", "HasFutureDraft"
                 FROM filtered
-                ORDER BY ("PrescriptionId" IS NULL) DESC,
+                ORDER BY "IsPublished" DESC, ("PrescriptionId" IS NULL) DESC,
                     CASE WHEN "PrescriptionId" IS NULL THEN "PatientName" END ASC,
                     "CreatedAt" DESC NULLS LAST, "PatientId" ASC
                 LIMIT @limit OFFSET @offset
