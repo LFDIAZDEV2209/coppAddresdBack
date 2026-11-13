@@ -117,3 +117,18 @@ Validación específica: 128 unitarios de medios y 2 PostgreSQL, sin fallos.
 - La integración coordinada debe conservar el ORDER BY de `392439a`; no se tocó.
 - Nota de Luis sobre pacientes/plantillas afectados para 1.12 registrada en
   `docs/modules/media/README.md`; todavía no se implementa 1.12.
+
+## 1.7b — Referencias clínicas conservadas al editar podcasts
+
+`WeeklyDayTemplateDto` añade `routineId` y `nutritionPlanId` (nullable), tanto en
+GET como en la respuesta de PUT. PUT semanal reemplaza las clases enviadas en
+su ámbito; conserva las clases omitidas. Para una fila enviada, una referencia
+clínica null/omitida conserva la previa efectiva (específica > genérica); una
+referencia no nula la cambia. El editor de podcasts no desasigna contenido clínico.
+La retirada explícita de referencias requiere un caso de uso específico; no se
+interpreta la ausencia de un campo como una decisión clínica de desasignación.
+
+PostgreSQL: guardar solo podcasts conserva rutina/plan específicos; reenviar
+las misiones sin campos clínicos conserva las referencias; una semana nueva
+hereda genéricas y otras semanas permanecen intactas. GET devuelve ambas refs.
+Pruebas de 1.7 y regresión 1.7b: 2/2; build Release y módulo ProgramProgress.

@@ -2885,8 +2885,9 @@ public sealed partial class ProgramRepository(
                 if (tasks.GroupBy(t => (t.Weekday, t.TaskCode)).Any(g => g.Count() > 1))
                     throw new UnprocessableEntityException("DUPLICATE_WEEKDAY_TASK: día/tarea duplicados.");
                 foreach (var task in tasks) task.WeekNumber = weekNumber;
+                var codes = tasks.Select(t => t.TaskCode).Distinct().ToArray();
                 await dbContext
-                    .WeeklyDayTemplates.Where(d => d.TemplateId == templateId && d.WeekNumber == weekNumber)
+                    .WeeklyDayTemplates.Where(d => d.TemplateId == templateId && d.WeekNumber == weekNumber && codes.Contains(d.TaskCode))
                     .ExecuteDeleteAsync(ct);
 
                 AddDayTemplates(templateId, tasks, actorId);
@@ -2894,7 +2895,10 @@ public sealed partial class ProgramRepository(
                     .ExecuteUpdateAsync(s => s.SetProperty(t => t.UpdatedAt, DateTime.UtcNow).SetProperty(t => t.UpdatedBy, actorId), ct);
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
-                return tasks;
+                // Las clases omitidas por el editor conservan sus filas y referencias.
+                return await dbContext.WeeklyDayTemplates.AsNoTracking()
+                    .Where(d => d.TemplateId == templateId && d.WeekNumber == weekNumber)
+                    .OrderBy(d => d.Weekday).ThenBy(d => d.SortOrder).ToListAsync(ct);
             }
             catch
             {

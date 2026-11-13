@@ -181,18 +181,20 @@ public class TemplateCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_ReemplazarTareas_DevuelveFilasNuevas()
+    public async Task Handle_ReemplazarClasesEnviadas_ConservaLasOmitidas()
     {
         var command = new ReplaceWeekdayTasksCommand(
             _templateId, [new(2, TaskCode.nut, 150, 1), new(2, TaskCode.emocional, 120, 2)]);
 
         var dto = await _replaceHandler.Handle(command, CancellationToken.None);
 
-        Assert.Equal(2, dto.Count);
-        Assert.All(dto, d => Assert.Equal((short)2, d.Weekday));
+        Assert.Equal(3, dto.Count);
+        Assert.Equal((short)2, Assert.Single(dto, d => d.TaskCode == TaskCode.nut).Weekday);
+        Assert.Equal((short)2, Assert.Single(dto, d => d.TaskCode == TaskCode.emocional).Weekday);
+        Assert.Equal((short)1, Assert.Single(dto, d => d.TaskCode == TaskCode.podcast).Weekday);
         var stored = _repository.Templates[_templateId].DayTemplates;
-        Assert.Equal(2, stored.Count);
-        Assert.Equal(TaskCode.nut, stored.First().TaskCode);
+        Assert.Equal(3, stored.Count);
+        Assert.Equal(80, Assert.Single(stored, d => d.TaskCode == TaskCode.podcast).Points);
     }
 
     [Fact]

@@ -493,12 +493,14 @@ public sealed record WeeklyDayTemplateDto(
     int SortOrder,
     Guid? MediaId,
     DateTime CreatedAt,
-    int? WeekNumber = null
+    int? WeekNumber = null,
+    Guid? RoutineId = null,
+    Guid? NutritionPlanId = null
 )
 {
     public static WeeklyDayTemplateDto FromEntity(
         Domain.Entities.ProgramProgress.WeeklyDayTemplate d
-    ) => new(d.Id, d.Weekday, d.TaskCode, d.Points, d.SortOrder, d.MediaId, d.CreatedAt, d.WeekNumber);
+    ) => new(d.Id, d.Weekday, d.TaskCode, d.Points, d.SortOrder, d.MediaId, d.CreatedAt, d.WeekNumber, d.RoutineId, d.NutritionPlanId);
 }
 
 /// <summary>

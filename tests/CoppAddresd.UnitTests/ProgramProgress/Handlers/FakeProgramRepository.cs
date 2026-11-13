@@ -451,9 +451,10 @@ internal sealed class FakeProgramRepository : IProgramRepository
             );
         }
 
-        template.DayTemplates = template.DayTemplates.Where(d => d.WeekNumber != weekNumber).Concat(tasks).ToList();
+        var codes = tasks.Select(t => t.TaskCode).ToHashSet();
+        template.DayTemplates = template.DayTemplates.Where(d => d.WeekNumber != weekNumber || !codes.Contains(d.TaskCode)).Concat(tasks).ToList();
         foreach (var task in tasks) task.WeekNumber = weekNumber;
-        return Task.FromResult(tasks);
+        return Task.FromResult<IReadOnlyList<WeeklyDayTemplate>>(template.DayTemplates.Where(d => d.WeekNumber == weekNumber).ToList());
     }
 
     // ------------------------------------------------------------ Adaptaciones
