@@ -12,3 +12,10 @@ Se habilita la corrección 1.2.
 
 Validación: `dotnet build -c Release` sin errores; integración `ActivacionPor`: 2/2.
 Debug bloqueado por servicios locales en ejecución; Release evita detenerlos.
+
+## 1.2 — Conservación al activar
+
+Las dos regresiones fallaron con 1.1 (2 fallos) y pasan tras conservar snapshots
+no vacíos en ambas activaciones. Las semanas vacías mantienen la copia de plantilla.
+La combinación por origen y actualización del resto de días corresponde a 1.5.
+Validación: build Release y pruebas de activación PostgreSQL.

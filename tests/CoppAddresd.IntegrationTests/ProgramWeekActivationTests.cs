@@ -11,10 +11,10 @@ namespace CoppAddresd.IntegrationTests;
 public sealed partial class NutritionPlanWorkflowTests
 {
     [NutritionPostgresFact]
-    public Task ActivacionPorFecha_PisaPreedicionFutura() => VerificarPreedicionAsync(false);
+    public Task ActivacionPorFecha_ConservaPreedicionFutura() => VerificarPreedicionAsync(false);
 
     [NutritionPostgresFact]
-    public Task ActivacionPorSemanaPerfecta_PisaPreedicionFutura() => VerificarPreedicionAsync(true);
+    public Task ActivacionPorSemanaPerfecta_ConservaPreedicionFutura() => VerificarPreedicionAsync(true);
 
     private async Task VerificarPreedicionAsync(bool semanaPerfecta)
     {
@@ -59,7 +59,7 @@ public sealed partial class NutritionPlanWorkflowTests
         await using var verification = Context();
         var activated = await verification.ProgramWeeks.AsNoTracking().SingleAsync(w => w.Id == next.Id);
         Assert.Equal(ProgramWeekStatus.Active, activated.Status);
-        // Caracterización 1.1: la plantilla pisa el jueves individual (77 → 10).
-        Assert.Equal(10, activated.TasksSnapshot.EnumerateArray().Single(t => t.GetProperty("weekday").GetInt32() == 4).GetProperty("points").GetInt32());
+        // Regresión 1.2: la activación conserva el jueves preeditado.
+        Assert.Equal(77, activated.TasksSnapshot.EnumerateArray().Single(t => t.GetProperty("weekday").GetInt32() == 4).GetProperty("points").GetInt32());
     }
 }

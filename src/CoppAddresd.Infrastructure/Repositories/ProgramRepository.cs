@@ -1797,7 +1797,9 @@ public sealed partial class ProgramRepository(
         var now = DateTime.UtcNow;
         week.Status = ProgramWeekStatus.Active;
         week.ActivatedAt = now;
-        week.TasksSnapshot = await BuildSnapshotFromTemplateAsync(template.Id, ct);
+        // Una preedición del ERP ya materializada debe sobrevivir a la activación.
+        if (week.TasksSnapshot.ValueKind != JsonValueKind.Array || week.TasksSnapshot.GetArrayLength() == 0)
+            week.TasksSnapshot = await BuildSnapshotFromTemplateAsync(template.Id, ct);
         week.TemplateVersionAtStart = template.Version;
         week.UpdatedAt = now;
 
@@ -1844,7 +1846,9 @@ public sealed partial class ProgramRepository(
             {
                 nextWeek.Status = ProgramWeekStatus.Active;
                 nextWeek.ActivatedAt = now;
-                nextWeek.TasksSnapshot = await BuildSnapshotFromTemplateAsync(template.Id, ct);
+                // También se conserva al avanzar por siete días perfectos.
+                if (nextWeek.TasksSnapshot.ValueKind != JsonValueKind.Array || nextWeek.TasksSnapshot.GetArrayLength() == 0)
+                    nextWeek.TasksSnapshot = await BuildSnapshotFromTemplateAsync(template.Id, ct);
                 nextWeek.TemplateVersionAtStart = template.Version;
                 nextWeek.UpdatedAt = now;
                 enrollment.CurrentWeekNumber = nextWeek.WeekNumber;
