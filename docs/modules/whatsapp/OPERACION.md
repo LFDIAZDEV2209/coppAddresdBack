@@ -1,8 +1,71 @@
-# Operación pendiente de aprobación de Luis
+# Operación del canal WhatsApp
 
-Este documento prepara las fases 7–9. No se creó ninguna plantilla, webhook,
-despliegue ni credencial durante la implementación. Ejecutar desde el backend,
-con PowerShell 7 y una sesión sin transcripción/depuración de HTTP.
+Este documento prepara las fases 7–9. Ejecutar desde el backend, con PowerShell 7
+y una sesión sin transcripción/depuración de HTTP.
+
+## Estado de Meta (2026-11-12)
+
+- Número de PRUEBA +1 555-825-8464 ELIMINADO del portfolio: Meta exigía display
+  name aprobado para los números 555 y rechazaba todo envío con error 131037
+  ("WhatsApp provided number needs display name approval before message can be
+  sent"). Es el motivo por el que el agente dejó de responder después de las
+  2:20 PM del 12-11.
+- Número real +1 (865) 420-7919 AGREGADO a la WABA 1174342838653556, verificado
+  por OTP vía SMS (el código llega a Twilio y se lee por su API) y REGISTRADO en
+  Cloud API (`POST /{pnid}/register`). Estado CONNECTED, plataforma CLOUD_API.
+- `WHATSAPP_PHONE_NUMBER_ID` del secret `cooppadresd/whatsapp` = 1349732194899802
+  (número real). La clave `WHATSAPP_TWO_STEP_PIN` guarda el PIN de dos pasos del
+  número (rotaciones y borrados requieren ese PIN).
+- La UI de WhatsApp Manager no borra números sin la contraseña de Facebook del
+  admin; la API de Meta no permite borrar números. La creación de números por
+  API devolvió 403 (reservada a Tech Providers) y 2388112 cuando el portfolio
+  agotó su tope de números: agregar/vincular se hace desde el Dashboard.
+- El doc de Tech Provider de Twilio NO aplica a este caso: es el programa para
+  ISVs que onboardan a sus clientes vía Embedded Signup. El número Twilio sigue
+  sirviendo SMS y llamadas normalmente: los canales son independientes.
+  A2P 10DLC no aplica (es SMS saliente hacia EE. UU.; los OTP van a +57).
+
+## Canal del agente (2026-11-12)
+
+El turno de WhatsApp viaja al ai-service con `Agent: "whatsapp"` (perfil propio
+en `ai-service/app/agents/registry.py`): sin herramientas de citas ni controles
+y con alcance, prompt y política de turno SIN agendamiento (la gestión con los
+profesionales vive en la app ANTARES). `MessagePolicy.NormalizeForWhatsApp`
+convierte Markdown a formato del canal (`**`→`*`, sin `---`, encabezados a
+negrita) y el worker marca el mensaje entrante como leído y muestra el
+indicador de escritura (tres puntos, refresco cada 20 s) mientras prepara la
+respuesta. BUG corregido en ai-service (`a576191`): los perfiles con tools por
+NOMBRE (p. ej. whatsapp) deben resolverse a BaseTool antes de `bind_tools` —
+el proveedor real rechaza strings con "Unsupported function" y el turno cae al
+mensaje de contingencia.
+
+## Diagnóstico de "no contesta" (2026-11-12/13)
+
+Tres causas distintas con el mismo síntoma, en orden de aparición:
+
+1. **Error 131037** — Meta exigía display name aprobado para el número de
+   prueba 555 y rechazaba todo envío. Resuelto eliminando el 555 y registrando
+   el número real.
+2. **Chat muerto del 555** — usuarios que tenían la conversación del número
+   borrado escriben a un hilo que ya no existe. La salida es un mensaje del
+   negocio al usuario (ancla) o que abran `wa.me/18654207919` desde cero.
+3. **Usuario en el block list del número de negocio** — el GET de
+   `block_users` puede ocultar al bloqueado; `DELETE /{pnid}/block_users` con
+   el número lo revela (`removed_users`) y desbloquea en el mismo paso.
+   Síntoma: los envíos se aceptan (wamid) pero no entregan, y los mensajes del
+   usuario llegan a Meta (2 grises) sin evento en el webhook.
+
+## Pacientes QA creados por DB (2026-11-12, script `clone-qa-patients.sql`)
+
+Clonados del demo 55551234 con SU propio celular como teléfono y documento
+(misma clínica, programa, plan aprobado, prescripciones v1/v2, tests
+completados, rutinas, XP, racha y controles): `3005552989` (QA WhatsApp 1),
+`3006663269` (QA WhatsApp 2), `3137292352` (QA WhatsApp 3). El documento es el
+celular, imposible de olvidar. Sin password (login por OTP). Notas de diseño:
+`uq_nutrition_prescriptions_cycle_version` es global → cada clon usa un
+`cycle_id` nuevo; el dedupe de `xp_ledger` exige `source_ref_id` remapeados; los
+`client_request_id` clonados van a NULL. El 55551234 sigue intacto como demo
+del dueño.
 
 ## 7. Plantillas
 
@@ -24,19 +87,19 @@ contiene exclusivamente bienestar, racha, podcast y evaluación inicial es/en.
 
 ## 8. Preparar y desplegar
 
-La rama es feature/canal-whatsapp. Los commits son locales y no hay push. Revisar
-diff y pruebas; después Luis autoriza merge/push a dev (dispara el workflow).
+La rama feature/canal-whatsapp está MERGEADA a dev y desplegada en producción
+(webhook activo en erp.coppadresd.com/api/v1/whatsapp/webhook, migraciones
+whatsapp aplicadas el 12-11). Las variables:
 
-Variables de GitHub para el entorno dev del workflow existente:
-
-| Variable | Valor / acción |
-|---|---|
-| WHATSAPP_ENABLED_DEV | 0 por defecto; 1 solo para activar el canal tras migrar |
-| WHATSAPP_REMINDERS_ENABLED_DEV | false hasta que VerifyTemplates confirme las ocho plantillas |
-| WHATSAPP_SECRET_ARN_DEV | ARN completo del secret cooppadresd/whatsapp, sin sufijos de campo |
+| Variable                       | Valor / acción                                                     |
+| ------------------------------ | ------------------------------------------------------------------ |
+| WHATSAPP_ENABLED_DEV           | 0 por defecto; 1 solo para activar el canal tras migrar            |
+| WHATSAPP_REMINDERS_ENABLED_DEV | false hasta que VerifyTemplates confirme las ocho plantillas       |
+| WHATSAPP_SECRET_ARN_DEV        | ARN completo del secret cooppadresd/whatsapp, sin sufijos de campo |
 
 Claves JSON del secret: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID,
-WHATSAPP_APP_ID, WHATSAPP_APP_SECRET, WHATSAPP_WEBHOOK_VERIFY_TOKEN. ECS recibe
+WHATSAPP_APP_ID, WHATSAPP_APP_SECRET, WHATSAPP_WEBHOOK_VERIFY_TOKEN y
+WHATSAPP_TWO_STEP_PIN (operación Meta; ECS no la inyecta). ECS recibe
 referencias `ARN:CLAVE::`; el runner no lee sus valores. El execution role de ECS
 debe tener secretsmanager:GetSecretValue y kms:Decrypt cuando corresponda. El flag
 se inyecta aparte como configuración no secreta. No añadir un valor secreto al
