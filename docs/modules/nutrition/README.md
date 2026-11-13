@@ -459,7 +459,9 @@ patient_professionals Active para propios; Patients.View habilita alcance
 global. No acepta alcance ni identidad desde query/body.
 
 Última prescripción por createdAt DESC/id DESC, incluidos borradores. Sin
-plan primero por nombre/patientId; resto por fecha descendente/patientId.
+plan se mantiene por nombre/patientId y planes por fecha descendente/patientId,
+con prioridad global previa para isPublished=true (incluye por_renovar).
+Esta prioridad se aplica antes de paginar; no ordena solamente la página del ERP.
 State y búsqueda por nombre se filtran en PostgreSQL antes de contar/paginar;
 por_renovar se calcula con la fecha local de cada paciente, igual que el módulo.
 Críticas se cuentan con ClinicalFlags sin cargar comidas; dos consultas por

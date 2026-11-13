@@ -41,6 +41,34 @@ public sealed partial class NutritionPlanWorkflowTests
     }
 
     [NutritionPostgresFact]
+    public async Task Inbox_PublishedPatientsComeFirstBeforePagination_WithoutDuplicates()
+    {
+        await using var db = Context();
+        var empty = await InboxPatient(db, "Ana");
+        var draftPatient = await InboxPatient(db, "Beto");
+        var publishedPatient = await InboxPatient(db, "Zoe");
+        var renewingPatient = await InboxPatient(db, "Yara");
+        var draft = InboxPlan(draftPatient.Id, InboxNow);
+        var published = InboxPlan(publishedPatient.Id, InboxNow.AddDays(-10));
+        PublishInboxPlan(published, new(2026, 12, 4));
+        var renewing = InboxPlan(renewingPatient.Id, InboxNow.AddDays(-11));
+        PublishInboxPlan(renewing, new(2026, 11, 9));
+        db.NutritionPrescriptions.AddRange(draft, published, renewing);
+        await db.SaveChangesAsync();
+        var ids = new List<Guid>();
+        for (var page = 1; page <= 4; page++)
+        {
+            var result = await Inbox(db).Handle(new(InboxGlobal, Page: page, PageSize: 1), CancellationToken.None);
+            Assert.Equal(4, result.Total);
+            ids.Add(Assert.Single(result.Items).PatientId);
+        }
+        Assert.Equal(new[] { publishedPatient.Id, renewingPatient.Id, empty.Id, draftPatient.Id }, ids);
+        Assert.Equal(4, ids.Distinct().Count());
+        var filtered = await Inbox(db).Handle(new(InboxGlobal, State: "sin_plan"), CancellationToken.None);
+        Assert.Equal(empty.Id, Assert.Single(filtered.Items).PatientId);
+    }
+
+    [NutritionPostgresFact]
     public async Task Inbox_CurrentPublicationIsIndependentOfFutureCycle_AndChangesAtLocalMidnight()
     {
         await using var db=Context(); var p=await InboxPatient(db,"Ciclos"); p.Timezone="America/Bogota";

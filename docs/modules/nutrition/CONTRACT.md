@@ -301,8 +301,10 @@ Estado por_renovar replica la regla del módulo: aprobado, publicado y endDate
 ≤ hoy local +5 días, incluido vencido. SQL usa la zona de cada paciente y el
 reloj UTC de la petición, antes de contar y paginar. Zona inválida: 422.
 
-Orden estable: sin_plan primero por nombre ASC y patientId ASC; después,
-fecha de creación de última prescripción DESC y patientId ASC. Los filtros
+Orden estable: pacientes cuya última prescripción tiene isPublished=true
+primero (incluye por_renovar), antes de LIMIT/OFFSET. Dentro de cada grupo se
+conserva el orden anterior: sin_plan por nombre ASC/patientId ASC y planes por
+fecha de creación DESC/patientId ASC. Los filtros
 de alcance, estado y nombre preceden a total/offset. Una página posterior al
 final devuelve items vacío conservando total. Total cuenta pacientes filtrados,
 no prescripciones; no hay totalPages adicional.
