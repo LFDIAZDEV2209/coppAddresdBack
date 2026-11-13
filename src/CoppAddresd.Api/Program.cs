@@ -50,7 +50,9 @@ builder.Host.UseSerilog(
 );
 
 builder
-    .Services.AddControllers(options => options.Filters.Add<CoppAddresd.Api.Localization.PatientContentLocalizationFilter>())
+    .Services.AddControllers(options =>
+        options.Filters.Add<CoppAddresd.Api.Localization.PatientContentLocalizationFilter>()
+    )
     .AddApplicationPart(typeof(CoppAddresd.WhatsApp.Webhook.WhatsAppWebhookController).Assembly)
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter())
@@ -72,39 +74,71 @@ if (!args.Contains("--migrate"))
 }
 
 // El flag se resuelve por entorno y admite override/reload desde configuración.
-builder.Services.AddProgramAssignmentSettings(builder.Configuration, builder.Environment.IsDevelopment());
+builder.Services.AddProgramAssignmentSettings(
+    builder.Configuration,
+    builder.Environment.IsDevelopment()
+);
 builder.Services.AddCoppAddresdApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddWhatsApp(builder.Configuration, migrationsOnly: args.Contains("--migrate"));
-if (WhatsAppOptions.FromEnvironment().Enabled)
-{
-    builder.Services.AddScoped<CoppAddresd.Application.Features.Patients.IPatientChannelQuery,
-        CoppAddresd.Infrastructure.Repositories.PatientChannelQuery>();
-    builder.Services.AddScoped<CoppAddresd.Application.Features.Patients.IPatientBindingQuery,
-        CoppAddresd.Infrastructure.Repositories.PatientBindingQuery>();
-    builder.Services.AddScoped<CoppAddresd.Application.Features.ProgramProgress.Queries.IProgramAccompanimentQuery,
-        CoppAddresd.Infrastructure.Repositories.ProgramAccompanimentQuery>();
-}
+
+// Las tres consultas EF se registran SIEMPRE: los handlers MediatR que las
+// consumen (FindActivePatientForBindingQueryHandler, FindActivePatientByPhoneQueryHandler)
+// se registran incondicionalmente con AddCoppAddresdApplicationServices, y la
+// validación del grafo DI falla al arrancar si falta la dependencia. El flag
+// de entorno WHATSAPP_ENABLED gobierna el COMPORTAMIENTO del canal (flow,
+// schedulers, envío), no la disponibilidad de las consultas de solo lectura.
+builder.Services.AddScoped<
+    CoppAddresd.Application.Features.Patients.IPatientChannelQuery,
+    CoppAddresd.Infrastructure.Repositories.PatientChannelQuery
+>();
+builder.Services.AddScoped<
+    CoppAddresd.Application.Features.Patients.IPatientBindingQuery,
+    CoppAddresd.Infrastructure.Repositories.PatientBindingQuery
+>();
+builder.Services.AddScoped<
+    CoppAddresd.Application.Features.ProgramProgress.Queries.IProgramAccompanimentQuery,
+    CoppAddresd.Infrastructure.Repositories.ProgramAccompanimentQuery
+>();
 builder.Services.ConfigureCors(builder.Configuration);
 builder.Services.ConfigureJwtAuthentication(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
+
 // Solo el enlace público de ubicación tiene este límite; el protocolo SOS
 // autenticado conserva sus cuotas y su ruta de activación existentes.
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("assessment-analysis", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-        _ => new FixedWindowRateLimiterOptions { PermitLimit = 3, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
-    options.AddPolicy("sos-location-links", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-        _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 30,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0,
-            AutoReplenishment = true,
-        }));
+    options.AddPolicy(
+        "assessment-analysis",
+        context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? context.Connection.RemoteIpAddress?.ToString()
+                    ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 3,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                    AutoReplenishment = true,
+                }
+            )
+    );
+    options.AddPolicy(
+        "sos-location-links",
+        context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 30,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                    AutoReplenishment = true,
+                }
+            )
+    );
 });
 
 // Handler de propagación de correlation ID: AddHttpMessageHandler<T> resuelve
