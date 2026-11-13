@@ -20,7 +20,7 @@ public sealed class ReplaceWeekdayTasksCommandHandler(
         var tasks = ProgramProgressTemplateMapper.ToEntities(request.Tasks);
 
         var replaced = await repository.ReplaceWeekdayTasksAsync(
-            request.TemplateId, tasks, request.ActorId, ct);
+            request.TemplateId, tasks, request.ActorId, ct, request.WeekNumber);
 
         logger.LogInformation(
             "Program.ReplaceWeekdayTasks: template={TemplateId} filas={Count}",

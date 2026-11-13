@@ -916,23 +916,16 @@ public sealed class ProgramController(
     [HttpGet("templates/{id:guid}/weekday-tasks")]
     [RequireContextPermission(PermissionCodes.ProgramProfile360View)]
     public async Task<ActionResult<IReadOnlyList<WeeklyDayTemplateDto>>> GetWeekdayTasks(
-        Guid id,
-        CancellationToken ct
-    )
-    {
-        var template = await mediator.Send(new GetTemplateQuery(id), ct);
-        return Ok(template.Days);
-    }
+        Guid id, CancellationToken ct, [FromQuery] int? weekNumber = null
+    ) => Ok(await mediator.Send(new CoppAddresd.Application.Features.ProgramProgress.Queries.GetWeekdayTasks.GetWeekdayTasksQuery(id, weekNumber), ct));
 
-    /// <summary>Reemplazo en bloque del horario semanal (SPEC §7.6).</summary>
+    /// <summary>Reemplaza solo el ámbito genérico o la semana indicada.</summary>
     [HttpPut("templates/{id:guid}/weekday-tasks")]
     [RequireContextPermission("Program.Edit")]
     public async Task<ActionResult<IReadOnlyList<WeeklyDayTemplateDto>>> ReplaceWeekdayTasks(
-        Guid id,
-        [FromBody] IReadOnlyList<WeeklyDayTemplateRequest> tasks,
-        CancellationToken ct
-    ) =>
-        Ok(await mediator.Send(new ReplaceWeekdayTasksCommand(id, tasks, actorContext.UserId), ct));
+        Guid id, [FromBody] IReadOnlyList<WeeklyDayTemplateRequest> tasks,
+        CancellationToken ct, [FromQuery] int? weekNumber = null
+    ) => Ok(await mediator.Send(new ReplaceWeekdayTasksCommand(id, tasks, actorContext.UserId, weekNumber), ct));
 
     // ===================== CLÍNICO/ERP: adaptaciones =====================
 

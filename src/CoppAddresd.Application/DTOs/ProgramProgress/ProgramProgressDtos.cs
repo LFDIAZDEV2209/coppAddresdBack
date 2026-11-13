@@ -492,12 +492,13 @@ public sealed record WeeklyDayTemplateDto(
     int Points,
     int SortOrder,
     Guid? MediaId,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    int? WeekNumber = null
 )
 {
     public static WeeklyDayTemplateDto FromEntity(
         Domain.Entities.ProgramProgress.WeeklyDayTemplate d
-    ) => new(d.Id, d.Weekday, d.TaskCode, d.Points, d.SortOrder, d.MediaId, d.CreatedAt);
+    ) => new(d.Id, d.Weekday, d.TaskCode, d.Points, d.SortOrder, d.MediaId, d.CreatedAt, d.WeekNumber);
 }
 
 /// <summary>

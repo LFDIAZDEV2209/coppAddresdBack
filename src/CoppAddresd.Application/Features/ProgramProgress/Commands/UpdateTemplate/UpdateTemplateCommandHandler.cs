@@ -31,7 +31,7 @@ public sealed class UpdateTemplateCommandHandler(
 
         var days = request.Days is { Count: > 0 }
             ? ProgramProgressTemplateMapper.ToEntities(request.Days)
-            : existing.DayTemplates.ToList();
+            : existing.DayTemplates.Where(d => d.WeekNumber == null).ToList();
         var updated = await repository.UpsertTemplateAsync(existing, days, request.ActorId, ct);
 
         var dto = await repository.GetTemplateAsync(updated.Id, ct)

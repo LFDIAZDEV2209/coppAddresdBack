@@ -430,7 +430,8 @@ internal sealed class FakeProgramRepository : IProgramRepository
         CancellationToken ct = default
     )
     {
-        template.DayTemplates = dayTemplates.ToList();
+        var specific = template.DayTemplates.Where(d => d.WeekNumber.HasValue).ToList();
+        template.DayTemplates = specific.Concat(dayTemplates).ToList();
         Templates[template.Id] = template;
         return Task.FromResult(template);
     }
@@ -439,7 +440,8 @@ internal sealed class FakeProgramRepository : IProgramRepository
         Guid templateId,
         IReadOnlyList<WeeklyDayTemplate> tasks,
         Guid? actorId = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        int? weekNumber = null
     )
     {
         if (!Templates.TryGetValue(templateId, out var template))
@@ -449,7 +451,8 @@ internal sealed class FakeProgramRepository : IProgramRepository
             );
         }
 
-        template.DayTemplates = tasks.ToList();
+        template.DayTemplates = template.DayTemplates.Where(d => d.WeekNumber != weekNumber).Concat(tasks).ToList();
+        foreach (var task in tasks) task.WeekNumber = weekNumber;
         return Task.FromResult(tasks);
     }
 

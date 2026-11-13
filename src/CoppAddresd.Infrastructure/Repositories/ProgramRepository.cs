@@ -3,6 +3,7 @@ using System.Text.Json;
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.Media;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent;
+using CoppAddresd.Application.Features.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.ReconcileStreaks;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ActivityLog;
 using CoppAddresd.Application.Features.ProgramProgress.DTOs.ClinicalXp;
@@ -2832,7 +2833,8 @@ public sealed partial class ProgramRepository(
                     existing.UpdatedBy = actorId;
                     existing.UpdatedAt = now;
 
-                    dbContext.WeeklyDayTemplates.RemoveRange(existing.DayTemplates);
+                    // El editor anterior solo reemplaza genéricas; conserva las semanas específicas.
+                    dbContext.WeeklyDayTemplates.RemoveRange(existing.DayTemplates.Where(d => d.WeekNumber == null));
                     AddDayTemplates(existing.Id, dayTemplates, actorId);
                 }
 
@@ -2859,7 +2861,8 @@ public sealed partial class ProgramRepository(
         Guid templateId,
         IReadOnlyList<WeeklyDayTemplate> tasks,
         Guid? actorId = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        int? weekNumber = null
     )
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
@@ -2868,19 +2871,27 @@ public sealed partial class ProgramRepository(
             await using var transaction = await dbContext.Database.BeginTransactionAsync(ct);
             try
             {
-                var exists = await dbContext
+                var template = await dbContext
                     .ProgramTemplates.AsNoTracking()
-                    .AnyAsync(t => t.Id == templateId, ct);
-                if (!exists)
+                    .FirstOrDefaultAsync(t => t.Id == templateId, ct);
+                if (template is null)
                 {
                     throw new NotFoundException($"Plantilla {templateId} no encontrada.");
                 }
 
+                ProgramTemplateWeekRules.ValidateWeek(template.TotalWeeks, weekNumber);
+                if (tasks.Any(t => !ProgramTemplateWeekRules.IsAllowedDay(template.TotalWeeks, weekNumber, t.Weekday)))
+                    throw new UnprocessableEntityException("PROGRAM_DAY_OUT_OF_RANGE: el día 84 no pertenece al programa de 83 días.");
+                if (tasks.GroupBy(t => (t.Weekday, t.TaskCode)).Any(g => g.Count() > 1))
+                    throw new UnprocessableEntityException("DUPLICATE_WEEKDAY_TASK: día/tarea duplicados.");
+                foreach (var task in tasks) task.WeekNumber = weekNumber;
                 await dbContext
-                    .WeeklyDayTemplates.Where(d => d.TemplateId == templateId)
+                    .WeeklyDayTemplates.Where(d => d.TemplateId == templateId && d.WeekNumber == weekNumber)
                     .ExecuteDeleteAsync(ct);
 
                 AddDayTemplates(templateId, tasks, actorId);
+                await dbContext.ProgramTemplates.Where(t => t.Id == templateId)
+                    .ExecuteUpdateAsync(s => s.SetProperty(t => t.UpdatedAt, DateTime.UtcNow).SetProperty(t => t.UpdatedBy, actorId), ct);
                 await dbContext.SaveChangesAsync(ct);
                 await transaction.CommitAsync(ct);
                 return tasks;
@@ -3995,7 +4006,9 @@ public sealed partial class ProgramRepository(
             .Where(d => d.TemplateId == templateId && (d.WeekNumber == null || d.WeekNumber == weekNumber))
             .ToListAsync(ct);
         // La específica sustituye a la genérica por día/tarea, sin duplicar misiones.
-        return days.GroupBy(d => (d.Weekday, d.TaskCode))
+        var totalWeeks = await dbContext.ProgramTemplates.Where(t => t.Id == templateId).Select(t => t.TotalWeeks).SingleAsync(ct);
+        return days.Where(d => ProgramTemplateWeekRules.IsAllowedDay(totalWeeks, weekNumber, d.Weekday))
+            .GroupBy(d => (d.Weekday, d.TaskCode))
             .Select(g => g.OrderByDescending(d => d.WeekNumber.HasValue).First())
             .OrderBy(d => d.Weekday).ThenBy(d => d.SortOrder).ToList();
     }

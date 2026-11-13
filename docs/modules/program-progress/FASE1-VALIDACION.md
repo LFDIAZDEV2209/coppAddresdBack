@@ -59,3 +59,16 @@ Simulación local en conexión de solo lectura: 11.788 semanas; 3.326 excluidas,
 PostgreSQL efímero: simulación, clasificación por versión/específica, prudencia
 ante ambigüedad, idempotencia y reversa exacta/protegida contra edición posterior.
 Validación: build Release; integración 1/1; ProgramProgress 570 pasan, 97 omitidas.
+
+## 1.7 — API de tareas por semana
+
+GET/PUT `templates/{id}/weekday-tasks?weekNumber=N`. Omitido: ámbito genérico
+compatible con clientes anteriores. GET semanal combina específica > genérica;
+PUT reemplaza solo filas de la semana solicitada, sin tocar las demás ni snapshots.
+La respuesta añade `weekNumber` (null identifica respaldo genérico).
+Semana fuera de rango: 422; plantilla de 12 semanas, semana 12/día 7: 422
+`PROGRAM_DAY_OUT_OF_RANGE`; GET y materialización omiten ese día 84.
+El CRUD anterior de metadatos/genéricas conserva las específicas.
+Validación: PostgreSQL lectura/escritura aislada, persistencia entre semanas,
+rechazo sin pérdida del día 84, día 83 aceptado, rangos y editor anterior: 1/1.
+Build Release correcto; ProgramProgress 570 pasan, 97 omitidas.

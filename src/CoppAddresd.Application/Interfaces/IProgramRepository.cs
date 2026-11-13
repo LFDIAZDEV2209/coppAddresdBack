@@ -192,7 +192,8 @@ public interface IProgramRepository
         Guid templateId,
         IReadOnlyList<WeeklyDayTemplate> tasks,
         Guid? actorId = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        int? weekNumber = null
     );
 
     /// <summary>Reemplazo en bloque del TasksSnapshot de una semana específica en la inscripción del paciente.</summary>

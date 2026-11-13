@@ -14,13 +14,15 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Commands.ReplaceWeekd
 public sealed record ReplaceWeekdayTasksCommand(
     Guid TemplateId,
     IReadOnlyList<WeeklyDayTemplateRequest> Tasks,
-    Guid? ActorId = null) : IRequest<IReadOnlyList<WeeklyDayTemplateDto>>;
+    Guid? ActorId = null, int? WeekNumber = null) : IRequest<IReadOnlyList<WeeklyDayTemplateDto>>;
 
 /// <summary>Validación de input de <see cref="ReplaceWeekdayTasksCommand"/> (T-11).</summary>
 public sealed class ReplaceWeekdayTasksCommandValidator : AbstractValidator<ReplaceWeekdayTasksCommand>
 {
     public ReplaceWeekdayTasksCommandValidator()
     {
+        RuleFor(x => x.WeekNumber).GreaterThan(0).When(x => x.WeekNumber.HasValue);
+
         RuleFor(x => x.TemplateId)
             .NotEmpty()
             .WithMessage("El templateId es requerido.");
