@@ -70,6 +70,14 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
             query = query.Where(m => m.Status == request.Status.Value);
         }
 
+        if (request.SourceKind is not null)
+            query = query.Where(m => m.SourceKind == request.SourceKind);
+        if (request.Tags is { Count: > 0 })
+        {
+            var requiredTags = System.Text.Json.JsonSerializer.Serialize(request.Tags);
+            query = query.Where(m => EF.Functions.JsonContains(m.Tags, requiredTags));
+        }
+
         if (request.IncludedIds is not null)
         {
             // Lista vacía = "assigned sin referencias" → resultado vacío legítimo.
@@ -238,18 +246,18 @@ public sealed class MediaItemRepository(AppDbContext dbContext) : IMediaItemRepo
     {
         var rows = await dbContext
             .MediaItems.AsNoTracking()
-            .Select(m => new { m.StorageKey, m.ThumbnailKey })
+            .Select(m => new { m.StorageKey, m.ThumbnailKey, m.SourceKind })
             .ToListAsync(ct);
 
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var row in rows)
         {
-            if (!string.IsNullOrWhiteSpace(row.StorageKey))
+            if (row.SourceKind == "file" && !string.IsNullOrWhiteSpace(row.StorageKey))
             {
                 keys.Add(row.StorageKey);
             }
 
-            if (!string.IsNullOrWhiteSpace(row.ThumbnailKey))
+            if (!string.IsNullOrWhiteSpace(row.ThumbnailKey) && !Uri.TryCreate(row.ThumbnailKey, UriKind.Absolute, out _))
             {
                 keys.Add(row.ThumbnailKey);
             }

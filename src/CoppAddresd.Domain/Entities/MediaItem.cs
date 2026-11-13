@@ -16,6 +16,15 @@ public sealed class MediaItem
 
     public string? Description { get; set; }
 
+    /// <summary>Etiquetas normalizadas para filtrar la biblioteca.</summary>
+    public List<string> Tags { get; set; } = [];
+
+    /// <summary>Origen: file (compatible con archivos actuales) o external.</summary>
+    public string SourceKind { get; set; } = "file";
+
+    /// <summary>Enlace HTTPS del video del proveedor, sin descarga al storage.</summary>
+    public string? ExternalUrl { get; set; }
+
     /// <summary>Autor/a del contenido, nombre visible en la lección.</summary>
     public string Author { get; set; } = default!;
 

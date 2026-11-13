@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using CoppAddresd.Domain.Enums;
 
 namespace CoppAddresd.Application.Features.Media;
@@ -16,7 +17,7 @@ public record CreateMediaItemRequest(
     string Author,
     MediaType MediaType,
     MediaCategory Category,
-    string StorageKey,
+    string? StorageKey,
     string? ThumbnailKey,
     string? ContentType,
     long? FileSizeBytes,
@@ -26,7 +27,13 @@ public record CreateMediaItemRequest(
     int Day,
     int Month,
     IReadOnlyList<CoppAddresd.Domain.Entities.MediaChapterDto>? Chapters = null,
-    IReadOnlyList<string>? Takeaways = null);
+    IReadOnlyList<string>? Takeaways = null,
+    IReadOnlyList<string>? Tags = null,
+    [property: JsonPropertyName("source_kind")] string SourceKind = "file",
+    string? Provider = null,
+    [property: JsonPropertyName("external_url")] string? ExternalUrl = null,
+    string? ThumbnailUrl = null,
+    int? DurationSeconds = null);
 
 /// <summary>Payload de actualización de un medio desde el ERP.</summary>
 public record UpdateMediaItemRequest(
@@ -35,7 +42,7 @@ public record UpdateMediaItemRequest(
     string Author,
     MediaType MediaType,
     MediaCategory Category,
-    string StorageKey,
+    string? StorageKey,
     string? ThumbnailKey,
     string? ContentType,
     long? FileSizeBytes,
@@ -45,7 +52,13 @@ public record UpdateMediaItemRequest(
     int Day,
     int Month,
     IReadOnlyList<CoppAddresd.Domain.Entities.MediaChapterDto>? Chapters = null,
-    IReadOnlyList<string>? Takeaways = null);
+    IReadOnlyList<string>? Takeaways = null,
+    IReadOnlyList<string>? Tags = null,
+    [property: JsonPropertyName("source_kind")] string SourceKind = "file",
+    string? Provider = null,
+    [property: JsonPropertyName("external_url")] string? ExternalUrl = null,
+    string? ThumbnailUrl = null,
+    int? DurationSeconds = null);
 
 /// <summary>Representación de un medio para la API.</summary>
 public record MediaItemDto(
@@ -69,8 +82,14 @@ public record MediaItemDto(
     DateTimeOffset? UpdatedAt,
     Guid? CreatedBy,
     IReadOnlyList<CoppAddresd.Domain.Entities.MediaChapterDto> Chapters,
-    IReadOnlyList<string> Takeaways)
+    IReadOnlyList<string> Takeaways,
+    IReadOnlyList<string>? Tags = null,
+    [property: JsonPropertyName("source_kind")] string SourceKind = "file",
+    [property: JsonPropertyName("external_url")] string? ExternalUrl = null)
 {
+    public string? Provider => ExternalMediaRules.ProviderFor(ExternalUrl);
+    public string? ThumbnailUrl => ExternalMediaRules.IsHttpsUrl(ThumbnailKey) ? ThumbnailKey : null;
+    public int? DurationSeconds => DurationSecs;
     public static MediaItemDto FromEntity(CoppAddresd.Domain.Entities.MediaItem entity) => new(
         entity.Id,
         entity.Title,
@@ -92,5 +111,5 @@ public record MediaItemDto(
         entity.UpdatedAt,
         entity.CreatedBy,
         entity.Chapters ?? [],
-        entity.Takeaways ?? []);
+        entity.Takeaways ?? [], entity.Tags, entity.SourceKind, entity.ExternalUrl);
 }

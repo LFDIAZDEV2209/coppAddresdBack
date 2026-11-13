@@ -14,7 +14,7 @@ public record UpdateMediaItemCommand(
     string Author,
     MediaType MediaType,
     MediaCategory Category,
-    string StorageKey,
+    string? StorageKey,
     string? ThumbnailKey,
     string? ContentType,
     long? FileSizeBytes,
@@ -25,7 +25,11 @@ public record UpdateMediaItemCommand(
     int Month,
     Guid? UpdatedBy = null,
     IReadOnlyList<MediaChapterDto>? Chapters = null,
-    IReadOnlyList<string>? Takeaways = null)
+    IReadOnlyList<string>? Takeaways = null,
+    IReadOnlyList<string>? Tags = null,
+    string SourceKind = "file",
+    string? Provider = null,
+    string? ExternalUrl = null)
     : IRequest<MediaItemDto?>;
 
 public sealed class UpdateMediaItemCommandHandler(
@@ -39,6 +43,9 @@ public sealed class UpdateMediaItemCommandHandler(
         if (entity is null)
             return null;
 
+        var storageKey = ExternalMediaRules.StorageKey(request.SourceKind, request.Provider, request.ExternalUrl, request.MediaType, request.StorageKey);
+        var tags = ExternalMediaRules.NormalizeTags(request.Tags).ToList();
+        var oldSourceKind = entity.SourceKind;
         var oldStorageKey = entity.StorageKey;
         var oldThumbnailKey = entity.ThumbnailKey;
 
@@ -47,7 +54,10 @@ public sealed class UpdateMediaItemCommandHandler(
         entity.Author = request.Author;
         entity.MediaType = request.MediaType;
         entity.Category = request.Category;
-        entity.StorageKey = request.StorageKey;
+        entity.StorageKey = storageKey;
+        entity.SourceKind = ExternalMediaRules.NormalizeSource(request.SourceKind);
+        entity.ExternalUrl = entity.SourceKind == "external" ? request.ExternalUrl?.Trim() : null;
+        if (request.Tags is not null) entity.Tags = tags;
         entity.ThumbnailKey = request.ThumbnailKey;
         entity.ContentType = request.ContentType;
         entity.FileSizeBytes = request.FileSizeBytes;
@@ -76,7 +86,7 @@ public sealed class UpdateMediaItemCommandHandler(
         // PUT) antes de este update; acá solo se limpia el objeto viejo si la
         // clave cambió (reemplazo de archivo/miniatura). Un fallo de limpieza
         // no aborta la operación: el huérfano es basura acumulable, no pérdida.
-        await DeleteIfChangedAsync(oldStorageKey, request.StorageKey, ct);
+        if (oldSourceKind == "file") await DeleteIfChangedAsync(oldStorageKey, storageKey, ct);
         await DeleteIfChangedAsync(oldThumbnailKey, request.ThumbnailKey, ct);
 
         logger.LogInformation("MediaItem updated: {Id} ({Title})", entity.Id, entity.Title);
@@ -85,7 +95,7 @@ public sealed class UpdateMediaItemCommandHandler(
 
     private async Task DeleteIfChangedAsync(string? oldKey, string? newKey, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(oldKey) || string.Equals(oldKey, newKey, StringComparison.Ordinal))
+        if (string.IsNullOrWhiteSpace(oldKey) || Uri.TryCreate(oldKey, UriKind.Absolute, out _) || string.Equals(oldKey, newKey, StringComparison.Ordinal))
             return;
 
         try

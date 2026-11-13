@@ -74,13 +74,14 @@ public sealed class DeleteMediaItemCommandHandler(
         //    fila ya no existe y el recolector de huérfanos purgará el resto.
         try
         {
-            var keys = new List<string> { entity.StorageKey };
-            if (!string.IsNullOrWhiteSpace(entity.ThumbnailKey))
+            var keys = new List<string>();
+            if (entity.SourceKind == "file") keys.Add(entity.StorageKey);
+            if (!string.IsNullOrWhiteSpace(entity.ThumbnailKey) && !Uri.TryCreate(entity.ThumbnailKey, UriKind.Absolute, out _))
             {
                 keys.Add(entity.ThumbnailKey!);
             }
 
-            await objectStorage.DeleteObjectsAsync(keys, ct);
+            if (keys.Count > 0) await objectStorage.DeleteObjectsAsync(keys, ct);
         }
         catch (Exception ex)
         {

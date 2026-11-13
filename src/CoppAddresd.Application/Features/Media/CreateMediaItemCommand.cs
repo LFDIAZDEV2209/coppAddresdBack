@@ -13,7 +13,7 @@ public record CreateMediaItemCommand(
     string Author,
     MediaType MediaType,
     MediaCategory Category,
-    string StorageKey,
+    string? StorageKey,
     string? ThumbnailKey,
     string? ContentType,
     long? FileSizeBytes,
@@ -24,7 +24,11 @@ public record CreateMediaItemCommand(
     int Month,
     Guid? CreatedBy = null,
     IReadOnlyList<MediaChapterDto>? Chapters = null,
-    IReadOnlyList<string>? Takeaways = null)
+    IReadOnlyList<string>? Takeaways = null,
+    IReadOnlyList<string>? Tags = null,
+    string SourceKind = "file",
+    string? Provider = null,
+    string? ExternalUrl = null)
     : IRequest<MediaItemDto>;
 
 public sealed class CreateMediaItemCommandHandler(
@@ -33,13 +37,18 @@ public sealed class CreateMediaItemCommandHandler(
 {
     public async Task<MediaItemDto> Handle(CreateMediaItemCommand request, CancellationToken ct)
     {
+        var storageKey = ExternalMediaRules.StorageKey(request.SourceKind, request.Provider, request.ExternalUrl, request.MediaType, request.StorageKey);
+        var tags = ExternalMediaRules.NormalizeTags(request.Tags).ToList();
         var now = DateTimeOffset.UtcNow;
 
         // Upsert por storageKey: si la subida ya se registró (retry), se actualiza
         // en vez de duplicar. Esto hace el POST idempotente.
-        var existing = await repository.GetByStorageKeyAsync(request.StorageKey, ct);
+        var existing = await repository.GetByStorageKeyAsync(storageKey, ct);
         if (existing is not null)
         {
+            existing.SourceKind = ExternalMediaRules.NormalizeSource(request.SourceKind);
+            existing.ExternalUrl = existing.SourceKind == "external" ? request.ExternalUrl?.Trim() : null;
+            if (request.Tags is not null) existing.Tags = tags;
             existing.Title = request.Title;
             existing.Description = request.Description;
             existing.Author = request.Author;
@@ -74,7 +83,10 @@ public sealed class CreateMediaItemCommandHandler(
             Author = request.Author,
             MediaType = request.MediaType,
             Category = request.Category,
-            StorageKey = request.StorageKey,
+            StorageKey = storageKey,
+            Tags = tags,
+            SourceKind = ExternalMediaRules.NormalizeSource(request.SourceKind),
+            ExternalUrl = ExternalMediaRules.NormalizeSource(request.SourceKind) == "external" ? request.ExternalUrl?.Trim() : null,
             ThumbnailKey = request.ThumbnailKey,
             ContentType = request.ContentType,
             FileSizeBytes = request.FileSizeBytes,

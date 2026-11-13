@@ -20,6 +20,17 @@ public sealed class MediaItemConfiguration : IEntityTypeConfiguration<MediaItem>
     {
         builder.ToTable("media_items", "app");
 
+        builder.Property(x => x.SourceKind).HasColumnName("source_kind").HasMaxLength(16).HasDefaultValue("file");
+        builder.Property(x => x.ExternalUrl).HasColumnName("external_url").HasMaxLength(2048);
+        builder.Property(x => x.Tags).HasColumnName("tags").HasColumnType("jsonb")
+            .HasConversion(v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+            .HasDefaultValueSql("'[]'::jsonb")
+            .Metadata.SetValueComparer(new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<List<string>>(
+                (a, b) => a != null && b != null && a.SequenceEqual(b),
+                a => a.Aggregate(0, (hash, value) => HashCode.Combine(hash, value.GetHashCode())),
+                a => a.ToList()));
+
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id)
             .HasColumnName("id")

@@ -47,7 +47,9 @@ public class MediaController(
         [FromQuery] string? usage = null,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortDirection = null,
-        CancellationToken ct = default
+        CancellationToken ct = default,
+        [FromQuery(Name = "source_kind")] string? sourceKind = null,
+        [FromQuery] string[]? tags = null
     )
     {
         var result = await mediator.Send(
@@ -60,7 +62,7 @@ public class MediaController(
                 status,
                 usage,
                 sortBy,
-                sortDirection
+                sortDirection, sourceKind, tags
             ),
             ct
         );
@@ -92,17 +94,17 @@ public class MediaController(
             request.MediaType,
             request.Category,
             request.StorageKey,
-            request.ThumbnailKey,
+            ExternalMediaRules.ResolveThumbnail(request.ThumbnailKey, request.ThumbnailUrl),
             request.ContentType,
             request.FileSizeBytes,
-            request.DurationSecs,
+            request.DurationSeconds ?? request.DurationSecs,
             request.Status,
             request.SortOrder,
             request.Day,
             request.Month,
             CurrentUserId(),
             request.Chapters,
-            request.Takeaways
+            request.Takeaways, request.Tags, request.SourceKind, request.Provider, request.ExternalUrl
         );
 
         var item = await mediator.Send(command, ct);
@@ -195,17 +197,17 @@ public class MediaController(
             request.MediaType,
             request.Category,
             request.StorageKey,
-            request.ThumbnailKey,
+            ExternalMediaRules.ResolveThumbnail(request.ThumbnailKey, request.ThumbnailUrl),
             request.ContentType,
             request.FileSizeBytes,
-            request.DurationSecs,
+            request.DurationSeconds ?? request.DurationSecs,
             request.Status,
             request.SortOrder,
             request.Day,
             request.Month,
             CurrentUserId(),
             request.Chapters,
-            request.Takeaways
+            request.Takeaways, request.Tags, request.SourceKind, request.Provider, request.ExternalUrl
         );
 
         var updated = await mediator.Send(command, ct);

@@ -72,3 +72,48 @@ El CRUD anterior de metadatos/genéricas conserva las específicas.
 Validación: PostgreSQL lectura/escritura aislada, persistencia entre semanas,
 rechazo sin pérdida del día 84, día 83 aceptado, rangos y editor anterior: 1/1.
 Build Release correcto; ProgramProgress 570 pasan, 97 omitidas.
+
+## Contraste final de ProgramRepository con PostgreSQL
+
+Al activar COP_TEST_DB_CONNECTION, la clase ProgramRepositoryTests ejecuta 63
+casos: 54 pasan y 9 fallan. Repetidos en worktree limpio de a9fd51f: mismos
+54/9 y exactamente los mismos nueve nombres (sin casos nuevos fallidos).
+Los fallos de base corresponden a tres paridades de racha, hito 14, recentVitals,
+tres limpiezas de DAY_BONUS con FK RESTRICT y una aserción antigua que presupone
+que la última migración sea AddStructuredEmotionalAssessment. No se modificaron
+estas pruebas ni reglas de XP fuera del alcance.
+
+Casos reproducidos en base y rama:
+- `BonusDayBonus_BaseXpNula_Fallback50`.
+- `BonusDayBonus_Multiplicador2_MaxUsaBaseYGrantReflejaMultiplicador`.
+- `BonusDayBonus_ReglaBase75_SnapshotYCompletacionSiguenLaRegla`.
+- `GetSnapshot_RecentVitals_PobladoTrasVitals`.
+- `Racha_Hito14_OtorgaStreak14UnaVezYNoActivaMultiplicador`.
+- `Racha_Parity_DobleQuiebre_ParidadEnCadaPaso`.
+- `Racha_Parity_JobZeroeado_SinRescate_ReiniciaEn1`.
+- `Racha_Parity_MismoDia_Idempotente_SinDeriva`.
+- `TareaEmocional_MigracionReversible_ConservaRegistrosAnteriores`.
+
+## 1.8 — Medios externos y filtros
+
+Migración aditiva `AddMediaSourceAndTags`; actuales `file`/`[]`, enlace nullable,
+GIN concurrente, checks y Down protegido/comentado. PostgreSQL Up/Down/Up con
+10.000 filas y EXPLAIN ANALYZE del GIN aprobados. No se migró la BD local.
+GET media filtra origen/etiquetas en SQL antes de conteo/paginación; se probó la
+combinación con tipo/categoría/estado, páginas distintas y etiquetas múltiples.
+URLs HTTPS de YouTube/Vimeo verificadas por proveedor; contrato externo, portada
+y duración opcionales. Crear/actualizar/publicar/eliminar externos no requiere blob.
+Validación específica: 128 unitarios de medios y 2 PostgreSQL, sin fallos.
+
+## Validación conjunta al cerrar 1.1–1.8
+
+- `dotnet build -c Release`: correcto; Debug estaba ocupado por servicios existentes.
+- Unitarios del proyecto: 2.393 aprobados, 105 omitidos sin conexión de pruebas.
+- Integración PostgreSQL de `NutritionPlanWorkflowTests` (incluye toda la Fase 1):
+  **59/59**, sin omisiones, cada caso en BD efímera con migraciones reales.
+- ProgramRepository PostgreSQL: 54/63; los mismos 9 fallan en base `a9fd51f`.
+  Contraste exacto de nombres arriba; ninguna modificación fuera de alcance.
+- `git diff --check`: correcto. Sin push, pull de dev, rebase ni despliegue.
+- La integración coordinada debe conservar el ORDER BY de `392439a`; no se tocó.
+- Nota de Luis sobre pacientes/plantillas afectados para 1.12 registrada en
+  `docs/modules/media/README.md`; todavía no se implementa 1.12.

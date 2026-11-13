@@ -7,6 +7,10 @@ public sealed class CreateMediaItemCommandValidator : AbstractValidator<CreateMe
 {
     public CreateMediaItemCommandValidator()
     {
+        RuleFor(x => x).Must(x => ExternalMediaRules.IsValid(x.SourceKind, x.Provider, x.ExternalUrl, x.MediaType))
+            .WithMessage("Origen, proveedor o URL de video inválidos; se admiten enlaces HTTPS de YouTube y Vimeo.");
+        RuleFor(x => x.Tags).Must(ExternalMediaRules.ValidTags).WithMessage("Máximo 32 etiquetas, de 1 a 64 caracteres.");
+
         RuleFor(x => x.Title).NotEmpty().WithMessage("El título es requerido.").MaximumLength(200);
 
         RuleFor(x => x.Description).MaximumLength(2000);
@@ -18,7 +22,8 @@ public sealed class CreateMediaItemCommandValidator : AbstractValidator<CreateMe
         RuleFor(x => x.StorageKey)
             .NotEmpty()
             .WithMessage("La clave de storage (S3) es requerida.")
-            .MaximumLength(1024);
+            .MaximumLength(1024)
+            .When(x => ExternalMediaRules.NormalizeSource(x.SourceKind) == "file");
 
         RuleFor(x => x.ContentType).MaximumLength(100);
         RuleFor(x => x.ContentType)

@@ -32,7 +32,8 @@ public sealed record MediaPublishValidationDto(
     bool StorageKeyVerified,
     long? FileSizeBytes,
     int? DurationSecs,
-    bool ThumbnailVerified
+    bool ThumbnailVerified,
+    bool ExternalUrlVerified = false
 );
 
 /// <summary>
@@ -101,6 +102,24 @@ public sealed class PublishMediaItemCommandHandler(
         var entity =
             await repository.GetByIdAsync(request.Id, ct)
             ?? throw new NotFoundException($"Medio {request.Id} no encontrado.");
+
+        if (entity.SourceKind == "external")
+        {
+            // Se publica el enlace validado. No se descarga ni se verifica un blob ficticio.
+            ExternalMediaRules.StorageKey(entity.SourceKind, ExternalMediaRules.ProviderFor(entity.ExternalUrl), entity.ExternalUrl, entity.MediaType, null);
+            if (entity.DurationSecs is <= 0)
+                throw new UnprocessableEntityException("La duración debe ser mayor a cero cuando se informa.");
+            if (entity.Status != MediaStatus.Published)
+            {
+                entity.Status = MediaStatus.Published;
+                entity.PublishedAt = DateTimeOffset.UtcNow;
+            }
+            entity.UpdatedAt = DateTimeOffset.UtcNow;
+            await repository.UpdateAsync(entity, ct);
+            logger.LogInformation("Enlace externo publicado: {Id}", entity.Id);
+            return new(entity.Id, entity.Status, entity.PublishedAt,
+                new(false, null, entity.DurationSecs, false, ExternalUrlVerified: true));
+        }
 
         if (MediaPublishRules.IsPlaceholderStorageKey(entity.StorageKey))
         {

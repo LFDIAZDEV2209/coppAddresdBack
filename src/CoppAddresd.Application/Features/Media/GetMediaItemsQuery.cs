@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Entities;
 using CoppAddresd.Domain.Enums;
@@ -33,7 +34,9 @@ public record GetMediaItemsQuery(
     MediaStatus? Status = null,
     string? Usage = null,
     string? SortBy = null,
-    string? SortDirection = null
+    string? SortDirection = null,
+    string? SourceKind = null,
+    IReadOnlyList<string>? Tags = null
 ) : IRequest<PagedMediaItemsResult>;
 
 /// <summary>
@@ -51,7 +54,9 @@ public sealed record MediaItemsPageRequest(
     IReadOnlyCollection<Guid>? IncludedIds = null,
     IReadOnlyCollection<Guid>? ExcludedIds = null,
     string? SortBy = null,
-    string? SortDirection = null
+    string? SortDirection = null,
+    string? SourceKind = null,
+    IReadOnlyList<string>? Tags = null
 );
 
 /// <summary>
@@ -86,9 +91,16 @@ public record MediaItemSummaryDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     Guid? CreatedBy,
-    int UsageCount
+    int UsageCount,
+    IReadOnlyList<string>? Tags = null,
+    [property: JsonPropertyName("source_kind")] string SourceKind = "file",
+    [property: JsonPropertyName("external_url")] string? ExternalUrl = null
 )
 {
+    public string? Provider => ExternalMediaRules.ProviderFor(ExternalUrl);
+    public string? ThumbnailUrl => ExternalMediaRules.IsHttpsUrl(ThumbnailKey) ? ThumbnailKey : null;
+    public int? DurationSeconds => DurationSecs;
+
     public static MediaItemSummaryDto FromEntity(MediaItem entity, int usageCount) =>
         new(
             entity.Id,
@@ -110,7 +122,7 @@ public record MediaItemSummaryDto(
             entity.CreatedAt,
             entity.UpdatedAt,
             entity.CreatedBy,
-            usageCount
+            usageCount, entity.Tags, entity.SourceKind, entity.ExternalUrl
         );
 }
 
@@ -131,6 +143,10 @@ public sealed class GetMediaItemsQueryHandler(IMediaItemRepository repository)
         CancellationToken ct
     )
     {
+        var source = request.SourceKind is null ? null : ExternalMediaRules.NormalizeSource(request.SourceKind);
+        if (source is not null && source is not ("file" or "external"))
+            throw new CoppAddresd.Domain.Exceptions.UnprocessableEntityException("source_kind debe ser file o external.");
+        var tags = ExternalMediaRules.NormalizeTags(request.Tags);
         var page = Math.Max(1, request.Page);
         var pageSize = Math.Clamp(request.PageSize <= 0 ? 20 : request.PageSize, 1, 100);
 
@@ -162,7 +178,7 @@ public sealed class GetMediaItemsQueryHandler(IMediaItemRepository repository)
                 IncludedIds: includedIds,
                 ExcludedIds: excludedIds,
                 SortBy: request.SortBy,
-                SortDirection: request.SortDirection
+                SortDirection: request.SortDirection, SourceKind: source, Tags: tags
             ),
             ct
         );

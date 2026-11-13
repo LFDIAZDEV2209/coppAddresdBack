@@ -249,3 +249,13 @@ Volumen local: 84 filas; validación PostgreSQL con 10.000 filas adicionales.
 Reversa protegida: exportar/retirar las específicas; nunca se descartan automáticamente.
 Un CONCURRENTLY interrumpido puede dejar índice inválido: comprobar `pg_index.indisvalid`,
 retirar solo el inválido y reintentar durante la ventana de mantenimiento.
+
+## Biblioteca de medios — Fase 1.8
+
+`ix_media_items_tags`: GIN (`tags jsonb_path_ops`) para `tags @> '["etiqueta"]'::jsonb`
+(y varias etiquetas con AND). Se aplica antes de COUNT/OFFSET/LIMIT y combina los
+filtros existentes. Creado CONCURRENTLY mediante SQL, fuera del modelo EF;
+JSONB con conversión de lista y comparador estructural para detectar ediciones.
+Coste: mantenimiento de GIN en escrituras de etiquetas. Volumen local: 55 medios.
+Prueba PostgreSQL: 10.000 medios, etiqueta poco frecuente, ANALYZE + EXPLAIN ANALYZE
+confirman uso del índice. No se añade un B-tree por origen de baja cardinalidad.
