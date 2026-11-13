@@ -1,0 +1,22 @@
+{
+  "name": "copp_sos_alert_v1",
+  "language": "es",
+  "category": "UTILITY",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Alerta SOS: {{1}} necesita tu ayuda.\n\nDirección: {{2}}\nMapa: {{3}}\nAlerta: {{4}}\n\nÚltimas lecturas registradas: {{5}}\n\nComunícate ahora para confirmar cómo se encuentra. Recibes este aviso porque eres su contacto de emergencia. Copp Adresd.",
+      "example": {
+        "body_text": [
+          [
+            "María Gómez",
+            "Calle 114, Barranquilla, Colombia",
+            "https://erp.coppadresd.com/api/v1/s/DEMO",
+            "13 nov 2026 · 15:00 UTC",
+            "Pulso: 84 lpm (Dispositivo · 13 nov 2026 · 14:58 UTC · 2 min antes de la alerta); Oxígeno: 97% (Dispositivo · 13 nov 2026 · 14:58 UTC · 2 min antes de la alerta). No disponible: Presión"
+          ]
+        ]
+      }
+    }
+  ]
+}

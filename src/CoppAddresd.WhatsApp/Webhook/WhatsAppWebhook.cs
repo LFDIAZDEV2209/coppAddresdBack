@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Interfaces;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -13,7 +14,8 @@ public sealed class WhatsAppWebhook(
     WhatsAppOptions options,
     WhatsAppQueue queue,
     TimeProvider clock,
-    ILogger<WhatsAppWebhook> logger
+    ILogger<WhatsAppWebhook> logger,
+    ISosWhatsAppStatusReceiver? sosStatuses = null
 )
 {
     public bool Verify(string? mode, string? token) =>
@@ -91,8 +93,6 @@ public sealed class WhatsAppWebhook(
                         !change.TryGetProperty("value", out var value)
                         || !value.TryGetProperty("metadata", out var metadata)
                         || !metadata.TryGetProperty("phone_number_id", out var number)
-                        || !value.TryGetProperty("messages", out var messages)
-                        || messages.ValueKind != JsonValueKind.Array
                     )
                         continue;
                     var receiver = number.GetString();
@@ -107,6 +107,19 @@ public sealed class WhatsAppWebhook(
                         );
                         continue;
                     }
+                    if (sosStatuses is not null && value.TryGetProperty("statuses", out var statuses) && statuses.ValueKind == JsonValueKind.Array)
+                        foreach (var status in statuses.EnumerateArray()) {
+                            var correlation=String(status,"biz_opaque_callback_data");
+                            var statusId=String(status,"id"); var recipient=String(status,"recipient_id");
+                            var state=String(status,"status");
+                            if(correlation is null || statusId is null || recipient is null || state is null
+                                || !long.TryParse(String(status,"timestamp"),out var seconds) || seconds<0 || seconds>253402300799) continue;
+                            string? errorCode=null;
+                            if(status.TryGetProperty("errors",out var errors) && errors.ValueKind==JsonValueKind.Array && errors.GetArrayLength()>0
+                                && errors[0].TryGetProperty("code",out var code) && code.TryGetInt32(out var n)) errorCode="meta:"+n;
+                            await sosStatuses.ReceiveAsync(correlation,statusId,recipient,state,DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime,errorCode,ct);
+                        }
+                    if(!value.TryGetProperty("messages",out var messages) || messages.ValueKind!=JsonValueKind.Array)continue;
                     foreach (var message in messages.EnumerateArray())
                     {
                         var wamid = String(message, "id");

@@ -190,6 +190,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Intervention> Interventions => Set<Intervention>();
 
     // SOS real — alertas del botón de pánico (change sos-panic-real)
+    public DbSet<SosWhatsAppDelivery> SosWhatsAppDeliveries => Set<SosWhatsAppDelivery>();
     public DbSet<SosAlert> SosAlerts => Set<SosAlert>();
     public DbSet<SosAlertRecipient> SosAlertRecipients => Set<SosAlertRecipient>();
     public DbSet<AssessmentProfileInsight> AssessmentProfileInsights => Set<AssessmentProfileInsight>();

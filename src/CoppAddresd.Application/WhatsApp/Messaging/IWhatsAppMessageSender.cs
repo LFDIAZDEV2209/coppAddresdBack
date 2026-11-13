@@ -35,6 +35,11 @@ public interface IWhatsAppMessageSender
         CancellationToken ct
     );
 
+    /// <summary>Correlación opaca para conciliar callbacks que lleguen antes del ACK HTTP.</summary>
+    Task<WhatsAppSendResult> SendTemplateWithCallbackAsync(string waId, string name, string language,
+        IReadOnlyList<string> bodyParameters, string callbackData, CancellationToken ct)
+        => SendTemplateAsync(waId, name, language, bodyParameters, ct);
+
     /// <summary>
     /// Marca el mensaje entrante como leído y activa el indicador de escritura
     /// de WhatsApp (tres puntos). Cosmético: nunca lanza, los fallos se

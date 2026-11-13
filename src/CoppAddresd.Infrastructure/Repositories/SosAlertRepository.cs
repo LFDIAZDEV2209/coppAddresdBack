@@ -15,7 +15,7 @@ namespace CoppAddresd.Infrastructure.Repositories;
 /// resolver carreras sin reintentos: idempotencia → replay/409, índice
 /// parcial de alerta activa → 409 con la existente.
 /// </summary>
-public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertRepository
+public sealed class SosAlertRepository(AppDbContext dbContext, Microsoft.Extensions.Options.IOptions<CoppAddresd.Infrastructure.Sos.SosWhatsAppSettings>? whatsApp = null) : ISosAlertRepository
 {
     private const string IdempotencyUniqueIndex = "uq_sos_alerts_patient_idempotency";
     private const string ActiveUniqueIndex = "uq_sos_alerts_patient_active";
@@ -73,6 +73,18 @@ public sealed class SosAlertRepository(AppDbContext dbContext) : ISosAlertReposi
     )
     {
         dbContext.SosAlerts.Add(alert);
+        if (whatsApp?.Value.Enabled == true)
+        {
+            var patient = await GetPatientProfileAsync(alert.PatientId, ct);
+            // Misma transacción que SOS: sin ventana entre commit y encolado WhatsApp.
+            var recipients = alert.Recipients.Count > 0 ? alert.Recipients :
+                [new SosAlertRecipient { PhoneE164 = alert.DestinationPhoneE164 }];
+            foreach (var recipient in recipients.Where(r=>r.PhoneE164!=null).DistinctBy(r=>r.PhoneE164))
+                dbContext.SosWhatsAppDeliveries.Add(new SosWhatsAppDelivery {
+                    AlertId=alert.Id, Destination=recipient.PhoneE164!, ContactOrder=recipient.ContactOrder,
+                    PatientName=CoppAddresd.Infrastructure.Services.SosMessageFormatting.FullName(patient),
+                    CreatedAt=alert.CreatedAt, NextAttemptAt=alert.CreatedAt });
+        }
         foreach (var dedupeKey in dedupeKeys)
         {
             dbContext.NotificationDedupeKeys.Add(

@@ -259,3 +259,13 @@ JSONB con conversión de lista y comparador estructural para detectar ediciones.
 Coste: mantenimiento de GIN en escrituras de etiquetas. Volumen local: 55 medios.
 Prueba PostgreSQL: 10.000 medios, etiqueta poco frecuente, ANALYZE + EXPLAIN ANALYZE
 confirman uso del índice. No se añade un B-tree por origen de baja cardinalidad.
+
+## SOS WhatsApp (KAN-66)
+
+Tabla nueva `app.sos_whatsapp_deliveries`; sin índices sobre tablas existentes.
+
+| Índice | Columnas / tipo | Consulta y motivo | Costo |
+|---|---|---|---|
+| IX_sos_whatsapp_deliveries_alert_id_destination | alert_id, destination / único B-tree | Un envío por alerta/teléfono; cubre FK y consulta de alerta | Una inserción por contacto distinto |
+| IX_sos_whatsapp_deliveries_state_next_attempt_at | state, next_attempt_at / B-tree | Worker encuentra pendientes vencidos sin recorrer historial | Se actualiza al reintentar/finalizar |
+| IX_sos_whatsapp_deliveries_lease_until | lease_until / B-tree parcial Processing | Recuperar reservas huérfanas como Unknown | Solo reservas activas |
