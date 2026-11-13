@@ -72,6 +72,16 @@ public static class PermissionCodes
     public const string WellnessView = "Wellness.View";
     public const string WellnessManage = "Wellness.Manage";
     public const string NutritionPlansApprove = "NutritionPlans.Approve";
+    // Capacidades de Bienestar separadas de dashboards y de las escrituras.
+    public const string ProgramProfile360View = "Program.Profile360View";
+    public const string ProgramAiView = "Program.AiView";
+    public const string ProgramAiManage = "Program.AiManage";
+    public const string NutritionView = "Nutrition.View";
+    public const string NutritionRecordsView = "Nutrition.RecordsView";
+    public const string NutritionPhotosView = "Nutrition.PhotosView";
+    public const string NutritionNotesView = "Nutrition.NotesView";
+    public const string NutritionNotesManage = "Nutrition.NotesManage";
+    public const string NutritionReviewManage = "Nutrition.ReviewManage";
     public const string NutritionManage = "Nutrition.Manage";
     public const string NutritionApprove = "Nutrition.Approve";
 
@@ -132,6 +142,15 @@ public static class PermissionCodes
         WellnessView,
         WellnessManage,
         NutritionPlansApprove,
+        ProgramProfile360View,
+        ProgramAiView,
+        ProgramAiManage,
+        NutritionView,
+        NutritionRecordsView,
+        NutritionPhotosView,
+        NutritionNotesView,
+        NutritionNotesManage,
+        NutritionReviewManage,
         NutritionManage,
         NutritionApprove,
         SystemAdminSettings,

@@ -114,7 +114,12 @@ public static class AdminSeeder
             logger.LogInformation("Admin role assigned to {Email}", authSettings.AdminEmail);
         }
 
-        var allPermissions = await dbContext.Permissions.ToListAsync(ct);
+        // La matriz §10.1 reserva la edición de notas internas al nutricionista.
+        // Admin conserva lectura y su excepción de alcance, no esta escritura.
+        await dbContext.RolePermissions.Where(rp => rp.RoleId == adminRole.Id
+            && rp.Permission.Code == "Nutrition.NotesManage").ExecuteDeleteAsync(ct);
+        var allPermissions = await dbContext.Permissions
+            .Where(p => p.Code != "Nutrition.NotesManage").ToListAsync(ct);
         var adminRolePermissions = await dbContext
             .RolePermissions.Where(rp => rp.RoleId == adminRole.Id)
             .Select(rp => rp.PermissionId)

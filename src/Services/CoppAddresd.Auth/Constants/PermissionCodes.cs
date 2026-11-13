@@ -130,6 +130,16 @@ public static class PermissionCodes
     public const string WellnessView = "Wellness.View";
     public const string WellnessManage = "Wellness.Manage";
     public const string NutritionPlansApprove = "NutritionPlans.Approve";
+    // Capacidades de Bienestar separadas de dashboards y de las escrituras.
+    public const string ProgramProfile360View = "Program.Profile360View";
+    public const string ProgramAiView = "Program.AiView";
+    public const string ProgramAiManage = "Program.AiManage";
+    public const string NutritionView = "Nutrition.View";
+    public const string NutritionRecordsView = "Nutrition.RecordsView";
+    public const string NutritionPhotosView = "Nutrition.PhotosView";
+    public const string NutritionNotesView = "Nutrition.NotesView";
+    public const string NutritionNotesManage = "Nutrition.NotesManage";
+    public const string NutritionReviewManage = "Nutrition.ReviewManage";
     public const string NutritionManage = "Nutrition.Manage";
     public const string NutritionApprove = "Nutrition.Approve";
 
@@ -256,6 +266,18 @@ public static class PermissionCodes
         yield return WellnessView;
         yield return WellnessManage;
         yield return NutritionPlansApprove;
+        yield return ProgramProfile360View;
+        yield return ProgramAiView;
+        yield return ProgramAiManage;
+        yield return NutritionView;
+        yield return NutritionRecordsView;
+        yield return NutritionPhotosView;
+        yield return NutritionNotesView;
+        yield return NutritionNotesManage;
+        yield return NutritionReviewManage;
+        yield return "Program.Edit";
+        yield return "Program.Enroll";
+        yield return "Program.Adapt";
         yield return NutritionManage;
         yield return NutritionApprove;
         yield return LegalDocumentsView;

@@ -156,6 +156,18 @@ public static class RoleSeeder
                 logger.LogInformation("Rol creado: {Role}", roleName);
             }
 
+            // La matriz es exacta en sus capacidades, también sobre roles ya sembrados.
+            // El resto de permisos administrativos conserva su configuración existente.
+            var codes = permissionCodes;
+            if (roleName is "ClinicalDirector" or "NutritionReviewer" or "CareCoordinator")
+            {
+                codes = permissionCodes.Except(WellbeingRolePermissions.ManagedCodes)
+                    .Concat(WellbeingRolePermissions.ForRole(roleName)).Distinct().ToArray();
+                await dbContext.RolePermissions.Where(rp => rp.RoleId == role.Id
+                    && WellbeingRolePermissions.ManagedCodes.Contains(rp.Permission.Code)
+                    && !codes.Contains(rp.Permission.Code)).ExecuteDeleteAsync(ct);
+            }
+
             // Permisos por defecto (idempotente): solo agrega los que faltan.
             var assignedIds = await dbContext
                 .RolePermissions.Where(rp => rp.RoleId == role.Id)
@@ -163,7 +175,7 @@ public static class RoleSeeder
                 .ToListAsync(ct);
 
             var permissionIds = await dbContext
-                .Permissions.Where(p => permissionCodes.Contains(p.Code))
+                .Permissions.Where(p => codes.Contains(p.Code))
                 .Select(p => new { p.Id, p.Code })
                 .ToListAsync(ct);
 
