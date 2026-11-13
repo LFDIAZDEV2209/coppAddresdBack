@@ -148,7 +148,8 @@ public sealed class ProgramController(
     /// <c>NotFoundException</c>, que el middleware global mapea a 404).
     /// </summary>
     [HttpGet("enrollments/{id:guid}/snapshot")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Profile360View")]
     public async Task<ActionResult<ProgramSnapshotDto>> GetEnrollmentSnapshot(
         Guid id,
         CancellationToken ct
@@ -299,6 +300,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("enrollments")]
     [RequirePermission("Program.Enroll")]
+    [PatientScope("request.PatientId", "Program.Enroll")]
     public async Task<ActionResult<ProgramEnrollmentDto>> EnrollPatient(
         [FromBody] EnrollRequest request,
         CancellationToken ct
@@ -329,6 +331,7 @@ public sealed class ProgramController(
     /// asignado; otro actor → 404.</summary>
     [HttpPost("enrollments/{id:guid}/pause")]
     [RequirePermission("Program.Enroll")]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Enroll")]
     public async Task<ActionResult<ProgramEnrollmentDto>> PauseEnrollment(
         Guid id,
         [FromBody] EnrollmentActionRequest? request,
@@ -352,6 +355,7 @@ public sealed class ProgramController(
     /// Scoping T-81: mismo alcance que pause.</summary>
     [HttpPost("enrollments/{id:guid}/resume")]
     [RequirePermission("Program.Enroll")]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Enroll")]
     public async Task<ActionResult<ProgramEnrollmentDto>> ResumeEnrollment(
         Guid id,
         CancellationToken ct
@@ -369,6 +373,7 @@ public sealed class ProgramController(
     /// Scoping T-81: mismo alcance que pause.</summary>
     [HttpPost("enrollments/{id:guid}/withdraw")]
     [RequirePermission("Program.Enroll")]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Enroll")]
     public async Task<ActionResult<ProgramEnrollmentDto>> WithdrawEnrollment(
         Guid id,
         [FromBody] EnrollmentActionRequest? request,
@@ -394,7 +399,7 @@ public sealed class ProgramController(
     /// tolerante: texto que no parsea a GUID → resultado vacío (200), nunca 400
     /// de binding.</summary>
     [HttpGet("enrollments")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
     public async Task<ActionResult<PaginatedEnrollmentsResult>> ListEnrollments(
         [FromQuery] string? patientId,
         [FromQuery] ProgramEnrollmentStatus? status,
@@ -538,7 +543,8 @@ public sealed class ProgramController(
     /// <c>Program.View</c>; inscripción inexistente → 404 (anti-IDOR).
     /// </summary>
     [HttpGet("enrollments/{id:guid}")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Profile360View")]
     public async Task<ActionResult<ProgramEnrollmentDto>> GetEnrollment(
         Guid id,
         CancellationToken ct
@@ -556,7 +562,8 @@ public sealed class ProgramController(
     /// <c>Program.View</c>; inscripción inexistente → 404.
     /// </summary>
     [HttpGet("enrollments/{id:guid}/xp-ledger")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Profile360View")]
     public async Task<ActionResult<PaginatedXpLedgerResult>> GetXpLedger(
         Guid id,
         [FromQuery] int page = 1,
@@ -579,7 +586,8 @@ public sealed class ProgramController(
     /// base. Requiere <c>Program.View</c>; inscripción inexistente → 404.
     /// </summary>
     [HttpGet("enrollments/{id:guid}/baselines")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Profile360View")]
     public async Task<ActionResult<IReadOnlyList<ClinicalBaselineDto>>> GetBaselines(
         Guid id,
         CancellationToken ct
@@ -603,6 +611,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("enrollments/{id:guid}/baselines")]
     [RequirePermission("Program.Edit")]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Edit")]
     public async Task<ActionResult<ClinicalBaselineDto>> CreateBaseline(
         Guid id,
         [FromBody] CreateBaselineRequest request,
@@ -641,7 +650,8 @@ public sealed class ProgramController(
     /// 404 si el actor no tiene alcance sobre la inscripción.
     /// </summary>
     [HttpGet("enrollments/{id:guid}/content")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Profile360View")]
     public async Task<ActionResult<ProgramContentResponse>> GetProgramContent(
         Guid id,
         CancellationToken ct
@@ -669,6 +679,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPut("enrollments/{id:guid}/content/week/{weekNumber:int}")]
     [RequirePermission("Program.Edit")]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Edit")]
     public async Task<ActionResult<ProgramContentWeekDto>> SetWeekContent(
         Guid id,
         int weekNumber,
@@ -703,6 +714,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPut("enrollments/{id:guid}/content/range")]
     [RequirePermission("Program.Edit")]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Edit")]
     public async Task<ActionResult<IReadOnlyList<ProgramContentWeekDto>>> SetWeekContentRange(
         Guid id,
         [FromBody] SetWeekContentRangeRequest request,
@@ -735,6 +747,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("content/bulk-assign")]
     [RequirePermission("Program.Edit")]
+    [PatientScope(PatientResource.Enrollment, "command.TargetId", "Program.Edit", SkipForTemplate = true)]
     public async Task<ActionResult<BulkAssignProgramContentResult>> BulkAssignProgramContent(
         [FromBody] BulkAssignProgramContentCommand command,
         CancellationToken ct
@@ -756,7 +769,8 @@ public sealed class ProgramController(
     /// tiene alcance sobre ella.
     /// </summary>
     [HttpGet("enrollments/{id:guid}/week/{weekNumber:int}")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Profile360View")]
     public async Task<ActionResult<EnrollmentWeekDetailDto>> GetEnrollmentWeek(
         Guid id,
         int weekNumber,
@@ -793,6 +807,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPut("enrollments/{id:guid}/week/{weekNumber:int}/tasks")]
     [RequirePermission("Program.Edit")]
+    [PatientScope(PatientResource.Enrollment, "id", "Program.Edit")]
     public async Task<ActionResult<EnrollmentWeekDetailDto>> ReplaceEnrollmentWeekTasks(
         Guid id,
         int weekNumber,
@@ -810,7 +825,7 @@ public sealed class ProgramController(
 
     /// <summary>Listado paginado de plantillas (SPEC §7.6, ERP).</summary>
     [HttpGet("templates")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
     public async Task<ActionResult<PaginatedTemplatesResult>> ListTemplates(
         [FromQuery] string? search,
         [FromQuery] TemplateStatus? status,
@@ -821,7 +836,7 @@ public sealed class ProgramController(
 
     /// <summary>Detalle de una plantilla con sus filas por día (SPEC §7.6).</summary>
     [HttpGet("templates/{id:guid}")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
     public async Task<ActionResult<ProgramTemplateDto>> GetTemplate(
         Guid id,
         CancellationToken ct
@@ -896,7 +911,7 @@ public sealed class ProgramController(
     /// <c>WeeklyDayTemplateDto</c> del detalle de la plantilla.
     /// </summary>
     [HttpGet("templates/{id:guid}/weekday-tasks")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
     public async Task<ActionResult<IReadOnlyList<WeeklyDayTemplateDto>>> GetWeekdayTasks(
         Guid id,
         CancellationToken ct
@@ -920,7 +935,7 @@ public sealed class ProgramController(
 
     /// <summary>Listado paginado de recomendaciones de adaptación (SPEC §7.7).</summary>
     [HttpGet("adaptations")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
     public async Task<ActionResult<PaginatedAdaptationsResult>> ListAdaptations(
         [FromQuery] Guid? enrollmentId,
         [FromQuery] AdaptationStatus? status,
@@ -933,6 +948,7 @@ public sealed class ProgramController(
     /// <summary>Detalle de una recomendación de adaptación (SPEC §7.7).</summary>
     [HttpGet("adaptations/{id:guid}")]
     [RequirePermission("Program.View")]
+    [PatientScope(PatientResource.Adaptation, "id", "Program.Profile360View")]
     public async Task<ActionResult<AdaptationRecommendationDto>> GetAdaptation(
         Guid id,
         CancellationToken ct
@@ -941,6 +957,7 @@ public sealed class ProgramController(
     /// <summary>Aprueba o rechaza una recomendación de adaptación (SPEC §7.7).</summary>
     [HttpPost("adaptations/{id:guid}/decide")]
     [RequirePermission("Program.Adapt")]
+    [PatientScope(PatientResource.Adaptation, "id", "Program.Adapt")]
     public async Task<ActionResult<AdaptationRecommendationDto>> DecideAdaptation(
         Guid id,
         [FromBody] DecideAdaptationRequest request,
@@ -1224,6 +1241,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("scores/calculate")]
     [RequirePermission("Program.Edit")]
+    [PatientScope("request.PatientId", "Program.Edit")]
     public async Task<ActionResult<ScoresResponseDto>> CalculateScores(
         [FromBody] CalculateScoresRequest request,
         CancellationToken ct
@@ -1318,6 +1336,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("xp-rules/clinical-pending/{id:guid}/decide")]
     [RequirePermission("Program.Adapt")]
+    [PatientScope(PatientResource.ClinicalReview, "id", "Program.Edit")]
     public async Task<ActionResult<ClinicalReviewDto>> DecideClinicalReview(
         Guid id,
         [FromBody] DecideClinicalReviewRequest request,
@@ -1556,6 +1575,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("weaknesses/{id:guid}/status")]
     [RequirePermission("Program.Adapt")]
+    [PatientScope(PatientResource.Weakness, "id", "Program.Edit")]
     public async Task<ActionResult<WeaknessDto>> UpdateWeaknessStatus(
         Guid id,
         [FromBody] UpdateWeaknessStatusRequest request,
@@ -1650,6 +1670,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("interventions/{id:guid}/status")]
     [RequirePermission("Program.Adapt")]
+    [PatientScope(PatientResource.Intervention, "id", "Program.Edit")]
     public async Task<ActionResult<InterventionDto>> UpdateInterventionStatus(
         Guid id,
         [FromBody] UpdateInterventionStatusRequest request,
@@ -1676,6 +1697,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("interventions/{id:guid}/tele-scheduled")]
     [RequirePermission("Program.Adapt")]
+    [PatientScope(PatientResource.Intervention, "id", "Program.Edit")]
     public async Task<ActionResult<InterventionDto>> MarkTeleScheduled(
         Guid id,
         CancellationToken ct
@@ -1688,6 +1710,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("interventions/{id:guid}/tele-attended")]
     [RequirePermission("Program.Adapt")]
+    [PatientScope(PatientResource.Intervention, "id", "Program.Edit")]
     public async Task<ActionResult<InterventionDto>> MarkTeleAttended(Guid id, CancellationToken ct)
     {
         if (actorContext.UserId is not { } userId)
@@ -1705,6 +1728,7 @@ public sealed class ProgramController(
     /// </summary>
     [HttpPost("interventions/{id:guid}/tele-comply")]
     [RequirePermission("Program.Adapt")]
+    [PatientScope(PatientResource.Intervention, "id", "Program.Edit")]
     public async Task<ActionResult<InterventionDto>> MarkTeleComply(
         Guid id,
         CancellationToken ct
@@ -1899,7 +1923,8 @@ public sealed class ProgramController(
     /// scores, debilidades, intervenciones y checkins.
     /// </summary>
     [HttpGet("erp/patients/{patientId:guid}/overview")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope("patientId", "Program.Profile360View")]
     public async Task<ActionResult<PatientOverviewDto>> GetPatientOverview(
         Guid patientId,
         CancellationToken ct
@@ -1925,7 +1950,8 @@ public sealed class ProgramController(
     /// administración (Admin/OrganizationAdmin/ClinicAdmin) no se filtran.
     /// </summary>
     [HttpGet("erp/patients/{patientId:guid}/controls")]
-    [RequirePermission("Program.View")]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
+    [PatientScope("patientId", "Program.Profile360View")]
     public async Task<ActionResult<PatientControlsDto>> GetPatientControls(
         Guid patientId,
         CancellationToken ct

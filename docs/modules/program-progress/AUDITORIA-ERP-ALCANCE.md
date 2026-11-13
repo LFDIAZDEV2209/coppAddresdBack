@@ -37,28 +37,28 @@ Fichero: `src/CoppAddresd.Api/Controllers/ProgramController.cs`.
 | Ruta | Acción / handler | Estado |
 | --- | --- | --- |
 | `GET /api/v1/program/me/snapshot` | `ProgramController.GetMySnapshot` (125) → `GetSnapshotQuery` | hecho: identidad JWT (self-service) |
-| `GET /api/v1/program/enrollments/{id:guid}/snapshot` | `ProgramController.GetEnrollmentSnapshot` (150) → `GetSnapshotQuery` | pendiente 0.11c |
+| `GET /api/v1/program/enrollments/{id:guid}/snapshot` | `ProgramController.GetEnrollmentSnapshot` (150) → `GetSnapshotQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `POST /api/v1/program/tasks/complete` | `ProgramController.CompleteTask` (167) → `CompleteTaskCommand` | hecho: identidad JWT (self-service) |
 | `GET /api/v1/program/calendar` | `ProgramController.GetCalendar` (212) → `GetCalendarQuery` | hecho: identidad JWT (self-service) |
 | `GET /api/v1/program/path` | `ProgramController.GetPath` (239) → `GetPathQuery` | hecho: identidad JWT (self-service) |
 | `POST /api/v1/program/enrollments/me` | `ProgramController.EnrollSelf` (264) → `EnrollPatientCommand` | hecho: identidad JWT (self-service) |
-| `POST /api/v1/program/enrollments` | `ProgramController.EnrollPatient` (300) → `EnrollPatientCommand` | pendiente 0.11c |
-| `POST /api/v1/program/enrollments/{id:guid}/pause` | `ProgramController.PauseEnrollment` (330) → `PauseEnrollmentCommand` | pendiente 0.11c |
-| `POST /api/v1/program/enrollments/{id:guid}/resume` | `ProgramController.ResumeEnrollment` (353) → `ResumeEnrollmentCommand` | pendiente 0.11c |
-| `POST /api/v1/program/enrollments/{id:guid}/withdraw` | `ProgramController.WithdrawEnrollment` (370) → `WithdrawEnrollmentCommand` | pendiente 0.11c |
-| `GET /api/v1/program/enrollments` | `ProgramController.ListEnrollments` (396) → `ListEnrollmentsQuery` | pendiente 0.11c |
-| `POST /api/v1/program/enrollments/bulk` | `ProgramController.BulkEnroll` (447) → `BulkEnrollPatientsCommand` | pendiente 0.11c |
-| `GET /api/v1/program/enrollments/export` | `ProgramController.ExportEnrollments` (480) → `ExportEnrollmentsQuery` | pendiente 0.11c |
-| `GET /api/v1/program/enrollments/{id:guid}` | `ProgramController.GetEnrollment` (540) → `GetEnrollmentQuery` | pendiente 0.11c |
-| `GET /api/v1/program/enrollments/{id:guid}/xp-ledger` | `ProgramController.GetXpLedger` (558) → `GetXpLedgerQuery` | pendiente 0.11c |
-| `GET /api/v1/program/enrollments/{id:guid}/baselines` | `ProgramController.GetBaselines` (581) → `GetBaselinesQuery` | pendiente 0.11c |
-| `POST /api/v1/program/enrollments/{id:guid}/baselines` | `ProgramController.CreateBaseline` (604) → `CreateBaselineCommand` | pendiente 0.11c |
-| `GET /api/v1/program/enrollments/{id:guid}/content` | `ProgramController.GetProgramContent` (643) → `GetProgramContentQuery` | pendiente 0.11c |
-| `PUT /api/v1/program/enrollments/{id:guid}/content/week/{weekNumber:int}` | `ProgramController.SetWeekContent` (670) → `SetWeekContentCommand` | pendiente 0.11c |
-| `PUT /api/v1/program/enrollments/{id:guid}/content/range` | `ProgramController.SetWeekContentRange` (704) → `SetWeekContentRangeCommand` | pendiente 0.11c |
-| `POST /api/v1/program/content/bulk-assign` | `ProgramController.BulkAssignProgramContent` (736) | pendiente 0.11c |
-| `GET /api/v1/program/enrollments/{id:guid}/week/{weekNumber:int}` | `ProgramController.GetEnrollmentWeek` (758) → `GetEnrollmentWeekQuery` | pendiente 0.11c |
-| `PUT /api/v1/program/enrollments/{id:guid}/week/{weekNumber:int}/tasks` | `ProgramController.ReplaceEnrollmentWeekTasks` (794) → `ReplaceEnrollmentWeekTasksCommand` | pendiente 0.11c |
+| `POST /api/v1/program/enrollments` | `ProgramController.EnrollPatient` (300) → `EnrollPatientCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/enrollments/{id:guid}/pause` | `ProgramController.PauseEnrollment` (330) → `PauseEnrollmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/enrollments/{id:guid}/resume` | `ProgramController.ResumeEnrollment` (353) → `ResumeEnrollmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/enrollments/{id:guid}/withdraw` | `ProgramController.WithdrawEnrollment` (370) → `WithdrawEnrollmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/enrollments` | `ProgramController.ListEnrollments` (396) → `ListEnrollmentsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/enrollments/bulk` | `ProgramController.BulkEnroll` (447) → `BulkEnrollPatientsCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/enrollments/export` | `ProgramController.ExportEnrollments` (480) → `ExportEnrollmentsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/enrollments/{id:guid}` | `ProgramController.GetEnrollment` (540) → `GetEnrollmentQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/enrollments/{id:guid}/xp-ledger` | `ProgramController.GetXpLedger` (558) → `GetXpLedgerQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/enrollments/{id:guid}/baselines` | `ProgramController.GetBaselines` (581) → `GetBaselinesQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/enrollments/{id:guid}/baselines` | `ProgramController.CreateBaseline` (604) → `CreateBaselineCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/enrollments/{id:guid}/content` | `ProgramController.GetProgramContent` (643) → `GetProgramContentQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `PUT /api/v1/program/enrollments/{id:guid}/content/week/{weekNumber:int}` | `ProgramController.SetWeekContent` (670) → `SetWeekContentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `PUT /api/v1/program/enrollments/{id:guid}/content/range` | `ProgramController.SetWeekContentRange` (704) → `SetWeekContentRangeCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/content/bulk-assign` | `ProgramController.BulkAssignProgramContent` (736) | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/enrollments/{id:guid}/week/{weekNumber:int}` | `ProgramController.GetEnrollmentWeek` (758) → `GetEnrollmentWeekQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `PUT /api/v1/program/enrollments/{id:guid}/week/{weekNumber:int}/tasks` | `ProgramController.ReplaceEnrollmentWeekTasks` (794) → `ReplaceEnrollmentWeekTasksCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `GET /api/v1/program/templates` | `ProgramController.ListTemplates` (812) → `ListTemplatesQuery` | hecho: catálogo global, sin propietario paciente |
 | `GET /api/v1/program/templates/{id:guid}` | `ProgramController.GetTemplate` (823) → `GetTemplateQuery` | hecho: catálogo global, sin propietario paciente |
 | `POST /api/v1/program/templates` | `ProgramController.CreateTemplate` (831) → `CreateTemplateCommand` | hecho: catálogo global, sin propietario paciente |
@@ -67,9 +67,9 @@ Fichero: `src/CoppAddresd.Api/Controllers/ProgramController.cs`.
 | `POST /api/v1/program/templates/{id:guid}/archive` | `ProgramController.ArchiveTemplate` (887) → `ArchiveTemplateCommand` | hecho: catálogo global, sin propietario paciente |
 | `GET /api/v1/program/templates/{id:guid}/weekday-tasks` | `ProgramController.GetWeekdayTasks` (898) → `GetTemplateQuery` | hecho: catálogo global, sin propietario paciente |
 | `PUT /api/v1/program/templates/{id:guid}/weekday-tasks` | `ProgramController.ReplaceWeekdayTasks` (910) → `ReplaceWeekdayTasksCommand` | hecho: catálogo global, sin propietario paciente |
-| `GET /api/v1/program/adaptations` | `ProgramController.ListAdaptations` (922) → `ListAdaptationsQuery` | pendiente 0.11c |
-| `GET /api/v1/program/adaptations/{id:guid}` | `ProgramController.GetAdaptation` (934) → `GetAdaptationQuery` | pendiente 0.11c |
-| `POST /api/v1/program/adaptations/{id:guid}/decide` | `ProgramController.DecideAdaptation` (942) → `DecideAdaptationCommand` | pendiente 0.11c |
+| `GET /api/v1/program/adaptations` | `ProgramController.ListAdaptations` (922) → `ListAdaptationsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/adaptations/{id:guid}` | `ProgramController.GetAdaptation` (934) → `GetAdaptationQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/adaptations/{id:guid}/decide` | `ProgramController.DecideAdaptation` (942) → `DecideAdaptationCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `GET /api/v1/program/scores` | `ProgramController.GetScores` (972) → `GetScoresQuery` | hecho: identidad JWT (self-service) |
 | `GET /api/v1/program/me/scores-history` | `ProgramController.GetScoresHistory` (1003) → `GetScoresHistoryQuery` | hecho: identidad JWT (self-service) |
 | `PUT /api/v1/program/me/league-preferences` | `ProgramController.UpdateLeaguePreferences` (1045) → `UpdateLeaguePreferencesCommand` | hecho: identidad JWT (self-service) |
@@ -77,26 +77,26 @@ Fichero: `src/CoppAddresd.Api/Controllers/ProgramController.cs`.
 | `POST /api/v1/program/me/weight` | `ProgramController.RecordWeight` (1112) → `RecordWeightCommand` | hecho: identidad JWT (self-service) |
 | `POST /api/v1/program/me/device-metrics` | `ProgramController.RecordDeviceMetrics` (1151) → `RecordDeviceMetricsCommand` | hecho: identidad JWT (self-service) |
 | `GET /api/v1/program/me/metrics-history` | `ProgramController.GetMetricsHistory` (1185) → `GetMetricsHistoryQuery` | hecho: identidad JWT (self-service) |
-| `POST /api/v1/program/scores/calculate` | `ProgramController.CalculateScores` (1225) → `CalculateScoresCommand` | pendiente 0.11c |
+| `POST /api/v1/program/scores/calculate` | `ProgramController.CalculateScores` (1225) → `CalculateScoresCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `GET /api/v1/program/xp-rules` | `ProgramController.ListXpRules` (1256) → `ListXpRulesQuery` | hecho: catálogo global, sin propietario paciente |
 | `PUT /api/v1/program/xp-rules/{code}` | `ProgramController.UpdateXpRule` (1269) → `UpdateXpRuleCommand` | hecho: catálogo global, sin propietario paciente |
-| `GET /api/v1/program/xp-rules/clinical-pending` | `ProgramController.ListClinicalReviews` (1302) → `ListClinicalReviewsQuery` | pendiente 0.11c |
-| `POST /api/v1/program/xp-rules/clinical-pending/{id:guid}/decide` | `ProgramController.DecideClinicalReview` (1319) → `DecideClinicalReviewCommand` | pendiente 0.11c |
+| `GET /api/v1/program/xp-rules/clinical-pending` | `ProgramController.ListClinicalReviews` (1302) → `ListClinicalReviewsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/xp-rules/clinical-pending/{id:guid}/decide` | `ProgramController.DecideClinicalReview` (1319) → `DecideClinicalReviewCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `POST /api/v1/program/nutrition/log` | `ProgramController.LogNutrition` (1358) → `LogNutritionCommand` | hecho: identidad JWT (self-service) |
 | `PUT /api/v1/program/nutrition/log/{mealCode}` | `ProgramController.UpdateNutritionLog` (1405) → `UpdateNutritionIntakeCommand` | hecho: identidad JWT (self-service) |
 | `GET /api/v1/program/notifications` | `ProgramController.ListNotifications` (1457) | hecho: identidad JWT (self-service) |
 | `GET /api/v1/program/me/notifications` | `ProgramController.ListNotifications` (1458) → `ListNotificationsQuery` | hecho: identidad JWT (self-service) |
 | `POST /api/v1/program/notifications/{id:guid}/read` | `ProgramController.MarkNotificationRead` (1483) → `MarkNotificationReadCommand` | hecho: identidad JWT (self-service) |
 | `GET /api/v1/program/weaknesses` | `ProgramController.ListWeaknesses` (1512) → `ListWeaknessesQuery` | hecho: identidad JWT (self-service) |
-| `GET /api/v1/program/weaknesses/open` | `ProgramController.ListOpenWeaknesses` (1541) → `ListOpenWeaknessesQuery` | pendiente 0.11c |
-| `POST /api/v1/program/weaknesses/{id:guid}/status` | `ProgramController.UpdateWeaknessStatus` (1557) → `UpdateWeaknessStatusCommand` | pendiente 0.11c |
+| `GET /api/v1/program/weaknesses/open` | `ProgramController.ListOpenWeaknesses` (1541) → `ListOpenWeaknessesQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/weaknesses/{id:guid}/status` | `ProgramController.UpdateWeaknessStatus` (1557) → `UpdateWeaknessStatusCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `GET /api/v1/program/interventions` | `ProgramController.ListInterventions` (1585) → `ListInterventionsQuery` | hecho: identidad JWT (self-service) |
 | `POST /api/v1/program/interventions/{id:guid}/accept` | `ProgramController.AcceptIntervention` (1613) → `AcceptInterventionCommand` | hecho: identidad JWT (self-service) |
-| `GET /api/v1/program/interventions/open` | `ProgramController.ListOpenInterventions` (1637) → `ListOpenInterventionsQuery` | pendiente 0.11c |
-| `POST /api/v1/program/interventions/{id:guid}/status` | `ProgramController.UpdateInterventionStatus` (1651) → `UpdateInterventionStatusCommand` | pendiente 0.11c |
-| `POST /api/v1/program/interventions/{id:guid}/tele-scheduled` | `ProgramController.MarkTeleScheduled` (1677) → `MarkTeleScheduledCommand` | pendiente 0.11c |
-| `POST /api/v1/program/interventions/{id:guid}/tele-attended` | `ProgramController.MarkTeleAttended` (1689) → `MarkTeleAttendedCommand` | pendiente 0.11c |
-| `POST /api/v1/program/interventions/{id:guid}/tele-comply` | `ProgramController.MarkTeleComply` (1706) → `MarkTeleComplyCommand` | pendiente 0.11c |
+| `GET /api/v1/program/interventions/open` | `ProgramController.ListOpenInterventions` (1637) → `ListOpenInterventionsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/interventions/{id:guid}/status` | `ProgramController.UpdateInterventionStatus` (1651) → `UpdateInterventionStatusCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/interventions/{id:guid}/tele-scheduled` | `ProgramController.MarkTeleScheduled` (1677) → `MarkTeleScheduledCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/interventions/{id:guid}/tele-attended` | `ProgramController.MarkTeleAttended` (1689) → `MarkTeleAttendedCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program/interventions/{id:guid}/tele-comply` | `ProgramController.MarkTeleComply` (1706) → `MarkTeleComplyCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `GET /api/v1/program/erp/dashboard` | `ProgramController.GetErpDashboard` (1719) → `GetErpDashboardQuery` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
 | `GET /api/v1/program/erp/biometria/community` | `ProgramController.GetBiometriaCommunity` (1730) → `GetBiometriaCommunityQuery` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
 | `GET /api/v1/program/erp/biometria/patients` | `ProgramController.ListBiometriaPatients` (1740) → `ListBiometriaPatientsQuery` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
@@ -105,8 +105,8 @@ Fichero: `src/CoppAddresd.Api/Controllers/ProgramController.cs`.
 | `GET /api/v1/program/erp/today` | `ProgramController.GetErpToday` (1855) → `GetErpTodayQuery` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
 | `GET /api/v1/program/erp/adherencia` | `ProgramController.GetErpAdherencia` (1864) → `GetErpAdherenciaQuery` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
 | `GET /api/v1/program/erp/cofres` | `ProgramController.GetErpCofres` (1885) → `GetErpCofresQuery` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
-| `GET /api/v1/program/erp/patients/{patientId:guid}/overview` | `ProgramController.GetPatientOverview` (1901) → `GetPatientOverviewQuery` | pendiente 0.11c |
-| `GET /api/v1/program/erp/patients/{patientId:guid}/controls` | `ProgramController.GetPatientControls` (1927) → `GetPatientControlsQuery` | pendiente 0.11c |
+| `GET /api/v1/program/erp/patients/{patientId:guid}/overview` | `ProgramController.GetPatientOverview` (1901) → `GetPatientOverviewQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program/erp/patients/{patientId:guid}/controls` | `ProgramController.GetPatientControls` (1927) → `GetPatientControlsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
 | `POST /api/v1/program/maintenance/reconcile-streaks` | `ProgramController.ReconcileStreaks` (1958) → `ReconcileStreaksCommand` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
 | `GET /api/v1/program/activity-log` | `ProgramController.GetActivityLog` (1974) → `ListProgramActivityLogQuery` | adyacente: dashboard/mantenimiento fuera del change; sin otorgar Program.View a lectores |
 
@@ -119,30 +119,30 @@ Fichero: `src/CoppAddresd.Api/Controllers/WellnessController.cs`.
 
 | Ruta | Acción / handler | Estado |
 | --- | --- | --- |
-| `GET /api/v1/wellness/nutrition-plans` | `WellnessController.ListNutritionPlans` (24) → `ListNutritionPlansQuery` | pendiente 0.11c |
-| `GET /api/v1/wellness/nutrition-plans/{id:guid}` | `WellnessController.GetNutritionPlan` (42) → `GetNutritionPlanQuery` | pendiente 0.11c |
-| `POST /api/v1/wellness/nutrition-plans` | `WellnessController.CreateNutritionPlan` (51) → `CreateNutritionPlanCommand` | pendiente 0.11c |
-| `PUT /api/v1/wellness/nutrition-plans/{id:guid}` | `WellnessController.UpdateNutritionPlan` (62) → `GetNutritionPlanQuery, UpdateNutritionPlanCommand` | pendiente 0.11c |
-| `DELETE /api/v1/wellness/nutrition-plans/{id:guid}` | `WellnessController.DeleteNutritionPlan` (74) → `GetNutritionPlanQuery, DeleteNutritionPlanCommand` | pendiente 0.11c |
-| `POST /api/v1/wellness/nutrition-plans/{sourcePlanId:guid}/clone` | `WellnessController.CloneNutritionPlan` (85) → `GetNutritionPlanQuery, CloneNutritionPlanCommand` | pendiente 0.11c |
-| `GET /api/v1/wellness/exercise-routines` | `WellnessController.ListExerciseRoutines` (102) → `ListExerciseRoutinesQuery` | pendiente 0.11c: catálogo con PatientId opcional |
-| `GET /api/v1/wellness/exercise-routines/{id:guid}` | `WellnessController.GetExerciseRoutine` (113) → `GetExerciseRoutineQuery` | pendiente 0.11c: catálogo con PatientId opcional |
-| `POST /api/v1/wellness/exercise-routines` | `WellnessController.CreateExerciseRoutine` (121) → `CreateExerciseRoutineCommand` | pendiente 0.11c: catálogo con PatientId opcional |
-| `PUT /api/v1/wellness/exercise-routines/{id:guid}` | `WellnessController.UpdateExerciseRoutine` (131) → `UpdateExerciseRoutineCommand` | pendiente 0.11c: catálogo con PatientId opcional |
-| `DELETE /api/v1/wellness/exercise-routines/{id:guid}` | `WellnessController.DeleteExerciseRoutine` (140) → `DeleteExerciseRoutineCommand` | pendiente 0.11c: catálogo con PatientId opcional |
-| `GET /api/v1/wellness/routine-assignments` | `WellnessController.ListRoutineAssignments` (150) → `ListRoutineAssignmentsQuery` | pendiente 0.11c |
-| `GET /api/v1/wellness/routine-assignments/{id:guid}` | `WellnessController.GetRoutineAssignment` (167) → `GetRoutineAssignmentQuery` | pendiente 0.11c |
-| `GET /api/v1/wellness/patients/{patientId:guid}/routine-assignments` | `WellnessController.ListAssignmentsByPatient` (176) → `ListAssignmentsByPatientQuery` | pendiente 0.11c |
-| `POST /api/v1/wellness/routine-assignments` | `WellnessController.CreateRoutineAssignment` (185) → `CreateRoutineAssignmentCommand` | pendiente 0.11c |
-| `PUT /api/v1/wellness/routine-assignments/{id:guid}` | `WellnessController.UpdateRoutineAssignment` (195) → `GetRoutineAssignmentQuery, UpdateRoutineAssignmentCommand` | pendiente 0.11c |
-| `DELETE /api/v1/wellness/routine-assignments/{id:guid}` | `WellnessController.DeleteRoutineAssignment` (206) → `GetRoutineAssignmentQuery, DeleteRoutineAssignmentCommand` | pendiente 0.11c |
-| `GET /api/v1/wellness/nutrition-plan-assignments` | `WellnessController.ListNutritionPlanAssignments` (218) → `GetNutritionPlanQuery, ListNutritionPlanAssignmentsQuery` | pendiente 0.11c |
-| `GET /api/v1/wellness/nutrition-plan-assignments/{id:guid}` | `WellnessController.GetNutritionPlanAssignment` (241) → `GetNutritionPlanAssignmentQuery` | pendiente 0.11c |
-| `GET /api/v1/wellness/patients/{patientId:guid}/nutrition-plan-assignments` | `WellnessController.ListPlanAssignmentsByPatient` (250) → `ListPlanAssignmentsByPatientQuery` | pendiente 0.11c |
-| `POST /api/v1/wellness/nutrition-plan-assignments` | `WellnessController.CreateNutritionPlanAssignment` (259) → `CreateNutritionPlanAssignmentCommand` | pendiente 0.11c |
-| `PUT /api/v1/wellness/nutrition-plan-assignments/{id:guid}` | `WellnessController.UpdateNutritionPlanAssignment` (269) → `GetNutritionPlanAssignmentQuery, UpdateNutritionPlanAssignmentCommand` | pendiente 0.11c |
-| `DELETE /api/v1/wellness/nutrition-plan-assignments/{id:guid}` | `WellnessController.DeleteNutritionPlanAssignment` (280) → `GetNutritionPlanAssignmentQuery, DeleteNutritionPlanAssignmentCommand` | pendiente 0.11c |
-| `POST /api/v1/wellness/plans/generate` | `WellnessController.GeneratePlan` (297) → `GeneratePlanCommand` | pendiente 0.11c |
+| `GET /api/v1/wellness/nutrition-plans` | `WellnessController.ListNutritionPlans` (24) → `ListNutritionPlansQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/wellness/nutrition-plans/{id:guid}` | `WellnessController.GetNutritionPlan` (42) → `GetNutritionPlanQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/wellness/nutrition-plans` | `WellnessController.CreateNutritionPlan` (51) → `CreateNutritionPlanCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `PUT /api/v1/wellness/nutrition-plans/{id:guid}` | `WellnessController.UpdateNutritionPlan` (62) → `GetNutritionPlanQuery, UpdateNutritionPlanCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `DELETE /api/v1/wellness/nutrition-plans/{id:guid}` | `WellnessController.DeleteNutritionPlan` (74) → `GetNutritionPlanQuery, DeleteNutritionPlanCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/wellness/nutrition-plans/{sourcePlanId:guid}/clone` | `WellnessController.CloneNutritionPlan` (85) → `GetNutritionPlanQuery, CloneNutritionPlanCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/wellness/exercise-routines` | `WellnessController.ListExerciseRoutines` (102) → `ListExerciseRoutinesQuery` | hecho 0.11c: catálogo global; creación con paciente exige guard |
+| `GET /api/v1/wellness/exercise-routines/{id:guid}` | `WellnessController.GetExerciseRoutine` (113) → `GetExerciseRoutineQuery` | hecho 0.11c: catálogo global; creación con paciente exige guard |
+| `POST /api/v1/wellness/exercise-routines` | `WellnessController.CreateExerciseRoutine` (121) → `CreateExerciseRoutineCommand` | hecho 0.11c: catálogo global; creación con paciente exige guard |
+| `PUT /api/v1/wellness/exercise-routines/{id:guid}` | `WellnessController.UpdateExerciseRoutine` (131) → `UpdateExerciseRoutineCommand` | hecho 0.11c: catálogo global; creación con paciente exige guard |
+| `DELETE /api/v1/wellness/exercise-routines/{id:guid}` | `WellnessController.DeleteExerciseRoutine` (140) → `DeleteExerciseRoutineCommand` | hecho 0.11c: catálogo global; creación con paciente exige guard |
+| `GET /api/v1/wellness/routine-assignments` | `WellnessController.ListRoutineAssignments` (150) → `ListRoutineAssignmentsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/wellness/routine-assignments/{id:guid}` | `WellnessController.GetRoutineAssignment` (167) → `GetRoutineAssignmentQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/wellness/patients/{patientId:guid}/routine-assignments` | `WellnessController.ListAssignmentsByPatient` (176) → `ListAssignmentsByPatientQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/wellness/routine-assignments` | `WellnessController.CreateRoutineAssignment` (185) → `CreateRoutineAssignmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `PUT /api/v1/wellness/routine-assignments/{id:guid}` | `WellnessController.UpdateRoutineAssignment` (195) → `GetRoutineAssignmentQuery, UpdateRoutineAssignmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `DELETE /api/v1/wellness/routine-assignments/{id:guid}` | `WellnessController.DeleteRoutineAssignment` (206) → `GetRoutineAssignmentQuery, DeleteRoutineAssignmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/wellness/nutrition-plan-assignments` | `WellnessController.ListNutritionPlanAssignments` (218) → `GetNutritionPlanQuery, ListNutritionPlanAssignmentsQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/wellness/nutrition-plan-assignments/{id:guid}` | `WellnessController.GetNutritionPlanAssignment` (241) → `GetNutritionPlanAssignmentQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/wellness/patients/{patientId:guid}/nutrition-plan-assignments` | `WellnessController.ListPlanAssignmentsByPatient` (250) → `ListPlanAssignmentsByPatientQuery` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/wellness/nutrition-plan-assignments` | `WellnessController.CreateNutritionPlanAssignment` (259) → `CreateNutritionPlanAssignmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `PUT /api/v1/wellness/nutrition-plan-assignments/{id:guid}` | `WellnessController.UpdateNutritionPlanAssignment` (269) → `GetNutritionPlanAssignmentQuery, UpdateNutritionPlanAssignmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `DELETE /api/v1/wellness/nutrition-plan-assignments/{id:guid}` | `WellnessController.DeleteNutritionPlanAssignment` (280) → `GetNutritionPlanAssignmentQuery, DeleteNutritionPlanAssignmentCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/wellness/plans/generate` | `WellnessController.GeneratePlan` (297) → `GeneratePlanCommand` | hecho 0.11c: guard y/o filtro previo a materializar |
 
 
 ### Nutrición / prescripciones
@@ -224,10 +224,10 @@ Fichero: `src/CoppAddresd.Api/Controllers/ProgramControlsController.cs`.
 
 | Ruta | Acción / handler | Estado |
 | --- | --- | --- |
-| `POST /api/v1/program-controls/run` | `ProgramControlsController.Run` (44) | pendiente 0.11c |
-| `POST /api/v1/program-controls/force` | `ProgramControlsController.ForceSend` (65) | pendiente 0.11c |
-| `GET /api/v1/program-controls/list` | `ProgramControlsController.List` (104) | pendiente 0.11c |
-| `DELETE /api/v1/program-controls/list` | `ProgramControlsController.Delete` (124) | pendiente 0.11c |
+| `POST /api/v1/program-controls/run` | `ProgramControlsController.Run` (44) | hecho 0.11c: guard y/o filtro previo a materializar |
+| `POST /api/v1/program-controls/force` | `ProgramControlsController.ForceSend` (65) | hecho 0.11c: guard y/o filtro previo a materializar |
+| `GET /api/v1/program-controls/list` | `ProgramControlsController.List` (104) | hecho 0.11c: guard y/o filtro previo a materializar |
+| `DELETE /api/v1/program-controls/list` | `ProgramControlsController.Delete` (124) | hecho 0.11c: guard y/o filtro previo a materializar |
 | `GET /api/v1/program-controls/templates` | `ProgramControlsController.GetTemplates` (141) | hecho: catálogo global |
 
 
@@ -362,3 +362,11 @@ Fichero: `src/CoppAddresd.Api/Controllers/LabExamController.cs`.
 No hay rutas sin clasificar en las familias de §10.3. Las filas pendientes son trabajo de
 protección, no evidencia de cierre de 0.11c/0.11d. Los estados se actualizarán únicamente
 con pruebas verdes; este inventario no certifica que el backend base sea seguro.
+
+### Evidencia 0.11c
+
+`PatientScopeRouteTests` verifica cada entrada anotada con paciente propio, ajeno, Admin y sin permiso;
+`BulkEnrollmentScopeTests` verifica lote mixto sin despachar al ajeno. Los listados de Programa
+y controles componen el guard antes de contar/paginar. Las comprobaciones antiguas de Bienestar
+ya no convierten `Patients.View` en excepción de alcance. Los jobs globales de controles
+(run/reset) quedan reservados a Admin. La generación de planes por IA comprueba el paciente.

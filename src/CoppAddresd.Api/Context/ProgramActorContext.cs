@@ -1,3 +1,4 @@
+using CoppAddresd.Application.Interfaces;
 using CoppAddresd.Domain.Enums.ProgramProgress;
 using CoppAddresd.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -74,7 +75,7 @@ public interface IProgramActorContext
 public sealed class ProgramActorContext(
     ICurrentContext currentContext,
     IHttpContextAccessor httpContextAccessor,
-    AppDbContext dbContext) : IProgramActorContext
+    AppDbContext dbContext, IPatientScopeGuard? patientScope = null) : IProgramActorContext
 {
     private const string PatientIdClaim = "patient_id";
     private const string PatientIdClaimAlt = "patientId";
@@ -96,8 +97,6 @@ public sealed class ProgramActorContext(
     private static readonly HashSet<string> ScopeBypassRoles = new(StringComparer.OrdinalIgnoreCase)
     {
         "Admin",
-        "OrganizationAdmin",
-        "ClinicAdmin",
     };
 
     public Guid? UserId => currentContext.UserId;
@@ -173,6 +172,13 @@ public sealed class ProgramActorContext(
     /// <inheritdoc />
     public async Task<IReadOnlyList<Guid>?> ResolveScopedPatientIdsAsync(CancellationToken ct = default)
     {
+        if (patientScope is not null)
+        {
+            var visible = await patientScope.FilterAsync(dbContext.PatientProfiles.AsNoTracking(),
+                p => p.Id, "Program.Profile360View", ct);
+            return await visible.Select(p => p.Id).ToListAsync(ct);
+        }
+
         if (_scopedPatientIdsResolved)
         {
             return _scopedPatientIds;

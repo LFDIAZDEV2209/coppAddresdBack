@@ -42,6 +42,7 @@ public sealed class ProgramControlsController(
     /// re-envían y no cuentan en los totales.
     /// </summary>
     [HttpPost("run")]
+    [Authorize(Roles = "Admin")]
     [RequirePermission(PermissionCodes.ProgramForceComplete)]
     [ProducesResponseType(typeof(ProgramControlRunResult), StatusCodes.Status200OK)]
     public async Task<ActionResult<ProgramControlRunResult>> Run(CancellationToken ct)
@@ -63,6 +64,7 @@ public sealed class ProgramControlsController(
     /// usuario de paciente → 404.
     /// </summary>
     [HttpPost("force")]
+    [PatientScope(PatientResource.Enrollment, "request.EnrollmentId", "Program.ForceComplete")]
     [RequirePermission(PermissionCodes.ProgramForceComplete)]
     [ProducesResponseType(typeof(ProgramControlSendResult), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -102,7 +104,7 @@ public sealed class ProgramControlsController(
     /// inscripción, paciente y estado; <c>limit</c> default 100, máximo 500.
     /// </summary>
     [HttpGet("list")]
-    [RequirePermission(PermissionCodes.ProgramView)]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
     [ProducesResponseType(typeof(IReadOnlyList<ProgramControlSendDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<ProgramControlSendDto>>> List(
         [FromQuery] Guid? enrollmentId,
@@ -122,6 +124,7 @@ public sealed class ProgramControlsController(
     /// (force-send → listar → reset).
     /// </summary>
     [HttpDelete("list")]
+    [Authorize(Roles = "Admin")]
     [RequirePermission(PermissionCodes.ProgramForceComplete)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> Delete([FromQuery] Guid? enrollmentId, CancellationToken ct)
@@ -139,7 +142,7 @@ public sealed class ProgramControlsController(
     /// las plantillas por día (título, mensaje, agente).
     /// </summary>
     [HttpGet("templates")]
-    [RequirePermission(PermissionCodes.ProgramView)]
+    [RequirePermission(PermissionCodes.ProgramProfile360View)]
     [ProducesResponseType(typeof(ProgramControlTemplatesView), StatusCodes.Status200OK)]
     public ActionResult<ProgramControlTemplatesView> GetTemplates()
     {

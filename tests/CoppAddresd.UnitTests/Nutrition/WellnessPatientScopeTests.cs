@@ -22,7 +22,7 @@ public sealed class WellnessPatientScopeTests
         foreach (var route in new[] { "plan-get", "plan-create", "plan-update", "plan-delete", "clone-source", "clone-target",
             "plans-list", "nutrition-list", "nutrition-list-plan", "nutrition-get", "nutrition-patient", "nutrition-create", "nutrition-update",
             "nutrition-delete", "routine-list", "routine-get", "routine-patient", "routine-create", "routine-update", "routine-delete", "generate" })
-            foreach (var scope in new[] { "own", "foreign", "global" }) yield return [route, scope];
+            foreach (var scope in new[] { "own", "foreign", "global", "global_permission" }) yield return [route, scope];
     }
 
     [Theory]
@@ -38,7 +38,7 @@ public sealed class WellnessPatientScopeTests
         var controller = new WellnessController(mediator, NullLogger<WellnessController>.Instance, context, workflow)
         {
             ControllerContext = new() { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(
-                scope == "global" ? [new Claim(PermissionClaimTypes.Permission, PermissionCodes.PatientsView)] : [], "test")) } }
+                scope == "global" ? [new Claim(ClaimTypes.Role, "Admin")] : scope == "global_permission" ? [new Claim(PermissionClaimTypes.Permission, PermissionCodes.PatientsView)] : [], "test")) } }
         };
         var dto = NutritionPlanDto.FromEntity(new NutritionPlan { Id = id, Name = "Plan", PatientId = route == "clone-target" ? null : patientId });
         mediator.Send(Arg.Any<GetNutritionPlanQuery>(), Arg.Any<CancellationToken>()).Returns(dto);
@@ -85,7 +85,7 @@ public sealed class WellnessPatientScopeTests
             "generate" => (await controller.GeneratePlan(new(patientId, "nutrition"), ct)).Result,
             _ => throw new InvalidOperationException()
         };
-        if (scope == "foreign") Assert.IsType<NotFoundResult>(result);
+        if (scope is "foreign" or "global_permission") Assert.IsType<NotFoundResult>(result);
         else Assert.True(result is OkObjectResult or CreatedAtActionResult or NoContentResult, $"{route}: {result?.GetType().Name}");
         await workflow.Received().CanAccessPatientAsync(patientId,
             Arg.Is<NutritionReviewActor>(a => a.ViewAll == (scope == "global") && a.ProfessionalId == professionalId), ct);

@@ -61,7 +61,8 @@ public sealed partial class ProgramRepository(
     IGamifiedNotificationService? gamifiedNotificationService = null,
     IProgramContentResolver? programContentResolver = null,
     IProgramAdaptationEngine? programAdaptationEngine = null,
-    IProgramAssignmentNoticeRepository? assignmentNotices = null
+    IProgramAssignmentNoticeRepository? assignmentNotices = null,
+    IPatientScopeGuard? patientScope = null
 ) : IProgramRepository
 {
     private const int MaxFreezes = 3;
@@ -482,6 +483,7 @@ public sealed partial class ProgramRepository(
     )
     {
         var query = dbContext.ProgramEnrollments.AsNoTracking().AsQueryable();
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.PatientId, "Program.Profile360View", ct);
         if (!string.IsNullOrWhiteSpace(search))
         {
             var pattern = $"%{search.Trim()}%";
@@ -2995,6 +2997,7 @@ public sealed partial class ProgramRepository(
     )
     {
         var query = dbContext.AdaptationRecommendations.AsNoTracking().AsQueryable();
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.Enrollment!.PatientId, "Program.Profile360View", ct);
 
         if (enrollmentId.HasValue)
         {
@@ -4857,6 +4860,7 @@ public sealed partial class ProgramRepository(
         var query = dbContext
             .ClinicalXpReviews.AsNoTracking()
             .Where(r => r.Status == ClinicalXpReviewStatus.pending);
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.PatientId, "Program.View", ct);
 
         var total = await query.CountAsync(ct);
         var items = await query
@@ -6046,6 +6050,7 @@ public sealed partial class ProgramRepository(
     )
     {
         var query = dbContext.Weaknesses.AsNoTracking().Where(w => w.Status == WeaknessStatus.open);
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.PatientId, "Program.View", ct);
 
         var total = await query.CountAsync(ct);
         var entities = await query
@@ -6200,6 +6205,7 @@ public sealed partial class ProgramRepository(
     )
     {
         var query = dbContext.ProgramEnrollments.AsNoTracking().AsQueryable();
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.PatientId, "Program.Export", ct);
 
         if (clinicId.HasValue)
         {
@@ -6704,6 +6710,7 @@ public sealed partial class ProgramRepository(
         var query = dbContext
             .Interventions.AsNoTracking()
             .Where(i => i.Status != InterventionStatus.completed);
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.PatientId, "Program.View", ct);
 
         var total = await query.CountAsync(ct);
         var entities = await query

@@ -1,3 +1,5 @@
+using CoppAddresd.Application.Interfaces;
+using CoppAddresd.Domain.Exceptions;
 using CoppAddresd.Application.DTOs.ProgramProgress;
 using CoppAddresd.Application.Features.ProgramProgress.Commands.EnrollPatient;
 using MediatR;
@@ -14,7 +16,7 @@ namespace CoppAddresd.Application.Features.ProgramProgress.Commands.BulkEnrollPa
 /// </summary>
 public sealed class BulkEnrollPatientsCommandHandler(
     IMediator mediator,
-    ILogger<BulkEnrollPatientsCommandHandler> logger)
+    ILogger<BulkEnrollPatientsCommandHandler> logger, IPatientScopeGuard? patientScope = null)
     : IRequestHandler<BulkEnrollPatientsCommand, BulkEnrollPatientsResultDto>
 {
     public async Task<BulkEnrollPatientsResultDto> Handle(
@@ -28,6 +30,7 @@ public sealed class BulkEnrollPatientsCommandHandler(
         {
             try
             {
+                if (patientScope is not null) await patientScope.EnsureAsync(patientId, "Program.Enroll", ct);
                 ProgramEnrollmentDto enrollment = await mediator.Send(
                     new EnrollPatientCommand(
                         patientId,
@@ -40,6 +43,11 @@ public sealed class BulkEnrollPatientsCommandHandler(
 
                 results.Add(new BulkEnrollPatientResultDto(patientId, enrollment.Id, null));
                 created++;
+            }
+            catch (NotFoundException) when (patientScope is not null)
+            {
+                results.Add(new BulkEnrollPatientResultDto(patientId, null, "omitidos_sin_alcance"));
+                failed++;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -13,7 +13,7 @@ namespace CoppAddresd.Infrastructure.Repositories;
 /// Estilo espejo de DeviceTokenRepository: operaciones acotadas, SaveChanges
 /// por operación.
 /// </summary>
-public sealed class ProgramControlRepository(AppDbContext dbContext) : IProgramControlRepository
+public sealed class ProgramControlRepository(AppDbContext dbContext, IPatientScopeGuard? patientScope = null) : IProgramControlRepository
 {
     public async Task<IReadOnlyList<ProgramControlEnrollmentCandidate>> ListActiveCandidatesAsync(
         DateOnly startLocalDateCutoff, CancellationToken ct = default)
@@ -71,6 +71,7 @@ public sealed class ProgramControlRepository(AppDbContext dbContext) : IProgramC
         IQueryable<ProgramControl> query = dbContext.ProgramControls
             .AsNoTracking()
             .Include(c => c.Enrollment);
+        if (patientScope is not null) query = await patientScope.FilterAsync(query, x => x.Enrollment!.PatientId, "Program.Profile360View", ct);
 
         if (enrollmentId is { } eid)
         {
