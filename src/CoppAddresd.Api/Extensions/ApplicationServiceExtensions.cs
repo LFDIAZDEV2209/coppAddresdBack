@@ -1,4 +1,3 @@
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Text;
 using CoppAddresd.Api.Authorization;
 using CoppAddresd.Api.Configuration;
@@ -18,6 +17,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -26,11 +26,26 @@ namespace CoppAddresd.Api.Extensions;
 
 public static class ApplicationServiceExtensions
 {
+    /// <summary>
+    /// Resuelve el BaseAddress de un cliente tipado tolerando hosts sin
+    /// configuración (CI/tests sin appsettings): si la sección está vacía se
+    /// usa el URL de desarrollo documentado del servicio, en lugar de lanzar
+    /// UriFormatException dentro de la request. En producción el valor viene
+    /// de appsettings/secrets y el fallback nunca aplica.
+    /// </summary>
+    public static Uri ResolveBaseUri(string configured, string devFallback) =>
+        new Uri(string.IsNullOrWhiteSpace(configured) ? devFallback : configured);
+
     /// <summary>Default por entorno, override explícito y recarga del flag sin redeploy.</summary>
-    public static IServiceCollection AddProgramAssignmentSettings(this IServiceCollection services,
-        IConfiguration configuration, bool isDevelopment)
+    public static IServiceCollection AddProgramAssignmentSettings(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool isDevelopment
+    )
     {
-        services.AddOptions<ProgramAssignmentSettings>().Configure(o => o.Enabled = isDevelopment)
+        services
+            .AddOptions<ProgramAssignmentSettings>()
+            .Configure(o => o.Enabled = isDevelopment)
             .Bind(configuration.GetSection(ProgramAssignmentSettings.SectionName));
         return services;
     }
@@ -87,7 +102,7 @@ public static class ApplicationServiceExtensions
                     var communitySettings = sp.GetRequiredService<
                         IOptions<CommunityServiceSettings>
                     >().Value;
-                    client.BaseAddress = new Uri(communitySettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(communitySettings.BaseUrl, "http://localhost:5200");
                     client.Timeout = TimeSpan.FromSeconds(communitySettings.TimeoutSeconds);
                 }
             )
@@ -117,7 +132,10 @@ public static class ApplicationServiceExtensions
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
         services.TryAddSingleton<TimeProvider>(TimeProvider.System);
-        services.AddScoped<IProgramAssignmentNotifier,CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramAssignmentNotifier>();
+        services.AddScoped<
+            IProgramAssignmentNotifier,
+            CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramAssignmentNotifier
+        >();
         services.AddScoped<CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramAssignmentJob>();
         services.AddSingleton<CoppAddresd.Application.Features.ProgramProgress.Assignment.AssignmentEngine>();
         services.AddScoped<CoppAddresd.Application.Features.ProgramProgress.Assignment.ProgramNarrativeProcessor>();
@@ -125,12 +143,22 @@ public static class ApplicationServiceExtensions
         services.AddSingleton<IProgramNarrativeQueue, ProgramNarrativeQueue>();
         services.AddSingleton<ProgramNarrativeResilience>();
         services.AddHostedService<ProgramNarrativeWorker>();
-        services.AddHttpClient<IProgramNarrativeClient, ProgramNarrativeClient>((sp, client) =>
-        {
-            var settings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
-            client.BaseAddress = new Uri(settings.BaseUrl);
-            client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
-        }).AddPolicyHandler((sp, _) => sp.GetRequiredService<ProgramNarrativeResilience>().Policy)
+        services
+            .AddHttpClient<IProgramNarrativeClient, ProgramNarrativeClient>(
+                (sp, client) =>
+                {
+                    var settings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
+                    // Fallback al URL documentado del ai-service cuando el host no trae
+                    // configuración (CI/tests sin appsettings): el cliente se construye
+                    // de forma diferida y un BaseAddress vacío rompería la request.
+                    var baseUrl = string.IsNullOrWhiteSpace(settings.BaseUrl)
+                        ? "http://localhost:8000"
+                        : settings.BaseUrl;
+                    client.BaseAddress = new Uri(baseUrl);
+                    client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+                }
+            )
+            .AddPolicyHandler((sp, _) => sp.GetRequiredService<ProgramNarrativeResilience>().Policy)
             .AddHttpMessageHandler<AiConsentHttpHandler>()
             .AddHttpMessageHandler<CorrelationIdDelegatingHandler>();
 
@@ -145,7 +173,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(aiSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(aiSettings.BaseUrl, "http://localhost:8000");
                     client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
                 }
             )
@@ -163,7 +191,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(aiSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(aiSettings.BaseUrl, "http://localhost:8000");
                     client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
                 }
             )
@@ -174,7 +202,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var aiSettings = sp.GetRequiredService<IOptions<AiServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(aiSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(aiSettings.BaseUrl, "http://localhost:8000");
                     client.Timeout = TimeSpan.FromSeconds(aiSettings.TimeoutSeconds);
                 }
             )
@@ -190,7 +218,7 @@ public static class ApplicationServiceExtensions
             (sp, client) =>
             {
                 var settings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-                client.BaseAddress = new Uri(settings.BaseUrl);
+                client.BaseAddress = ResolveBaseUri(settings.BaseUrl, "http://localhost:8000");
                 client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
                 client.DefaultRequestHeaders.Add("X-Internal-Key", settings.InternalApiKey);
             }
@@ -203,7 +231,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(authSettings.BaseUrl, "http://localhost:5123");
                     client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
                 }
@@ -215,7 +243,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(authSettings.BaseUrl, "http://localhost:5123");
                     client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
                 }
@@ -227,7 +255,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(authSettings.BaseUrl, "http://localhost:5123");
                     client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
                 }
@@ -239,7 +267,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(authSettings.BaseUrl, "http://localhost:5123");
                     client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
                 }
@@ -251,7 +279,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(authSettings.BaseUrl, "http://localhost:5123");
                     client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
                 }
@@ -265,7 +293,7 @@ public static class ApplicationServiceExtensions
                 (sp, client) =>
                 {
                     var authSettings = sp.GetRequiredService<IOptions<AuthServiceSettings>>().Value;
-                    client.BaseAddress = new Uri(authSettings.BaseUrl);
+                    client.BaseAddress = ResolveBaseUri(authSettings.BaseUrl, "http://localhost:5123");
                     client.Timeout = TimeSpan.FromSeconds(authSettings.TimeoutSeconds);
                     client.DefaultRequestHeaders.Add("X-Internal-Key", authSettings.InternalApiKey);
                 }
