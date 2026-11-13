@@ -191,7 +191,7 @@ public sealed partial class ProgramRepository(
                 // Semanas 1..N: la 1 nace Active con su snapshot; el resto nacen
                 // Locked con snapshot vacío que se toma al activar (SPEC §4.5:
                 // ediciones de la plantilla aplican a la próxima semana).
-                var snapshot = BuildSnapshot(template.DayTemplates);
+                var snapshot = await BuildSnapshotFromTemplateAsync(template.Id, 1, ct);
                 for (var weekNumber = 1; weekNumber <= template.TotalWeeks; weekNumber++)
                 {
                     var start = startLocalDate.AddDays((weekNumber - 1) * 7);
@@ -1797,9 +1797,7 @@ public sealed partial class ProgramRepository(
         var now = DateTime.UtcNow;
         week.Status = ProgramWeekStatus.Active;
         week.ActivatedAt = now;
-        // Una preedición del ERP ya materializada debe sobrevivir a la activación.
-        if (week.TasksSnapshot.ValueKind != JsonValueKind.Array || week.TasksSnapshot.GetArrayLength() == 0)
-            week.TasksSnapshot = await BuildSnapshotFromTemplateAsync(template.Id, ct);
+        week.TasksSnapshot = await MergeActivationSnapshotAsync(template.Id, week, ct);
         week.TemplateVersionAtStart = template.Version;
         week.UpdatedAt = now;
 
@@ -1842,13 +1840,11 @@ public sealed partial class ProgramRepository(
                 w => w.EnrollmentId == enrollment.Id && w.WeekNumber == week.WeekNumber + 1,
                 ct
             );
-            if (nextWeek is not null)
+            if (nextWeek is { Status: ProgramWeekStatus.Locked })
             {
                 nextWeek.Status = ProgramWeekStatus.Active;
                 nextWeek.ActivatedAt = now;
-                // También se conserva al avanzar por siete días perfectos.
-                if (nextWeek.TasksSnapshot.ValueKind != JsonValueKind.Array || nextWeek.TasksSnapshot.GetArrayLength() == 0)
-                    nextWeek.TasksSnapshot = await BuildSnapshotFromTemplateAsync(template.Id, ct);
+                nextWeek.TasksSnapshot = await MergeActivationSnapshotAsync(template.Id, nextWeek, ct);
                 nextWeek.TemplateVersionAtStart = template.Version;
                 nextWeek.UpdatedAt = now;
                 enrollment.CurrentWeekNumber = nextWeek.WeekNumber;
@@ -1968,11 +1964,9 @@ public sealed partial class ProgramRepository(
         // (template, weekday)); así el móvil ve el contenido del podcast del
         // día antes de completarlo. La completación (media_id real del cliente)
         // tiene prioridad sobre el fallback.
-        var fallbackByTask = await dbContext
-            .WeeklyDayTemplates.AsNoTracking()
-            .Where(d => d.TemplateId == row.TemplateId && d.Weekday == weekday)
-            .Select(d => new { TaskCode = d.TaskCode.ToString(), d.MediaId })
-            .ToListAsync(ct);
+        var fallbackByTask = (await LoadTemplateDaysAsync(row.TemplateId, week.WeekNumber, ct))
+            .Where(d => d.Weekday == weekday)
+            .Select(d => new { TaskCode = d.TaskCode.ToString(), d.MediaId }).ToList();
 
         var mediaIds = todayCompletions
             .Where(c => c.MediaId.HasValue)
@@ -3994,18 +3988,34 @@ public sealed partial class ProgramRepository(
         return name is not null ? (name, name) : null;
     }
 
-    private async Task<JsonElement> BuildSnapshotFromTemplateAsync(
-        Guid templateId,
-        CancellationToken ct
-    )
+    private async Task<IReadOnlyList<WeeklyDayTemplate>> LoadTemplateDaysAsync(
+        Guid templateId, int weekNumber, CancellationToken ct)
     {
-        var days = await dbContext
-            .WeeklyDayTemplates.AsNoTracking()
-            .Where(d => d.TemplateId == templateId)
-            .OrderBy(d => d.Weekday)
-            .ThenBy(d => d.SortOrder)
+        var days = await dbContext.WeeklyDayTemplates.AsNoTracking()
+            .Where(d => d.TemplateId == templateId && (d.WeekNumber == null || d.WeekNumber == weekNumber))
             .ToListAsync(ct);
-        return BuildSnapshot(days);
+        // La específica sustituye a la genérica por día/tarea, sin duplicar misiones.
+        return days.GroupBy(d => (d.Weekday, d.TaskCode))
+            .Select(g => g.OrderByDescending(d => d.WeekNumber.HasValue).First())
+            .OrderBy(d => d.Weekday).ThenBy(d => d.SortOrder).ToList();
+    }
+
+    private async Task<JsonElement> BuildSnapshotFromTemplateAsync(
+        Guid templateId, int weekNumber, CancellationToken ct) =>
+        BuildSnapshot(await LoadTemplateDaysAsync(templateId, weekNumber, ct));
+
+    private async Task<JsonElement> MergeActivationSnapshotAsync(
+        Guid templateId, ProgramWeek week, CancellationToken ct)
+    {
+        var merged = ParseSnapshot(await BuildSnapshotFromTemplateAsync(templateId, week.WeekNumber, ct))
+            .ToDictionary(t => (t.Weekday, t.TaskCode));
+        foreach (var item in ParseSnapshot(week.TasksSnapshot).Where(t => t.Origin != "program"))
+        {
+            // Hasta clasificar los antiguos, un origen ausente o desconocido se
+            // conserva como individual; nunca se pierde una posible decisión humana.
+            merged[(item.Weekday, item.TaskCode)] = item with { Origin = "individual" };
+        }
+        return WeekSnapshotJson.Serialize(merged.Values.OrderBy(t => t.Weekday).ThenBy(t => t.SortOrder).ToList());
     }
 
     /// <summary>Serialize el snapshot con el shape de la SPEC §3.4 (jsonb).</summary>
@@ -7955,23 +7965,7 @@ public sealed partial class ProgramRepository(
         var snapshotTasks = ParseSnapshot(week.TasksSnapshot);
         if (snapshotTasks.Count == 0)
         {
-            var templateDays = await dbContext
-                .WeeklyDayTemplates.AsNoTracking()
-                .Where(d => d.TemplateId == enrollment.TemplateId)
-                .OrderBy(d => d.Weekday)
-                .ThenBy(d => d.SortOrder)
-                .ToListAsync(ct);
-            snapshotTasks = templateDays
-                .Select(d => new WeekSnapshotTaskRow(
-                    d.Weekday,
-                    d.TaskCode.ToString(),
-                    d.Points,
-                    d.SortOrder,
-                    d.RoutineId,
-                    d.NutritionPlanId,
-                    d.MediaId
-                ))
-                .ToList();
+            snapshotTasks = ParseSnapshot(await BuildSnapshotFromTemplateAsync(enrollment.TemplateId, weekNumber, ct));
         }
         var tasksByWeekday = snapshotTasks
             .GroupBy(t => t.Weekday)

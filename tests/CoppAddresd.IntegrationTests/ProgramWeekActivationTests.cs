@@ -16,7 +16,13 @@ public sealed partial class NutritionPlanWorkflowTests
     [NutritionPostgresFact]
     public Task ActivacionPorSemanaPerfecta_ConservaPreedicionFutura() => VerificarPreedicionAsync(true);
 
-    private async Task VerificarPreedicionAsync(bool semanaPerfecta)
+    [NutritionPostgresFact]
+    public Task ActivacionPorFecha_CombinaJuevesIndividualYPlantillaVigente() => VerificarPreedicionAsync(false, true);
+
+    [NutritionPostgresFact]
+    public Task ActivacionPorSemanaPerfecta_CombinaJuevesIndividualYPlantillaVigente() => VerificarPreedicionAsync(true, true);
+
+    private async Task VerificarPreedicionAsync(bool semanaPerfecta, bool combinar = false)
     {
         await using var db = Context();
         var patient = await PatientAsync(db);
@@ -41,11 +47,26 @@ public sealed partial class NutritionPlanWorkflowTests
         var repository = new ProgramRepository(db, new ConfigurationBuilder().Build());
 
         // Se usa la misma escritura que el ERP; la segunda semana aún está bloqueada.
-        var edited = days.Select(d => new WeeklyDayTemplate { Weekday = d.Weekday, TaskCode = d.TaskCode,
+        var edited = days.Where(d => !combinar || d.Weekday == 4).Select(d => new WeeklyDayTemplate { Weekday = d.Weekday, TaskCode = d.TaskCode,
             Points = d.Weekday == 4 ? 77 : 10, SortOrder = d.SortOrder }).ToArray();
         await repository.ReplaceEnrollmentWeekTasksAsync(enrollment.Id, 2, edited, ct: CancellationToken.None);
         Assert.Equal(77, next.TasksSnapshot.EnumerateArray().Single(t => t.GetProperty("weekday").GetInt32() == 4).GetProperty("points").GetInt32());
 
+        if (combinar)
+        {
+            // El contenido de programa ya materializado debe refrescarse; el individual no.
+            var rows = CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent.WeekSnapshotJson.Parse(next.TasksSnapshot).ToList();
+            rows.Add(new(1, "podcast", 15, 1, Origin: "program"));
+            next.TasksSnapshot = CoppAddresd.Application.Features.ProgramProgress.Commands.BulkAssignProgramContent.WeekSnapshotJson.Serialize(rows);
+            foreach (var day in days) day.Points = 30;
+            db.WeeklyDayTemplates.Add(new() { TemplateId = template.Id, WeekNumber = 2, Weekday = 2,
+                TaskCode = TaskCode.podcast, Points = 40, SortOrder = 1 });
+            // Una específica de otra semana no entra en la activación.
+            db.WeeklyDayTemplates.Add(new() { TemplateId = template.Id, WeekNumber = 3, Weekday = 3,
+                TaskCode = TaskCode.podcast, Points = 99, SortOrder = 1 });
+            template.Version = 2;
+            await db.SaveChangesAsync();
+        }
         if (semanaPerfecta)
         {
             for (var day = 0; day < 7; day++)
@@ -59,6 +80,19 @@ public sealed partial class NutritionPlanWorkflowTests
         await using var verification = Context();
         var activated = await verification.ProgramWeeks.AsNoTracking().SingleAsync(w => w.Id == next.Id);
         Assert.Equal(ProgramWeekStatus.Active, activated.Status);
+        if (combinar)
+        {
+            Assert.Equal(2, activated.TemplateVersionAtStart);
+            Assert.Equal(7, activated.TasksSnapshot.GetArrayLength());
+            foreach (var item in activated.TasksSnapshot.EnumerateArray())
+            {
+                var day = item.GetProperty("weekday").GetInt32();
+                Assert.Equal(day == 4 ? 77 : day == 2 ? 40 : 30, item.GetProperty("points").GetInt32());
+                Assert.Equal(day == 4 ? "individual" : "program", item.GetProperty("origin").GetString());
+            }
+            var frozen = await verification.ProgramWeeks.AsNoTracking().SingleAsync(w => w.Id == first.Id);
+            Assert.All(frozen.TasksSnapshot.EnumerateArray(), item => Assert.Equal(10, item.GetProperty("points").GetInt32()));
+        }
         // Regresión 1.2: la activación conserva el jueves preeditado.
         Assert.Equal(77, activated.TasksSnapshot.EnumerateArray().Single(t => t.GetProperty("weekday").GetInt32() == 4).GetProperty("points").GetInt32());
     }

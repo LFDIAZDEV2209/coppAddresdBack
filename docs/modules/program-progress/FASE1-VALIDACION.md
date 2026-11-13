@@ -39,3 +39,14 @@ Las copias nuevas nacen `program`; las preediciones ERP nacen `individual`, con
 actor y fecha. No se cambia aún la resolución de descansos (tarea 1.9).
 Validación: ida/vuelta antiguo/nuevo, descanso true/false, auditoría y edición selectiva;
 build Release correcto; ProgramProgress 570 pasan, 97 omitidas; activación PostgreSQL 2/2.
+
+## 1.5 — Combinación al activar
+
+Ambas activaciones combinan plantilla vigente (específica > genérica) con ítems
+individuales. Origen antiguo/desconocido se conserva como individual por prudencia.
+Las semanas ya activas/completadas no se rematerializan al completar una anterior.
+La semana inicial y los respaldos de lectura también seleccionan por semana.
+PostgreSQL: jueves individual de 77 sobrevive, lunes program de 15 pasa a 30,
+martes específico gana con 40, miércoles ignora la específica de otra semana;
+la semana anterior conserva sus 10 puntos. Cubiertas las dos activaciones.
+Validación: build Release; integración 4/4; ProgramProgress 570 pasan, 97 omitidas.
