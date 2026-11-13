@@ -50,3 +50,12 @@ PostgreSQL: jueves individual de 77 sobrevive, lunes program de 15 pasa a 30,
 martes específico gana con 40, miércoles ignora la específica de otra semana;
 la semana anterior conserva sus 10 puntos. Cubiertas las dos activaciones.
 Validación: build Release; integración 4/4; ProgramProgress 570 pasan, 97 omitidas.
+
+## 1.6 — Clasificación simulada
+
+Script y operación documentados en `scripts/README-week-snapshot-origin.md`.
+Simulación local en conexión de solo lectura: 11.788 semanas; 3.326 excluidas,
+8.462 futuras vacías; 0 ítems, 0 conflictos, 0 escrituras. No se aplicó a BD local.
+PostgreSQL efímero: simulación, clasificación por versión/específica, prudencia
+ante ambigüedad, idempotencia y reversa exacta/protegida contra edición posterior.
+Validación: build Release; integración 1/1; ProgramProgress 570 pasan, 97 omitidas.
