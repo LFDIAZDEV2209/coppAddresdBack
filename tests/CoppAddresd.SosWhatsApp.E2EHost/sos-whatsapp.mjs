@@ -1,0 +1,41 @@
+/** UI + activación y outbox PostgreSQL reales; transportes sin red. */
+import { chromium, expect } from '../../../antares-paciente/node_modules/playwright/test.mjs';
+import { mkdir, writeFile } from 'node:fs/promises';
+const output=process.env.COP_E2E_OUTPUT;if(!output)throw Error('COP_E2E_OUTPUT requerido');await mkdir(output,{recursive:true});
+const browser=await chromium.launch();
+try {
+ const page=await browser.newPage({viewport:{width:390,height:844}});
+ await page.request.post('http://127.0.0.1:5199/reset/normal');
+ await page.goto('http://127.0.0.1:5199');
+ await page.getByRole('button',{name:'Activar SOS de prueba',exact:true}).click();
+ await expect(page.locator('#result')).toContainText('Created');
+ await expect(page.locator('#deliveries')).toContainText('copp_sos_alert_v1',{timeout:12000});
+ const messages=await (await page.request.get('http://127.0.0.1:5199/deliveries')).json();
+ expect(messages).toHaveLength(2);expect(messages.map(m=>m.destination).sort()).toEqual(['+12025550101','+12025550102']);
+ expect(messages[0].parameters.join(' ')).toContain('María Gómez');
+ expect(messages[0].parameters.join(' ')).toContain('Calle 114');
+ expect(messages[0].parameters.join(' ')).toContain('84 lpm');
+ await page.getByRole('button',{name:'Repetir activación',exact:true}).click();
+ await expect(page.locator('#result')).toContainText('Replayed');
+ expect(await(await page.request.get('http://127.0.0.1:5199/deliveries')).json()).toHaveLength(2);
+ const states=async()=>await(await page.request.get('http://127.0.0.1:5199/states')).json();
+ await page.request.post('http://127.0.0.1:5199/status/delivered');
+ expect((await states())[0].deliveryStatus).toBe('delivered');
+ await page.request.post('http://127.0.0.1:5199/status/sent');expect((await states())[0].deliveryStatus).toBe('delivered');
+ const invalid=await(await page.request.post('http://127.0.0.1:5199/status/invalid')).json();expect(invalid.code).toBe(401);
+ expect((await states())[0].deliveryStatus).toBe('delivered');
+ await page.request.post('http://127.0.0.1:5199/reset/rate');
+ await page.getByRole('button',{name:'Activar SOS de prueba',exact:true}).click();
+ await expect.poll(async()=> (await states()).filter(x=>x.state==='Pending').length).toBe(1);
+ await page.request.post('http://127.0.0.1:5199/advance');
+ await expect.poll(async()=>(await states()).filter(x=>x.state==='Accepted').length).toBe(2);
+ expect((await states()).map(x=>x.attempts).sort()).toEqual([1,2]);
+ await page.request.post('http://127.0.0.1:5199/reset/timeout');
+ await page.getByRole('button',{name:'Activar SOS de prueba',exact:true}).click();
+ await expect.poll(async()=>(await states()).filter(x=>x.state==='Unknown').length).toBe(2);
+ await page.request.post('http://127.0.0.1:5199/advance');
+ expect((await states()).map(x=>x.attempts)).toEqual([1,1]);
+ await page.screenshot({path:output+'/sos-whatsapp.png'});
+ await writeFile(output+'/result.json',JSON.stringify({passed:true,count:messages.length}));
+ console.log('PASS: activación, dos contactos, snapshot y replay sin duplicados');
+} finally {await browser.close();}

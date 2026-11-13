@@ -6,7 +6,7 @@ El SOS combina las últimas tomas reales disponibles en el teléfono con medicio
 
 La migración aditiva `AddSosVitalsSnapshot` añade `app.sos_alerts.vitals_snapshot` (jsonb nullable). Preserva valor, unidad, fecha y procedencia: los reintentos e idempotencia conservan el mismo snapshot. La respuesta del SOS devuelve el snapshot compartido; la app no afirma haber compartido lecturas basándose únicamente en lo que intentó enviar. Correo HTML/texto muestra fecha UTC, procedencia y antigüedad respecto a la activación; SMS conserva valores/unidades, hora de activación y fechas de toma con zona COL explícita y antigüedad. Los datos ausentes se identifican por métrica cuando hay lecturas parciales. No se acortan signos ni se corta la URL para limitar segmentos. La llamada identifica los valores como últimas lecturas registradas.
 
-Pruebas locales usan PostgreSQL aislado y APIs sintéticas, sin enviar SMS, correo ni llamadas reales. El canal SOS WhatsApp todavía no existe en este módulo: su entrega y prueba pertenecen a la integración WhatsApp solicitada; debe reutilizar este snapshot y las reglas de ausencia/fecha.
+Pruebas locales usan PostgreSQL aislado y APIs sintéticas, sin enviar SMS, correo ni llamadas reales. El canal SOS WhatsApp está implementado con outbox por destinatario y un interruptor desactivado por defecto. Ver [operación y plantilla](WHATSAPP.md); la aceptación real en Meta y la recepción en un teléfono requieren configuración y prueba autorizada.
 
 
 Los avisos se construyen únicamente en el servidor. El paciente autenticado

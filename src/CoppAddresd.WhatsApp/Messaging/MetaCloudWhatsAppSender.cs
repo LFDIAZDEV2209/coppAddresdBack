@@ -57,11 +57,15 @@ public sealed class MetaCloudWhatsAppSender(
         string language,
         IReadOnlyList<string> bodyParameters,
         CancellationToken ct
-    ) =>
+    ) => SendTemplateWithCallbackAsync(waId, name, language, bodyParameters, "", ct);
+
+    public Task<WhatsAppSendResult> SendTemplateWithCallbackAsync(string waId, string name, string language,
+        IReadOnlyList<string> bodyParameters, string callbackData, CancellationToken ct) =>
         SendAsync(
             waId,
             new
             {
+                biz_opaque_callback_data = string.IsNullOrEmpty(callbackData) ? null : callbackData,
                 messaging_product = "whatsapp",
                 recipient_type = "individual",
                 to = waId.TrimStart('+'),
@@ -146,7 +150,7 @@ public sealed class MetaCloudWhatsAppSender(
             "Bearer",
             options.AccessToken
         );
-        request.Content = JsonContent.Create(payload);
+        request.Content = JsonContent.Create(payload, options: new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
         try

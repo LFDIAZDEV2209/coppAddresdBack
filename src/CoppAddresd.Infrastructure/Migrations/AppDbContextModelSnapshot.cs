@@ -9569,6 +9569,99 @@ namespace CoppAddresd.Infrastructure.Migrations
                     b.ToTable("sos_alert_recipients", "app");
                 });
 
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosWhatsAppDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AlertId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("alert_id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<int>("ContactOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("contact_order");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DeliveryRank")
+                        .HasColumnType("integer")
+                        .HasColumnName("delivery_rank");
+
+                    b.Property<string>("DeliveryStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("delivery_status");
+
+                    b.Property<string>("Destination")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("destination");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("error_code");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .HasColumnType("uuid")
+                        .HasColumnName("lease_token");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lease_until");
+
+                    b.Property<DateTime>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("ParametersJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("parameters_json");
+
+                    b.Property<string>("PatientName")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("patient_name");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("state");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("Wamid")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("wamid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeaseUntil")
+                        .HasFilter("state = 'Processing'");
+
+                    b.HasIndex("AlertId", "Destination")
+                        .IsUnique();
+
+                    b.HasIndex("State", "NextAttemptAt");
+
+                    b.ToTable("sos_whatsapp_deliveries", "app");
+                });
+
             modelBuilder.Entity("CoppAddresd.Domain.Entities.Specialty", b =>
                 {
                     b.Property<Guid>("Id")
@@ -11414,6 +11507,15 @@ namespace CoppAddresd.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Alert");
+                });
+
+            modelBuilder.Entity("CoppAddresd.Domain.Entities.SosWhatsAppDelivery", b =>
+                {
+                    b.HasOne("CoppAddresd.Domain.Entities.SosAlert", null)
+                        .WithMany()
+                        .HasForeignKey("AlertId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("CoppAddresd.Domain.Entities.State", b =>
