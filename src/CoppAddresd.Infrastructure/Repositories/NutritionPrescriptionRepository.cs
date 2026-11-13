@@ -8,6 +8,12 @@ namespace CoppAddresd.Infrastructure.Repositories;
 /// <summary>Persistencia atómica del agregado; cada guardado incluye comidas e ítems.</summary>
 public sealed class NutritionPrescriptionRepository(AppDbContext db) : INutritionPrescriptionRepository
 {
+    public async Task<IReadOnlyList<NutritionCycleHeader>> ListCycleHeadersAsync(Guid patientId, CancellationToken ct)
+        => await db.NutritionPrescriptions.AsNoTracking()
+            .Where(p => p.PatientId == patientId && p.State == "aprobado" && p.StartDate != null && p.EndDate != null)
+            .Select(p => new NutritionCycleHeader(p.Id, p.CycleId, p.StartDate!.Value,
+                p.EndDate!.Value, p.CreatedAt, p.IsPublished)).ToListAsync(ct);
+
     public async Task<IReadOnlyList<NutritionFoodItem>> ListFoodsAsync(CancellationToken ct)
         => await db.NutritionFoodItems.AsNoTracking().OrderBy(x => x.Id).ToListAsync(ct);
 

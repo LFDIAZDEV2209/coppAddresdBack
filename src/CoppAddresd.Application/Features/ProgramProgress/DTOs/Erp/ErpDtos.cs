@@ -459,4 +459,13 @@ public sealed record PatientOverviewDto(
     [property: JsonPropertyName("pending_adaptations")] int PendingAdaptations,
     [property: JsonPropertyName("clinical_reviews")] IReadOnlyList<ErpClinicalReviewSummary> ClinicalReviews,
     [property: JsonPropertyName("daily_checkins")] IReadOnlyList<ErpDailyCheckinSummary> DailyCheckins,
-    [property: JsonPropertyName("mediciones_clinicas")] PatientOverviewClinicalMetricsDto? MedicionesClinicas);
+    [property: JsonPropertyName("mediciones_clinicas")] PatientOverviewClinicalMetricsDto? MedicionesClinicas,
+    [property: JsonPropertyName("programName")] string? ProgramName = null,
+    [property: JsonPropertyName("currentCycle")] PatientOverviewCurrentCycle? CurrentCycle = null);
+
+public sealed record PatientOverviewCurrentCycle(
+    [property: JsonPropertyName("number")] int Number,
+    [property: JsonPropertyName("day")] int Day,
+    [property: JsonPropertyName("of")] int Of,
+    [property: JsonPropertyName("startDate")] DateOnly StartDate,
+    [property: JsonPropertyName("endDate")] DateOnly EndDate);

@@ -785,3 +785,20 @@ el worker recupera ahora la deuda de narrativa desde PostgreSQL al arrancar y po
 lotes, sujeto al flag y al debounce. La regeneración explícita permanece como
 operación interna; su endpoint de ficha fue retirado.
 Contrato y filtros: [asignación post-tests](./assignments.md#recuperación-y-regeneración-interna-de-narrativa).
+
+
+## Overview: resumen de programa y ciclo (Fase 0)
+
+`GET /api/v1/program/erp/patients/{id}/overview` exige `Program.Profile360View`
+y alcance del paciente. Conserva el contrato anterior y añade dos campos opcionales:
+
+```json
+{"programName":"Programa de 83 días","currentCycle":{"number":2,"day":9,"of":30,"startDate":"2026-11-05","endDate":"2026-12-04"}}
+```
+
+`programName` proviene de la plantilla de la inscripción. El día se calcula en la zona
+horaria del paciente; `currentCycle` usa la misma vigencia publicada de 30 días que el
+workspace de Nutrición. Es null si no hay publicación vigente (incluido futuro/vencido).
+Hasta crear `nutrition_cycles` en Fase 3, la numeración se deriva sin huecos de los
+`cycle_id` con publicación histórica, por fecha inicial y desempate estable; las versiones
+no incrementan el número. La consulta lee solo cabeceras aprobadas del paciente solicitado.
